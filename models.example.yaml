@@ -1,0 +1,18 @@
+models:
+  # A model can be bound to multiple providers. When multiple providers are configured,
+  # open-next-router selects the provider using the configured strategy.
+  #
+  # Supported strategies:
+  # - round_robin (default)
+
+  gpt-4o-mini:
+    providers: 
+      - openai
+    strategy: round_robin
+    owned_by: open-next-router
+
+  claude-haiku-4-5:
+    providers: 
+      - anthropic
+    strategy: round_robin
+

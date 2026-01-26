@@ -1,0 +1,18 @@
+### Healthz
+GET {{base_url}}/healthz
+
+?? status == 200
+
+?? status == 200
+
+### List loaded providers (requires auth)
+GET {{base_url}}/admin/providers
+Authorization: Bearer {{api_key}}
+
+?? status == 200
+
+### Reload providers + keys (requires auth)
+POST {{base_url}}/admin/reload
+Authorization: Bearer {{api_key}}
+
+?? status == 200

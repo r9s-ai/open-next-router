@@ -1,0 +1,32 @@
+server:
+  listen: ":3000"
+  read_timeout_ms: 60000
+  write_timeout_ms: 60000
+
+auth:
+  # Public API key for calling open-next-router
+  api_key: "change-me"
+
+providers:
+  # Directory containing provider DSL files (*.conf)
+  dir: "./providers"
+
+keys:
+  # Upstream keys file (grouped by provider)
+  file: "./keys.yaml"
+
+models:
+  # Model routing file (model -> providers)
+  file: "./models.yaml"
+
+traffic_dump:
+  # Enable traffic dump logs to files (request/response capture, best-effort masking).
+  enabled: false
+  dir: "./dumps"
+  file_path: "{{.request_id}}.log"
+  max_bytes: 1048576
+  mask_secrets: true
+
+logging:
+  level: "info"
+  access_log: true

@@ -1,0 +1,18 @@
+providers:
+  openai:
+    keys:
+      - name: "key1"
+        # Option A: plaintext (not recommended for public repos)
+        value: "sk-xxxx"
+        # Optional: override provider base_url (e.g. route via proxy)
+        # base_url_override: "https://api.openai.com"
+
+  anthropic:
+    keys:
+      - name: "key1"
+        # Option B: encrypted value (requires ONR_MASTER_KEY at runtime)
+        # value: "ENC[v1:aesgcm:...]"
+        #
+        # Option C: leave empty and provide env override:
+        #   ONR_UPSTREAM_KEY_ANTHROPIC_KEY1=sk-ant-xxxx
+        value: ""

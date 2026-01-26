@@ -1,0 +1,103 @@
+@base_url = http://localhost:3000
+@api_key = {{$dotenv ONR_API_KEY}}
+
+### Models
+GET {{base_url}}/v1/models
+Authorization: Bearer {{api_key}}
+
+### Chat Completions (non-stream)
+POST {{base_url}}/v1/chat/completions
+Authorization: Bearer {{api_key}}
+Content-Type: application/json
+
+{
+  "model": "gpt-4o-mini",
+  "messages": [
+    { "role": "user", "content": "hello" }
+  ]
+}
+
+?? status == 200
+
+### Chat Completions (stream)
+POST {{base_url}}/v1/chat/completions
+Authorization: Bearer {{api_key}}
+Content-Type: application/json
+
+{
+  "model": "gpt-4o-mini",
+  "stream": true,
+  "messages": [
+    { "role": "user", "content": "hello" }
+  ]
+}
+
+?? status == 200
+
+### Responses (non-stream)
+POST {{base_url}}/v1/responses
+Authorization: Bearer {{api_key}}
+Content-Type: application/json
+
+{
+  "model": "gpt-4o-mini",
+  "input": "hello"
+}
+
+?? status == 200
+
+### Responses (stream)
+POST {{base_url}}/v1/responses
+Authorization: Bearer {{api_key}}
+Content-Type: application/json
+
+{
+  "model": "gpt-4o-mini",
+  "stream": true,
+  "input": "hello"
+}
+
+?? status == 200
+
+### Claude Messages (non-stream)
+POST {{base_url}}/v1/messages
+Authorization: Bearer {{api_key}}
+Content-Type: application/json
+
+{
+  "model": "claude-haiku-4-5",
+  "max_tokens": 128,
+  "messages": [
+    { "role": "user", "content": "hello" }
+  ]
+}
+
+?? status == 200
+
+### Claude Messages (stream)
+POST {{base_url}}/v1/messages
+Authorization: Bearer {{api_key}}
+Content-Type: application/json
+
+{
+  "model": "claude-haiku-4-5",
+  "max_tokens": 128,
+  "stream": true,
+  "messages": [
+    { "role": "user", "content": "hello" }
+  ]
+}
+
+?? status == 200
+
+### Embeddings
+POST {{base_url}}/v1/embeddings
+Authorization: Bearer {{api_key}}
+Content-Type: application/json
+
+{
+  "model": "text-embedding-3-small",
+  "input": "hello"
+}
+
+?? status == 200

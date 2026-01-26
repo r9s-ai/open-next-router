@@ -1,0 +1,27 @@
+# Local runtime configs / secrets
+open-next-router.yaml
+models.yaml
+keys.yaml
+.env
+
+# Build outputs
+*.exe
+*.out
+
+# Go
+/bin/
+/dist/
+/tmp/
+*.log
+*.test
+*.prof
+go.work
+go.work.sum
+
+# IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+report.xml
