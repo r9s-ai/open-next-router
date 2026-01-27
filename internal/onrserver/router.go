@@ -13,8 +13,8 @@ import (
 	"github.com/edgefn/open-next-router/internal/models"
 	"github.com/edgefn/open-next-router/internal/proxy"
 	"github.com/edgefn/open-next-router/internal/requestid"
-	"github.com/edgefn/open-next-router/internal/trafficdump"
 	"github.com/edgefn/open-next-router/pkg/dslconfig"
+	"github.com/edgefn/open-next-router/pkg/trafficdump"
 )
 
 func NewRouter(cfg *config.Config, st *state, reg *dslconfig.Registry, pclient *proxy.Client) *gin.Engine {

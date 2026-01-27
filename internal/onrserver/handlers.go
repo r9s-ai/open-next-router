@@ -13,7 +13,7 @@ import (
 	"github.com/edgefn/open-next-router/internal/config"
 	"github.com/edgefn/open-next-router/internal/proxy"
 	"github.com/edgefn/open-next-router/internal/requestid"
-	"github.com/edgefn/open-next-router/internal/trafficdump"
+	"github.com/edgefn/open-next-router/pkg/trafficdump"
 )
 
 func makeHandler(cfg *config.Config, st *state, pclient *proxy.Client, api string) gin.HandlerFunc {

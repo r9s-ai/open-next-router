@@ -13,9 +13,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/edgefn/open-next-router/internal/trafficdump"
 	"github.com/edgefn/open-next-router/pkg/dslconfig"
 	"github.com/edgefn/open-next-router/pkg/dslmeta"
+	"github.com/edgefn/open-next-router/pkg/trafficdump"
 	"github.com/edgefn/open-next-router/pkg/usageestimate"
 )
 
