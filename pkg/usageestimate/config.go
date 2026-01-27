@@ -60,6 +60,8 @@ func ApplyDefaults(cfg *Config) {
 			"responses",
 			"claude.messages",
 			"embeddings",
+			"gemini.generateContent",
+			"gemini.streamGenerateContent",
 		}
 	}
 }

@@ -80,6 +80,12 @@ func (c *Client) ProxyJSON(
 			model = strings.TrimSpace(v)
 		}
 	}
+	if model == "" {
+		// Gemini native endpoints put model in URL path: /v1beta/models/{model}:{action}
+		if m2, ok := parseGeminiModelFromPath(gc.Request.URL.Path); ok && strings.TrimSpace(m2) != "" {
+			model = strings.TrimSpace(m2)
+		}
+	}
 
 	m := &dslmeta.Meta{
 		API:             strings.TrimSpace(api),
@@ -103,7 +109,10 @@ func (c *Client) ProxyJSON(
 	if t, ok := pf.Request.Select(m); ok {
 		t.Apply(m)
 		if root != nil && m.DSLModelMapped != "" {
-			root["model"] = m.DSLModelMapped
+			// Only override when the field exists (OpenAI-style). Gemini native requests do not have "model" in body.
+			if _, exists := root["model"]; exists {
+				root["model"] = m.DSLModelMapped
+			}
 		}
 		if root != nil && len(t.JSONOps) > 0 {
 			out, err := dslconfig.ApplyJSONOps(m, root, t.JSONOps)
@@ -111,6 +120,13 @@ func (c *Client) ProxyJSON(
 				return nil, err
 			}
 			root, _ = out.(map[string]any)
+		}
+	}
+
+	// Best-effort: for Gemini native endpoints, let model_map rewrite URL model segment.
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(api)), "gemini.") && strings.TrimSpace(m.DSLModelMapped) != "" {
+		if newPath, ok := replaceGeminiModelInPath(m.RequestURLPath, m.DSLModelMapped); ok {
+			m.RequestURLPath = newPath
 		}
 	}
 
@@ -313,6 +329,40 @@ func (c *Client) ProxyJSON(
 	}, nil
 }
 
+func parseGeminiModelFromPath(path string) (model string, ok bool) {
+	p := strings.TrimSpace(path)
+	// /v1beta/models/{model}:{action}
+	const prefix = "/v1beta/models/"
+	if !strings.HasPrefix(p, prefix) {
+		return "", false
+	}
+	rest := strings.TrimPrefix(p, prefix)
+	// rest: {model}:{action}
+	parts := strings.SplitN(rest, ":", 2)
+	if len(parts) != 2 {
+		return "", false
+	}
+	model = strings.TrimSpace(parts[0])
+	if model == "" {
+		return "", false
+	}
+	return model, true
+}
+
+func replaceGeminiModelInPath(pathWithQuery string, newModel string) (string, bool) {
+	p := strings.TrimSpace(pathWithQuery)
+	const prefix = "/v1beta/models/"
+	if !strings.HasPrefix(p, prefix) {
+		return "", false
+	}
+	rest := strings.TrimPrefix(p, prefix)
+	parts := strings.SplitN(rest, ":", 2)
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" {
+		return "", false
+	}
+	return prefix + strings.TrimSpace(newModel) + ":" + parts[1], true
+}
+
 func usageMap(u *dslconfig.Usage) map[string]any {
 	if u == nil {
 		return nil
@@ -411,7 +461,18 @@ func extractLastSSEJSONWithUsage(sse []byte) []byte {
 		if err := json.Unmarshal(payload, &obj); err != nil {
 			return
 		}
+		// OpenAI-style: usage
 		if _, ok := obj["usage"]; ok {
+			last = payload
+			return
+		}
+		// Gemini native: usageMetadata
+		if _, ok := obj["usageMetadata"]; ok {
+			last = payload
+			return
+		}
+		// Snake-case fallback
+		if _, ok := obj["usage_metadata"]; ok {
 			last = payload
 		}
 	}

@@ -103,6 +103,34 @@ func ExtractUsage(meta *dslmeta.Meta, cfg UsageExtractConfig, respBody []byte) (
 		outputTokens = getIntByPath(root, "$.usage.output_tokens")
 		cachedTokens = getIntByPath(root, "$.usage.cache_read_input_tokens")
 		cacheWriteTokens = getIntByPath(root, "$.usage.cache_creation_input_tokens")
+	case "gemini":
+		// Gemini native usage fields (new-api alignment):
+		// - usageMetadata.promptTokenCount
+		// - usageMetadata.candidatesTokenCount
+		// - usageMetadata.thoughtsTokenCount (reasoning)
+		// - usageMetadata.totalTokenCount
+		//
+		// CompletionTokens = candidatesTokenCount + thoughtsTokenCount
+		// TotalTokens uses totalTokenCount if present.
+		inputTokens = firstInt(
+			getIntByPath(root, "$.usageMetadata.promptTokenCount"),
+			getIntByPath(root, "$.usage_metadata.prompt_token_count"),
+		)
+		candidatesTokens := firstInt(
+			getIntByPath(root, "$.usageMetadata.candidatesTokenCount"),
+			getIntByPath(root, "$.usage_metadata.candidates_token_count"),
+		)
+		thoughtsTokens := firstInt(
+			getIntByPath(root, "$.usageMetadata.thoughtsTokenCount"),
+			getIntByPath(root, "$.usage_metadata.thoughts_token_count"),
+		)
+		outputTokens = candidatesTokens + thoughtsTokens
+		if v := firstInt(
+			getIntByPath(root, "$.usageMetadata.totalTokenCount"),
+			getIntByPath(root, "$.usage_metadata.total_token_count"),
+		); v != 0 {
+			totalTokens = &v
+		}
 	case "custom":
 		inputTokens = evalUsageField(root, cfg.InputTokensExpr, cfg.InputTokensPath)
 		outputTokens = evalUsageField(root, cfg.OutputTokensExpr, cfg.OutputTokensPath)

@@ -11,6 +11,7 @@ type state struct {
 	mu          sync.RWMutex
 	keys        *keystore.Store
 	modelRouter *models.Router
+	startedAt   int64
 }
 
 func (s *state) Keys() *keystore.Store {
@@ -35,4 +36,16 @@ func (s *state) SetModelRouter(r *models.Router) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.modelRouter = r
+}
+
+func (s *state) StartedAtUnix() int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.startedAt
+}
+
+func (s *state) SetStartedAtUnix(ts int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.startedAt = ts
 }

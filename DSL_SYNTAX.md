@@ -126,6 +126,8 @@ Currently supported `api` values (aligned with OpenAI-style endpoints):
 - `audio.speech`
 - `audio.transcriptions`
 - `audio.translations`
+- `gemini.generateContent` (Gemini native: `POST /v1beta/models/{model}:generateContent`)
+- `gemini.streamGenerateContent` (Gemini native: `POST /v1beta/models/{model}:streamGenerateContent?alt=sse`)
 
 ## 5. Phases / blocks (can appear in defaults and match)
 
@@ -261,11 +263,16 @@ upstream {
 upstream {
   set_query "api-version" "2024-10-01";
   set_query stream "true";
+  # Use built-in variables without quotes (variables are not expanded inside string literals):
+  #   ✅ set_query key $channel.key;
+  #   ❌ set_query key "$channel.key";  # becomes the literal string "$channel.key"
 }
 ```
 
 - Multiple directives are allowed.
 - If the same key is set multiple times, the last one wins.
+- **Important:** built-in variables (e.g. `$channel.key`, `$request.model_mapped`) are only expanded when used as bare expressions.
+  If you wrap them in double quotes, they are treated as plain string literals and will not be expanded.
 
 #### del_query (multiple allowed)
 
@@ -330,11 +337,13 @@ error { error_map openai; }
 ```conf
 metrics { usage_extract openai; }
 metrics { usage_extract anthropic; }
+metrics { usage_extract gemini; }
 metrics { usage_extract custom; }
 ```
 
 - `openai`: OpenAI/OpenAI-compatible usage fields
 - `anthropic`: Anthropic usage fields
+- `gemini`: Gemini native usage fields (`usageMetadata.*`)
 - `custom`: extract from response JSON via a restricted JSONPath subset and optional arithmetic (see below)
 
 #### Custom extraction fields (recommended with `custom`)
@@ -678,7 +687,7 @@ Context: metrics
 Multiple: no
 ```
 
-- Supported: `openai` / `anthropic` / `custom`.
+- Supported: `openai` / `anthropic` / `gemini` / `custom`.
 
 #### input_tokens
 

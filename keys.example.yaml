@@ -16,3 +16,10 @@ providers:
         # Option C: leave empty and provide env override:
         #   ONR_UPSTREAM_KEY_ANTHROPIC_KEY1=sk-ant-xxxx
         value: ""
+
+  gemini:
+    keys:
+      - name: "key1"
+        # Recommended: provide env override:
+        #   ONR_UPSTREAM_KEY_GEMINI_KEY1=AIzaSy...
+        value: ""

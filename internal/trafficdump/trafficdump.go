@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -201,6 +202,51 @@ func maskIfNeeded(key, val string, on bool) string {
 	return val
 }
 
+func maskURLIfNeeded(rawURL string, on bool) string {
+	if !on {
+		return rawURL
+	}
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return rawURL
+	}
+	q := u.Query()
+	if len(q) == 0 {
+		return rawURL
+	}
+
+	shouldRedactKey := func(k string) bool {
+		lk := strings.ToLower(strings.TrimSpace(k))
+		if lk == "" {
+			return false
+		}
+		// Gemini native uses `key=...` query parameter.
+		if lk == "key" || lk == "api_key" || lk == "apikey" {
+			return true
+		}
+		// common patterns
+		if strings.Contains(lk, "token") || strings.Contains(lk, "secret") {
+			return true
+		}
+		return false
+	}
+
+	changed := false
+	for k := range q {
+		if !shouldRedactKey(k) {
+			continue
+		}
+		// Keep the key, redact all values.
+		q.Set(k, "[REDACTED]")
+		changed = true
+	}
+	if !changed {
+		return rawURL
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
 func isBinaryByContentType(ct string) bool {
 	ct = strings.ToLower(strings.TrimSpace(ct))
 	return !strings.Contains(ct, "json") && !strings.HasPrefix(ct, "text/")
@@ -263,7 +309,7 @@ func AppendUpstreamRequest(
 ) {
 	if r := FromContext(c); r != nil {
 		r.writeLine("=== UPSTREAM REQUEST ===")
-		r.writeLine(fmt.Sprintf("%s %s", method, url))
+		r.writeLine(fmt.Sprintf("%s %s", method, maskURLIfNeeded(url, r.mask)))
 		ct := ""
 		for k, vals := range headers {
 			for _, v := range vals {

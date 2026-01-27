@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -95,20 +94,20 @@ func (r *Router) NextProvider(modelID string) (string, bool) {
 }
 
 func (r *Router) ToOpenAIList() map[string]any {
-	now := time.Now().Unix()
+	return r.ToOpenAIListAt(0)
+}
+
+func (r *Router) ToOpenAIListAt(createdAtUnix int64) map[string]any {
+	created := createdAtUnix
+	if created <= 0 {
+		created = 0
+	}
 	data := make([]any, 0)
 	for _, id := range r.Models() {
-		ownedBy := "open-next-router"
-		r.mu.Lock()
-		if rt, ok := r.routes[id]; ok && strings.TrimSpace(rt.OwnedBy) != "" {
-			ownedBy = strings.TrimSpace(rt.OwnedBy)
-		}
-		r.mu.Unlock()
 		data = append(data, map[string]any{
 			"id":       id,
-			"object":   "model",
-			"created":  now,
-			"owned_by": ownedBy,
+			"created":  created,
+			"owned_by": "custom",
 		})
 	}
 	return map[string]any{

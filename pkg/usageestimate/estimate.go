@@ -133,6 +133,11 @@ func extractRequestText(api string, body []byte, limit int) string {
 		if v, ok := m["input"]; ok {
 			return stringifyAny(v)
 		}
+	case "gemini.generatecontent", "gemini.streamgeneratecontent":
+		// Gemini native request: contents[].parts[].text
+		if v, ok := m["contents"]; ok {
+			return stringifyGeminiContents(v)
+		}
 	}
 
 	if v, ok := m["messages"]; ok {
@@ -208,6 +213,11 @@ func extractResponseText(api string, body []byte, limit int) string {
 		// best-effort: output_text or any nested "text"
 		if s, ok := m["output_text"].(string); ok && strings.TrimSpace(s) != "" {
 			return s
+		}
+	case "gemini.generatecontent", "gemini.streamgeneratecontent":
+		// Gemini native response: candidates[].content.parts[].text
+		if v, ok := m["candidates"]; ok {
+			return stringifyGeminiCandidates(v)
 		}
 	}
 
@@ -355,6 +365,52 @@ func stringifyMessages(v any) string {
 			if strings.TrimSpace(s) != "" {
 				b.WriteString(s)
 				b.WriteByte('\n')
+			}
+		}
+	}
+	return b.String()
+}
+
+func stringifyGeminiContents(v any) string {
+	arr, ok := v.([]any)
+	if !ok {
+		return stringifyAny(v)
+	}
+	var b strings.Builder
+	for _, it := range arr {
+		m, _ := it.(map[string]any)
+		if m == nil {
+			continue
+		}
+		if parts, ok := m["parts"]; ok {
+			s := stringifyAny(parts)
+			if strings.TrimSpace(s) != "" {
+				b.WriteString(s)
+				b.WriteByte('\n')
+			}
+		}
+	}
+	return b.String()
+}
+
+func stringifyGeminiCandidates(v any) string {
+	arr, ok := v.([]any)
+	if !ok {
+		return stringifyAny(v)
+	}
+	var b strings.Builder
+	for _, it := range arr {
+		m, _ := it.(map[string]any)
+		if m == nil {
+			continue
+		}
+		if content, ok := m["content"].(map[string]any); ok {
+			if parts, ok := content["parts"]; ok {
+				s := stringifyAny(parts)
+				if strings.TrimSpace(s) != "" {
+					b.WriteString(s)
+					b.WriteByte('\n')
+				}
 			}
 		}
 	}

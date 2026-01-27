@@ -14,6 +14,8 @@ import (
 )
 
 func Run(cfgPath string) error {
+	startedAt := time.Now().Unix()
+
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
@@ -52,6 +54,7 @@ func Run(cfgPath string) error {
 		keys:        keys,
 		modelRouter: mr,
 	}
+	st.SetStartedAtUnix(startedAt)
 
 	engine := NewRouter(cfg, st, reg, pclient)
 

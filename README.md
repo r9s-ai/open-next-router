@@ -105,6 +105,7 @@ Observability:
 
 - `Authorization: Bearer <ONR_API_KEY>`
 - `x-api-key: <ONR_API_KEY>` (compatible)
+- `x-goog-api-key: <ONR_API_KEY>` (compatible)
 
 ## Upstream Keys (keys.yaml)
 
@@ -141,6 +142,24 @@ Example:
 ## Provider Selection
 
 - Override: `x-onr-provider: <provider>`
+
+## Gemini Native API (v1beta)
+
+In addition to OpenAI-style endpoints, open-next-router supports a subset of Gemini native endpoints:
+
+- `POST /v1beta/models/{model}:generateContent`
+- `POST /v1beta/models/{model}:streamGenerateContent` (SSE; `alt=sse` will be added if missing)
+- `GET /v1beta/models` (Gemini-style output)
+
+Example (force provider selection via header):
+
+```bash
+curl -sS http://127.0.0.1:3000/v1beta/models/gemini-2.0-flash:generateContent \
+  -H "Authorization: Bearer change-me" \
+  -H "x-onr-provider: gemini" \
+  -H "Content-Type: application/json" \
+  -d '{"contents":[{"role":"user","parts":[{"text":"hello"}]}]}'
+```
 
 ## Model Routing (models.yaml)
 

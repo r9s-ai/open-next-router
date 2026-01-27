@@ -28,6 +28,9 @@ func Middleware(apiKey string) gin.HandlerFunc {
 		if got == "" {
 			got = strings.TrimSpace(c.GetHeader("x-api-key"))
 		}
+		if got == "" {
+			got = strings.TrimSpace(c.GetHeader("x-goog-api-key"))
+		}
 
 		if got != expected {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{

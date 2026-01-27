@@ -17,3 +17,8 @@ models:
       - anthropic
     strategy: round_robin
 
+  gemini-2.5-flash:
+    providers:
+      - gemini
+    strategy: round_robin
+

@@ -67,8 +67,29 @@ func NewRouter(cfg *config.Config, st *state, reg *dslconfig.Registry, pclient *
 	v1.POST("/embeddings", makeHandler(cfg, st, pclient, "embeddings"))
 	v1.POST("/messages", makeHandler(cfg, st, pclient, "claude.messages"))
 	v1.GET("/models", func(c *gin.Context) {
-		c.JSON(http.StatusOK, st.ModelRouter().ToOpenAIList())
+		c.JSON(http.StatusOK, st.ModelRouter().ToOpenAIListAt(st.StartedAtUnix()))
 	})
+
+	v1beta := secured.Group("/v1beta")
+	// Gemini-style model listing.
+	v1beta.GET("/models", func(c *gin.Context) {
+		type geminiModel struct {
+			Name        string `json:"name"`
+			DisplayName string `json:"displayName"`
+		}
+		ids := st.ModelRouter().Models()
+		out := make([]geminiModel, 0, len(ids))
+		for _, id := range ids {
+			out = append(out, geminiModel{Name: id, DisplayName: id})
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"models":        out,
+			"nextPageToken": nil,
+		})
+	})
+	// Gemini native API paths: /v1beta/models/{model}:generateContent
+	// (Stage 1) Only generateContent / streamGenerateContent are supported.
+	v1beta.POST("/models/*path", makeGeminiHandler(cfg, st, pclient))
 
 	return r
 }

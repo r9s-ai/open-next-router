@@ -28,7 +28,7 @@ usage_estimation:
   max_request_bytes: 1048576
   max_response_bytes: 1048576
   max_stream_collect_bytes: 262144
-  apis: ["chat.completions", "responses", "claude.messages", "embeddings"]
+  apis: ["chat.completions", "responses", "claude.messages", "embeddings", "gemini.generateContent", "gemini.streamGenerateContent"]
 
 traffic_dump:
   # Enable traffic dump logs to files (request/response capture, best-effort masking).
