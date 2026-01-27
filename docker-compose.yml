@@ -6,10 +6,10 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      # Mount your runtime config (create it from open-next-router.example.yaml).
+      # Mount your runtime config (create it from config/open-next-router.example.yaml).
       - ./open-next-router.yaml:/etc/open-next-router/open-next-router.yaml:ro
       # Providers directory (DSL *.conf)
-      - ./providers:/etc/open-next-router/providers:ro
+      - ./config/providers:/etc/open-next-router/providers:ro
       # Upstream keys
       - ./keys.yaml:/etc/open-next-router/keys.yaml:ro
       # Model routing

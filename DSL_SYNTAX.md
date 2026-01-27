@@ -1,7 +1,8 @@
 # Provider Config DSL Syntax (v0.1)
 
 This document describes the provider configuration DSL used by **open-next-router**.
-Provider configs live under `providers/*.conf` and are loaded at startup (and on reload).
+Provider configs live under `config/providers/*.conf` in this repository and are loaded at startup (and on reload).
+The directory can be customized via `providers.dir` (config) or `ONR_PROVIDERS_DIR` (env).
 
 ## Table of Contents
 
@@ -36,8 +37,8 @@ Provider configs live under `providers/*.conf` and are loaded at startup (and on
 
 ## 1. Conventions
 
-- **One provider per file**: `providers/<provider>.conf`
-- **File name must match provider name**: e.g. `providers/openai.conf` must contain `provider "openai" { ... }`
+- **One provider per file**: `config/providers/<provider>.conf`
+- **File name must match provider name**: e.g. `config/providers/openai.conf` must contain `provider "openai" { ... }`
 - **Provider name matching is case-insensitive**: everything is normalized to lowercase for matching; use lowercase in configs
 - **Semicolon `;` is required**: every statement ends with `;`
 - **Only blocks use `{}`**: directives themselves do not use `{}` (nginx-like style)
@@ -441,7 +442,7 @@ Context: file
 Multiple: yes
 ```
 
-- File name must match `<name>`: `providers/<name>.conf`.
+- File name must match `<name>`: `config/providers/<name>.conf`.
 - Matching is case-insensitive; use lowercase for `<name>` and file name.
 
 #### defaults

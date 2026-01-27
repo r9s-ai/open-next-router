@@ -78,7 +78,7 @@ func applyDefaults(cfg *Config) {
 		cfg.Server.WriteTimeoutMs = 60000
 	}
 	if strings.TrimSpace(cfg.Providers.Dir) == "" {
-		cfg.Providers.Dir = "./providers"
+		cfg.Providers.Dir = "./config/providers"
 	}
 	if strings.TrimSpace(cfg.Keys.File) == "" {
 		cfg.Keys.File = "./keys.yaml"

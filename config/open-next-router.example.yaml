@@ -9,7 +9,7 @@ auth:
 
 providers:
   # Directory containing provider DSL files (*.conf)
-  dir: "./providers"
+  dir: "./config/providers"
 
 keys:
   # Upstream keys file (grouped by provider)

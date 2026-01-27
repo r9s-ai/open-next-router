@@ -19,10 +19,10 @@ open-next-router (ONR) is a lightweight API gateway that routes OpenAI-style end
 
 1) Prepare configs
 
-- Copy `open-next-router.example.yaml` -> `open-next-router.yaml`
-- Copy `keys.example.yaml` -> `keys.yaml`
-- Copy `models.example.yaml` -> `models.yaml`
-- Copy provider configs under `providers/` (or write your own)
+- Copy `config/open-next-router.example.yaml` -> `open-next-router.yaml`
+- Copy `config/keys.example.yaml` -> `keys.yaml`
+- Copy `config/models.example.yaml` -> `models.yaml`
+- Provider DSL examples are under `config/providers/` (or write your own)
 - Provider DSL reference: `DSL_SYNTAX.md`
 
 2) Run
@@ -38,9 +38,9 @@ Create runtime config files first:
 
 ```bash
 cd open-next-router
-cp open-next-router.example.yaml open-next-router.yaml
-cp keys.example.yaml keys.yaml
-cp models.example.yaml models.yaml
+cp config/open-next-router.example.yaml open-next-router.yaml
+cp config/keys.example.yaml keys.yaml
+cp config/models.example.yaml models.yaml
 docker compose up --build
 ```
 
