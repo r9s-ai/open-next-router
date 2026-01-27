@@ -101,3 +101,48 @@ Content-Type: application/json
 }
 
 ?? status == 200
+
+
+### Models (Gemini style)
+GET {{base_url}}/v1beta/models
+Authorization: Bearer {{api_key}}
+
+?? status == 200
+
+### Models (Auth via x-goog-api-key, compatible)
+GET {{base_url}}/v1beta/models
+x-goog-api-key: {{api_key}}
+
+?? status == 200
+
+### Gemini generateContent (non-stream)
+POST {{base_url}}/v1beta/models/gemini-2.0-flash:generateContent
+Authorization: Bearer {{api_key}}
+Content-Type: application/json
+
+{
+  "contents": [
+    {
+      "role": "user",
+      "parts": [{ "text": "hello" }]
+    }
+  ]
+}
+
+?? status == 200
+
+### Gemini streamGenerateContent (SSE)
+POST {{base_url}}/v1beta/models/gemini-2.0-flash:streamGenerateContent
+Authorization: Bearer {{api_key}}
+Content-Type: application/json
+
+{
+  "contents": [
+    {
+      "role": "user",
+      "parts": [{ "text": "hello" }]
+    }
+  ]
+}
+
+?? status == 200
