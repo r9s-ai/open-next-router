@@ -73,6 +73,9 @@ func makeHandler(cfg *config.Config, st *state, pclient *proxy.Client, api strin
 		}
 		if res != nil {
 			c.Set("onr.latency_ms", res.LatencyMs)
+			if res.Status > 0 {
+				c.Set("onr.upstream_status", res.Status)
+			}
 			if strings.TrimSpace(res.UsageStage) != "" {
 				c.Set("onr.usage_stage", res.UsageStage)
 			}

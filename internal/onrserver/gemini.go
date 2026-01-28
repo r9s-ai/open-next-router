@@ -99,6 +99,9 @@ func makeGeminiHandler(cfg *config.Config, st *state, pclient *proxy.Client) gin
 		}
 		if res != nil {
 			c.Set("onr.latency_ms", res.LatencyMs)
+			if res.Status > 0 {
+				c.Set("onr.upstream_status", res.Status)
+			}
 			if strings.TrimSpace(res.UsageStage) != "" {
 				c.Set("onr.usage_stage", res.UsageStage)
 			}
