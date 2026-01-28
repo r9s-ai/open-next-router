@@ -63,6 +63,9 @@ func requestLogger() gin.HandlerFunc {
 		if v, ok := c.Get("onr.upstream_status"); ok {
 			fields["upstream_status"] = v
 		}
+		if v, ok := c.Get("onr.finish_reason"); ok {
+			fields["finish_reason"] = v
+		}
 
 		log.Println(logx.FormatRequestLine(time.Now(), status, latency, c.ClientIP(), c.Request.Method, c.Request.URL.Path, fields))
 	}

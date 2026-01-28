@@ -64,7 +64,7 @@ provider "azure-openai" {
   }
 }
 `
-	routing, _, req, _, _, _, err := parseProviderConfig("azure-openai.conf", conf)
+	routing, _, req, _, _, _, _, err := parseProviderConfig("azure-openai.conf", conf)
 	if err != nil {
 		t.Fatalf("parseProviderConfig: %v", err)
 	}

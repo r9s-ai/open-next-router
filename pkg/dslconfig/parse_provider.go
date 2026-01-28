@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-func parseProviderConfig(path string, content string) (ProviderRouting, ProviderHeaders, ProviderRequestTransform, ProviderResponse, ProviderError, ProviderUsage, error) {
+func parseProviderConfig(path string, content string) (ProviderRouting, ProviderHeaders, ProviderRequestTransform, ProviderResponse, ProviderError, ProviderUsage, ProviderFinishReason, error) {
 	s := newScanner(path, content)
 	var routing ProviderRouting
 	var headers ProviderHeaders
@@ -13,6 +13,7 @@ func parseProviderConfig(path string, content string) (ProviderRouting, Provider
 	var response ProviderResponse
 	var perr ProviderError
 	var usage ProviderUsage
+	var finish ProviderFinishReason
 	for {
 		tok := s.nextNonTrivia()
 		if tok.kind == tokEOF {
@@ -21,15 +22,15 @@ func parseProviderConfig(path string, content string) (ProviderRouting, Provider
 		if tok.kind == tokIdent && tok.text == "provider" {
 			nameTok := s.nextNonTrivia()
 			if nameTok.kind != tokString {
-				return ProviderRouting{}, ProviderHeaders{}, ProviderRequestTransform{}, ProviderResponse{}, ProviderError{}, ProviderUsage{}, s.errAt(nameTok, "expected provider name string literal")
+				return ProviderRouting{}, ProviderHeaders{}, ProviderRequestTransform{}, ProviderResponse{}, ProviderError{}, ProviderUsage{}, ProviderFinishReason{}, s.errAt(nameTok, "expected provider name string literal")
 			}
 			lb := s.nextNonTrivia()
 			if lb.kind != tokLBrace {
-				return ProviderRouting{}, ProviderHeaders{}, ProviderRequestTransform{}, ProviderResponse{}, ProviderError{}, ProviderUsage{}, s.errAt(lb, "expected '{' after provider name")
+				return ProviderRouting{}, ProviderHeaders{}, ProviderRequestTransform{}, ProviderResponse{}, ProviderError{}, ProviderUsage{}, ProviderFinishReason{}, s.errAt(lb, "expected '{' after provider name")
 			}
-			r, h, rq, resp, e, u, err := parseProviderBody(s)
+			r, h, rq, resp, e, u, fr, err := parseProviderBody(s)
 			if err != nil {
-				return ProviderRouting{}, ProviderHeaders{}, ProviderRequestTransform{}, ProviderResponse{}, ProviderError{}, ProviderUsage{}, err
+				return ProviderRouting{}, ProviderHeaders{}, ProviderRequestTransform{}, ProviderResponse{}, ProviderError{}, ProviderUsage{}, ProviderFinishReason{}, err
 			}
 			routing = r
 			headers = h
@@ -37,36 +38,38 @@ func parseProviderConfig(path string, content string) (ProviderRouting, Provider
 			response = resp
 			perr = e
 			usage = u
+			finish = fr
 			continue
 		}
 	}
-	return routing, headers, req, response, perr, usage, nil
+	return routing, headers, req, response, perr, usage, finish, nil
 }
 
-func parseProviderBody(s *scanner) (ProviderRouting, ProviderHeaders, ProviderRequestTransform, ProviderResponse, ProviderError, ProviderUsage, error) {
+func parseProviderBody(s *scanner) (ProviderRouting, ProviderHeaders, ProviderRequestTransform, ProviderResponse, ProviderError, ProviderUsage, ProviderFinishReason, error) {
 	var routing ProviderRouting
 	var headers ProviderHeaders
 	var req ProviderRequestTransform
 	var response ProviderResponse
 	var perr ProviderError
 	var usage ProviderUsage
+	var finish ProviderFinishReason
 	for {
 		tok := s.nextNonTrivia()
 		switch tok.kind {
 		case tokEOF:
-			return ProviderRouting{}, ProviderHeaders{}, ProviderRequestTransform{}, ProviderResponse{}, ProviderError{}, ProviderUsage{}, s.errAt(tok, "unexpected EOF in provider block")
+			return ProviderRouting{}, ProviderHeaders{}, ProviderRequestTransform{}, ProviderResponse{}, ProviderError{}, ProviderUsage{}, ProviderFinishReason{}, s.errAt(tok, "unexpected EOF in provider block")
 		case tokRBrace:
-			return routing, headers, req, response, perr, usage, nil
+			return routing, headers, req, response, perr, usage, finish, nil
 		case tokIdent:
 			switch tok.text {
 			case "defaults":
-				if err := parseDefaultsBlock(s, &routing, &headers, &req, &response, &perr, &usage); err != nil {
-					return ProviderRouting{}, ProviderHeaders{}, ProviderRequestTransform{}, ProviderResponse{}, ProviderError{}, ProviderUsage{}, err
+				if err := parseDefaultsBlock(s, &routing, &headers, &req, &response, &perr, &usage, &finish); err != nil {
+					return ProviderRouting{}, ProviderHeaders{}, ProviderRequestTransform{}, ProviderResponse{}, ProviderError{}, ProviderUsage{}, ProviderFinishReason{}, err
 				}
 			case "match":
-				m, mh, mreq, mr, me, mu, err := parseMatchBlock(s)
+				m, mh, mreq, mr, me, mu, mfr, err := parseMatchBlock(s)
 				if err != nil {
-					return ProviderRouting{}, ProviderHeaders{}, ProviderRequestTransform{}, ProviderResponse{}, ProviderError{}, ProviderUsage{}, err
+					return ProviderRouting{}, ProviderHeaders{}, ProviderRequestTransform{}, ProviderResponse{}, ProviderError{}, ProviderUsage{}, ProviderFinishReason{}, err
 				}
 				routing.Matches = append(routing.Matches, m)
 				headers.Matches = append(headers.Matches, mh)
@@ -74,9 +77,10 @@ func parseProviderBody(s *scanner) (ProviderRouting, ProviderHeaders, ProviderRe
 				response.Matches = append(response.Matches, mr)
 				perr.Matches = append(perr.Matches, me)
 				usage.Matches = append(usage.Matches, mu)
+				finish.Matches = append(finish.Matches, mfr)
 			default:
 				if err := skipStmtOrBlock(s); err != nil {
-					return ProviderRouting{}, ProviderHeaders{}, ProviderRequestTransform{}, ProviderResponse{}, ProviderError{}, ProviderUsage{}, err
+					return ProviderRouting{}, ProviderHeaders{}, ProviderRequestTransform{}, ProviderResponse{}, ProviderError{}, ProviderUsage{}, ProviderFinishReason{}, err
 				}
 			}
 		default:
@@ -85,7 +89,7 @@ func parseProviderBody(s *scanner) (ProviderRouting, ProviderHeaders, ProviderRe
 	}
 }
 
-func parseDefaultsBlock(s *scanner, routing *ProviderRouting, headers *ProviderHeaders, req *ProviderRequestTransform, response *ProviderResponse, perr *ProviderError, usage *ProviderUsage) error {
+func parseDefaultsBlock(s *scanner, routing *ProviderRouting, headers *ProviderHeaders, req *ProviderRequestTransform, response *ProviderResponse, perr *ProviderError, usage *ProviderUsage, finish *ProviderFinishReason) error {
 	lb := s.nextNonTrivia()
 	if lb.kind != tokLBrace {
 		return s.errAt(lb, "expected '{' after defaults")
@@ -96,7 +100,7 @@ func parseDefaultsBlock(s *scanner, routing *ProviderRouting, headers *ProviderH
 		request:        func() error { return parseRequestPhaseWithTransform(s, &headers.Defaults, &req.Defaults) },
 		response:       func() error { return parseResponsePhase(s, &response.Defaults) },
 		errPhase:       func() error { return parseErrorPhase(s, &perr.Defaults) },
-		metrics:        func() error { return parseMetricsPhase(s, &usage.Defaults) },
+		metrics:        func() error { return parseMetricsPhase(s, &usage.Defaults, &finish.Defaults) },
 	})
 }
 
@@ -133,17 +137,18 @@ func parseUpstreamConfigBlock(s *scanner, routing *ProviderRouting) error {
 	}
 }
 
-func parseMatchBlock(s *scanner) (RoutingMatch, MatchHeaders, MatchRequestTransform, MatchResponse, MatchError, MatchUsage, error) {
+func parseMatchBlock(s *scanner) (RoutingMatch, MatchHeaders, MatchRequestTransform, MatchResponse, MatchError, MatchUsage, MatchFinishReason, error) {
 	var m RoutingMatch
 	var h MatchHeaders
 	var req MatchRequestTransform
 	var r MatchResponse
 	var e MatchError
 	var u MatchUsage
+	var fr MatchFinishReason
 	for {
 		tok := s.nextNonTrivia()
 		if tok.kind == tokEOF {
-			return RoutingMatch{}, MatchHeaders{}, MatchRequestTransform{}, MatchResponse{}, MatchError{}, MatchUsage{}, s.errAt(tok, "unexpected EOF in match header")
+			return RoutingMatch{}, MatchHeaders{}, MatchRequestTransform{}, MatchResponse{}, MatchError{}, MatchUsage{}, MatchFinishReason{}, s.errAt(tok, "unexpected EOF in match header")
 		}
 		if tok.kind == tokLBrace {
 			break
@@ -160,7 +165,7 @@ func parseMatchBlock(s *scanner) (RoutingMatch, MatchHeaders, MatchRequestTransf
 		switch key {
 		case "api":
 			if valTok.kind != tokString {
-				return RoutingMatch{}, MatchHeaders{}, MatchRequestTransform{}, MatchResponse{}, MatchError{}, MatchUsage{}, s.errAt(valTok, "match api expects string literal")
+				return RoutingMatch{}, MatchHeaders{}, MatchRequestTransform{}, MatchResponse{}, MatchError{}, MatchUsage{}, MatchFinishReason{}, s.errAt(valTok, "match api expects string literal")
 			}
 			m.API = strings.TrimSpace(unquoteString(valTok.text))
 			h.API = m.API
@@ -168,9 +173,10 @@ func parseMatchBlock(s *scanner) (RoutingMatch, MatchHeaders, MatchRequestTransf
 			r.API = m.API
 			e.API = m.API
 			u.API = m.API
+			fr.API = m.API
 		case "stream":
 			if valTok.kind != tokIdent {
-				return RoutingMatch{}, MatchHeaders{}, MatchRequestTransform{}, MatchResponse{}, MatchError{}, MatchUsage{}, s.errAt(valTok, "match stream expects true/false")
+				return RoutingMatch{}, MatchHeaders{}, MatchRequestTransform{}, MatchResponse{}, MatchError{}, MatchUsage{}, MatchFinishReason{}, s.errAt(valTok, "match stream expects true/false")
 			}
 			switch valTok.text {
 			case "true":
@@ -181,6 +187,7 @@ func parseMatchBlock(s *scanner) (RoutingMatch, MatchHeaders, MatchRequestTransf
 				r.Stream = &v
 				e.Stream = &v
 				u.Stream = &v
+				fr.Stream = &v
 			case "false":
 				v := false
 				m.Stream = &v
@@ -189,8 +196,9 @@ func parseMatchBlock(s *scanner) (RoutingMatch, MatchHeaders, MatchRequestTransf
 				r.Stream = &v
 				e.Stream = &v
 				u.Stream = &v
+				fr.Stream = &v
 			default:
-				return RoutingMatch{}, MatchHeaders{}, MatchRequestTransform{}, MatchResponse{}, MatchError{}, MatchUsage{}, s.errAt(valTok, "match stream expects true/false")
+				return RoutingMatch{}, MatchHeaders{}, MatchRequestTransform{}, MatchResponse{}, MatchError{}, MatchUsage{}, MatchFinishReason{}, s.errAt(valTok, "match stream expects true/false")
 			}
 		default:
 			// ignore other keys in v0.1 parser
@@ -198,13 +206,13 @@ func parseMatchBlock(s *scanner) (RoutingMatch, MatchHeaders, MatchRequestTransf
 	}
 
 	m.QueryPairs = map[string]string{}
-	if err := parseMatchBody(s, &m, &h, &req, &r, &e, &u); err != nil {
-		return RoutingMatch{}, MatchHeaders{}, MatchRequestTransform{}, MatchResponse{}, MatchError{}, MatchUsage{}, err
+	if err := parseMatchBody(s, &m, &h, &req, &r, &e, &u, &fr); err != nil {
+		return RoutingMatch{}, MatchHeaders{}, MatchRequestTransform{}, MatchResponse{}, MatchError{}, MatchUsage{}, MatchFinishReason{}, err
 	}
-	return m, h, req, r, e, u, nil
+	return m, h, req, r, e, u, fr, nil
 }
 
-func parseMatchBody(s *scanner, m *RoutingMatch, h *MatchHeaders, req *MatchRequestTransform, r *MatchResponse, e *MatchError, u *MatchUsage) error {
+func parseMatchBody(s *scanner, m *RoutingMatch, h *MatchHeaders, req *MatchRequestTransform, r *MatchResponse, e *MatchError, u *MatchUsage, fr *MatchFinishReason) error {
 	h.Upstream.QueryPairs = map[string]string{}
 	return parsePhaseBlock(s, "match block", phaseHandlers{
 		upstream:  func() error { return parseUpstreamPhase(s, m) },
@@ -212,7 +220,7 @@ func parseMatchBody(s *scanner, m *RoutingMatch, h *MatchHeaders, req *MatchRequ
 		request:   func() error { return parseRequestPhaseWithTransform(s, &h.Headers, &req.Transform) },
 		response:  func() error { return parseResponsePhase(s, &r.Response) },
 		errPhase:  func() error { return parseErrorPhase(s, &e.Response) },
-		metrics:   func() error { return parseMetricsPhase(s, &u.Extract) },
+		metrics:   func() error { return parseMetricsPhase(s, &u.Extract, &fr.Extract) },
 		onUnknown: func() error { return skipStmtOrBlock(s) },
 	})
 }
@@ -303,7 +311,7 @@ func parsePhaseBlock(s *scanner, blockName string, h phaseHandlers) error {
 	}
 }
 
-func parseMetricsPhase(s *scanner, cfg *UsageExtractConfig) error {
+func parseMetricsPhase(s *scanner, usage *UsageExtractConfig, finish *FinishReasonExtractConfig) error {
 	lb := s.nextNonTrivia()
 	if lb.kind != tokLBrace {
 		return s.errAt(lb, "expected '{' after metrics")
@@ -318,16 +326,24 @@ func parseMetricsPhase(s *scanner, cfg *UsageExtractConfig) error {
 		case tokIdent:
 			switch tok.text {
 			case "usage_extract":
-				if err := parseUsageExtractStmt(s, cfg); err != nil {
+				if err := parseUsageExtractStmt(s, usage); err != nil {
 					return err
 				}
 			case "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "total_tokens":
-				if err := parseUsageExtractAssignStmt(s, cfg, tok.text); err != nil {
+				if err := parseUsageExtractAssignStmt(s, usage, tok.text); err != nil {
 					return err
 				}
 			case "input_tokens_path", "output_tokens_path", "cache_read_tokens_path", "cache_write_tokens_path":
 				// allow statement-style overrides inside metrics block (mainly for mode=custom).
-				if err := parseUsageExtractFieldStmt(s, cfg, tok.text); err != nil {
+				if err := parseUsageExtractFieldStmt(s, usage, tok.text); err != nil {
+					return err
+				}
+			case "finish_reason_extract":
+				if err := parseFinishReasonExtractStmt(s, finish); err != nil {
+					return err
+				}
+			case "finish_reason_path":
+				if err := parseFinishReasonPathStmt(s, finish); err != nil {
 					return err
 				}
 			default:
@@ -339,6 +355,47 @@ func parseMetricsPhase(s *scanner, cfg *UsageExtractConfig) error {
 			// ignore
 		}
 	}
+}
+
+func parseFinishReasonExtractStmt(s *scanner, cfg *FinishReasonExtractConfig) error {
+	// finish_reason_extract <mode>;
+	modeTok := s.nextNonTrivia()
+	if modeTok.kind == tokLBrace {
+		return s.errAt(modeTok, "finish_reason_extract does not use braces; use: finish_reason_extract <mode>;")
+	}
+	if strings.TrimSpace(cfg.Mode) != "" {
+		return s.errAt(modeTok, "finish_reason_extract may appear only once in a metrics block")
+	}
+	switch modeTok.kind {
+	case tokIdent, tokString:
+		// ok
+	default:
+		return s.errAt(modeTok, "finish_reason_extract expects mode")
+	}
+	mode := modeTok.text
+	if modeTok.kind == tokString {
+		mode = unquoteString(modeTok.text)
+	}
+	cfg.Mode = strings.TrimSpace(mode)
+	return consumeSemicolon(s, "finish_reason_extract")
+}
+
+func parseFinishReasonPathStmt(s *scanner, cfg *FinishReasonExtractConfig) error {
+	// finish_reason_path <jsonpath>;
+	peek := s.nextNonTrivia()
+	if peek.kind == tokOther && peek.text == "=" {
+		return s.errAt(peek, "finish_reason_path does not use '='; use: finish_reason_path <jsonpath>;")
+	}
+	expr, err := consumeExprUntilSemicolonWithFirst(s, peek)
+	if err != nil {
+		return err
+	}
+	val := strings.TrimSpace(expr)
+	if strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"") {
+		val = strings.TrimSpace(unquoteString(val))
+	}
+	cfg.FinishReasonPath = val
+	return nil
 }
 
 func parseUsageExtractStmt(s *scanner, cfg *UsageExtractConfig) error {

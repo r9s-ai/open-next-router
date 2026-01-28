@@ -331,7 +331,7 @@ error { error_map openai; }
 - Allowed modes (whitelist enforced at load time): `openai`, `common`, `passthrough`.
 - If multiple directives are present, the last one wins.
 
-### 5.7 metrics (usage extraction)
+### 5.7 metrics (usage / finish_reason extraction)
 
 #### usage_extract
 
@@ -368,6 +368,31 @@ Supported JSONPath subset:
 Multiple/override rules:
 
 - These fields are optional overrides; if the same field appears multiple times, the last one wins.
+
+#### finish_reason_extract
+
+```conf
+metrics { finish_reason_extract openai; }
+metrics { finish_reason_extract anthropic; }
+metrics { finish_reason_extract gemini; }
+metrics { finish_reason_extract custom; finish_reason_path "$.choices[0].finish_reason"; }
+```
+
+- `openai`: OpenAI/OpenAI-compatible finish reason (`choices[*].finish_reason`)
+- `anthropic`: Anthropic stop reason (`stop_reason`)
+- `gemini`: Gemini native finish reason (`candidates[*].finishReason`)
+- `custom`: extract from response JSON via `finish_reason_path` (restricted JSONPath subset, see above)
+
+#### finish_reason_path (optional override)
+
+```conf
+metrics {
+  finish_reason_extract openai;
+  finish_reason_path "$.choices[0].finish_reason";
+}
+```
+
+- Optional escape hatch for providers that expose finish reason in a custom location.
 
 ## 6. Expression context (built-in variables)
 
@@ -677,7 +702,7 @@ Multiple: yes
 - Allowed modes: `openai`, `common`, `passthrough` (whitelist validated at load time).
 - `passthrough`: bypass error normalization and pass upstream error response through to the client.
 
-### 7.9 metrics (usage extraction)
+### 7.9 metrics (usage / finish_reason extraction)
 
 #### usage_extract
 
@@ -689,6 +714,29 @@ Multiple: no
 ```
 
 - Supported: `openai` / `anthropic` / `gemini` / `custom`.
+
+#### finish_reason_extract
+
+```text
+Syntax:  finish_reason_extract <mode>;
+Default: —
+Context: metrics
+Multiple: no
+```
+
+- Supported: `openai` / `anthropic` / `gemini` / `custom`.
+
+#### finish_reason_path
+
+```text
+Syntax:  finish_reason_path <jsonpath>;
+Default: —
+Context: metrics
+Multiple: yes
+```
+
+- Optional override / required for `finish_reason_extract custom;`.
+- JSONPath subset: `$.a.b.c` / `$.items[0].x` / `$.items[*].x` (returns first non-empty string with `[*]`).
 
 #### input_tokens
 

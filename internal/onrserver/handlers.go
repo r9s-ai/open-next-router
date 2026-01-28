@@ -76,6 +76,9 @@ func makeHandler(cfg *config.Config, st *state, pclient *proxy.Client, api strin
 			if res.Status > 0 {
 				c.Set("onr.upstream_status", res.Status)
 			}
+			if strings.TrimSpace(res.FinishReason) != "" {
+				c.Set("onr.finish_reason", strings.TrimSpace(res.FinishReason))
+			}
 			if strings.TrimSpace(res.UsageStage) != "" {
 				c.Set("onr.usage_stage", res.UsageStage)
 			}

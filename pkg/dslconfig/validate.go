@@ -64,7 +64,7 @@ func ValidateProviderFile(path string) (ProviderFile, error) {
 			p, providerName, expected,
 		)
 	}
-	routing, headers, req, response, perr, usage, err := parseProviderConfig(p, content)
+	routing, headers, req, response, perr, usage, finish, err := parseProviderConfig(p, content)
 	if err != nil {
 		return ProviderFile{}, err
 	}
@@ -72,6 +72,9 @@ func ValidateProviderFile(path string) (ProviderFile, error) {
 		return ProviderFile{}, err
 	}
 	if err := validateProviderUsage(p, providerName, usage); err != nil {
+		return ProviderFile{}, err
+	}
+	if err := validateProviderFinishReason(p, providerName, finish); err != nil {
 		return ProviderFile{}, err
 	}
 	return ProviderFile{
@@ -84,6 +87,7 @@ func ValidateProviderFile(path string) (ProviderFile, error) {
 		Response: response,
 		Error:    perr,
 		Usage:    usage,
+		Finish:   finish,
 	}, nil
 }
 
@@ -96,6 +100,42 @@ func validateProviderUsage(path, providerName string, usage ProviderUsage) error
 		if err := validateUsageExtractConfig(path, providerName, scope, m.Extract); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func validateProviderFinishReason(path, providerName string, finish ProviderFinishReason) error {
+	if err := validateFinishReasonExtractConfig(path, providerName, "defaults.metrics", finish.Defaults); err != nil {
+		return err
+	}
+	for i, m := range finish.Matches {
+		scope := fmt.Sprintf("match[%d].metrics", i)
+		if err := validateFinishReasonExtractConfig(path, providerName, scope, m.Extract); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateFinishReasonExtractConfig(path, providerName, scope string, cfg FinishReasonExtractConfig) error {
+	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
+	p := strings.TrimSpace(cfg.FinishReasonPath)
+
+	if mode == "" && p == "" {
+		return nil
+	}
+	switch mode {
+	case "", "openai", "anthropic", "gemini":
+		// ok
+	case "custom":
+		if p == "" {
+			return fmt.Errorf("provider %q in %q: %s finish_reason_extract custom requires finish_reason_path", providerName, path, scope)
+		}
+	default:
+		return fmt.Errorf("provider %q in %q: %s unsupported finish_reason_extract mode %q", providerName, path, scope, cfg.Mode)
+	}
+	if p != "" && !strings.HasPrefix(p, "$.") {
+		return fmt.Errorf("provider %q in %q: %s finish_reason_path must start with $. ", providerName, path, scope)
 	}
 	return nil
 }

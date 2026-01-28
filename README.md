@@ -90,6 +90,7 @@ Observability:
 - [ONR] one-line request log
     • always: request_id, status, latency, client_ip, method, path
     • when available: api, model, provider, provider_source, stream, latency_ms
+    • when available: upstream_status, finish_reason
     • usage (when available): usage_stage, input_tokens, output_tokens, total_tokens, cache_read_tokens, cache_write_tokens
         - usage_stage=upstream: usage returned by upstream
         - usage_stage=estimate_*: best-effort estimation when upstream usage is missing/zero

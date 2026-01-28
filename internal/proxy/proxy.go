@@ -40,6 +40,7 @@ type Result struct {
 	LatencyMs      int64
 	Usage          map[string]any
 	UsageStage     string
+	FinishReason   string
 }
 
 type Client struct {
@@ -234,6 +235,13 @@ func (c *Client) ProxyJSON(
 				usage = usageMap(out.Usage)
 				usageStage := out.Stage
 
+				finishReason := ""
+				if frCfg, ok := pf.Finish.Select(m); ok {
+					if v, err := dslconfig.ExtractFinishReason(m, frCfg, respBody); err == nil {
+						finishReason = strings.TrimSpace(v)
+					}
+				}
+
 				return &Result{
 					Provider:       provider,
 					ProviderKey:    key.Name,
@@ -245,6 +253,7 @@ func (c *Client) ProxyJSON(
 					LatencyMs:      time.Since(start).Milliseconds(),
 					Usage:          usage,
 					UsageStage:     usageStage,
+					FinishReason:   finishReason,
 				}, nil
 			}
 		}
@@ -257,6 +266,13 @@ func (c *Client) ProxyJSON(
 		})
 		usage = usageMap(out.Usage)
 
+		finishReason := ""
+		if frCfg, ok := pf.Finish.Select(m); ok {
+			if v, err := dslconfig.ExtractFinishReason(m, frCfg, respBody); err == nil {
+				finishReason = strings.TrimSpace(v)
+			}
+		}
+
 		return &Result{
 			Provider:       provider,
 			ProviderKey:    key.Name,
@@ -268,6 +284,7 @@ func (c *Client) ProxyJSON(
 			LatencyMs:      time.Since(start).Milliseconds(),
 			Usage:          usage,
 			UsageStage:     out.Stage,
+			FinishReason:   finishReason,
 		}, nil
 	}
 
@@ -314,11 +331,25 @@ func (c *Client) ProxyJSON(
 	// best-effort: extract usage from SSE stream tail (OpenAI-style only)
 	var upstreamUsage *dslconfig.Usage
 	if cfg, ok := pf.Usage.Select(m); ok && usageTail.Len() > 0 {
-		if eventJSON := extractLastSSEJSONWithUsage(usageTail.Bytes()); len(eventJSON) > 0 {
-			u, _, err := dslconfig.ExtractUsage(m, cfg, eventJSON)
+		if strings.EqualFold(strings.TrimSpace(cfg.Mode), "anthropic") {
+			u, err := extractAnthropicUsageFromSSETail(m, cfg, usageTail.Bytes())
 			if err == nil && u != nil {
 				upstreamUsage = u
 			}
+		} else {
+			if eventJSON := extractLastSSEJSONWithUsage(usageTail.Bytes()); len(eventJSON) > 0 {
+				u, _, err := dslconfig.ExtractUsage(m, cfg, eventJSON)
+				if err == nil && u != nil {
+					upstreamUsage = u
+				}
+			}
+		}
+	}
+
+	finishReason := ""
+	if frCfg, ok := pf.Finish.Select(m); ok && usageTail.Len() > 0 {
+		if v, err := extractFinishReasonFromSSETail(m, frCfg, usageTail.Bytes()); err == nil {
+			finishReason = strings.TrimSpace(v)
 		}
 	}
 
@@ -341,7 +372,151 @@ func (c *Client) ProxyJSON(
 		LatencyMs:      time.Since(start).Milliseconds(),
 		Usage:          usage,
 		UsageStage:     out.Stage,
+		FinishReason:   finishReason,
 	}, nil
+}
+
+func extractFinishReasonFromSSETail(meta *dslmeta.Meta, cfg dslconfig.FinishReasonExtractConfig, sse []byte) (string, error) {
+	lines := bytes.Split(sse, []byte{'\n'})
+	var (
+		curData [][]byte
+		last    string
+	)
+	flush := func() error {
+		if len(curData) == 0 {
+			return nil
+		}
+		payload := bytes.TrimSpace(bytes.Join(curData, []byte{'\n'}))
+		curData = curData[:0]
+		if len(payload) == 0 || bytes.Equal(payload, []byte("[DONE]")) {
+			return nil
+		}
+		v, err := dslconfig.ExtractFinishReason(meta, cfg, payload)
+		if err != nil {
+			// ignore parse/extract errors for individual events
+			return nil
+		}
+		if strings.TrimSpace(v) != "" {
+			last = v
+		}
+		return nil
+	}
+
+	for _, raw := range lines {
+		line := bytes.TrimRight(raw, "\r")
+		if len(bytes.TrimSpace(line)) == 0 {
+			if err := flush(); err != nil {
+				return "", err
+			}
+			continue
+		}
+		if bytes.HasPrefix(line, []byte("data:")) {
+			curData = append(curData, bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:"))))
+		}
+	}
+	if err := flush(); err != nil {
+		return "", err
+	}
+	return last, nil
+}
+
+func extractAnthropicUsageFromSSETail(meta *dslmeta.Meta, cfg dslconfig.UsageExtractConfig, sse []byte) (*dslconfig.Usage, error) {
+	type usageSnapshot struct {
+		InputTokens      int
+		OutputTokens     int
+		CacheReadTokens  int
+		CacheWriteTokens int
+	}
+	var snap usageSnapshot
+
+	lines := bytes.Split(sse, []byte{'\n'})
+	var curData [][]byte
+	flush := func() {
+		if len(curData) == 0 {
+			return
+		}
+		payload := bytes.TrimSpace(bytes.Join(curData, []byte{'\n'}))
+		curData = curData[:0]
+		if len(payload) == 0 || bytes.Equal(payload, []byte("[DONE]")) {
+			return
+		}
+		var obj map[string]any
+		if err := json.Unmarshal(payload, &obj); err != nil || obj == nil {
+			return
+		}
+
+		// Prefer top-level "usage" (e.g. message_delta), otherwise "message.usage" (e.g. message_start).
+		var usage any
+		if u, ok := obj["usage"]; ok {
+			usage = u
+		} else if msg, ok := obj["message"].(map[string]any); ok {
+			usage = msg["usage"]
+		}
+		um, ok := usage.(map[string]any)
+		if !ok || um == nil {
+			return
+		}
+
+		if v := coerceInt(um["input_tokens"]); v > 0 {
+			snap.InputTokens = v
+		}
+		if v := coerceInt(um["output_tokens"]); v > 0 {
+			snap.OutputTokens = v
+		}
+		if v := coerceInt(um["cache_read_input_tokens"]); v > 0 {
+			snap.CacheReadTokens = v
+		}
+		if v := coerceInt(um["cache_creation_input_tokens"]); v > 0 {
+			snap.CacheWriteTokens = v
+		}
+	}
+
+	for _, raw := range lines {
+		line := bytes.TrimRight(raw, "\r")
+		if len(bytes.TrimSpace(line)) == 0 {
+			flush()
+			continue
+		}
+		if bytes.HasPrefix(line, []byte("data:")) {
+			curData = append(curData, bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:"))))
+		}
+	}
+	flush()
+
+	// Build a synthetic payload compatible with usage_extract anthropic.
+	if snap.InputTokens == 0 && snap.OutputTokens == 0 && snap.CacheReadTokens == 0 && snap.CacheWriteTokens == 0 {
+		return nil, nil
+	}
+	synth := map[string]any{
+		"usage": map[string]any{
+			"input_tokens":                snap.InputTokens,
+			"output_tokens":               snap.OutputTokens,
+			"cache_read_input_tokens":     snap.CacheReadTokens,
+			"cache_creation_input_tokens": snap.CacheWriteTokens,
+		},
+	}
+	b, err := json.Marshal(synth)
+	if err != nil {
+		return nil, err
+	}
+	u, _, err := dslconfig.ExtractUsage(meta, cfg, b)
+	if err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
+func coerceInt(v any) int {
+	switch t := v.(type) {
+	case int:
+		return t
+	case int64:
+		return int(t)
+	case float64:
+		return int(t)
+	default:
+		return 0
+	}
 }
 
 func (c *Client) httpClientForProvider(provider string) (*http.Client, error) {
