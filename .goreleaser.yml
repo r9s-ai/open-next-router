@@ -127,6 +127,7 @@ brews:
     repository:
       owner: r9s-ai
       name: homebrew-tap
+    token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Formula
     homepage: "https://github.com/r9s-ai/open-next-router"
     description: "A lightweight API gateway for routing OpenAI-compatible endpoints"
