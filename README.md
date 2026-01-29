@@ -32,6 +32,8 @@ cd open-next-router
 go run ./cmd/open-next-router --config ./open-next-router.yaml
 ```
 
+For more information about version management and releases, see [docs/RELEASE.md](docs/RELEASE.md).
+
 ## Docker Compose
 
 Create runtime config files first:
