@@ -121,6 +121,19 @@ changelog:
     - title: 'Other Changes'
       order: 999
 
+# Homebrew Tap configuration
+brews:
+  - name: onr
+    repository:
+      owner: r9s-ai
+      name: homebrew-tap
+    directory: Formula
+    homepage: "https://github.com/r9s-ai/open-next-router"
+    description: "A lightweight API gateway for routing OpenAI-compatible endpoints"
+    license: "MIT"
+    test: |
+      system "#{bin}/onr --version"
+
 # GitHub Release configuration
 release:
   # GitHub repository
