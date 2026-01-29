@@ -4,9 +4,8 @@ on:
   push:
     branches:
       - main
-      - master
   pull_request:
-    types: [opened, reopened, synchronize]
+    types: [opened, reopened, synchronize, edited]
 
 permissions:
   contents: write
