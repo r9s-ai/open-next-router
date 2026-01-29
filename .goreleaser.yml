@@ -125,7 +125,7 @@ changelog:
 release:
   # GitHub repository
   github:
-    owner: edgefn
+    owner: r9s-ai
     name: open-next-router
   
   # Release name template
