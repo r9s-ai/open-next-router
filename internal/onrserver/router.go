@@ -7,14 +7,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/edgefn/open-next-router/internal/auth"
-	"github.com/edgefn/open-next-router/internal/config"
-	"github.com/edgefn/open-next-router/internal/keystore"
-	"github.com/edgefn/open-next-router/internal/models"
-	"github.com/edgefn/open-next-router/internal/proxy"
-	"github.com/edgefn/open-next-router/internal/requestid"
-	"github.com/edgefn/open-next-router/pkg/dslconfig"
-	"github.com/edgefn/open-next-router/pkg/trafficdump"
+	"github.com/r9s-ai/open-next-router/internal/auth"
+	"github.com/r9s-ai/open-next-router/internal/config"
+	"github.com/r9s-ai/open-next-router/internal/keystore"
+	"github.com/r9s-ai/open-next-router/internal/models"
+	"github.com/r9s-ai/open-next-router/internal/proxy"
+	"github.com/r9s-ai/open-next-router/internal/requestid"
+	"github.com/r9s-ai/open-next-router/pkg/dslconfig"
+	"github.com/r9s-ai/open-next-router/pkg/trafficdump"
 )
 
 func NewRouter(cfg *config.Config, st *state, reg *dslconfig.Registry, pclient *proxy.Client) *gin.Engine {

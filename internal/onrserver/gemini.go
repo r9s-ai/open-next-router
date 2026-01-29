@@ -8,9 +8,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/edgefn/open-next-router/internal/config"
-	"github.com/edgefn/open-next-router/internal/proxy"
-	"github.com/edgefn/open-next-router/pkg/trafficdump"
+	"github.com/r9s-ai/open-next-router/internal/config"
+	"github.com/r9s-ai/open-next-router/internal/proxy"
+	"github.com/r9s-ai/open-next-router/pkg/trafficdump"
 )
 
 func makeGeminiHandler(cfg *config.Config, st *state, pclient *proxy.Client) gin.HandlerFunc {

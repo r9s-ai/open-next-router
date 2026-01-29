@@ -6,18 +6,18 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      # Mount your runtime config (create it from config/open-next-router.example.yaml).
-      - ./open-next-router.yaml:/etc/open-next-router/open-next-router.yaml:ro
+      # Mount your runtime config (create it from config/onr.example.yaml).
+      - ./onr.yaml:/etc/onr/onr.yaml:ro
       # Providers directory (DSL *.conf)
-      - ./config/providers:/etc/open-next-router/providers:ro
+      - ./config/providers:/etc/onr/providers:ro
       # Upstream keys
-      - ./keys.yaml:/etc/open-next-router/keys.yaml:ro
+      - ./keys.yaml:/etc/onr/keys.yaml:ro
       # Model routing
-      - ./models.yaml:/etc/open-next-router/models.yaml:ro
+      - ./models.yaml:/etc/onr/models.yaml:ro
     environment:
-      - ONR_PROVIDERS_DIR=/etc/open-next-router/providers
-      - ONR_KEYS_FILE=/etc/open-next-router/keys.yaml
-      - ONR_MODELS_FILE=/etc/open-next-router/models.yaml
+      - ONR_PROVIDERS_DIR=/etc/onr/providers
+      - ONR_KEYS_FILE=/etc/onr/keys.yaml
+      - ONR_MODELS_FILE=/etc/onr/models.yaml
       # Optional overrides:
       # - ONR_API_KEY=change-me
       # - ONR_READ_TIMEOUT_MS=60000

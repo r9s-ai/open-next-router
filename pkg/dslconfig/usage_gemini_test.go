@@ -3,7 +3,7 @@ package dslconfig
 import (
 	"testing"
 
-	"github.com/edgefn/open-next-router/pkg/dslmeta"
+	"github.com/r9s-ai/open-next-router/pkg/dslmeta"
 )
 
 func TestExtractUsage_Gemini_NonStream(t *testing.T) {

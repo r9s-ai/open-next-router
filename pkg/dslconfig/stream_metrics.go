@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/edgefn/open-next-router/pkg/dslmeta"
+	"github.com/r9s-ai/open-next-router/pkg/dslmeta"
 )
 
 // StreamMetricsAggregator aggregates best-effort metrics from SSE "data:" JSON payloads.

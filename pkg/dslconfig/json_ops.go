@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/edgefn/open-next-router/pkg/dslmeta"
+	"github.com/r9s-ai/open-next-router/pkg/dslmeta"
 )
 
 func ApplyJSONOps(meta *dslmeta.Meta, in any, ops []JSONOp) (any, error) {

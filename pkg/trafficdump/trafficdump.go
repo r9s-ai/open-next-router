@@ -16,7 +16,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/edgefn/open-next-router/internal/requestid"
+	"github.com/r9s-ai/open-next-router/internal/requestid"
 )
 
 const (

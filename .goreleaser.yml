@@ -1,0 +1,168 @@
+# GoReleaser configuration for onr
+# Documentation: https://goreleaser.com
+
+version: 2
+
+# Before hooks - run before the build
+before:
+  hooks:
+    # Run tests before building
+    - go test ./...
+    # Run go mod tidy to ensure dependencies are clean
+    - go mod tidy
+
+# Build configuration
+builds:
+  # Main binary: onr
+  - id: onr
+    main: ./cmd/onr
+    binary: onr
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    # Ignore specific OS/Arch combinations
+    ignore:
+      - goos: windows
+        goarch: arm64
+    # ldflags to inject version information
+    ldflags:
+      - -s -w
+      - -X github.com/r9s-ai/open-next-router/internal/version.Version={{.Version}}
+      - -X github.com/r9s-ai/open-next-router/internal/version.Commit={{.Commit}}
+      - -X github.com/r9s-ai/open-next-router/internal/version.BuildDate={{.Date}}
+
+  # Utility binary: onr-crypt
+  - id: onr-crypt
+    main: ./cmd/onr-crypt
+    binary: onr-crypt
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/r9s-ai/open-next-router/internal/version.Version={{.Version}}
+      - -X github.com/r9s-ai/open-next-router/internal/version.Commit={{.Commit}}
+      - -X github.com/r9s-ai/open-next-router/internal/version.BuildDate={{.Date}}
+
+# Archive configuration
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    # Use zip for Windows
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+    files:
+      - LICENSE
+      - README.md
+      - CHANGELOG.md
+      - config/*.yaml
+
+# Checksum generation
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+# Snapshot configuration (for non-tagged builds)
+snapshot:
+  version_template: "{{ .Tag }}-next"
+
+# Changelog generation
+changelog:
+  # Sort commits by type
+  sort: asc
+  use: github
+  filters:
+    # Exclude certain commit types from changelog
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^ci:'
+      - 'typo'
+  groups:
+    # Group commits by type
+    - title: 'Features'
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: 'Bug Fixes'
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: 'Performance Improvements'
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: 'Refactors'
+      regexp: '^.*?refactor(\([[:word:]]+\))??!?:.+$'
+      order: 3
+    - title: 'Other Changes'
+      order: 999
+
+# GitHub Release configuration
+release:
+  # GitHub repository
+  github:
+    owner: edgefn
+    name: open-next-router
+  
+  # Release name template
+  name_template: "{{.ProjectName}} {{.Version}}"
+  
+  # Draft release (set to false for automatic publishing)
+  draft: false
+  
+  # Prerelease detection
+  prerelease: auto
+  
+  # Release notes
+  header: |
+    ## Release {{.Version}} ({{.Date}})
+    
+    Welcome to this new release of onr!
+  
+  footer: |
+    ---
+    
+    **Full Changelog**: https://github.com/r9s-ai/open-next-router/compare/{{.PreviousTag}}...{{.Tag}}
+    
+    ## Installation
+    
+    ### Download Binary
+    Download the appropriate binary for your platform from the assets below.
+    
+    ### Verify Checksum
+    ```bash
+    sha256sum -c checksums.txt
+    ```
+    
+    ## Docker
+    ```bash
+    docker pull ghcr.io/r9s-ai/open-next-router:{{.Version}}
+    ```
+
+# Metadata
+metadata:
+  mod_timestamp: '{{ .CommitTimestamp }}'

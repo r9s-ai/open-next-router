@@ -3,8 +3,8 @@ package onrserver
 import (
 	"sync"
 
-	"github.com/edgefn/open-next-router/internal/keystore"
-	"github.com/edgefn/open-next-router/internal/models"
+	"github.com/r9s-ai/open-next-router/internal/keystore"
+	"github.com/r9s-ai/open-next-router/internal/models"
 )
 
 type state struct {

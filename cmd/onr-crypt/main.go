@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/edgefn/open-next-router/internal/keystore"
+	"github.com/r9s-ai/open-next-router/internal/keystore"
 )
 
 func main() {

@@ -3,7 +3,7 @@ package usageestimate
 import (
 	"testing"
 
-	"github.com/edgefn/open-next-router/pkg/dslconfig"
+	"github.com/r9s-ai/open-next-router/pkg/dslconfig"
 )
 
 func TestEstimate_WhenMissingUsage_EstimateBoth(t *testing.T) {

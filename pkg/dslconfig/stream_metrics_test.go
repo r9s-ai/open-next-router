@@ -3,7 +3,7 @@ package dslconfig
 import (
 	"testing"
 
-	"github.com/edgefn/open-next-router/pkg/dslmeta"
+	"github.com/r9s-ai/open-next-router/pkg/dslmeta"
 )
 
 func TestStreamMetricsAggregator_OpenAIUsageLast_FinishFirst(t *testing.T) {

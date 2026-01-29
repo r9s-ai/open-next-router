@@ -1,0 +1,183 @@
+# Release Drafter configuration
+# Automatically generates draft releases based on PR labels and commits
+
+# Template for release name
+name-template: 'v$RESOLVED_VERSION'
+
+# Template for release tag
+tag-template: 'v$RESOLVED_VERSION'
+
+# Categories for organizing changes
+categories:
+  - title: '🚀 Features'
+    labels:
+      - 'feature'
+      - 'enhancement'
+    collapse-after: 10
+
+  - title: '🐛 Bug Fixes'
+    labels:
+      - 'fix'
+      - 'bugfix'
+      - 'bug'
+    collapse-after: 10
+
+  - title: '⚡ Performance Improvements'
+    labels:
+      - 'performance'
+      - 'perf'
+
+  - title: '🔒 Security'
+    labels:
+      - 'security'
+
+  - title: '📝 Documentation'
+    labels:
+      - 'documentation'
+      - 'docs'
+
+  - title: '🔧 Refactoring'
+    labels:
+      - 'refactor'
+      - 'refactoring'
+
+  - title: '🧪 Testing'
+    labels:
+      - 'test'
+      - 'testing'
+
+  - title: '🏗️ Build & CI'
+    labels:
+      - 'build'
+      - 'ci'
+      - 'dependencies'
+
+  - title: '⚙️ Other Changes'
+    labels:
+      - '*'
+
+# Exclude certain labels from the changelog
+exclude-labels:
+  - 'skip-changelog'
+  - 'duplicate'
+  - 'invalid'
+  - 'wontfix'
+
+# Change template for each item
+change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
+
+# PR template with no changes
+no-changes-template: 'No changes in this release.'
+
+# Template for the release body
+template: |
+  ## What's Changed
+  
+  $CHANGES
+  
+  ## Contributors
+  
+  Thanks to all contributors who made this release possible! 🎉
+  
+  $CONTRIBUTORS
+
+# Auto labeling based on branch names and commit messages
+autolabeler:
+  - label: 'feature'
+    branch:
+      - '/^feat(ure)?[/-].+/'
+    title:
+      - '/^feat(\(.+\))?:/i'
+
+  - label: 'fix'
+    branch:
+      - '/^fix[/-].+/'
+    title:
+      - '/^fix(\(.+\))?:/i'
+
+  - label: 'documentation'
+    branch:
+      - '/^docs?[/-].+/'
+    title:
+      - '/^docs?(\(.+\))?:/i'
+    files:
+      - '*.md'
+      - 'docs/**/*'
+
+  - label: 'performance'
+    title:
+      - '/^perf(\(.+\))?:/i'
+
+  - label: 'refactor'
+    title:
+      - '/^refactor(\(.+\))?:/i'
+
+  - label: 'test'
+    branch:
+      - '/^test[/-].+/'
+    title:
+      - '/^test(\(.+\))?:/i'
+    files:
+      - '**/*_test.go'
+      - '**/test/**/*'
+
+  - label: 'build'
+    title:
+      - '/^build(\(.+\))?:/i'
+      - '/^chore(\(.+\))?:/i'
+    files:
+      - 'Makefile'
+      - 'Dockerfile'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/**/*'
+
+  - label: 'dependencies'
+    files:
+      - 'go.mod'
+      - 'go.sum'
+
+  - label: 'security'
+    title:
+      - '/security/i'
+
+# Version resolution strategy
+version-resolver:
+  major:
+    labels:
+      - 'major'
+      - 'breaking'
+  minor:
+    labels:
+      - 'minor'
+      - 'feature'
+      - 'enhancement'
+  patch:
+    labels:
+      - 'patch'
+      - 'fix'
+      - 'bugfix'
+      - 'bug'
+      - 'documentation'
+      - 'dependencies'
+  default: patch
+
+# Replacers for better formatting
+replacers:
+  # Replace conventional commit prefixes in titles
+  - search: '/^feat(\(.+\))?:\s*/i'
+    replace: ''
+  - search: '/^fix(\(.+\))?:\s*/i'
+    replace: ''
+  - search: '/^docs?(\(.+\))?:\s*/i'
+    replace: ''
+  - search: '/^refactor(\(.+\))?:\s*/i'
+    replace: ''
+  - search: '/^perf(\(.+\))?:\s*/i'
+    replace: ''
+  - search: '/^test(\(.+\))?:\s*/i'
+    replace: ''
+  - search: '/^build(\(.+\))?:\s*/i'
+    replace: ''
+  - search: '/^chore(\(.+\))?:\s*/i'
+    replace: ''

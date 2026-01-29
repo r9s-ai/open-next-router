@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/edgefn/open-next-router/internal/config"
-	"github.com/edgefn/open-next-router/internal/keystore"
-	"github.com/edgefn/open-next-router/internal/models"
-	"github.com/edgefn/open-next-router/internal/proxy"
-	"github.com/edgefn/open-next-router/pkg/dslconfig"
+	"github.com/r9s-ai/open-next-router/internal/config"
+	"github.com/r9s-ai/open-next-router/internal/keystore"
+	"github.com/r9s-ai/open-next-router/internal/models"
+	"github.com/r9s-ai/open-next-router/internal/proxy"
+	"github.com/r9s-ai/open-next-router/pkg/dslconfig"
 )
 
 func Run(cfgPath string) error {
