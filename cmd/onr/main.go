@@ -12,7 +12,7 @@ import (
 func main() {
 	var cfgPath string
 	var showVersion bool
-	flag.StringVar(&cfgPath, "config", "open-next-router.yaml", "path to config yaml")
+	flag.StringVar(&cfgPath, "config", "onr.yaml", "path to config yaml")
 	flag.BoolVar(&showVersion, "version", false, "show version information")
 	flag.Parse()
 

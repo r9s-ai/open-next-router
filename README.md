@@ -1,6 +1,6 @@
 <div align="center">
 
-# open-next-router
+# onr (open-next-router)
 
 **A lightweight API gateway for routing OpenAI-compatible endpoints to multiple upstream providers**
 
@@ -19,7 +19,7 @@ open-next-router (ONR) is a lightweight API gateway that routes OpenAI-style end
 
 1) Prepare configs
 
-- Copy `config/open-next-router.example.yaml` -> `open-next-router.yaml`
+- Copy `config/onr.example.yaml` -> `onr.yaml`
 - Copy `config/keys.example.yaml` -> `keys.yaml`
 - Copy `config/models.example.yaml` -> `models.yaml`
 - Provider DSL examples are under `config/providers/` (or write your own)
@@ -29,7 +29,7 @@ open-next-router (ONR) is a lightweight API gateway that routes OpenAI-style end
 
 ```bash
 cd open-next-router
-go run ./cmd/open-next-router --config ./open-next-router.yaml
+go run ./cmd/onr --config ./onr.yaml
 ```
 
 For more information about version management and releases, see [docs/RELEASE.md](docs/RELEASE.md).
@@ -40,7 +40,7 @@ Create runtime config files first:
 
 ```bash
 cd open-next-router
-cp config/open-next-router.example.yaml open-next-router.yaml
+cp config/onr.example.yaml onr.yaml
 cp config/keys.example.yaml keys.yaml
 cp config/models.example.yaml models.yaml
 docker compose up --build
@@ -144,7 +144,7 @@ Example:
 
 ## Upstream HTTP Proxy (per provider)
 
-You can configure an outbound HTTP proxy per upstream provider in `open-next-router.yaml`:
+You can configure an outbound HTTP proxy per upstream provider in `onr.yaml`:
 
 ```yaml
 upstream_proxies:

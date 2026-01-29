@@ -1,0 +1,32 @@
+server:
+  listen: ":3000"
+  read_timeout_ms: 60000
+  write_timeout_ms: 60000
+
+auth:
+  # Public API key for calling open-next-router
+  api_key: "change-me"
+
+providers:
+  # Directory containing provider DSL files (*.conf)
+  dir: "./config/providers"
+
+keys:
+  # Upstream keys file (grouped by provider)
+  file: "./keys.yaml"
+
+logging:
+  level: "info"
+  access_log: true
+
+upstream_proxies:
+  # Configure outbound HTTP proxy per provider (optional).
+  # Example:
+  #   by_provider:
+  #     openai: "http://127.0.0.1:7890"
+  #     anthropic: "http://127.0.0.1:7891"
+  # Supported schemes:
+  #   - http:// / https://
+  #   - socks5:// / socks5h:// (optional user/pass: socks5://user:pass@host:port)
+  by_provider: 
+    gemini: "socks5://172.18.156.198:1081"

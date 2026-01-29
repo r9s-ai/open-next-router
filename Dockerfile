@@ -4,15 +4,15 @@ WORKDIR /app
 
 COPY . .
 
-RUN go build -o /usr/local/bin/open-next-router ./cmd/open-next-router
+RUN go build -o /usr/local/bin/onr ./cmd/onr
 
 FROM alpine:3.20
 RUN adduser -D -H -u 10001 app
 USER app
 
 WORKDIR /home/app
-COPY --from=build /usr/local/bin/open-next-router /usr/local/bin/open-next-router
+COPY --from=build /usr/local/bin/onr /usr/local/bin/onr
 
 EXPOSE 3000
-ENTRYPOINT ["/usr/local/bin/open-next-router"]
-CMD ["--config", "/etc/open-next-router/open-next-router.yaml"]
+ENTRYPOINT ["/usr/local/bin/onr"]
+CMD ["--config", "/etc/onr/onr.yaml"]

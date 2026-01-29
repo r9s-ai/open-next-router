@@ -1,4 +1,4 @@
-# GoReleaser configuration for open-next-router
+# GoReleaser configuration for onr
 # Documentation: https://goreleaser.com
 
 version: 2
@@ -13,10 +13,10 @@ before:
 
 # Build configuration
 builds:
-  # Main binary: open-next-router
-  - id: open-next-router
-    main: ./cmd/open-next-router
-    binary: open-next-router
+  # Main binary: onr
+  - id: onr
+    main: ./cmd/onr
+    binary: onr
     env:
       - CGO_ENABLED=0
     goos:
@@ -141,7 +141,7 @@ release:
   header: |
     ## Release {{.Version}} ({{.Date}})
     
-    Welcome to this new release of open-next-router!
+    Welcome to this new release of onr!
   
   footer: |
     ---

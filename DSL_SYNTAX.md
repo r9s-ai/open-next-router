@@ -1,6 +1,6 @@
 # Provider Config DSL Syntax (v0.1)
 
-This document describes the provider configuration DSL used by **open-next-router**.
+This document describes the provider configuration DSL used by **onr** (open-next-router).
 Provider configs live under `config/providers/*.conf` in this repository and are loaded at startup (and on reload).
 The directory can be customized via `providers.dir` (config) or `ONR_PROVIDERS_DIR` (env).
 

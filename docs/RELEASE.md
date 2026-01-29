@@ -13,7 +13,7 @@ make version
 或运行程序查看版本：
 
 ```bash
-./bin/open-next-router --version
+./bin/onr --version
 ```
 
 ### 创建新版本发布
@@ -228,7 +228,7 @@ make build
 make version
 
 # 运行
-./bin/open-next-router --version
+./bin/onr --version
 ```
 
 ---
@@ -349,7 +349,7 @@ Changelog 由 GoReleaser 基于 git commit history 自动生成，会根据 comm
 - `.goreleaser.yml` - GoReleaser 配置
 - `.github/workflows/release.yml` - 自动发布工作流
 - `.github/workflows/draft-release.yml` - Draft Release 工作流
-- `.release-drafter.yml` - Release Drafter 配置
+- `.github/release-drafter.yml` - Release Drafter 配置
 - `CHANGELOG.md` - 变更日志（自动生成）
 - `internal/version/version.go` - 版本信息代码
 - `.commitlintrc.json` - Commit message 校验规则（可选）
