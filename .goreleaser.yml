@@ -134,6 +134,47 @@ brews:
     test: |
       system "#{bin}/onr --version"
 
+# Docker image configuration
+dockers:
+  - image_templates:
+      - "ghcr.io/r9s-ai/open-next-router:{{.Version}}"
+      - "ghcr.io/r9s-ai/open-next-router:latest"
+    dockerfile: Dockerfile.dist
+    build_flag_templates:
+      - "--pull"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.name={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+    use: buildx
+    goos: linux
+    goarch: amd64
+  - image_templates:
+      - "ghcr.io/r9s-ai/open-next-router:{{.Version}}-arm64"
+    dockerfile: Dockerfile.dist
+    build_flag_templates:
+      - "--pull"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.name={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+    use: buildx
+    goos: linux
+    goarch: arm64
+
+# Docker manifest configuration (to combine amd64 and arm64 into a multi-arch image)
+docker_manifests:
+  - name_template: "ghcr.io/r9s-ai/open-next-router:{{.Version}}"
+    image_templates:
+      - "ghcr.io/r9s-ai/open-next-router:{{.Version}}"
+      - "ghcr.io/r9s-ai/open-next-router:{{.Version}}-arm64"
+  - name_template: "ghcr.io/r9s-ai/open-next-router:latest"
+    image_templates:
+      - "ghcr.io/r9s-ai/open-next-router:{{.Version}}"
+      - "ghcr.io/r9s-ai/open-next-router:{{.Version}}-arm64"
+
 # GitHub Release configuration
 release:
   # GitHub repository
