@@ -65,6 +65,16 @@ func (p ProviderRouting) Apply(meta *dslmeta.Meta) error {
 	return nil
 }
 
+func (p ProviderRouting) HasMatchAPI(api string) bool {
+	for _, m := range p.Matches {
+		if m.API != "" && m.API != api {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 func (p ProviderRouting) HasMatch(meta *dslmeta.Meta) bool {
 	if meta == nil {
 		return false
