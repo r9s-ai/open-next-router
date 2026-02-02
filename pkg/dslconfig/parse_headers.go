@@ -81,6 +81,17 @@ func parseRequestPhaseWithTransform(s *scanner, phase *PhaseHeaders, transform *
 			}
 			return parseJSONRenameStmt(s, t)
 		},
+		"req_map": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
+			if t == nil {
+				return skipStmtOrBlock(s)
+			}
+			mode, err := parseModeArgStmt(s, "req_map")
+			if err != nil {
+				return err
+			}
+			t.ReqMapMode = mode
+			return nil
+		},
 	}
 
 	removed := map[string]string{

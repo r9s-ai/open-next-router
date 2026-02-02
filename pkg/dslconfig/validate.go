@@ -71,6 +71,9 @@ func ValidateProviderFile(path string) (ProviderFile, error) {
 	if err := validateProviderBaseURL(p, providerName, routing); err != nil {
 		return ProviderFile{}, err
 	}
+	if err := validateProviderRequestTransform(p, providerName, req); err != nil {
+		return ProviderFile{}, err
+	}
 	if err := validateProviderUsage(p, providerName, usage); err != nil {
 		return ProviderFile{}, err
 	}
@@ -89,6 +92,32 @@ func ValidateProviderFile(path string) (ProviderFile, error) {
 		Usage:    usage,
 		Finish:   finish,
 	}, nil
+}
+
+func validateProviderRequestTransform(path, providerName string, req ProviderRequestTransform) error {
+	if err := validateRequestTransform(path, providerName, "defaults.request", req.Defaults); err != nil {
+		return err
+	}
+	for i, m := range req.Matches {
+		scope := fmt.Sprintf("match[%d].request", i)
+		if err := validateRequestTransform(path, providerName, scope, m.Transform); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateRequestTransform(path, providerName, scope string, t RequestTransform) error {
+	mode := strings.ToLower(strings.TrimSpace(t.ReqMapMode))
+	if mode == "" {
+		return nil
+	}
+	switch mode {
+	case "openai_chat_to_openai_responses":
+		return nil
+	default:
+		return fmt.Errorf("provider %q in %q: %s unsupported req_map mode %q", providerName, path, scope, t.ReqMapMode)
+	}
 }
 
 func validateProviderUsage(path, providerName string, usage ProviderUsage) error {

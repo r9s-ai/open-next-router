@@ -246,6 +246,18 @@ request {
 - JSONPath (v0.1) supports an object-path subset: `$.a.b.c` (no array indices for these request ops).
 - `json_set` value expressions support: `true/false/null`, integer, string literal, variable, `concat(...)`.
 
+#### req_map
+
+```conf
+request { req_map <mode>; }
+```
+
+Built-in request mapping (non-streaming JSON transform). If multiple directives are present, the **last one wins**.
+
+v0.1 includes:
+
+- `openai_chat_to_openai_responses`: OpenAI-compatible `chat.completions` request JSON → OpenAI `/responses` request JSON
+
 ### 5.4 upstream
 
 #### set_path
@@ -321,6 +333,8 @@ Available modes depend on the built-in implementation. v0.1 includes:
 - `anthropic_to_openai_chunks` (`sse_parse`): Anthropic `/v1/messages` SSE → OpenAI stream chunks
 - `openai_to_anthropic_messages` (`resp_map`): OpenAI-compatible `chat.completions` JSON → Anthropic `/v1/messages` JSON
 - `openai_to_anthropic_chunks` (`sse_parse`): OpenAI-compatible `chat.completions` SSE → Anthropic `/v1/messages` SSE
+- `openai_responses_to_openai_chat` (`resp_map`): OpenAI/Azure `/responses` JSON → OpenAI `chat.completions` JSON
+- `openai_responses_to_openai_chat_chunks` (`sse_parse`): OpenAI/Azure `/responses` SSE → OpenAI `chat.completions` SSE chunks
 
 ### 5.6 error
 

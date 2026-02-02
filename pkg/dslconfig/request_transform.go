@@ -16,6 +16,9 @@ type ModelMapConfig struct {
 type RequestTransform struct {
 	ModelMap ModelMapConfig
 	JSONOps  []JSONOp
+	// ReqMapMode selects a built-in request mapping mode (non-streaming JSON transform),
+	// e.g. openai chat.completions -> openai responses.
+	ReqMapMode string
 }
 
 type ProviderRequestTransform struct {
@@ -42,7 +45,7 @@ func (p ProviderRequestTransform) Select(meta *dslmeta.Meta) (RequestTransform, 
 	if m, ok := p.selectMatch(api, meta.IsStream); ok {
 		out = mergeRequestTransform(out, m.Transform)
 	}
-	if out.ModelMap.Map == nil && strings.TrimSpace(out.ModelMap.DefaultExpr) == "" && len(out.JSONOps) == 0 {
+	if out.ModelMap.Map == nil && strings.TrimSpace(out.ModelMap.DefaultExpr) == "" && len(out.JSONOps) == 0 && strings.TrimSpace(out.ReqMapMode) == "" {
 		return RequestTransform{}, false
 	}
 	return out, true
@@ -76,6 +79,9 @@ func mergeRequestTransform(base, override RequestTransform) RequestTransform {
 	}
 	if len(override.JSONOps) > 0 {
 		out.JSONOps = append(out.JSONOps, override.JSONOps...)
+	}
+	if strings.TrimSpace(override.ReqMapMode) != "" {
+		out.ReqMapMode = override.ReqMapMode
 	}
 	return out
 }

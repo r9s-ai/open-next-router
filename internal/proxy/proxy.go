@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -117,17 +118,24 @@ func (c *Client) ProxyJSON(
 		return nil, fmt.Errorf("dsl provider no match (provider=%s api=%s stream=%v)", provider, api, stream)
 	}
 
-	// request transform (model_map + json ops)
+	respDir, _ := pf.Response.Select(m)
+
+	// request transform (model_map + json ops + req_map)
+	var reqTransform dslconfig.RequestTransform
+	var hasReqTransform bool
 	if t, ok := pf.Request.Select(m); ok {
-		t.Apply(m)
+		reqTransform = t
+		hasReqTransform = true
+
+		reqTransform.Apply(m)
 		if root != nil && m.DSLModelMapped != "" {
 			// Only override when the field exists (OpenAI-style). Gemini native requests do not have "model" in body.
 			if _, exists := root["model"]; exists {
 				root["model"] = m.DSLModelMapped
 			}
 		}
-		if root != nil && len(t.JSONOps) > 0 {
-			out, err := dslconfig.ApplyJSONOps(m, root, t.JSONOps)
+		if root != nil && len(reqTransform.JSONOps) > 0 {
+			out, err := dslconfig.ApplyJSONOps(m, root, reqTransform.JSONOps)
 			if err != nil {
 				return nil, err
 			}
@@ -143,13 +151,31 @@ func (c *Client) ProxyJSON(
 	}
 
 	// rebuild body
-	outBody := bodyBytes
+	reqBody := bodyBytes
 	if root != nil {
 		b, err := json.Marshal(root)
 		if err != nil {
 			return nil, err
 		}
-		outBody = b
+		reqBody = b
+	}
+
+	// req_map is explicitly configured in DSL; no implicit guessing based on API/path.
+	if hasReqTransform && strings.TrimSpace(reqTransform.ReqMapMode) != "" {
+		ce := strings.ToLower(strings.TrimSpace(gc.GetHeader("Content-Encoding")))
+		if ce != "" && ce != "identity" {
+			return nil, fmt.Errorf("cannot transform encoded client request (Content-Encoding=%q)", gc.GetHeader("Content-Encoding"))
+		}
+		switch strings.ToLower(strings.TrimSpace(reqTransform.ReqMapMode)) {
+		case "openai_chat_to_openai_responses":
+			mapped, err := dslconfig.MapOpenAIChatCompletionsToResponsesRequest(reqBody)
+			if err != nil {
+				return nil, err
+			}
+			reqBody = mapped
+		default:
+			return nil, fmt.Errorf("unsupported req_map mode %q", reqTransform.ReqMapMode)
+		}
 	}
 
 	// build upstream request
@@ -161,7 +187,7 @@ func (c *Client) ProxyJSON(
 
 	ctx, cancel := context.WithTimeout(gc.Request.Context(), c.WriteTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, gc.Request.Method, upstreamURL, bytes.NewReader(outBody))
+	req, err := http.NewRequestWithContext(ctx, gc.Request.Method, upstreamURL, bytes.NewReader(reqBody))
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +199,7 @@ func (c *Client) ProxyJSON(
 
 	// traffic dump: upstream request
 	if rec := trafficdump.FromContext(gc); rec != nil && rec.MaxBytes() > 0 {
-		limited, truncated := trafficdump.LimitBytes(outBody, rec.MaxBytes())
+		limited, truncated := trafficdump.LimitBytes(reqBody, rec.MaxBytes())
 		trafficdump.AppendUpstreamRequest(gc, req.Method, upstreamURL, req.Header, limited, false, truncated)
 	}
 
@@ -187,22 +213,20 @@ func (c *Client) ProxyJSON(
 	}
 	defer resp.Body.Close()
 
-	// copy headers
-	for k, vs := range resp.Header {
-		if len(vs) == 0 {
-			continue
-		}
-		gc.Writer.Header().Set(k, vs[0])
-	}
+	upstreamCT := strings.ToLower(resp.Header.Get("Content-Type"))
+	upstreamIsSSE := strings.Contains(upstreamCT, "text/event-stream")
+	// If upstream returns SSE, treat it as streaming regardless of client "stream" flag.
+	effectiveStream := stream || upstreamIsSSE
 
 	// non-stream: read body, try extract usage, write
 	var usage map[string]any
-	if !stream && !strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream") {
+	if !effectiveStream {
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return nil, err
 		}
 
+		// traffic dump: upstream response (original bytes)
 		if rec := trafficdump.FromContext(gc); rec != nil && rec.MaxBytes() > 0 {
 			ct := strings.ToLower(resp.Header.Get("Content-Type"))
 			binary := !strings.Contains(ct, "json") && !strings.HasPrefix(ct, "text/")
@@ -210,34 +234,75 @@ func (c *Client) ProxyJSON(
 			trafficdump.AppendUpstreamResponse(gc, resp.Status, resp.Header, limited, binary, truncated)
 		}
 
+		// response transform (best-effort)
+		respOutBody := respBody
+		outCT := resp.Header.Get("Content-Type")
+		didTransform := false
+		if strings.TrimSpace(respDir.Op) == "resp_map" && strings.EqualFold(strings.TrimSpace(respDir.Mode), "openai_responses_to_openai_chat") {
+			decoded, err := maybeDecodeUpstreamBody(respBody, resp.Header.Get("Content-Encoding"))
+			if err != nil {
+				return nil, err
+			}
+			srcBody := respBody
+			if decoded != nil {
+				srcBody = decoded
+			}
+			respOutBody, err = dslconfig.MapOpenAIResponsesToChatCompletions(srcBody)
+			if err != nil {
+				return nil, err
+			}
+			outCT = "application/json"
+			didTransform = true
+		}
+
+		// copy headers (after transform decision)
+		for k, vs := range resp.Header {
+			if len(vs) == 0 {
+				continue
+			}
+			// Content-Length may change after mapping.
+			if strings.EqualFold(k, "Content-Length") {
+				continue
+			}
+			// We may have transformed/decoded upstream content.
+			if strings.EqualFold(k, "Content-Encoding") && didTransform {
+				continue
+			}
+			gc.Writer.Header().Set(k, vs[0])
+		}
+		if strings.TrimSpace(outCT) != "" {
+			gc.Writer.Header().Set("Content-Type", outCT)
+		}
+
 		gc.Status(resp.StatusCode)
-		if _, err := gc.Writer.Write(respBody); err != nil {
+		if _, err := gc.Writer.Write(respOutBody); err != nil {
 			return nil, err
 		}
 
+		// traffic dump: proxy response (mapped bytes)
 		if rec := trafficdump.FromContext(gc); rec != nil && rec.MaxBytes() > 0 {
-			ct := strings.ToLower(resp.Header.Get("Content-Type"))
+			ct := strings.ToLower(outCT)
 			binary := !strings.Contains(ct, "json") && !strings.HasPrefix(ct, "text/")
-			limited, truncated := trafficdump.LimitBytes(respBody, rec.MaxBytes())
+			limited, truncated := trafficdump.LimitBytes(respOutBody, rec.MaxBytes())
 			trafficdump.AppendProxyResponse(gc, limited, binary, truncated, resp.StatusCode)
 		}
 
 		if cfg, ok := pf.Usage.Select(m); ok {
-			u, _, err := dslconfig.ExtractUsage(m, cfg, respBody)
+			u, _, err := dslconfig.ExtractUsage(m, cfg, respOutBody)
 			if err == nil && u != nil {
 				out := usageestimate.Estimate(c.UsageEst, usageestimate.Input{
 					API:           api,
 					Model:         model,
 					UpstreamUsage: u,
-					RequestBody:   outBody,
-					ResponseBody:  respBody,
+					RequestBody:   reqBody,
+					ResponseBody:  respOutBody,
 				})
 				usage = usageMap(out.Usage)
 				usageStage := out.Stage
 
 				finishReason := ""
 				if frCfg, ok := pf.Finish.Select(m); ok {
-					if v, err := dslconfig.ExtractFinishReason(m, frCfg, respBody); err == nil {
+					if v, err := dslconfig.ExtractFinishReason(m, frCfg, respOutBody); err == nil {
 						finishReason = strings.TrimSpace(v)
 					}
 				}
@@ -261,14 +326,14 @@ func (c *Client) ProxyJSON(
 		out := usageestimate.Estimate(c.UsageEst, usageestimate.Input{
 			API:          api,
 			Model:        model,
-			RequestBody:  outBody,
-			ResponseBody: respBody,
+			RequestBody:  reqBody,
+			ResponseBody: respOutBody,
 		})
 		usage = usageMap(out.Usage)
 
 		finishReason := ""
 		if frCfg, ok := pf.Finish.Select(m); ok {
-			if v, err := dslconfig.ExtractFinishReason(m, frCfg, respBody); err == nil {
+			if v, err := dslconfig.ExtractFinishReason(m, frCfg, respOutBody); err == nil {
 				finishReason = strings.TrimSpace(v)
 			}
 		}
@@ -289,11 +354,22 @@ func (c *Client) ProxyJSON(
 	}
 
 	// stream passthrough
-	gc.Status(resp.StatusCode)
 	var (
 		dumpBuf       []byte
 		dumpTruncated bool
+		dumpHandled   bool
 	)
+
+	// copy headers
+	for k, vs := range resp.Header {
+		if len(vs) == 0 {
+			continue
+		}
+		if strings.EqualFold(k, "Content-Length") {
+			continue
+		}
+		gc.Writer.Header().Set(k, vs[0])
+	}
 
 	// Always keep a tail buffer for best-effort usage extraction from SSE.
 	// Note: usage is usually sent near the end of the stream when enabled.
@@ -303,25 +379,77 @@ func (c *Client) ProxyJSON(
 	}
 	usageTail := &tailBuffer{limit: tailLimit}
 
-	if rec := trafficdump.FromContext(gc); rec != nil && rec.MaxBytes() > 0 {
-		buf := &limitedBuffer{limit: rec.MaxBytes()}
-		tee := io.TeeReader(resp.Body, io.MultiWriter(buf, usageTail))
-		if _, err := io.Copy(gc.Writer, tee); err != nil {
-			return nil, err
+	// stream transform (optional)
+	if strings.TrimSpace(respDir.Op) == "sse_parse" && strings.EqualFold(strings.TrimSpace(respDir.Mode), "openai_responses_to_openai_chat_chunks") {
+		var src io.Reader = resp.Body
+		ce := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Encoding")))
+		if ce == "gzip" {
+			gr, err := gzip.NewReader(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+			defer gr.Close()
+			src = gr
+			// Override encoding for downstream.
+			gc.Writer.Header().Del("Content-Encoding")
+		} else if ce != "" && ce != "identity" {
+			return nil, fmt.Errorf("cannot transform encoded upstream response (Content-Encoding=%q)", resp.Header.Get("Content-Encoding"))
 		}
-		dumpBuf = buf.Bytes()
-		dumpTruncated = buf.Truncated()
+
+		// Override to downstream chat SSE.
+		gc.Writer.Header().Set("Content-Type", "text/event-stream")
+		gc.Writer.Header().Set("Cache-Control", "no-cache")
+
+		gc.Status(resp.StatusCode)
+
+		var (
+			upDump *limitedBuffer
+			prDump *limitedBuffer
+		)
+		if rec := trafficdump.FromContext(gc); rec != nil && rec.MaxBytes() > 0 {
+			upDump = &limitedBuffer{limit: rec.MaxBytes()}
+			prDump = &limitedBuffer{limit: rec.MaxBytes()}
+			// Collect upstream bytes for dump, but collect proxy bytes for metrics/estimation.
+			src = io.TeeReader(src, upDump)
+			dst := io.MultiWriter(gc.Writer, prDump, usageTail)
+			if err := dslconfig.TransformOpenAIResponsesSSEToChatCompletionsSSE(src, dst); err != nil {
+				return nil, err
+			}
+			dumpBuf = upDump.Bytes()
+			dumpTruncated = upDump.Truncated()
+			// Append both upstream and proxy streams (best-effort).
+			trafficdump.AppendUpstreamResponse(gc, resp.Status, resp.Header, dumpBuf, false, dumpTruncated)
+			trafficdump.AppendProxyResponse(gc, prDump.Bytes(), false, prDump.Truncated(), resp.StatusCode)
+			dumpHandled = true
+		} else {
+			dst := io.MultiWriter(gc.Writer, usageTail)
+			if err := dslconfig.TransformOpenAIResponsesSSEToChatCompletionsSSE(src, dst); err != nil {
+				return nil, err
+			}
+		}
 	} else {
-		tee := io.TeeReader(resp.Body, usageTail)
-		if _, err := io.Copy(gc.Writer, tee); err != nil {
-			return nil, err
+		// passthrough
+		gc.Status(resp.StatusCode)
+		if rec := trafficdump.FromContext(gc); rec != nil && rec.MaxBytes() > 0 {
+			buf := &limitedBuffer{limit: rec.MaxBytes()}
+			tee := io.TeeReader(resp.Body, io.MultiWriter(buf, usageTail))
+			if _, err := io.Copy(gc.Writer, tee); err != nil {
+				return nil, err
+			}
+			dumpBuf = buf.Bytes()
+			dumpTruncated = buf.Truncated()
+		} else {
+			tee := io.TeeReader(resp.Body, usageTail)
+			if _, err := io.Copy(gc.Writer, tee); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if f, ok := gc.Writer.(http.Flusher); ok {
 		f.Flush()
 	}
 
-	if rec := trafficdump.FromContext(gc); rec != nil && rec.MaxBytes() > 0 && len(dumpBuf) > 0 {
+	if rec := trafficdump.FromContext(gc); rec != nil && rec.MaxBytes() > 0 && !dumpHandled && len(dumpBuf) > 0 && dumpBuf != nil {
 		ct := strings.ToLower(resp.Header.Get("Content-Type"))
 		binary := !strings.Contains(ct, "json") && !strings.HasPrefix(ct, "text/")
 		trafficdump.AppendUpstreamResponse(gc, resp.Status, resp.Header, dumpBuf, binary, dumpTruncated)
@@ -347,7 +475,7 @@ func (c *Client) ProxyJSON(
 		API:           api,
 		Model:         model,
 		UpstreamUsage: upstreamUsage,
-		RequestBody:   outBody,
+		RequestBody:   reqBody,
 		StreamTail:    usageTail.Bytes(),
 	})
 	usage = usageMap(out.Usage)
@@ -364,6 +492,27 @@ func (c *Client) ProxyJSON(
 		UsageStage:     out.Stage,
 		FinishReason:   finishReason,
 	}, nil
+}
+
+func maybeDecodeUpstreamBody(body []byte, contentEncoding string) ([]byte, error) {
+	ce := strings.ToLower(strings.TrimSpace(contentEncoding))
+	switch ce {
+	case "", "identity":
+		return nil, nil
+	case "gzip":
+		gr, err := gzip.NewReader(bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		defer gr.Close()
+		decoded, err := io.ReadAll(gr)
+		if err != nil {
+			return nil, err
+		}
+		return decoded, nil
+	default:
+		return nil, fmt.Errorf("cannot decode upstream response (Content-Encoding=%q)", contentEncoding)
+	}
 }
 
 func (c *Client) httpClientForProvider(provider string) (*http.Client, error) {
