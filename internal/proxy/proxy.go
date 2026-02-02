@@ -59,6 +59,21 @@ type Client struct {
 	httpByProxy map[string]*http.Client
 }
 
+type proxyCtx struct {
+	start           time.Time
+	provider        string
+	key             ProviderKey
+	api             string
+	stream          bool
+	pf              dslconfig.ProviderFile
+	meta            *dslmeta.Meta
+	model           string
+	reqBody         []byte
+	respDir         dslconfig.ResponseDirective
+	reqTransform    dslconfig.RequestTransform
+	hasReqTransform bool
+}
+
 func (c *Client) ProxyJSON(
 	gc *gin.Context,
 	provider string,
@@ -66,263 +81,115 @@ func (c *Client) ProxyJSON(
 	api string,
 	stream bool,
 ) (*Result, error) {
-	start := time.Now()
-	pf, ok := c.Registry.GetProvider(provider)
-	if !ok {
-		return nil, fmt.Errorf("provider not found: %s", provider)
-	}
-
-	// read request json
-	bodyBytes, err := io.ReadAll(gc.Request.Body)
+	bctx, err := c.buildProxyCtx(gc, provider, key, api, stream)
 	if err != nil {
 		return nil, err
 	}
-	_ = gc.Request.Body.Close()
+	start := bctx.start
+	pf := bctx.pf
+	m := bctx.meta
+	model := bctx.model
+	reqBody := bctx.reqBody
+	respDir := bctx.respDir
 
-	var reqObj any
-	if len(bodyBytes) > 0 {
-		if err := json.Unmarshal(bodyBytes, &reqObj); err != nil {
-			return nil, fmt.Errorf("invalid json: %w", err)
-		}
-	}
-	root, _ := reqObj.(map[string]any)
-
-	model := ""
-	if root != nil {
-		if v, ok := root["model"].(string); ok {
-			model = strings.TrimSpace(v)
-		}
-	}
-	if model == "" {
-		// Gemini native endpoints put model in URL path: /v1beta/models/{model}:{action}
-		if m2, ok := parseGeminiModelFromPath(gc.Request.URL.Path); ok && strings.TrimSpace(m2) != "" {
-			model = strings.TrimSpace(m2)
-		}
-	}
-
-	m := &dslmeta.Meta{
-		API:             strings.TrimSpace(api),
-		IsStream:        stream,
-		ActualModelName: strings.TrimSpace(model),
-		APIKey:          strings.TrimSpace(key.Value),
-		BaseURL:         strings.TrimSpace(key.BaseURLOverride),
-		RequestURLPath:  gc.Request.URL.RequestURI(),
-		StartTime:       time.Now(),
-	}
-
-	// route rewrite (set_path/set_query/del_query, base_url default)
-	if err := pf.Routing.Apply(m); err != nil {
-		return nil, err
-	}
-	if !pf.Routing.HasMatch(m) {
-		return nil, fmt.Errorf("dsl provider no match (provider=%s api=%s stream=%v)", provider, api, stream)
-	}
-
-	respDir, _ := pf.Response.Select(m)
-
-	// request transform (model_map + json ops + req_map)
-	var reqTransform dslconfig.RequestTransform
-	var hasReqTransform bool
-	if t, ok := pf.Request.Select(m); ok {
-		reqTransform = t
-		hasReqTransform = true
-
-		reqTransform.Apply(m)
-		if root != nil && m.DSLModelMapped != "" {
-			// Only override when the field exists (OpenAI-style). Gemini native requests do not have "model" in body.
-			if _, exists := root["model"]; exists {
-				root["model"] = m.DSLModelMapped
-			}
-		}
-		if root != nil && len(reqTransform.JSONOps) > 0 {
-			out, err := dslconfig.ApplyJSONOps(m, root, reqTransform.JSONOps)
-			if err != nil {
-				return nil, err
-			}
-			root, _ = out.(map[string]any)
-		}
-	}
-
-	// Best-effort: for Gemini native endpoints, let model_map rewrite URL model segment.
-	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(api)), "gemini.") && strings.TrimSpace(m.DSLModelMapped) != "" {
-		if newPath, ok := replaceGeminiModelInPath(m.RequestURLPath, m.DSLModelMapped); ok {
-			m.RequestURLPath = newPath
-		}
-	}
-
-	// rebuild body
-	reqBody := bodyBytes
-	if root != nil {
-		b, err := json.Marshal(root)
-		if err != nil {
-			return nil, err
-		}
-		reqBody = b
-	}
-
-	// req_map is explicitly configured in DSL; no implicit guessing based on API/path.
-	if hasReqTransform && strings.TrimSpace(reqTransform.ReqMapMode) != "" {
-		ce := strings.ToLower(strings.TrimSpace(gc.GetHeader("Content-Encoding")))
-		if ce != "" && ce != "identity" {
-			return nil, fmt.Errorf("cannot transform encoded client request (Content-Encoding=%q)", gc.GetHeader("Content-Encoding"))
-		}
-		switch strings.ToLower(strings.TrimSpace(reqTransform.ReqMapMode)) {
-		case "openai_chat_to_openai_responses":
-			mapped, err := dslconfig.MapOpenAIChatCompletionsToResponsesRequest(reqBody)
-			if err != nil {
-				return nil, err
-			}
-			reqBody = mapped
-		default:
-			return nil, fmt.Errorf("unsupported req_map mode %q", reqTransform.ReqMapMode)
-		}
-	}
-
-	// build upstream request
-	baseURL := strings.TrimRight(strings.TrimSpace(m.BaseURL), "/")
-	if baseURL == "" {
-		return nil, errors.New("upstream base_url is empty")
-	}
-	upstreamURL := baseURL + m.RequestURLPath
-
-	ctx, cancel := context.WithTimeout(gc.Request.Context(), c.WriteTimeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, gc.Request.Method, upstreamURL, bytes.NewReader(reqBody))
-	if err != nil {
-		return nil, err
-	}
-
-	// headers: start clean, do not forward client Authorization.
-	req.Header.Set("Content-Type", "application/json")
-	// apply auth + request headers from provider conf
-	pf.Headers.Apply(m, req.Header)
-
-	// traffic dump: upstream request
-	if rec := trafficdump.FromContext(gc); rec != nil && rec.MaxBytes() > 0 {
-		limited, truncated := trafficdump.LimitBytes(reqBody, rec.MaxBytes())
-		trafficdump.AppendUpstreamRequest(gc, req.Method, upstreamURL, req.Header, limited, false, truncated)
-	}
-
-	httpc, err := c.httpClientForProvider(provider)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := httpc.Do(req)
+	resp, err := c.doUpstreamRequest(gc, provider, pf, m, reqBody)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	upstreamCT := strings.ToLower(resp.Header.Get("Content-Type"))
-	upstreamIsSSE := strings.Contains(upstreamCT, "text/event-stream")
 	// If upstream returns SSE, treat it as streaming regardless of client "stream" flag.
-	effectiveStream := stream || upstreamIsSSE
+	effectiveStream := isEffectiveStream(stream, resp)
 
-	// non-stream: read body, try extract usage, write
-	var usage map[string]any
 	if !effectiveStream {
-		respBody, err := io.ReadAll(resp.Body)
+		return c.handleNonStreamResponse(gc, provider, key, api, stream, start, pf, m, model, reqBody, respDir, resp)
+	}
+	return c.handleStreamResponse(gc, provider, key, api, start, pf, m, model, reqBody, respDir, resp)
+}
+
+func (c *Client) handleNonStreamResponse(
+	gc *gin.Context,
+	provider string,
+	key ProviderKey,
+	api string,
+	stream bool,
+	start time.Time,
+	pf dslconfig.ProviderFile,
+	m *dslmeta.Meta,
+	model string,
+	reqBody []byte,
+	respDir dslconfig.ResponseDirective,
+	resp *http.Response,
+) (*Result, error) {
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// traffic dump: upstream response (original bytes)
+	if rec := trafficdump.FromContext(gc); rec != nil && rec.MaxBytes() > 0 {
+		ct := strings.ToLower(resp.Header.Get("Content-Type"))
+		binary := !strings.Contains(ct, "json") && !strings.HasPrefix(ct, "text/")
+		limited, truncated := trafficdump.LimitBytes(respBody, rec.MaxBytes())
+		trafficdump.AppendUpstreamResponse(gc, resp.Status, resp.Header, limited, binary, truncated)
+	}
+
+	// response transform (best-effort)
+	respOutBody := respBody
+	outCT := resp.Header.Get("Content-Type")
+	didTransform := false
+	if strings.TrimSpace(respDir.Op) == "resp_map" && strings.EqualFold(strings.TrimSpace(respDir.Mode), "openai_responses_to_openai_chat") {
+		decoded, err := maybeDecodeUpstreamBody(respBody, resp.Header.Get("Content-Encoding"))
 		if err != nil {
 			return nil, err
 		}
-
-		// traffic dump: upstream response (original bytes)
-		if rec := trafficdump.FromContext(gc); rec != nil && rec.MaxBytes() > 0 {
-			ct := strings.ToLower(resp.Header.Get("Content-Type"))
-			binary := !strings.Contains(ct, "json") && !strings.HasPrefix(ct, "text/")
-			limited, truncated := trafficdump.LimitBytes(respBody, rec.MaxBytes())
-			trafficdump.AppendUpstreamResponse(gc, resp.Status, resp.Header, limited, binary, truncated)
+		srcBody := respBody
+		if decoded != nil {
+			srcBody = decoded
 		}
-
-		// response transform (best-effort)
-		respOutBody := respBody
-		outCT := resp.Header.Get("Content-Type")
-		didTransform := false
-		if strings.TrimSpace(respDir.Op) == "resp_map" && strings.EqualFold(strings.TrimSpace(respDir.Mode), "openai_responses_to_openai_chat") {
-			decoded, err := maybeDecodeUpstreamBody(respBody, resp.Header.Get("Content-Encoding"))
-			if err != nil {
-				return nil, err
-			}
-			srcBody := respBody
-			if decoded != nil {
-				srcBody = decoded
-			}
-			respOutBody, err = dslconfig.MapOpenAIResponsesToChatCompletions(srcBody)
-			if err != nil {
-				return nil, err
-			}
-			outCT = "application/json"
-			didTransform = true
-		}
-
-		// copy headers (after transform decision)
-		for k, vs := range resp.Header {
-			if len(vs) == 0 {
-				continue
-			}
-			// Content-Length may change after mapping.
-			if strings.EqualFold(k, "Content-Length") {
-				continue
-			}
-			// We may have transformed/decoded upstream content.
-			if strings.EqualFold(k, "Content-Encoding") && didTransform {
-				continue
-			}
-			gc.Writer.Header().Set(k, vs[0])
-		}
-		if strings.TrimSpace(outCT) != "" {
-			gc.Writer.Header().Set("Content-Type", outCT)
-		}
-
-		gc.Status(resp.StatusCode)
-		if _, err := gc.Writer.Write(respOutBody); err != nil {
+		respOutBody, err = dslconfig.MapOpenAIResponsesToChatCompletions(srcBody)
+		if err != nil {
 			return nil, err
 		}
+		outCT = "application/json"
+		didTransform = true
+	}
 
-		// traffic dump: proxy response (mapped bytes)
-		if rec := trafficdump.FromContext(gc); rec != nil && rec.MaxBytes() > 0 {
-			ct := strings.ToLower(outCT)
-			binary := !strings.Contains(ct, "json") && !strings.HasPrefix(ct, "text/")
-			limited, truncated := trafficdump.LimitBytes(respOutBody, rec.MaxBytes())
-			trafficdump.AppendProxyResponse(gc, limited, binary, truncated, resp.StatusCode)
+	copyHeadersToClient(gc, resp.Header, didTransform)
+	if strings.TrimSpace(outCT) != "" {
+		gc.Writer.Header().Set("Content-Type", outCT)
+	}
+
+	gc.Status(resp.StatusCode)
+	if _, err := gc.Writer.Write(respOutBody); err != nil {
+		return nil, err
+	}
+
+	// traffic dump: proxy response (mapped bytes)
+	if rec := trafficdump.FromContext(gc); rec != nil && rec.MaxBytes() > 0 {
+		ct := strings.ToLower(outCT)
+		binary := !strings.Contains(ct, "json") && !strings.HasPrefix(ct, "text/")
+		limited, truncated := trafficdump.LimitBytes(respOutBody, rec.MaxBytes())
+		trafficdump.AppendProxyResponse(gc, limited, binary, truncated, resp.StatusCode)
+	}
+
+	var usage map[string]any
+	usageStage := ""
+	if cfg, ok := pf.Usage.Select(m); ok {
+		u, _, err := dslconfig.ExtractUsage(m, cfg, respOutBody)
+		if err == nil && u != nil {
+			out := usageestimate.Estimate(c.UsageEst, usageestimate.Input{
+				API:           api,
+				Model:         model,
+				UpstreamUsage: u,
+				RequestBody:   reqBody,
+				ResponseBody:  respOutBody,
+			})
+			usage = usageMap(out.Usage)
+			usageStage = out.Stage
 		}
-
-		if cfg, ok := pf.Usage.Select(m); ok {
-			u, _, err := dslconfig.ExtractUsage(m, cfg, respOutBody)
-			if err == nil && u != nil {
-				out := usageestimate.Estimate(c.UsageEst, usageestimate.Input{
-					API:           api,
-					Model:         model,
-					UpstreamUsage: u,
-					RequestBody:   reqBody,
-					ResponseBody:  respOutBody,
-				})
-				usage = usageMap(out.Usage)
-				usageStage := out.Stage
-
-				finishReason := ""
-				if frCfg, ok := pf.Finish.Select(m); ok {
-					if v, err := dslconfig.ExtractFinishReason(m, frCfg, respOutBody); err == nil {
-						finishReason = strings.TrimSpace(v)
-					}
-				}
-
-				return &Result{
-					Provider:       provider,
-					ProviderKey:    key.Name,
-					ProviderSource: "dsl",
-					API:            api,
-					Stream:         stream,
-					Model:          model,
-					Status:         resp.StatusCode,
-					LatencyMs:      time.Since(start).Milliseconds(),
-					Usage:          usage,
-					UsageStage:     usageStage,
-					FinishReason:   finishReason,
-				}, nil
-			}
-		}
-
+	}
+	if usage == nil {
 		out := usageestimate.Estimate(c.UsageEst, usageestimate.Input{
 			API:          api,
 			Model:        model,
@@ -330,29 +197,59 @@ func (c *Client) ProxyJSON(
 			ResponseBody: respOutBody,
 		})
 		usage = usageMap(out.Usage)
-
-		finishReason := ""
-		if frCfg, ok := pf.Finish.Select(m); ok {
-			if v, err := dslconfig.ExtractFinishReason(m, frCfg, respOutBody); err == nil {
-				finishReason = strings.TrimSpace(v)
-			}
-		}
-
-		return &Result{
-			Provider:       provider,
-			ProviderKey:    key.Name,
-			ProviderSource: "dsl",
-			API:            api,
-			Stream:         stream,
-			Model:          model,
-			Status:         resp.StatusCode,
-			LatencyMs:      time.Since(start).Milliseconds(),
-			Usage:          usage,
-			UsageStage:     out.Stage,
-			FinishReason:   finishReason,
-		}, nil
+		usageStage = out.Stage
 	}
 
+	finishReason := ""
+	if frCfg, ok := pf.Finish.Select(m); ok {
+		if v, err := dslconfig.ExtractFinishReason(m, frCfg, respOutBody); err == nil {
+			finishReason = strings.TrimSpace(v)
+		}
+	}
+
+	return &Result{
+		Provider:       provider,
+		ProviderKey:    key.Name,
+		ProviderSource: "dsl",
+		API:            api,
+		Stream:         stream,
+		Model:          model,
+		Status:         resp.StatusCode,
+		LatencyMs:      time.Since(start).Milliseconds(),
+		Usage:          usage,
+		UsageStage:     usageStage,
+		FinishReason:   finishReason,
+	}, nil
+}
+
+func copyHeadersToClient(gc *gin.Context, hdr http.Header, didTransform bool) {
+	for k, vs := range hdr {
+		if len(vs) == 0 {
+			continue
+		}
+		if strings.EqualFold(k, "Content-Length") {
+			continue
+		}
+		if strings.EqualFold(k, "Content-Encoding") && didTransform {
+			continue
+		}
+		gc.Writer.Header().Set(k, vs[0])
+	}
+}
+
+func (c *Client) handleStreamResponse(
+	gc *gin.Context,
+	provider string,
+	key ProviderKey,
+	api string,
+	start time.Time,
+	pf dslconfig.ProviderFile,
+	m *dslmeta.Meta,
+	model string,
+	reqBody []byte,
+	respDir dslconfig.ResponseDirective,
+	resp *http.Response,
+) (*Result, error) {
 	// stream passthrough
 	var (
 		dumpBuf       []byte
@@ -361,18 +258,9 @@ func (c *Client) ProxyJSON(
 	)
 
 	// copy headers
-	for k, vs := range resp.Header {
-		if len(vs) == 0 {
-			continue
-		}
-		if strings.EqualFold(k, "Content-Length") {
-			continue
-		}
-		gc.Writer.Header().Set(k, vs[0])
-	}
+	copyHeadersToClient(gc, resp.Header, false)
 
 	// Always keep a tail buffer for best-effort usage extraction from SSE.
-	// Note: usage is usually sent near the end of the stream when enabled.
 	tailLimit := 256 << 10 // 256KB
 	if c.UsageEst != nil && c.UsageEst.MaxStreamCollectBytes > 0 {
 		tailLimit = c.UsageEst.MaxStreamCollectBytes
@@ -478,7 +366,7 @@ func (c *Client) ProxyJSON(
 		RequestBody:   reqBody,
 		StreamTail:    usageTail.Bytes(),
 	})
-	usage = usageMap(out.Usage)
+	usage := usageMap(out.Usage)
 	return &Result{
 		Provider:       provider,
 		ProviderKey:    key.Name,
@@ -492,6 +380,205 @@ func (c *Client) ProxyJSON(
 		UsageStage:     out.Stage,
 		FinishReason:   finishReason,
 	}, nil
+}
+
+func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey, api string, stream bool) (*proxyCtx, error) {
+	start := time.Now()
+	pf, ok := c.Registry.GetProvider(provider)
+	if !ok {
+		return nil, fmt.Errorf("provider not found: %s", provider)
+	}
+
+	bodyBytes, root, model, err := readRequestJSON(gc)
+	if err != nil {
+		return nil, err
+	}
+
+	m := &dslmeta.Meta{
+		API:             strings.TrimSpace(api),
+		IsStream:        stream,
+		ActualModelName: strings.TrimSpace(model),
+		APIKey:          strings.TrimSpace(key.Value),
+		BaseURL:         strings.TrimSpace(key.BaseURLOverride),
+		RequestURLPath:  gc.Request.URL.RequestURI(),
+		StartTime:       time.Now(),
+	}
+
+	if err := pf.Routing.Apply(m); err != nil {
+		return nil, err
+	}
+	if !pf.Routing.HasMatch(m) {
+		return nil, fmt.Errorf("dsl provider no match (provider=%s api=%s stream=%v)", provider, api, stream)
+	}
+
+	respDir, _ := pf.Response.Select(m)
+
+	reqTransform, hasReqTransform, root, err := applyRequestTransform(pf, m, root)
+	if err != nil {
+		return nil, err
+	}
+	applyGeminiModelRewrite(api, m)
+
+	reqBody, err := marshalMaybeJSON(bodyBytes, root)
+	if err != nil {
+		return nil, err
+	}
+	reqBody, err = applyReqMap(gc, reqTransform, hasReqTransform, reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	return &proxyCtx{
+		start:           start,
+		provider:        provider,
+		key:             key,
+		api:             api,
+		stream:          stream,
+		pf:              pf,
+		meta:            m,
+		model:           model,
+		reqBody:         reqBody,
+		respDir:         respDir,
+		reqTransform:    reqTransform,
+		hasReqTransform: hasReqTransform,
+	}, nil
+}
+
+func readRequestJSON(gc *gin.Context) (bodyBytes []byte, root map[string]any, model string, err error) {
+	bodyBytes, err = io.ReadAll(gc.Request.Body)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	_ = gc.Request.Body.Close()
+
+	var reqObj any
+	if len(bodyBytes) > 0 {
+		if err := json.Unmarshal(bodyBytes, &reqObj); err != nil {
+			return bodyBytes, nil, "", fmt.Errorf("invalid json: %w", err)
+		}
+	}
+	root, _ = reqObj.(map[string]any)
+
+	if root != nil {
+		if v, ok := root["model"].(string); ok {
+			model = strings.TrimSpace(v)
+		}
+	}
+	if strings.TrimSpace(model) == "" {
+		if m2, ok := parseGeminiModelFromPath(gc.Request.URL.Path); ok && strings.TrimSpace(m2) != "" {
+			model = strings.TrimSpace(m2)
+		}
+	}
+	return bodyBytes, root, model, nil
+}
+
+func applyRequestTransform(pf dslconfig.ProviderFile, meta *dslmeta.Meta, root map[string]any) (dslconfig.RequestTransform, bool, map[string]any, error) {
+	t, ok := pf.Request.Select(meta)
+	if !ok {
+		return dslconfig.RequestTransform{}, false, root, nil
+	}
+
+	t.Apply(meta)
+
+	if root != nil && meta.DSLModelMapped != "" {
+		// Only override when the field exists (OpenAI-style). Gemini native requests do not have "model" in body.
+		if _, exists := root["model"]; exists {
+			root["model"] = meta.DSLModelMapped
+		}
+	}
+	if root != nil && len(t.JSONOps) > 0 {
+		out, err := dslconfig.ApplyJSONOps(meta, root, t.JSONOps)
+		if err != nil {
+			return dslconfig.RequestTransform{}, false, root, err
+		}
+		root, _ = out.(map[string]any)
+	}
+	return t, true, root, nil
+}
+
+func applyGeminiModelRewrite(api string, meta *dslmeta.Meta) {
+	if meta == nil {
+		return
+	}
+	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(api)), "gemini.") {
+		return
+	}
+	if strings.TrimSpace(meta.DSLModelMapped) == "" {
+		return
+	}
+	if newPath, ok := replaceGeminiModelInPath(meta.RequestURLPath, meta.DSLModelMapped); ok {
+		meta.RequestURLPath = newPath
+	}
+}
+
+func marshalMaybeJSON(bodyBytes []byte, root map[string]any) ([]byte, error) {
+	if root == nil {
+		return bodyBytes, nil
+	}
+	b, err := json.Marshal(root)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func applyReqMap(gc *gin.Context, t dslconfig.RequestTransform, hasT bool, reqBody []byte) ([]byte, error) {
+	if !hasT || strings.TrimSpace(t.ReqMapMode) == "" {
+		return reqBody, nil
+	}
+	ce := strings.ToLower(strings.TrimSpace(gc.GetHeader("Content-Encoding")))
+	if ce != "" && ce != "identity" {
+		return nil, fmt.Errorf("cannot transform encoded client request (Content-Encoding=%q)", gc.GetHeader("Content-Encoding"))
+	}
+	switch strings.ToLower(strings.TrimSpace(t.ReqMapMode)) {
+	case "openai_chat_to_openai_responses":
+		return dslconfig.MapOpenAIChatCompletionsToResponsesRequest(reqBody)
+	default:
+		return nil, fmt.Errorf("unsupported req_map mode %q", t.ReqMapMode)
+	}
+}
+
+func (c *Client) doUpstreamRequest(gc *gin.Context, provider string, pf dslconfig.ProviderFile, m *dslmeta.Meta, reqBody []byte) (*http.Response, error) {
+	if m == nil {
+		return nil, errors.New("meta is nil")
+	}
+	baseURL := strings.TrimRight(strings.TrimSpace(m.BaseURL), "/")
+	if baseURL == "" {
+		return nil, errors.New("upstream base_url is empty")
+	}
+	upstreamURL := baseURL + m.RequestURLPath
+
+	reqCtx, cancel := context.WithTimeout(gc.Request.Context(), c.WriteTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, gc.Request.Method, upstreamURL, bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	pf.Headers.Apply(m, req.Header)
+
+	if rec := trafficdump.FromContext(gc); rec != nil && rec.MaxBytes() > 0 {
+		limited, truncated := trafficdump.LimitBytes(reqBody, rec.MaxBytes())
+		trafficdump.AppendUpstreamRequest(gc, req.Method, upstreamURL, req.Header, limited, false, truncated)
+	}
+
+	httpc, err := c.httpClientForProvider(provider)
+	if err != nil {
+		return nil, err
+	}
+	return httpc.Do(req)
+}
+
+func isEffectiveStream(clientStream bool, resp *http.Response) bool {
+	if clientStream {
+		return true
+	}
+	if resp == nil {
+		return false
+	}
+	upstreamCT := strings.ToLower(resp.Header.Get("Content-Type"))
+	return strings.Contains(upstreamCT, "text/event-stream")
 }
 
 func maybeDecodeUpstreamBody(body []byte, contentEncoding string) ([]byte, error) {
