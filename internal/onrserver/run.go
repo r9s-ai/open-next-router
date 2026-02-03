@@ -30,7 +30,7 @@ func Run(cfgPath string) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	accessLogger, accessClose, err := openAccessLogger(cfg)
+	accessLogger, accessClose, accessColor, err := openAccessLogger(cfg)
 	if err != nil {
 		return fmt.Errorf("init access log: %w", err)
 	}
@@ -84,7 +84,7 @@ func Run(cfgPath string) error {
 
 	installReloadSignalHandler(cfg, st, reg)
 
-	engine := NewRouter(cfg, st, reg, pclient, accessLogger)
+	engine := NewRouter(cfg, st, reg, pclient, accessLogger, accessColor)
 
 	log.Printf("open-next-router listening on %s", cfg.Server.Listen)
 	if err := engine.Run(cfg.Server.Listen); err != nil {
@@ -93,33 +93,29 @@ func Run(cfgPath string) error {
 	return nil
 }
 
-type nopCloser struct{ io.Writer }
-
-func (n nopCloser) Close() error { return nil }
-
-func openAccessLogger(cfg *config.Config) (*log.Logger, io.Closer, error) {
+func openAccessLogger(cfg *config.Config) (*log.Logger, io.Closer, bool, error) {
 	if cfg == nil || !cfg.Logging.AccessLog {
-		return nil, nil, nil
+		return nil, nil, false, nil
 	}
 
 	path := strings.TrimSpace(cfg.Logging.AccessLogPath)
 	if path == "" {
 		// default: stdout (same as current behavior)
-		return log.New(os.Stdout, "", log.LstdFlags), nopCloser{os.Stdout}, nil
+		return log.New(os.Stdout, "", log.LstdFlags), nil, true, nil
 	}
 
 	dir := filepath.Dir(path)
 	if strings.TrimSpace(dir) != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0o750); err != nil {
-			return nil, nil, err
+			return nil, nil, false, err
 		}
 	}
 	// #nosec G304 -- access_log_path comes from trusted config/env.
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
-	return log.New(f, "", log.LstdFlags), f, nil
+	return log.New(f, "", log.LstdFlags), f, false, nil
 }
 
 type closerFunc func() error

@@ -11,7 +11,7 @@ import (
 	"github.com/r9s-ai/open-next-router/internal/requestid"
 )
 
-func requestLogger(l *log.Logger) gin.HandlerFunc {
+func requestLoggerWithColor(l *log.Logger, color bool) gin.HandlerFunc {
 	if l == nil {
 		l = log.New(os.Stdout, "", log.LstdFlags)
 	}
@@ -71,6 +71,6 @@ func requestLogger(l *log.Logger) gin.HandlerFunc {
 			fields["finish_reason"] = v
 		}
 
-		l.Println(logx.FormatRequestLine(time.Now(), status, latency, c.ClientIP(), c.Request.Method, c.Request.URL.Path, fields))
+		l.Println(logx.FormatRequestLineWithColor(time.Now(), status, latency, c.ClientIP(), c.Request.Method, c.Request.URL.Path, fields, color))
 	}
 }

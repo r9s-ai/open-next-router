@@ -12,8 +12,14 @@ import (
 
 var enableColor = isatty.IsTerminal(os.Stdout.Fd()) && strings.TrimSpace(os.Getenv("NO_COLOR")) == ""
 
+func ColorEnabled() bool { return enableColor }
+
 func ColorizeStatus(status int) string {
-	if !enableColor {
+	return ColorizeStatusWith(status, enableColor)
+}
+
+func ColorizeStatusWith(status int, color bool) string {
+	if !color {
 		return fmt.Sprintf("%d", status)
 	}
 	// ANSI colors
@@ -49,10 +55,23 @@ func FormatRequestLine(
 	path string,
 	fields map[string]any,
 ) string {
+	return FormatRequestLineWithColor(ts, status, latency, clientIP, method, path, fields, enableColor)
+}
+
+func FormatRequestLineWithColor(
+	ts time.Time,
+	status int,
+	latency time.Duration,
+	clientIP string,
+	method string,
+	path string,
+	fields map[string]any,
+	color bool,
+) string {
 	base := fmt.Sprintf(
 		`[ONR] %s | %s | %s | %s | %s %q`,
 		ts.Format("2006/01/02 - 15:04:05"),
-		ColorizeStatus(status),
+		ColorizeStatusWith(status, color),
 		latency.String(),
 		strings.TrimSpace(clientIP),
 		strings.TrimSpace(method),
