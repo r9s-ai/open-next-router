@@ -60,6 +60,12 @@ go run ./cmd/onr -t ./onr.yaml
 
 For more information about version management and releases, see [docs/RELEASE.md](docs/RELEASE.md).
 
+## Version
+
+```bash
+go run ./cmd/onr -V
+```
+
 ## Docker Compose
 
 Create runtime config files first:

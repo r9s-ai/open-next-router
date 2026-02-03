@@ -26,7 +26,7 @@ func main() {
 	flag.StringVar(&cfgPath, "c", "onr.yaml", "path to config yaml (alias of --config)")
 	flag.StringVar(&signalCmd, "s", "", "send signal to a running onr (supported: reload)")
 	flag.BoolVar(&testConfig, "t", false, "test config and exit (no network)")
-	flag.BoolVar(&showVersion, "version", false, "show version information")
+	flag.BoolVar(&showVersion, "V", false, "show version information")
 	flag.Parse()
 
 	// Show version and exit
