@@ -11,4 +11,3 @@ func TestValidateProvidersDir_ConfigProviders(t *testing.T) {
 		t.Fatalf("validate providers dir failed: %v", err)
 	}
 }
-

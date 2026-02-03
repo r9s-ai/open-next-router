@@ -5,6 +5,8 @@ import (
 	"strings"
 )
 
+const providerKeyword = "provider"
+
 func parseProviderConfig(path string, content string) (ProviderRouting, ProviderHeaders, ProviderRequestTransform, ProviderResponse, ProviderError, ProviderUsage, ProviderFinishReason, error) {
 	s := newScanner(path, content)
 	var routing ProviderRouting
@@ -19,7 +21,7 @@ func parseProviderConfig(path string, content string) (ProviderRouting, Provider
 		if tok.kind == tokEOF {
 			break
 		}
-		if tok.kind == tokIdent && tok.text == "provider" {
+		if tok.kind == tokIdent && tok.text == providerKeyword {
 			nameTok := s.nextNonTrivia()
 			if nameTok.kind != tokString {
 				return ProviderRouting{}, ProviderHeaders{}, ProviderRequestTransform{}, ProviderResponse{}, ProviderError{}, ProviderUsage{}, ProviderFinishReason{}, s.errAt(nameTok, "expected provider name string literal")

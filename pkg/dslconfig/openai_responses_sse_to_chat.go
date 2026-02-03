@@ -10,6 +10,11 @@ import (
 	"time"
 )
 
+const (
+	responsesFunctionCallType = "function_call"
+	finishReasonStop          = "stop"
+)
+
 // TransformOpenAIResponsesSSEToChatCompletionsSSE converts OpenAI Responses SSE stream into
 // OpenAI Chat Completions "data: {...}\n\n" chunks, ending with "data: [DONE]\n\n".
 //
@@ -229,7 +234,7 @@ func (s *responsesSSEToChatState) handleOutputItemFunctionCall(root map[string]a
 	if item == nil {
 		return nil
 	}
-	if strings.TrimSpace(coerceString(item["type"])) != "function_call" {
+	if strings.TrimSpace(coerceString(item["type"])) != responsesFunctionCallType {
 		return nil
 	}
 
@@ -294,8 +299,8 @@ func (s *responsesSSEToChatState) emitFinalFrom(root map[string]any) error {
 		full = inner
 	}
 
-	mapped, err := mapOpenAIResponsesObjectToChat(full)
-	if err != nil {
+	mapped := mapOpenAIResponsesObjectToChat(full)
+	if mapped == nil {
 		// Keep best-effort: do not fail the whole stream on mapping errors.
 		return nil
 	}
@@ -334,8 +339,10 @@ func (s *responsesSSEToChatState) emitFinalFrom(root map[string]any) error {
 	if err := writeSSEDataJSON(s.w, finalChunk); err != nil {
 		return err
 	}
-	_, err = io.WriteString(s.w, "data: [DONE]\n\n")
-	return err
+	if _, err := io.WriteString(s.w, "data: [DONE]\n\n"); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *responsesSSEToChatState) finishReasonFromMapped(mapped map[string]any) string {
@@ -346,7 +353,7 @@ func (s *responsesSSEToChatState) finishReasonFromMapped(mapped map[string]any) 
 		}
 	}
 	if strings.TrimSpace(finishReason) == "" {
-		finishReason = "stop"
+		finishReason = finishReasonStop
 	}
 	// new-api aligned: when only tool calls were emitted (no text), use tool_calls.
 	if s.sawToolCall && !s.sawText {

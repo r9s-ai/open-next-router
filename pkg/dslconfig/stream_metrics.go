@@ -62,8 +62,6 @@ func (a *StreamMetricsAggregator) OnSSEDataJSON(payload []byte) error {
 			if s := strings.TrimSpace(v); s != "" {
 				a.finishReason = s
 			}
-		} else {
-			// ignore individual event errors
 		}
 	}
 
@@ -72,7 +70,7 @@ func (a *StreamMetricsAggregator) OnSSEDataJSON(payload []byte) error {
 		return nil
 	}
 
-	if mode == "anthropic" {
+	if mode == usageModeAnthropic {
 		// Anthropic SSE events may carry usage at:
 		// - obj.usage (message_delta)
 		// - obj.message.usage (message_start)
@@ -158,7 +156,7 @@ func (a *StreamMetricsAggregator) Result() (usage *Usage, cachedTokens int, fini
 	finishReason = strings.TrimSpace(a.finishReason)
 
 	mode := strings.ToLower(strings.TrimSpace(a.usageCfg.Mode))
-	if mode == "anthropic" {
+	if mode == usageModeAnthropic {
 		s := a.anthropicSnap
 		if s.InputTokens == 0 && s.OutputTokens == 0 && s.CacheReadTokens == 0 && s.CacheWriteTokens == 0 {
 			return nil, 0, finishReason, false

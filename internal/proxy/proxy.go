@@ -24,6 +24,8 @@ import (
 	"github.com/r9s-ai/open-next-router/pkg/usageestimate"
 )
 
+const contentEncodingIdentity = "identity"
+
 type ProviderKey struct {
 	Name            string
 	Value           string
@@ -96,7 +98,9 @@ func (c *Client) ProxyJSON(
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	// If upstream returns SSE, treat it as streaming regardless of client "stream" flag.
 	effectiveStream := isEffectiveStream(stream, resp)
@@ -276,11 +280,13 @@ func (c *Client) handleStreamResponse(
 			if err != nil {
 				return nil, err
 			}
-			defer gr.Close()
+			defer func() {
+				_ = gr.Close()
+			}()
 			src = gr
 			// Override encoding for downstream.
 			gc.Writer.Header().Del("Content-Encoding")
-		} else if ce != "" && ce != "identity" {
+		} else if ce != "" && ce != contentEncodingIdentity {
 			return nil, fmt.Errorf("cannot transform encoded upstream response (Content-Encoding=%q)", resp.Header.Get("Content-Encoding"))
 		}
 
@@ -527,7 +533,7 @@ func applyReqMap(gc *gin.Context, t dslconfig.RequestTransform, hasT bool, reqBo
 		return reqBody, nil
 	}
 	ce := strings.ToLower(strings.TrimSpace(gc.GetHeader("Content-Encoding")))
-	if ce != "" && ce != "identity" {
+	if ce != "" && ce != contentEncodingIdentity {
 		return nil, fmt.Errorf("cannot transform encoded client request (Content-Encoding=%q)", gc.GetHeader("Content-Encoding"))
 	}
 	switch strings.ToLower(strings.TrimSpace(t.ReqMapMode)) {
@@ -584,14 +590,16 @@ func isEffectiveStream(clientStream bool, resp *http.Response) bool {
 func maybeDecodeUpstreamBody(body []byte, contentEncoding string) ([]byte, error) {
 	ce := strings.ToLower(strings.TrimSpace(contentEncoding))
 	switch ce {
-	case "", "identity":
+	case "", contentEncodingIdentity:
 		return nil, nil
 	case "gzip":
 		gr, err := gzip.NewReader(bytes.NewReader(body))
 		if err != nil {
 			return nil, err
 		}
-		defer gr.Close()
+		defer func() {
+			_ = gr.Close()
+		}()
 		decoded, err := io.ReadAll(gr)
 		if err != nil {
 			return nil, err
@@ -603,6 +611,9 @@ func maybeDecodeUpstreamBody(body []byte, contentEncoding string) ([]byte, error
 }
 
 func (c *Client) httpClientForProvider(provider string) (*http.Client, error) {
+	if c == nil {
+		return http.DefaultClient, nil
+	}
 	// default client
 	base := c.HTTP
 	if base == nil {
@@ -610,7 +621,7 @@ func (c *Client) httpClientForProvider(provider string) (*http.Client, error) {
 	}
 
 	raw := ""
-	if c != nil && c.ProxyByProvider != nil {
+	if c.ProxyByProvider != nil {
 		raw = strings.TrimSpace(c.ProxyByProvider[strings.ToLower(strings.TrimSpace(provider))])
 	}
 	if raw == "" {

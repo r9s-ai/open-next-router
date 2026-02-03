@@ -3,7 +3,6 @@ package onrserver
 import (
 	"bytes"
 	"io"
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -17,7 +16,7 @@ func makeGeminiHandler(cfg *config.Config, st *state, pclient *proxy.Client) gin
 	return func(c *gin.Context) {
 		model, action, err := parseGeminiModelAction(c.Param("path"))
 		if err != nil {
-			writeOpenAIError(c, http.StatusBadRequest, "invalid_request_error", "invalid_path", err.Error())
+			writeOpenAIError(c, "invalid_path", err.Error())
 			return
 		}
 
@@ -25,8 +24,6 @@ func makeGeminiHandler(cfg *config.Config, st *state, pclient *proxy.Client) gin
 		if !ok {
 			writeOpenAIError(
 				c,
-				http.StatusBadRequest,
-				"invalid_request_error",
 				"unsupported_gemini_action",
 				"unsupported gemini action: "+action,
 			)
@@ -49,7 +46,7 @@ func makeGeminiHandler(cfg *config.Config, st *state, pclient *proxy.Client) gin
 
 		bodyBytes, _, _, err := peekJSONBody(c)
 		if err != nil {
-			writeOpenAIError(c, http.StatusBadRequest, "invalid_request_error", "invalid_json", err.Error())
+			writeOpenAIError(c, "invalid_json", err.Error())
 			return
 		}
 
@@ -73,8 +70,6 @@ func makeGeminiHandler(cfg *config.Config, st *state, pclient *proxy.Client) gin
 		if provider == "" {
 			writeOpenAIError(
 				c,
-				http.StatusBadRequest,
-				"invalid_request_error",
 				"provider_not_selected",
 				"no provider selected: set x-onr-provider or configure models.yaml",
 			)
@@ -84,7 +79,7 @@ func makeGeminiHandler(cfg *config.Config, st *state, pclient *proxy.Client) gin
 		keys := st.Keys()
 		k, ok := keys.NextKey(provider)
 		if !ok {
-			writeOpenAIError(c, http.StatusBadRequest, "invalid_request_error", "missing_upstream_key", "no upstream key for provider: "+provider)
+			writeOpenAIError(c, "missing_upstream_key", "no upstream key for provider: "+provider)
 			return
 		}
 
@@ -94,38 +89,10 @@ func makeGeminiHandler(cfg *config.Config, st *state, pclient *proxy.Client) gin
 			BaseURLOverride: k.BaseURLOverride,
 		}, api, stream)
 		if perr != nil {
-			writeOpenAIError(c, http.StatusBadRequest, "invalid_request_error", "proxy_error", perr.Error())
+			writeOpenAIError(c, "proxy_error", perr.Error())
 			return
 		}
-		if res != nil {
-			c.Set("onr.latency_ms", res.LatencyMs)
-			if res.Status > 0 {
-				c.Set("onr.upstream_status", res.Status)
-			}
-			if strings.TrimSpace(res.FinishReason) != "" {
-				c.Set("onr.finish_reason", strings.TrimSpace(res.FinishReason))
-			}
-			if strings.TrimSpace(res.UsageStage) != "" {
-				c.Set("onr.usage_stage", res.UsageStage)
-			}
-			if res.Usage != nil {
-				if v, ok := res.Usage["input_tokens"]; ok {
-					c.Set("onr.usage_input_tokens", v)
-				}
-				if v, ok := res.Usage["output_tokens"]; ok {
-					c.Set("onr.usage_output_tokens", v)
-				}
-				if v, ok := res.Usage["total_tokens"]; ok {
-					c.Set("onr.usage_total_tokens", v)
-				}
-				if v, ok := res.Usage["cache_read_tokens"]; ok {
-					c.Set("onr.usage_cache_read_tokens", v)
-				}
-				if v, ok := res.Usage["cache_write_tokens"]; ok {
-					c.Set("onr.usage_cache_write_tokens", v)
-				}
-			}
-		}
+		setProxyResultContext(c, res)
 
 		_ = cfg
 	}

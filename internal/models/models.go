@@ -76,11 +76,11 @@ func (r *Router) NextProvider(modelID string) (string, bool) {
 	if !ok || len(rt.Providers) == 0 {
 		return "", false
 	}
-	strat := rt.Strategy
-	if strat == "" {
-		strat = StrategyRoundRobin
+	strategy := rt.Strategy
+	if strategy == "" {
+		strategy = StrategyRoundRobin
 	}
-	switch strat {
+	switch strategy {
 	case StrategyRoundRobin:
 		i := r.nextIdx[id] % len(rt.Providers)
 		r.nextIdx[id] = (i + 1) % len(rt.Providers)
@@ -122,6 +122,7 @@ func Load(path string) (*Router, error) {
 	if p == "" {
 		return NewRouter(nil), nil
 	}
+	// #nosec G304 -- path is provided by trusted config.
 	b, err := os.ReadFile(p)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

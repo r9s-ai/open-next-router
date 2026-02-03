@@ -3,8 +3,8 @@ package dslconfig
 import "strings"
 
 var supportedErrorMapModes = map[string]struct{}{
-	"openai": {},
-	"common": {},
+	"openai":      {},
+	"common":      {},
 	"passthrough": {},
 }
 

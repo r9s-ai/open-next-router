@@ -42,10 +42,11 @@ func TestMapOpenAIChatCompletionsToResponsesRequest_BasicText(t *testing.T) {
 }
 
 func TestMapOpenAIChatCompletionsToResponsesRequest_ToolOutput(t *testing.T) {
+	const toolNameGetWeather = "get_weather"
 	in := []byte(`{
   "model":"gpt-4o-mini",
   "messages":[
-    {"role":"assistant","content":"","tool_calls":[{"id":"call_1","type":"function","function":{"name":"get_weather","arguments":"{}"}}]},
+    {"role":"assistant","content":"","tool_calls":[{"id":"call_1","type":"function","function":{"name":"` + toolNameGetWeather + `","arguments":"{}"}}]},
     {"role":"tool","tool_call_id":"call_1","content":"{\"temp\":20}"}
   ]
 }`)
@@ -59,7 +60,7 @@ func TestMapOpenAIChatCompletionsToResponsesRequest_ToolOutput(t *testing.T) {
 		t.Fatalf("expected 3 input items (assistant + function_call + function_call_output), got %d", len(input))
 	}
 	fc := mustAnyMap(t, input[1])
-	if fc["type"] != "function_call" || fc["call_id"] != "call_1" || fc["name"] != "get_weather" {
+	if fc["type"] != "function_call" || fc["call_id"] != "call_1" || fc["name"] != toolNameGetWeather {
 		t.Fatalf("unexpected function_call item: %#v", fc)
 	}
 	fco := mustAnyMap(t, input[2])

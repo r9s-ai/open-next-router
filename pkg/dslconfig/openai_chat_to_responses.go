@@ -7,6 +7,11 @@ import (
 	"strings"
 )
 
+const (
+	chatRoleFunction    = "function"
+	chatContentTypeText = "text"
+)
+
 // MapOpenAIChatCompletionsToResponsesRequest converts an OpenAI-style chat.completions request JSON
 // into an OpenAI Responses request JSON (best-effort), following new-api's compatibility semantics.
 //
@@ -79,7 +84,7 @@ func mapChatMessagesToResponsesInput(messagesAny any) (inputItems []map[string]a
 		}
 
 		switch role {
-		case "tool", "function":
+		case "tool", chatRoleFunction:
 			appendToolOutputAsResponsesItem(&inputItems, msg)
 		case "system", "developer":
 			if s := strings.TrimSpace(extractChatTextFromContent(msg["content"])); s != "" {
@@ -154,7 +159,7 @@ func mapChatContentPartsToResponses(parts []any) []map[string]any {
 		}
 		pt := strings.TrimSpace(coerceString(pm["type"]))
 		switch pt {
-		case "text":
+		case chatContentTypeText:
 			out = append(out, map[string]any{
 				"type": "input_text",
 				"text": coerceString(pm["text"]),
@@ -322,7 +327,7 @@ func appendAssistantToolCallsAsInputItems(dst *[]map[string]any, msg map[string]
 			continue
 		}
 		typ := strings.TrimSpace(coerceString(m["type"]))
-		if typ != "" && typ != "function" {
+		if typ != "" && typ != chatRoleFunction {
 			continue
 		}
 		fn, _ := m["function"].(map[string]any)
@@ -352,7 +357,7 @@ func mapChatToolsToResponsesTools(tools []any) []any {
 		}
 		typ := strings.TrimSpace(coerceString(m["type"]))
 		switch typ {
-		case "function":
+		case chatRoleFunction:
 			fn, _ := m["function"].(map[string]any)
 			if fn == nil {
 				continue
@@ -377,15 +382,15 @@ func mapChatToolChoiceToResponses(v any) any {
 		return t
 	case map[string]any:
 		typ := strings.TrimSpace(coerceString(t["type"]))
-		if typ == "function" {
+		if typ == chatRoleFunction {
 			// Chat: {"type":"function","function":{"name":"..."}}
 			// Responses: {"type":"function","name":"..."}
 			if name := strings.TrimSpace(coerceString(t["name"])); name != "" {
-				return map[string]any{"type": "function", "name": name}
+				return map[string]any{"type": chatRoleFunction, "name": name}
 			}
 			if fn, ok := t["function"].(map[string]any); ok && fn != nil {
 				if name := strings.TrimSpace(coerceString(fn["name"])); name != "" {
-					return map[string]any{"type": "function", "name": name}
+					return map[string]any{"type": chatRoleFunction, "name": name}
 				}
 			}
 		}

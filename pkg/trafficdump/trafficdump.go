@@ -105,13 +105,14 @@ func StartWithRequestID(c *gin.Context, cfg Config, requestID string) (*Recorder
 	}
 
 	dir := strings.TrimSpace(cfg.Dir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, err
 	}
 	path := filepath.Join(dir, buf.String())
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return nil, err
 	}
+	// #nosec G304 -- path is derived from configured dump dir and template.
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return nil, err

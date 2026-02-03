@@ -24,6 +24,13 @@ type UsageExtractConfig struct {
 	TotalTokensExpr      *UsageExpr
 }
 
+const (
+	usageModeOpenAI    = "openai"
+	usageModeAnthropic = "anthropic"
+	usageModeGemini    = "gemini"
+	usageModeCustom    = "custom"
+)
+
 type ProviderUsage struct {
 	Defaults UsageExtractConfig
 	Matches  []MatchUsage
@@ -84,7 +91,7 @@ func ExtractUsage(meta *dslmeta.Meta, cfg UsageExtractConfig, respBody []byte) (
 	var inputTokens, outputTokens, cachedTokens, cacheWriteTokens int
 	var totalTokens *int
 	switch mode {
-	case "openai":
+	case usageModeOpenAI:
 		inputTokens = firstInt(
 			getIntByPath(root, "$.usage.prompt_tokens"),
 			getIntByPath(root, "$.usage.input_tokens"),
@@ -98,12 +105,12 @@ func ExtractUsage(meta *dslmeta.Meta, cfg UsageExtractConfig, respBody []byte) (
 			getIntByPath(root, "$.usage.input_tokens_details.cached_tokens"),
 			getIntByPath(root, "$.usage.cached_tokens"),
 		)
-	case "anthropic":
+	case usageModeAnthropic:
 		inputTokens = getIntByPath(root, "$.usage.input_tokens")
 		outputTokens = getIntByPath(root, "$.usage.output_tokens")
 		cachedTokens = getIntByPath(root, "$.usage.cache_read_input_tokens")
 		cacheWriteTokens = getIntByPath(root, "$.usage.cache_creation_input_tokens")
-	case "gemini":
+	case usageModeGemini:
 		// Gemini native usage fields (new-api alignment):
 		// - usageMetadata.promptTokenCount
 		// - usageMetadata.candidatesTokenCount
@@ -131,7 +138,7 @@ func ExtractUsage(meta *dslmeta.Meta, cfg UsageExtractConfig, respBody []byte) (
 		); v != 0 {
 			totalTokens = &v
 		}
-	case "custom":
+	case usageModeCustom:
 		inputTokens = evalUsageField(root, cfg.InputTokensExpr, cfg.InputTokensPath)
 		outputTokens = evalUsageField(root, cfg.OutputTokensExpr, cfg.OutputTokensPath)
 		cachedTokens = evalUsageField(root, cfg.CacheReadTokensExpr, cfg.CacheReadTokensPath)

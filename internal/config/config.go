@@ -58,6 +58,7 @@ type Config struct {
 }
 
 func Load(path string) (*Config, error) {
+	// #nosec G304 -- path is provided by trusted config/flag.
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err

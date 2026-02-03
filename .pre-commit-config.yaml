@@ -1,0 +1,35 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        # Keep Markdown hard line breaks; clean everything else.
+        args: [--markdown-linebreak-ext=md, --markdown-linebreak-ext=mdx]
+      - id: check-yaml
+      - id: check-json
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: [--maxkb=5120]
+
+  - repo: local
+    hooks:
+      - id: gofmt
+        name: gofmt
+        entry: gofmt -w
+        language: system
+        types: [go]
+
+      - id: gocyclo
+        name: gocyclo (over 30)
+        entry: gocyclo -over 30 .
+        language: system
+        pass_filenames: false
+
+      - id: golangci-lint
+        name: golangci-lint
+        entry: golangci-lint run --timeout=3m
+        language: system
+        types: [go]
+        pass_filenames: false

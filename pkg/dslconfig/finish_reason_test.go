@@ -19,25 +19,27 @@ func TestExtractFinishReason_OpenAI(t *testing.T) {
 }
 
 func TestExtractFinishReason_Anthropic(t *testing.T) {
+	const finishReasonEndTurn = "end_turn"
 	meta := &dslmeta.Meta{API: "claude.messages"}
-	body := []byte(`{"stop_reason":"end_turn"}`)
+	body := []byte(`{"stop_reason":"` + finishReasonEndTurn + `"}`)
 	v, err := ExtractFinishReason(meta, FinishReasonExtractConfig{Mode: "anthropic"}, body)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if v != "end_turn" {
+	if v != finishReasonEndTurn {
 		t.Fatalf("unexpected finish_reason: %q", v)
 	}
 }
 
 func TestExtractFinishReason_AnthropicStreamDelta(t *testing.T) {
+	const finishReasonEndTurn = "end_turn"
 	meta := &dslmeta.Meta{API: "claude.messages", IsStream: true}
-	body := []byte(`{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":12}}`)
+	body := []byte(`{"type":"message_delta","delta":{"stop_reason":"` + finishReasonEndTurn + `","stop_sequence":null},"usage":{"output_tokens":12}}`)
 	v, err := ExtractFinishReason(meta, FinishReasonExtractConfig{Mode: "anthropic"}, body)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if v != "end_turn" {
+	if v != finishReasonEndTurn {
 		t.Fatalf("unexpected finish_reason: %q", v)
 	}
 }

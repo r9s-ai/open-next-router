@@ -7,29 +7,44 @@
 // expected to remain stable (source-compatible) within the same major version:
 //
 //   - Registry / ProviderFile:
-//       - NewRegistry, DefaultRegistry
-//       - (*Registry).ReloadFromDir, (*Registry).ListProviderNames, (*Registry).GetProvider
-//       - ValidateProviderFile, ValidateProvidersDir
+//
+//   - NewRegistry, DefaultRegistry
+//
+//   - (*Registry).ReloadFromDir, (*Registry).ListProviderNames, (*Registry).GetProvider
+//
+//   - ValidateProviderFile, ValidateProvidersDir
 //
 //   - Routing:
-//       - ProviderRouting, RoutingMatch
-//       - (ProviderRouting).HasMatch, (ProviderRouting).Apply
+//
+//   - ProviderRouting, RoutingMatch
+//
+//   - (ProviderRouting).HasMatch, (ProviderRouting).Apply
 //
 //   - Request transform:
-//       - ProviderRequestTransform, MatchRequestTransform, RequestTransform
-//       - (ProviderRequestTransform).Select
-//       - (RequestTransform).Apply
-//       - JSONOp and related helpers in json_ops.go
+//
+//   - ProviderRequestTransform, MatchRequestTransform, RequestTransform
+//
+//   - (ProviderRequestTransform).Select
+//
+//   - (RequestTransform).Apply
+//
+//   - JSONOp and related helpers in json_ops.go
 //
 //   - Response / error mapping:
-//       - ProviderResponse, MatchResponse, ResponseDirective
-//       - ProviderError, MatchError, ErrorDirective (aliases in error.go)
-//       - (ProviderResponse).Select (and the same selection behavior for ProviderError)
+//
+//   - ProviderResponse, MatchResponse, ResponseDirective
+//
+//   - ProviderError, MatchError, ErrorDirective (aliases in error.go)
+//
+//   - (ProviderResponse).Select (and the same selection behavior for ProviderError)
 //
 //   - Usage extraction:
-//       - ProviderUsage, MatchUsage, UsageExtractConfig
-//       - ParseUsageExpr, UsageExpr
-//       - ExtractUsage
+//
+//   - ProviderUsage, MatchUsage, UsageExtractConfig
+//
+//   - ParseUsageExpr, UsageExpr
+//
+//   - ExtractUsage
 //
 // # Host integration
 //
@@ -43,4 +58,3 @@
 //   - Apply ProviderResponse / ProviderError selection at the boundary where the host
 //     writes the final response to the client.
 package dslconfig
-

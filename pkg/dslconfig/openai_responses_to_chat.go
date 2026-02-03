@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+const finishReasonLength = "length"
+
 // MapOpenAIResponsesToChatCompletions maps an OpenAI Responses API JSON response into an
 // OpenAI Chat Completions JSON response (best-effort).
 //
@@ -21,9 +23,9 @@ func MapOpenAIResponsesToChatCompletions(respBody []byte) ([]byte, error) {
 	if root == nil {
 		return nil, fmt.Errorf("responses json is not an object")
 	}
-	outObj, err := mapOpenAIResponsesObjectToChat(root)
-	if err != nil {
-		return nil, err
+	outObj := mapOpenAIResponsesObjectToChat(root)
+	if outObj == nil {
+		return nil, fmt.Errorf("responses json is not an object")
 	}
 	b, err := json.Marshal(outObj)
 	if err != nil {
@@ -32,7 +34,10 @@ func MapOpenAIResponsesToChatCompletions(respBody []byte) ([]byte, error) {
 	return b, nil
 }
 
-func mapOpenAIResponsesObjectToChat(root map[string]any) (map[string]any, error) {
+func mapOpenAIResponsesObjectToChat(root map[string]any) map[string]any {
+	if root == nil {
+		return nil
+	}
 	// Some SSE events wrap the final response in {"response":{...}}.
 	if inner, ok := root["response"].(map[string]any); ok && inner != nil {
 		root = inner
@@ -89,7 +94,7 @@ func mapOpenAIResponsesObjectToChat(root map[string]any) (map[string]any, error)
 	if usage != nil {
 		out["usage"] = usage
 	}
-	return out, nil
+	return out
 }
 
 func extractResponsesOutput(root map[string]any) (text string, toolCalls []any) {
@@ -176,20 +181,20 @@ func mapResponsesFinishReason(root map[string]any) string {
 	if inc, ok := root["incomplete_details"].(map[string]any); ok && inc != nil {
 		reason := strings.ToLower(strings.TrimSpace(coerceString(inc["reason"])))
 		switch reason {
-		case "max_output_tokens", "length":
-			return "length"
+		case "max_output_tokens", finishReasonLength:
+			return finishReasonLength
 		case "content_filter":
 			return "content_filter"
 		}
 	}
 	switch status {
 	case "completed", "":
-		return "stop"
+		return finishReasonStop
 	case "incomplete":
-		return "length"
+		return finishReasonLength
 	default:
 		// Keep it conservative.
-		return "stop"
+		return finishReasonStop
 	}
 }
 

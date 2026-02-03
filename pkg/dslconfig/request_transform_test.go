@@ -64,10 +64,15 @@ provider "azure-openai" {
   }
 }
 `
-	routing, _, req, _, _, _, _, err := parseProviderConfig("azure-openai.conf", conf)
+	routing, headers, req, response, perr, usage, finish, err := parseProviderConfig("azure-openai.conf", conf)
 	if err != nil {
 		t.Fatalf("parseProviderConfig: %v", err)
 	}
+	_ = headers
+	_ = response
+	_ = perr
+	_ = usage
+	_ = finish
 
 	m := &dslmeta.Meta{
 		API:             "chat.completions",

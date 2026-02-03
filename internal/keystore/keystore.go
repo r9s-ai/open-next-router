@@ -37,6 +37,7 @@ type fileFormat struct {
 var encValuePattern = regexp.MustCompile(`^ENC\[v1:aesgcm:([A-Za-z0-9+/=]+)\]$`)
 
 func Load(path string) (*Store, error) {
+	// #nosec G304 -- path is provided by trusted config.
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -191,7 +192,9 @@ func Encrypt(plain string) (string, error) {
 		return "", err
 	}
 	ct := gcm.Seal(nil, nonce, []byte(plain), nil)
-	buf := append(nonce, ct...)
+	buf := make([]byte, 0, len(nonce)+len(ct))
+	buf = append(buf, nonce...)
+	buf = append(buf, ct...)
 	return "ENC[v1:aesgcm:" + base64.StdEncoding.EncodeToString(buf) + "]", nil
 }
 

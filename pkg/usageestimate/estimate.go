@@ -15,6 +15,11 @@ const (
 	StageEstimateCompletion = "estimate_completion"
 )
 
+const (
+	apiChatCompletions = "chat.completions"
+	apiResponses       = "responses"
+)
+
 type Input struct {
 	API   string
 	Model string
@@ -70,7 +75,7 @@ func Estimate(cfg *Config, in Input) Output {
 	est.TotalTokens = est.InputTokens + est.OutputTokens
 
 	// Best-effort overhead for OpenAI-style chat messages.
-	if strings.ToLower(strings.TrimSpace(in.API)) == "chat.completions" {
+	if strings.ToLower(strings.TrimSpace(in.API)) == apiChatCompletions {
 		msgCount := countMessages(in.RequestBody, cfg.MaxRequestBytes)
 		if msgCount > 0 {
 			est.InputTokens += msgCount*3 + 3
@@ -128,7 +133,7 @@ func extractRequestText(api string, body []byte, limit int) string {
 	}
 
 	switch strings.ToLower(strings.TrimSpace(api)) {
-	case "embeddings", "responses":
+	case "embeddings", apiResponses:
 		// responses can use "input", embeddings uses "input".
 		if v, ok := m["input"]; ok {
 			return stringifyAny(v)
@@ -167,7 +172,7 @@ func extractResponseText(api string, body []byte, limit int) string {
 	}
 
 	switch strings.ToLower(strings.TrimSpace(api)) {
-	case "chat.completions":
+	case apiChatCompletions:
 		// choices[].message.content or choices[].text
 		if v, ok := m["choices"]; ok {
 			if arr, ok := v.([]any); ok {

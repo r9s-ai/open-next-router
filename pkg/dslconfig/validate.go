@@ -156,7 +156,7 @@ func validateFinishReasonExtractConfig(path, providerName, scope string, cfg Fin
 	switch mode {
 	case "", "openai", "anthropic", "gemini":
 		// ok
-	case "custom":
+	case usageModeCustom:
 		if p == "" {
 			return fmt.Errorf("provider %q in %q: %s finish_reason_extract custom requires finish_reason_path", providerName, path, scope)
 		}
@@ -174,7 +174,7 @@ func validateUsageExtractConfig(path, providerName, scope string, cfg UsageExtra
 	if mode == "" {
 		return nil
 	}
-	if mode != "custom" {
+	if mode != usageModeCustom {
 		return nil
 	}
 	if cfg.InputTokensExpr == nil && strings.TrimSpace(cfg.InputTokensPath) == "" {
