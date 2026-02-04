@@ -1,6 +1,7 @@
 package usageestimate
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/r9s-ai/open-next-router/pkg/dslconfig"
@@ -70,5 +71,62 @@ func TestEstimate_NormalizeTotalTokens(t *testing.T) {
 	}
 	if out.Usage == nil || out.Usage.TotalTokens != 20 {
 		t.Fatalf("total_tokens = %v, want 20", out.Usage)
+	}
+}
+
+func TestEstimate_WhenAllZeroUsage_Estimates(t *testing.T) {
+	cfg := &Config{}
+	ApplyDefaults(cfg)
+
+	out := Estimate(cfg, Input{
+		API:           "chat.completions",
+		Model:         "gpt-4o-mini",
+		UpstreamUsage: &dslconfig.Usage{InputTokens: 0, OutputTokens: 0, TotalTokens: 0},
+		RequestBody:   []byte(`{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello"}]}`),
+		ResponseBody:  []byte(`{"choices":[{"message":{"role":"assistant","content":"world"}}]}`),
+	})
+	if out.Stage != StageEstimateBoth {
+		t.Fatalf("stage=%q want=%q", out.Stage, StageEstimateBoth)
+	}
+	if out.Usage == nil || out.Usage.TotalTokens <= 0 {
+		t.Fatalf("expected estimated usage, got %#v", out.Usage)
+	}
+}
+
+func TestEstimate_WhenEstimationDisabled_ReturnsNilOnMissing(t *testing.T) {
+	cfg := &Config{
+		Enabled:                   true,
+		EstimateWhenMissingOrZero: false,
+		Strategy:                  "heuristic",
+		MaxRequestBytes:           1024,
+		MaxResponseBytes:          1024,
+		MaxStreamCollectBytes:     1024,
+		APIs:                      []string{"chat.completions"},
+	}
+
+	out := Estimate(cfg, Input{
+		API:   "chat.completions",
+		Model: "gpt-4o-mini",
+	})
+	if out.Stage != "" || out.Usage != nil {
+		t.Fatalf("expected empty output, got stage=%q usage=%#v", out.Stage, out.Usage)
+	}
+}
+
+func TestExtractStreamText_ChatCompletionsDelta(t *testing.T) {
+	t.Parallel()
+
+	sse := strings.Join([]string{
+		`data: {"id":"x","choices":[{"delta":{"content":"hel"}}]}`,
+		"",
+		`data: {"id":"x","choices":[{"delta":{"content":"lo"}}]}`,
+		"",
+		"data: [DONE]",
+		"",
+	}, "\n")
+
+	got := extractStreamText("chat.completions", []byte(sse), 1024)
+	if strings.ReplaceAll(got, "\n", "") != "hello" {
+		t.Fatalf("got=%q want=%q", got, "hello")
 	}
 }
