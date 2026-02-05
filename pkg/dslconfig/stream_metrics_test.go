@@ -79,3 +79,38 @@ func TestStreamMetricsAggregator_GeminiUsage(t *testing.T) {
 		t.Fatalf("unexpected finish_reason: %q", fr)
 	}
 }
+
+func TestStreamMetricsAggregator_CustomMerge_DoesNotOverrideWithZero(t *testing.T) {
+	meta := &dslmeta.Meta{API: "claude.messages", IsStream: true}
+
+	inExpr, err := ParseUsageExpr("$.usage.input_tokens + $.message.usage.input_tokens")
+	if err != nil {
+		t.Fatalf("ParseUsageExpr input: %v", err)
+	}
+	outExpr, err := ParseUsageExpr("$.usage.output_tokens + $.message.usage.output_tokens")
+	if err != nil {
+		t.Fatalf("ParseUsageExpr output: %v", err)
+	}
+
+	agg := NewStreamMetricsAggregator(meta,
+		UsageExtractConfig{
+			Mode:             "custom",
+			InputTokensExpr:  inExpr,
+			OutputTokensExpr: outExpr,
+		},
+		FinishReasonExtractConfig{Mode: "anthropic"},
+	)
+
+	// event 1: input tokens appear under message.usage
+	_ = agg.OnSSEDataJSON([]byte(`{"type":"message_start","message":{"usage":{"input_tokens":9,"output_tokens":1}}}`))
+	// event 2: output tokens appear under usage, but input is missing (zero) in this event
+	_ = agg.OnSSEDataJSON([]byte(`{"type":"message_delta","usage":{"output_tokens":18}}`))
+
+	u, _, _, ok := agg.Result()
+	if !ok || u == nil {
+		t.Fatalf("expected usage ok")
+	}
+	if u.InputTokens != 9 || u.OutputTokens != 18 || u.TotalTokens != 27 {
+		t.Fatalf("unexpected usage: %+v", *u)
+	}
+}

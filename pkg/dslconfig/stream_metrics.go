@@ -11,8 +11,11 @@ import (
 // StreamMetricsAggregator aggregates best-effort metrics from SSE "data:" JSON payloads.
 //
 // Semantics (aligned with next-router requirements):
-//   - usage: take the last known upstream usage (non-zero). For Anthropic SSE, token fields may appear
-//     in different events; we keep the latest positive value per field and build a final usage snapshot.
+//   - usage:
+//   - For Anthropic SSE, token fields may appear in different events; we keep the latest positive
+//     value per field and build a final usage snapshot.
+//   - For other modes (openai/gemini/custom), we merge per-field as well: a 0 value in a later
+//     event is treated as "missing" and MUST NOT overwrite a previously known positive value.
 //   - finish_reason: take the first non-empty finish_reason.
 //
 // This is a pure pkg utility (no HTTP/Gin dependency) and can be shared by ONR and next-router.
@@ -111,9 +114,21 @@ func (a *StreamMetricsAggregator) OnSSEDataJSON(payload []byte) error {
 	if u == nil || isAllZeroUsage(u) {
 		return nil
 	}
-	// "take last" semantics
-	a.lastUsage = u
-	a.lastCachedTokens = cachedTokens
+	// Merge semantics: do not allow 0 to overwrite a previously known value.
+	if a.lastUsage == nil {
+		a.lastUsage = u
+	} else {
+		mergeUsagePreferNonZero(a.lastUsage, u)
+	}
+	if cachedTokens > 0 {
+		a.lastCachedTokens = cachedTokens
+	}
+	// For custom mode, total_tokens is derived as input+output unless an explicit TotalTokensExpr is set.
+	// In streaming where usage may be split across events, we must recompute total from the merged fields.
+	if strings.EqualFold(strings.TrimSpace(a.usageCfg.Mode), usageModeCustom) && a.usageCfg.TotalTokensExpr == nil && a.lastUsage != nil {
+		normalizeUsageFields(a.lastUsage)
+		a.lastUsage.TotalTokens = a.lastUsage.InputTokens + a.lastUsage.OutputTokens
+	}
 	return nil
 }
 
@@ -180,6 +195,7 @@ func (a *StreamMetricsAggregator) Result() (usage *Usage, cachedTokens int, fini
 	if a.lastUsage == nil || isAllZeroUsage(a.lastUsage) {
 		return nil, 0, finishReason, false
 	}
+	normalizeUsageFields(a.lastUsage)
 	return a.lastUsage, a.lastCachedTokens, finishReason, true
 }
 
@@ -194,4 +210,69 @@ func isAllZeroUsage(u *Usage) bool {
 		return false
 	}
 	return true
+}
+
+func mergeUsagePreferNonZero(dst *Usage, src *Usage) {
+	if dst == nil || src == nil {
+		return
+	}
+	if src.InputTokens > 0 {
+		dst.InputTokens = src.InputTokens
+	}
+	if src.OutputTokens > 0 {
+		dst.OutputTokens = src.OutputTokens
+	}
+	if src.PromptTokens > 0 {
+		dst.PromptTokens = src.PromptTokens
+	}
+	if src.CompletionTokens > 0 {
+		dst.CompletionTokens = src.CompletionTokens
+	}
+
+	// Only accept total tokens from an event when it is likely a full snapshot:
+	// - total-only snapshot (no split fields)
+	// - or both sides are present in that event.
+	if src.TotalTokens > 0 {
+		hasSplit := src.InputTokens > 0 || src.OutputTokens > 0 || src.PromptTokens > 0 || src.CompletionTokens > 0
+		hasBothSides := (src.InputTokens > 0 && src.OutputTokens > 0) || (src.PromptTokens > 0 && src.CompletionTokens > 0)
+		if !hasSplit || hasBothSides {
+			dst.TotalTokens = src.TotalTokens
+		}
+	}
+
+	if src.InputTokenDetails != nil {
+		if dst.InputTokenDetails == nil {
+			dst.InputTokenDetails = &ResponseTokenDetails{}
+		}
+		if src.InputTokenDetails.CachedTokens > 0 {
+			dst.InputTokenDetails.CachedTokens = src.InputTokenDetails.CachedTokens
+		}
+		if src.InputTokenDetails.CacheWriteTokens > 0 {
+			dst.InputTokenDetails.CacheWriteTokens = src.InputTokenDetails.CacheWriteTokens
+		}
+	}
+
+	normalizeUsageFields(dst)
+}
+
+func normalizeUsageFields(u *Usage) {
+	if u == nil {
+		return
+	}
+	// Normalize legacy OpenAI fields.
+	if u.InputTokens == 0 && u.PromptTokens > 0 {
+		u.InputTokens = u.PromptTokens
+	}
+	if u.OutputTokens == 0 && u.CompletionTokens > 0 {
+		u.OutputTokens = u.CompletionTokens
+	}
+	if u.PromptTokens == 0 && u.InputTokens > 0 {
+		u.PromptTokens = u.InputTokens
+	}
+	if u.CompletionTokens == 0 && u.OutputTokens > 0 {
+		u.CompletionTokens = u.OutputTokens
+	}
+	if u.TotalTokens == 0 && (u.InputTokens > 0 || u.OutputTokens > 0) {
+		u.TotalTokens = u.InputTokens + u.OutputTokens
+	}
 }
