@@ -138,9 +138,39 @@ Observability:
 
 ## Auth
 
-- `Authorization: Bearer <ONR_API_KEY>`
+- `Authorization: Bearer <ONR_API_KEY>` (legacy master key)
 - `x-api-key: <ONR_API_KEY>` (compatible)
 - `x-goog-api-key: <ONR_API_KEY>` (compatible)
+
+### URI-like token key (onr:v1?)
+
+If your client can only set a single API key and cannot add custom headers, you can use an URI-like token key:
+
+**No-sig mode (editable):**
+
+`onr:v1?k=<ACCESS_KEY>&{query_without_k}`
+
+or
+
+`onr:v1?k64=<base64url(ACCESS_KEY)>&{query_without_k64}`
+
+Supported query params:
+
+- `p`: provider (optional)
+- `m`: model override (optional; always enforced)
+- `uk`: BYOK upstream key (optional; when set, ONR uses it directly to call upstream)
+
+Generate a token key:
+
+```bash
+go run ./cmd/onr-admin token create \
+  --config ./onr.yaml \
+  --access-key-name client-a \
+  --provider openai \
+  --model gpt-4o-mini
+```
+
+More details: see `docs/ACCESS_KEYS_CN.md`.
 
 ## Upstream Keys (keys.yaml)
 
@@ -160,7 +190,7 @@ To generate an encrypted value:
 
 ```bash
 export ONR_MASTER_KEY='...'
-echo -n 'sk-xxxx' | go run ./cmd/onr-crypt
+echo -n 'sk-xxxx' | go run ./cmd/onr-admin crypto encrypt
 ```
 
 ### Env override (recommended for CI / docker / k8s)
@@ -173,6 +203,46 @@ For each key entry, you can override the value via environment variable:
 Example:
 
 - `providers.openai.keys[0].name: key1` -> `ONR_UPSTREAM_KEY_OPENAI_KEY1`
+
+## Access Keys (keys.yaml: access_keys)
+
+`keys.yaml` can also contain access keys for clients:
+
+```yaml
+access_keys:
+  - name: "client-a"
+    value: "ak-xxx"
+    comment: "iOS app"
+```
+
+Env override:
+
+- If `name` is set: `ONR_ACCESS_KEY_<NAME>` (e.g. `ONR_ACCESS_KEY_CLIENT_A`)
+- Otherwise: `ONR_ACCESS_KEY_<INDEX>` (1-based)
+
+## Admin CLI (onr-admin)
+
+`onr-admin` uses subcommands (kubeadm-style):
+
+```bash
+# generate token key
+go run ./cmd/onr-admin token create --config ./onr.yaml --access-key-name client-a -p openai -m gpt-4o-mini
+
+# encrypt secret to ENC[...]
+go run ./cmd/onr-admin crypto encrypt --text 'sk-xxxx'
+
+# encrypt plaintext values in keys.yaml
+go run ./cmd/onr-admin crypto encrypt-keys --config ./onr.yaml
+
+# generate random ONR_MASTER_KEY (base64)
+go run ./cmd/onr-admin crypto gen-master-key --export
+
+# validate configs
+go run ./cmd/onr-admin validate all --config ./onr.yaml
+
+# open interactive UI
+go run ./cmd/onr-admin tui --config ./onr.yaml
+```
 
 ## Upstream HTTP Proxy (per provider)
 

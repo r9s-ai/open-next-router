@@ -37,10 +37,10 @@ builds:
       - -X github.com/r9s-ai/open-next-router/internal/version.Commit={{.Commit}}
       - -X github.com/r9s-ai/open-next-router/internal/version.BuildDate={{.Date}}
 
-  # Utility binary: onr-crypt
-  - id: onr-crypt
-    main: ./cmd/onr-crypt
-    binary: onr-crypt
+  # Utility binary: onr-admin
+  - id: onr-admin
+    main: ./cmd/onr-admin
+    binary: onr-admin
     env:
       - CGO_ENABLED=0
     goos:
@@ -181,37 +181,37 @@ release:
   github:
     owner: r9s-ai
     name: open-next-router
-  
+
   # Release name template
   name_template: "{{.ProjectName}} {{.Version}}"
-  
+
   # Draft release (set to false for automatic publishing)
   draft: false
-  
+
   # Prerelease detection
   prerelease: auto
-  
+
   # Release notes
   header: |
     ## Release {{.Version}} ({{.Date}})
-    
+
     Welcome to this new release of onr!
-  
+
   footer: |
     ---
-    
+
     **Full Changelog**: https://github.com/r9s-ai/open-next-router/compare/{{.PreviousTag}}...{{.Tag}}
-    
+
     ## Installation
-    
+
     ### Download Binary
     Download the appropriate binary for your platform from the assets below.
-    
+
     ### Verify Checksum
     ```bash
     sha256sum -c checksums.txt
     ```
-    
+
     ## Docker
     ```bash
     docker pull ghcr.io/r9s-ai/open-next-router:{{.Version}}

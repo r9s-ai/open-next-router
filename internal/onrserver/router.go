@@ -31,7 +31,17 @@ func NewRouter(cfg *config.Config, st *state, reg *dslconfig.Registry, pclient *
 	})
 
 	secured := r.Group("/")
-	secured.Use(auth.Middleware(cfg.Auth.APIKey))
+	secured.Use(auth.Middleware(cfg.Auth.APIKey, func(accessKey string) (string, bool) {
+		ks := st.Keys()
+		if ks == nil {
+			return "", false
+		}
+		ak, ok := ks.MatchAccessKey(accessKey)
+		if !ok {
+			return "", false
+		}
+		return strings.TrimSpace(ak.Name), true
+	}))
 
 	secured.GET("/admin/providers", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{

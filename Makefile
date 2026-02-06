@@ -23,7 +23,7 @@ run: ## Run the application locally
 
 build: ## Build the main binary
 	go build -ldflags "$(LDFLAGS)" -o bin/onr ./cmd/onr
-	go build -ldflags "$(LDFLAGS)" -o bin/onr-crypt ./cmd/onr-crypt
+	go build -ldflags "$(LDFLAGS)" -o bin/onr-admin ./cmd/onr-admin
 
 build-all: ## Build for all platforms using GoReleaser
 	goreleaser build --snapshot --clean
@@ -37,7 +37,7 @@ version: ## Show version information
 	@echo "Build Date: $(BUILD_DATE)"
 
 encrypt: ## Encrypt text (usage: make encrypt TEXT="your-text")
-	go run ./cmd/onr-crypt --text "$(TEXT)"
+	go run ./cmd/onr-admin crypto encrypt --text "$(TEXT)"
 
 release-dry: ## Dry run of GoReleaser (test release without publishing)
 	goreleaser release --snapshot --clean --skip=publish

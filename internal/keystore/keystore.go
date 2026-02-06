@@ -4,6 +4,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -20,6 +21,8 @@ type Store struct {
 	mu      sync.Mutex
 	byProv  map[string][]Key
 	nextIdx map[string]int
+
+	accessKeys []AccessKey
 }
 
 type Key struct {
@@ -28,10 +31,19 @@ type Key struct {
 	BaseURLOverride string `yaml:"base_url_override"`
 }
 
+type AccessKey struct {
+	Name     string `yaml:"name"`
+	Value    string `yaml:"value"`
+	Disabled bool   `yaml:"disabled"`
+	Comment  string `yaml:"comment"`
+}
+
 type fileFormat struct {
 	Providers map[string]struct {
 		Keys []Key `yaml:"keys"`
 	} `yaml:"providers"`
+
+	AccessKeys []AccessKey `yaml:"access_keys"`
 }
 
 var encValuePattern = regexp.MustCompile(`^ENC\[v1:aesgcm:([A-Za-z0-9+/=]+)\]$`)
@@ -79,8 +91,33 @@ func Load(path string) (*Store, error) {
 			out.byProv[p] = keys
 		}
 	}
-	if len(out.byProv) == 0 {
-		return nil, errors.New("keys.yaml has no provider keys configured")
+
+	aks := make([]AccessKey, 0, len(ff.AccessKeys))
+	for i, ak := range ff.AccessKeys {
+		if ak.Disabled {
+			continue
+		}
+		ak.Name = strings.TrimSpace(ak.Name)
+		ak.Comment = strings.TrimSpace(ak.Comment)
+
+		raw := strings.TrimSpace(ak.Value)
+		if envVal := strings.TrimSpace(os.Getenv(envVarForAccessKey(ak.Name, i))); envVal != "" {
+			raw = envVal
+		}
+		if raw == "" {
+			continue
+		}
+		val, err := decryptIfNeeded(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid access_keys value name=%q: %w", ak.Name, err)
+		}
+		ak.Value = val
+		aks = append(aks, ak)
+	}
+	out.accessKeys = aks
+
+	if len(out.byProv) == 0 && len(out.accessKeys) == 0 {
+		return nil, errors.New("keys.yaml has no provider keys or access_keys configured")
 	}
 	return out, nil
 }
@@ -99,6 +136,35 @@ func (s *Store) NextKey(provider string) (Key, bool) {
 	i := s.nextIdx[p] % len(keys)
 	s.nextIdx[p] = (i + 1) % len(keys)
 	return keys[i], true
+}
+
+func (s *Store) MatchAccessKey(value string) (AccessKey, bool) {
+	if s == nil {
+		return AccessKey{}, false
+	}
+	v := strings.TrimSpace(value)
+	if v == "" {
+		return AccessKey{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, ak := range s.accessKeys {
+		if subtle.ConstantTimeCompare([]byte(v), []byte(ak.Value)) == 1 {
+			return ak, true
+		}
+	}
+	return AccessKey{}, false
+}
+
+func (s *Store) AccessKeys() []AccessKey {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]AccessKey, len(s.accessKeys))
+	copy(out, s.accessKeys)
+	return out
 }
 
 func (s *Store) HasProvider(provider string) bool {
@@ -122,6 +188,14 @@ func envVarForUpstreamKey(provider string, name string, index int) string {
 		return fmt.Sprintf("ONR_UPSTREAM_KEY_%s_%d", sanitizeEnvToken(p), index+1)
 	}
 	return fmt.Sprintf("ONR_UPSTREAM_KEY_%s_%s", sanitizeEnvToken(p), sanitizeEnvToken(n))
+}
+
+func envVarForAccessKey(name string, index int) string {
+	n := strings.ToUpper(strings.TrimSpace(name))
+	if n == "" {
+		return fmt.Sprintf("ONR_ACCESS_KEY_%d", index+1)
+	}
+	return fmt.Sprintf("ONR_ACCESS_KEY_%s", sanitizeEnvToken(n))
 }
 
 func sanitizeEnvToken(s string) string {
