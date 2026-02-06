@@ -4,9 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/url"
-	"strconv"
 	"strings"
-	"time"
 )
 
 const (
@@ -33,14 +31,6 @@ type TokenClaims struct {
 	ModelOverride string
 	UpstreamKey   string
 	Mode          TokenMode
-	ExpUnix       int64
-}
-
-func (c TokenClaims) Expired(nowUnix int64) bool {
-	if c.ExpUnix <= 0 {
-		return false
-	}
-	return nowUnix >= c.ExpUnix
 }
 
 func IsTokenKey(raw string) bool {
@@ -57,8 +47,7 @@ func IsTokenKey(raw string) bool {
 // - p: provider (optional)
 // - m: model_override (optional)
 // - uk: upstream key for BYOK (optional; implies mode=byok)
-// - exp: unix seconds expiry (optional)
-func ParseTokenKeyV1(raw string, now time.Time) (*TokenClaims, string, error) {
+func ParseTokenKeyV1(raw string) (*TokenClaims, string, error) {
 	s := strings.TrimSpace(raw)
 	if !strings.HasPrefix(s, "onr:v1?") {
 		return nil, "", fmt.Errorf("not an onr:v1 token key")
@@ -90,16 +79,6 @@ func ParseTokenKeyV1(raw string, now time.Time) (*TokenClaims, string, error) {
 	}
 	if claims.UpstreamKey != "" {
 		claims.Mode = TokenModeBYOK
-	}
-	if expStr := strings.TrimSpace(vals.Get("exp")); expStr != "" {
-		n, err := strconv.ParseInt(expStr, 10, 64)
-		if err != nil || n <= 0 {
-			return nil, "", fmt.Errorf("invalid exp")
-		}
-		claims.ExpUnix = n
-		if claims.Expired(now.Unix()) {
-			return nil, "", fmt.Errorf("token expired")
-		}
 	}
 	return claims, accessKey, nil
 }

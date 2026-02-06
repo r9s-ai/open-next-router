@@ -65,7 +65,7 @@ access_keys:
 - `x-api-key: <ONR_API_KEY>`
 - `x-goog-api-key: <ONR_API_KEY>`
 
-### 2.2 Token Key（onr:v1?，可编辑，无 sig）
+### 2.2 Token Key（onr:v1?）
 
 适用于「客户端只能配置一个 key，不能加额外头」的场景。
 
@@ -88,7 +88,6 @@ Token Key 的 query 参数：
 - `p`：provider（可选；不填则走原有 provider 选择逻辑）
 - `m`：model override（可选；存在则强制替换请求里的 model；BYOK 模式下也生效）
 - `uk`：BYOK upstream key（可选；存在则 ONR 直接用该 key 调上游）
-- `exp`：可选；unix 秒时间戳；过期后拒绝
 
 示例：
 

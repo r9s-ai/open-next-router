@@ -4,7 +4,6 @@ import (
 	"crypto/subtle"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -44,7 +43,7 @@ func Middleware(masterKey string, matchAccessKey AccessKeyMatcher) gin.HandlerFu
 
 		// Token key: onr:v1?... (no-sig, editable)
 		if IsTokenKey(got) {
-			claims, accessKey, err := ParseTokenKeyV1(got, time.Now())
+			claims, accessKey, err := ParseTokenKeyV1(got)
 			if err == nil && claims != nil && strings.TrimSpace(accessKey) != "" {
 				ok := false
 				if subtle.ConstantTimeCompare([]byte(accessKey), []byte(expected)) == 1 {
