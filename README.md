@@ -138,9 +138,36 @@ Observability:
 
 ## Auth
 
-- `Authorization: Bearer <ONR_API_KEY>`
+- `Authorization: Bearer <ONR_API_KEY>` (legacy master key)
 - `x-api-key: <ONR_API_KEY>` (compatible)
 - `x-goog-api-key: <ONR_API_KEY>` (compatible)
+
+### URI-like token key (onr:v1?)
+
+If your client can only set a single API key and cannot add custom headers, you can use an URI-like token key:
+
+**No-sig mode (editable):**
+
+`onr:v1?k=<ACCESS_KEY>&{query_without_k}`
+
+or
+
+`onr:v1?k64=<base64url(ACCESS_KEY)>&{query_without_k64}`
+
+Supported query params:
+
+- `p`: provider (optional)
+- `m`: model override (optional; always enforced)
+- `uk`: BYOK upstream key (optional; when set, ONR uses it directly to call upstream)
+- `exp`: unix seconds expiry (optional)
+
+Generate a token key:
+
+```bash
+go run ./cmd/onr-admin --config ./onr.yaml
+```
+
+More details: see `docs/ACCESS_KEYS_CN.md`.
 
 ## Upstream Keys (keys.yaml)
 
@@ -173,6 +200,34 @@ For each key entry, you can override the value via environment variable:
 Example:
 
 - `providers.openai.keys[0].name: key1` -> `ONR_UPSTREAM_KEY_OPENAI_KEY1`
+
+## Access Keys (keys.yaml: access_keys)
+
+`keys.yaml` can also contain access keys for clients:
+
+```yaml
+access_keys:
+  - name: "client-a"
+    value: "ak-xxx"
+    comment: "iOS app"
+```
+
+Env override:
+
+- If `name` is set: `ONR_ACCESS_KEY_<NAME>` (e.g. `ONR_ACCESS_KEY_CLIENT_A`)
+- Otherwise: `ONR_ACCESS_KEY_<INDEX>` (1-based)
+
+## Admin CLI (onr-admin)
+
+Interactive management for `keys.yaml` / `models.yaml` + token key generation:
+
+```bash
+go run ./cmd/onr-admin --config ./onr.yaml
+# or override keys path
+go run ./cmd/onr-admin --keys ./keys.yaml
+# or override models path
+go run ./cmd/onr-admin --models ./models.yaml
+```
 
 ## Upstream HTTP Proxy (per provider)
 

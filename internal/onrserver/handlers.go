@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/r9s-ai/open-next-router/internal/auth"
 	"github.com/r9s-ai/open-next-router/internal/config"
 	"github.com/r9s-ai/open-next-router/internal/proxy"
 	"github.com/r9s-ai/open-next-router/internal/requestid"
@@ -26,6 +27,9 @@ func makeHandler(cfg *config.Config, st *state, pclient *proxy.Client, api strin
 			writeOpenAIError(c, "invalid_json", err.Error())
 			return
 		}
+		if mo := auth.TokenModelOverride(c); mo != "" {
+			model = mo
+		}
 
 		if rec := trafficdump.FromContext(c); rec != nil && rec.MaxBytes() > 0 {
 			ct := ""
@@ -41,7 +45,7 @@ func makeHandler(cfg *config.Config, st *state, pclient *proxy.Client, api strin
 		// restore body for downstream proxy layer
 		c.Request.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
-		provider, source := selectProvider(st, c.GetHeader("x-onr-provider"), model)
+		provider, source := selectProvider(st, auth.TokenProvider(c), c.GetHeader("x-onr-provider"), model)
 		c.Set("onr.provider", provider)
 		c.Set("onr.provider_source", source)
 		c.Set("onr.model", model)
@@ -55,17 +59,28 @@ func makeHandler(cfg *config.Config, st *state, pclient *proxy.Client, api strin
 			return
 		}
 
-		keys := st.Keys()
-		k, ok := keys.NextKey(provider)
-		if !ok {
-			writeOpenAIError(c, "missing_upstream_key", "no upstream key for provider: "+provider)
-			return
+		kname := ""
+		kval := ""
+		kbase := ""
+		if uk := auth.TokenUpstreamKey(c); uk != "" {
+			kname = "byok"
+			kval = uk
+		} else {
+			keys := st.Keys()
+			k, ok := keys.NextKey(provider)
+			if !ok {
+				writeOpenAIError(c, "missing_upstream_key", "no upstream key for provider: "+provider)
+				return
+			}
+			kname = k.Name
+			kval = k.Value
+			kbase = k.BaseURLOverride
 		}
 
 		res, perr := pclient.ProxyJSON(c, provider, proxy.ProviderKey{
-			Name:            k.Name,
-			Value:           k.Value,
-			BaseURLOverride: k.BaseURLOverride,
+			Name:            kname,
+			Value:           kval,
+			BaseURLOverride: kbase,
 		}, api, stream)
 		if perr != nil {
 			writeOpenAIError(c, "proxy_error", perr.Error())
@@ -77,7 +92,10 @@ func makeHandler(cfg *config.Config, st *state, pclient *proxy.Client, api strin
 	}
 }
 
-func selectProvider(st *state, headerProvider string, model string) (provider string, source string) {
+func selectProvider(st *state, tokenProvider string, headerProvider string, model string) (provider string, source string) {
+	if p := strings.ToLower(strings.TrimSpace(tokenProvider)); p != "" {
+		return p, "token"
+	}
 	if p := strings.ToLower(strings.TrimSpace(headerProvider)); p != "" {
 		return p, "header"
 	}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/r9s-ai/open-next-router/internal/auth"
 	"github.com/r9s-ai/open-next-router/internal/config"
 	"github.com/r9s-ai/open-next-router/internal/proxy"
 	"github.com/r9s-ai/open-next-router/pkg/trafficdump"
@@ -18,6 +19,9 @@ func makeGeminiHandler(cfg *config.Config, st *state, pclient *proxy.Client) gin
 		if err != nil {
 			writeOpenAIError(c, "invalid_path", err.Error())
 			return
+		}
+		if mo := auth.TokenModelOverride(c); mo != "" {
+			model = mo
 		}
 
 		api, stream, ok := geminiAPIFromAction(action)
@@ -64,7 +68,7 @@ func makeGeminiHandler(cfg *config.Config, st *state, pclient *proxy.Client) gin
 		// restore body for downstream proxy layer
 		c.Request.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
-		provider, source := selectProvider(st, c.GetHeader("x-onr-provider"), model)
+		provider, source := selectProvider(st, auth.TokenProvider(c), c.GetHeader("x-onr-provider"), model)
 		c.Set("onr.provider", provider)
 		c.Set("onr.provider_source", source)
 		if provider == "" {
@@ -76,17 +80,28 @@ func makeGeminiHandler(cfg *config.Config, st *state, pclient *proxy.Client) gin
 			return
 		}
 
-		keys := st.Keys()
-		k, ok := keys.NextKey(provider)
-		if !ok {
-			writeOpenAIError(c, "missing_upstream_key", "no upstream key for provider: "+provider)
-			return
+		kname := ""
+		kval := ""
+		kbase := ""
+		if uk := auth.TokenUpstreamKey(c); uk != "" {
+			kname = "byok"
+			kval = uk
+		} else {
+			keys := st.Keys()
+			k, ok := keys.NextKey(provider)
+			if !ok {
+				writeOpenAIError(c, "missing_upstream_key", "no upstream key for provider: "+provider)
+				return
+			}
+			kname = k.Name
+			kval = k.Value
+			kbase = k.BaseURLOverride
 		}
 
 		res, perr := pclient.ProxyJSON(c, provider, proxy.ProviderKey{
-			Name:            k.Name,
-			Value:           k.Value,
-			BaseURLOverride: k.BaseURLOverride,
+			Name:            kname,
+			Value:           kval,
+			BaseURLOverride: kbase,
 		}, api, stream)
 		if perr != nil {
 			writeOpenAIError(c, "proxy_error", perr.Error())

@@ -18,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 	xproxy "golang.org/x/net/proxy"
 
+	"github.com/r9s-ai/open-next-router/internal/auth"
 	"github.com/r9s-ai/open-next-router/pkg/dslconfig"
 	"github.com/r9s-ai/open-next-router/pkg/dslmeta"
 	"github.com/r9s-ai/open-next-router/pkg/trafficdump"
@@ -420,6 +421,14 @@ func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey
 	if err != nil {
 		return nil, err
 	}
+	if mo := auth.TokenModelOverride(gc); mo != "" {
+		model = mo
+		if root != nil {
+			if _, exists := root["model"]; exists {
+				root["model"] = mo
+			}
+		}
+	}
 
 	m := &dslmeta.Meta{
 		API:             strings.TrimSpace(api),
@@ -429,6 +438,11 @@ func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey
 		BaseURL:         strings.TrimSpace(key.BaseURLOverride),
 		RequestURLPath:  gc.Request.URL.RequestURI(),
 		StartTime:       time.Now(),
+	}
+	if mo := strings.TrimSpace(model); mo != "" {
+		if newPath, ok := replaceGeminiModelInPath(m.RequestURLPath, mo); ok {
+			m.RequestURLPath = newPath
+		}
 	}
 
 	if err := pf.Routing.Apply(m); err != nil {
