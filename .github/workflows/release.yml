@@ -10,10 +10,36 @@ permissions:
   packages: write  # Required for pushing Docker images to GHCR
 
 jobs:
+  guard:
+    name: Verify Tag On Main
+    runs-on: ubuntu-latest
+    outputs:
+      on_main: ${{ steps.verify.outputs.on_main }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag commit is on main
+        id: verify
+        shell: bash
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if git merge-base --is-ancestor "${GITHUB_SHA}" "origin/main"; then
+            echo "on_main=true" >> "$GITHUB_OUTPUT"
+            echo "tag commit is on main"
+          else
+            echo "on_main=false" >> "$GITHUB_OUTPUT"
+            echo "tag commit is NOT on main; skip release"
+          fi
+
   release:
     name: Create Release
+    needs: guard
+    if: needs.guard.outputs.on_main == 'true'
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
