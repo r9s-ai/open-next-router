@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
@@ -11,11 +10,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/r9s-ai/open-next-router/internal/config"
+	"github.com/r9s-ai/open-next-router/cmd/onr-admin/store"
+	"github.com/r9s-ai/open-next-router/cmd/onr-admin/tui"
 	"github.com/r9s-ai/open-next-router/internal/keystore"
 	"github.com/r9s-ai/open-next-router/internal/models"
 	"github.com/r9s-ai/open-next-router/pkg/dslconfig"
-	"gopkg.in/yaml.v3"
 )
 
 func runCLI(args []string) error {
@@ -78,38 +77,7 @@ func runTUI(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-
-	cfg, _ := loadConfigIfExists(strings.TrimSpace(cfgPath))
-	keysPath, modelsPath = resolveDataPaths(cfg, keysPath, modelsPath)
-	secret := resolveMasterKey(cfg)
-
-	keysDoc, err := loadOrInitKeysDoc(keysPath)
-	if err != nil {
-		return fmt.Errorf("load keys: %w", err)
-	}
-	modelsDoc, err := loadOrInitModelsDoc(modelsPath)
-	if err != nil {
-		return fmt.Errorf("load models: %w", err)
-	}
-
-	app := &app{
-		in:         bufio.NewReader(os.Stdin),
-		out:        os.Stdout,
-		cfgPath:    cfgPath,
-		keysPath:   strings.TrimSpace(keysPath),
-		modelsPath: strings.TrimSpace(modelsPath),
-		backup:     backup,
-		masterKey:  secret,
-		keysDoc:    keysDoc,
-		modelsDoc:  modelsDoc,
-	}
-	if cfg != nil {
-		app.providersDir = strings.TrimSpace(cfg.Providers.Dir)
-	}
-	if strings.TrimSpace(app.providersDir) == "" {
-		app.providersDir = "./config/providers"
-	}
-	return app.run()
+	return tui.Run(cfgPath, keysPath, modelsPath, backup, os.Stdin, os.Stdout)
 }
 
 func runToken(args []string) error {
@@ -184,8 +152,8 @@ func buildTokenFromFlags(args []string) (string, error) {
 		return "", err
 	}
 
-	cfg, _ := loadConfigIfExists(strings.TrimSpace(cfgPath))
-	keysPath, _ = resolveDataPaths(cfg, keysPath, "")
+	cfg, _ := store.LoadConfigIfExists(strings.TrimSpace(cfgPath))
+	keysPath, _ = store.ResolveDataPaths(cfg, keysPath, "")
 	if strings.TrimSpace(accessKey) == "" {
 		if strings.TrimSpace(accessKeyName) != "" {
 			v, err := accessKeyByName(keysPath, accessKeyName)
@@ -194,7 +162,7 @@ func buildTokenFromFlags(args []string) (string, error) {
 			}
 			accessKey = v
 		} else {
-			accessKey = resolveMasterKey(cfg)
+			accessKey = store.ResolveMasterKey(cfg)
 		}
 	}
 	accessKey = strings.TrimSpace(accessKey)
@@ -360,14 +328,14 @@ func runCryptoEncryptKeys(args []string) error {
 		return err
 	}
 
-	cfg, _ := loadConfigIfExists(strings.TrimSpace(cfgPath))
-	keysPath, _ = resolveDataPaths(cfg, keysPath, "")
-	doc, err := loadOrInitKeysDoc(keysPath)
+	cfg, _ := store.LoadConfigIfExists(strings.TrimSpace(cfgPath))
+	keysPath, _ = store.ResolveDataPaths(cfg, keysPath, "")
+	doc, err := store.LoadOrInitKeysDoc(keysPath)
 	if err != nil {
 		return fmt.Errorf("load keys: %w", err)
 	}
 
-	n, err := encryptKeysDocValues(doc)
+	n, err := store.EncryptKeysDocValues(doc)
 	if err != nil {
 		return err
 	}
@@ -380,78 +348,18 @@ func runCryptoEncryptKeys(args []string) error {
 		return nil
 	}
 
-	if err := validateKeysDoc(doc); err != nil {
+	if err := store.ValidateKeysDoc(doc); err != nil {
 		return err
 	}
-	b, err := encodeYAML(doc)
+	b, err := store.EncodeYAML(doc)
 	if err != nil {
 		return err
 	}
-	if err := writeAtomic(keysPath, b, backup); err != nil {
+	if err := store.WriteAtomic(keysPath, b, backup); err != nil {
 		return err
 	}
 	fmt.Printf("encrypt-keys: encrypted %d value(s) in %s\n", n, keysPath)
 	return nil
-}
-
-func encryptKeysDocValues(y *yaml.Node) (int, error) {
-	changed := 0
-	pm, err := providersMap(y)
-	if err != nil {
-		return 0, err
-	}
-	for i := 0; i+1 < len(pm.Content); i += 2 {
-		providerNode := pm.Content[i+1]
-		if providerNode == nil || providerNode.Kind != yaml.MappingNode {
-			continue
-		}
-		keysNode, ok := mappingGet(providerNode, "keys")
-		if !ok || keysNode == nil || keysNode.Kind != yaml.SequenceNode {
-			continue
-		}
-		for _, it := range keysNode.Content {
-			if c, err := encryptValueFieldIfNeeded(it); err != nil {
-				return 0, err
-			} else {
-				changed += c
-			}
-		}
-	}
-
-	aks, err := accessKeysSeq(y)
-	if err != nil {
-		return 0, err
-	}
-	for _, it := range aks.Content {
-		if c, err := encryptValueFieldIfNeeded(it); err != nil {
-			return 0, err
-		} else {
-			changed += c
-		}
-	}
-	return changed, nil
-}
-
-func encryptValueFieldIfNeeded(item *yaml.Node) (int, error) {
-	if item == nil || item.Kind != yaml.MappingNode {
-		return 0, nil
-	}
-	v, ok := mappingGet(item, "value")
-	if !ok || v == nil {
-		return 0, nil
-	}
-	raw := strings.TrimSpace(v.Value)
-	if raw == "" || strings.HasPrefix(raw, "ENC[") {
-		return 0, nil
-	}
-	enc, err := keystore.Encrypt(raw)
-	if err != nil {
-		return 0, fmt.Errorf("encrypt value failed: %w", err)
-	}
-	v.Kind = yaml.ScalarNode
-	v.Tag = "!!str"
-	v.Value = enc
-	return 1, nil
 }
 
 func runValidate(args []string) error {
@@ -474,8 +382,8 @@ func runValidate(args []string) error {
 		return err
 	}
 
-	cfg, _ := loadConfigIfExists(strings.TrimSpace(cfgPath))
-	keysPath, modelsPath = resolveDataPaths(cfg, keysPath, modelsPath)
+	cfg, _ := store.LoadConfigIfExists(strings.TrimSpace(cfgPath))
+	keysPath, modelsPath = store.ResolveDataPaths(cfg, keysPath, modelsPath)
 	if strings.TrimSpace(providersDir) == "" {
 		if cfg != nil && strings.TrimSpace(cfg.Providers.Dir) != "" {
 			providersDir = strings.TrimSpace(cfg.Providers.Dir)
@@ -509,11 +417,11 @@ func runValidate(args []string) error {
 }
 
 func validateKeys(path string) error {
-	doc, err := loadOrInitKeysDoc(path)
+	doc, err := store.LoadOrInitKeysDoc(path)
 	if err != nil {
 		return fmt.Errorf("load keys yaml: %w", err)
 	}
-	if err := validateKeysDoc(doc); err != nil {
+	if err := store.ValidateKeysDoc(doc); err != nil {
 		return fmt.Errorf("keys yaml structure invalid: %w", err)
 	}
 	if _, err := keystore.Load(path); err != nil {
@@ -524,11 +432,11 @@ func validateKeys(path string) error {
 }
 
 func validateModels(path string) error {
-	doc, err := loadOrInitModelsDoc(path)
+	doc, err := store.LoadOrInitModelsDoc(path)
 	if err != nil {
 		return fmt.Errorf("load models yaml: %w", err)
 	}
-	if err := validateModelsDoc(doc); err != nil {
+	if err := store.ValidateModelsDoc(doc); err != nil {
 		return fmt.Errorf("models yaml structure invalid: %w", err)
 	}
 	if _, err := models.Load(path); err != nil {
@@ -544,31 +452,4 @@ func validateProviders(path string) error {
 	}
 	fmt.Println("validate providers: OK")
 	return nil
-}
-
-func resolveDataPaths(cfg *config.Config, keysPath, modelsPath string) (string, string) {
-	kp := strings.TrimSpace(keysPath)
-	mp := strings.TrimSpace(modelsPath)
-	if kp == "" {
-		if cfg != nil && strings.TrimSpace(cfg.Keys.File) != "" {
-			kp = strings.TrimSpace(cfg.Keys.File)
-		} else {
-			kp = "./keys.yaml"
-		}
-	}
-	if mp == "" {
-		if cfg != nil && strings.TrimSpace(cfg.Models.File) != "" {
-			mp = strings.TrimSpace(cfg.Models.File)
-		} else {
-			mp = "./models.yaml"
-		}
-	}
-	return kp, mp
-}
-
-func resolveMasterKey(cfg *config.Config) string {
-	if cfg != nil && strings.TrimSpace(cfg.Auth.APIKey) != "" {
-		return strings.TrimSpace(cfg.Auth.APIKey)
-	}
-	return strings.TrimSpace(os.Getenv("ONR_API_KEY"))
 }
