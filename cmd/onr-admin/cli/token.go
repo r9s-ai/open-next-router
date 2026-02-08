@@ -3,92 +3,107 @@ package cli
 import (
 	"encoding/base64"
 	"errors"
-	"flag"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/r9s-ai/open-next-router/cmd/onr-admin/store"
 	"github.com/r9s-ai/open-next-router/internal/keystore"
+	"github.com/spf13/cobra"
 )
 
-func runToken(args []string) error {
-	if len(args) == 0 {
-		return errors.New("usage: onr-admin token create [flags]")
+func newTokenCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "token",
+		Short: "Token 生成工具",
 	}
-	switch args[0] {
-	case "create":
-		return runTokenCreate(args[1:])
-	default:
-		return fmt.Errorf("unknown token subcommand %q", args[0])
-	}
+	cmd.AddCommand(newTokenCreateCmd())
+	return cmd
 }
 
-func runTokenCreate(args []string) error {
-	if len(args) > 0 && args[0] == "phase" {
-		return runTokenCreatePhase(args[1:])
+func newTokenCreateCmd() *cobra.Command {
+	opts := tokenCreateOptions{
+		cfgPath: "onr.yaml",
 	}
-	token, err := buildTokenFromFlags(args)
-	if err != nil {
-		return err
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "生成 Token Key (onr:v1?)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			token, err := buildToken(opts)
+			if err != nil {
+				return err
+			}
+			fmt.Println("onr:v1?" + token)
+			return nil
+		},
 	}
-	fmt.Println("onr:v1?" + token)
-	return nil
+	addTokenCreateFlags(cmd, &opts)
+	cmd.AddCommand(newTokenCreatePhaseCmd())
+	return cmd
 }
 
-func runTokenCreatePhase(args []string) error {
-	if len(args) == 0 {
-		return errors.New("usage: onr-admin token create phase <query|uri> [flags]")
+func newTokenCreatePhaseCmd() *cobra.Command {
+	opts := tokenCreateOptions{
+		cfgPath: "onr.yaml",
 	}
-	phase := strings.ToLower(strings.TrimSpace(args[0]))
-	token, err := buildTokenFromFlags(args[1:])
-	if err != nil {
-		return err
+	cmd := &cobra.Command{
+		Use:   "phase <query|uri>",
+		Short: "分阶段输出 Token 生成结果",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			phase := strings.ToLower(strings.TrimSpace(args[0]))
+			token, err := buildToken(opts)
+			if err != nil {
+				return err
+			}
+			switch phase {
+			case "query":
+				fmt.Println(token)
+				return nil
+			case "uri":
+				fmt.Println("onr:v1?" + token)
+				return nil
+			default:
+				return fmt.Errorf("unknown phase %q (expect: query|uri)", phase)
+			}
+		},
 	}
-	switch phase {
-	case "query":
-		fmt.Println(token)
-		return nil
-	case "uri":
-		fmt.Println("onr:v1?" + token)
-		return nil
-	default:
-		return fmt.Errorf("unknown phase %q (expect: query|uri)", phase)
-	}
+	addTokenCreateFlags(cmd, &opts)
+	return cmd
 }
 
-func buildTokenFromFlags(args []string) (string, error) {
-	var cfgPath string
-	var keysPath string
-	var accessKey string
-	var accessKeyName string
-	var provider string
-	var modelOverride string
-	var upstreamKey string
-	var plainKey bool
+type tokenCreateOptions struct {
+	cfgPath       string
+	keysPath      string
+	accessKey     string
+	accessKeyName string
+	provider      string
+	modelOverride string
+	upstreamKey   string
+	plainKey      bool
+}
 
-	fs := flag.NewFlagSet("token create", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	fs.StringVar(&cfgPath, "config", "onr.yaml", "config yaml path")
-	fs.StringVar(&keysPath, "keys", "", "keys.yaml path")
-	fs.StringVar(&accessKey, "access-key", "", "direct access key value")
-	fs.StringVar(&accessKeyName, "access-key-name", "", "read access key value by name from keys.yaml")
-	fs.BoolVar(&plainKey, "k-plain", false, "embed access key as k=<plain> (default k64)")
-	fs.StringVar(&provider, "p", "", "provider")
-	fs.StringVar(&provider, "provider", "", "provider")
-	fs.StringVar(&modelOverride, "m", "", "model override")
-	fs.StringVar(&modelOverride, "model", "", "model override")
-	fs.StringVar(&upstreamKey, "uk", "", "BYOK upstream key")
-	fs.StringVar(&upstreamKey, "upstream-key", "", "BYOK upstream key")
-	if err := fs.Parse(args); err != nil {
-		return "", err
-	}
+func addTokenCreateFlags(cmd *cobra.Command, opts *tokenCreateOptions) {
+	fs := cmd.Flags()
+	fs.StringVar(&opts.cfgPath, "config", "onr.yaml", "config yaml path")
+	fs.StringVar(&opts.keysPath, "keys", "", "keys.yaml path")
+	fs.StringVar(&opts.accessKey, "access-key", "", "direct access key value")
+	fs.StringVar(&opts.accessKeyName, "access-key-name", "", "read access key value by name from keys.yaml")
+	fs.BoolVar(&opts.plainKey, "k-plain", false, "embed access key as k=<plain> (default k64)")
+	fs.StringVarP(&opts.provider, "provider", "p", "", "provider")
+	fs.StringVarP(&opts.modelOverride, "model", "m", "", "model override")
+	fs.StringVar(&opts.upstreamKey, "upstream-key", "", "BYOK upstream key")
+	// 保留旧参数 uk 兼容。
+	fs.StringVar(&opts.upstreamKey, "uk", "", "BYOK upstream key")
+}
 
-	cfg, _ := store.LoadConfigIfExists(strings.TrimSpace(cfgPath))
-	keysPath, _ = store.ResolveDataPaths(cfg, keysPath, "")
-	if strings.TrimSpace(accessKey) == "" {
-		if strings.TrimSpace(accessKeyName) != "" {
-			v, err := accessKeyByName(keysPath, accessKeyName)
+func buildToken(opts tokenCreateOptions) (string, error) {
+	cfg, _ := store.LoadConfigIfExists(strings.TrimSpace(opts.cfgPath))
+	keysPath, _ := store.ResolveDataPaths(cfg, opts.keysPath, "")
+
+	accessKey := strings.TrimSpace(opts.accessKey)
+	if accessKey == "" {
+		if strings.TrimSpace(opts.accessKeyName) != "" {
+			v, err := accessKeyByName(keysPath, opts.accessKeyName)
 			if err != nil {
 				return "", err
 			}
@@ -104,10 +119,10 @@ func buildTokenFromFlags(args []string) (string, error) {
 
 	vals := tokenQueryValues(
 		accessKey,
-		strings.ToLower(strings.TrimSpace(provider)),
-		strings.TrimSpace(modelOverride),
-		strings.TrimSpace(upstreamKey),
-		plainKey,
+		strings.ToLower(strings.TrimSpace(opts.provider)),
+		strings.TrimSpace(opts.modelOverride),
+		strings.TrimSpace(opts.upstreamKey),
+		opts.plainKey,
 	)
 	return vals, nil
 }

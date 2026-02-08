@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -16,62 +15,74 @@ import (
 	"github.com/r9s-ai/open-next-router/pkg/balancequery"
 	"github.com/r9s-ai/open-next-router/pkg/dslconfig"
 	"github.com/r9s-ai/open-next-router/pkg/dslmeta"
+	"github.com/spf13/cobra"
 )
 
-func runBalance(args []string) error {
-	if len(args) == 0 {
-		return errors.New("usage: onr-admin balance get [flags]")
+func newBalanceCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "balance",
+		Short: "按 providers DSL 查询上游余额",
 	}
-	switch args[0] {
-	case "get":
-		return runBalanceGet(args[1:])
-	default:
-		return fmt.Errorf("unknown balance subcommand %q", args[0])
-	}
+	cmd.AddCommand(newBalanceGetCmd())
+	return cmd
 }
 
-func runBalanceGet(args []string) error {
-	var cfgPath string
-	var keysPath string
-	var providersDir string
-	var provider string
-	var providersCSV string
-	var allProviders bool
-	var failFast bool
-	var api string
-	var stream bool
-	var upstreamKey string
-	var baseURLOv string
-	var debug bool
+type balanceGetOptions struct {
+	cfgPath      string
+	keysPath     string
+	providersDir string
 
-	fs := flag.NewFlagSet("balance get", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	fs.StringVar(&cfgPath, "config", "onr.yaml", "config yaml path")
-	fs.StringVar(&keysPath, "keys", "", "keys.yaml path")
-	fs.StringVar(&providersDir, "providers-dir", "", "providers dir path")
-	fs.StringVar(&provider, "p", "", "provider name")
-	fs.StringVar(&provider, "provider", "", "provider name")
-	fs.StringVar(&providersCSV, "providers", "", "providers list for batch mode, comma separated")
-	fs.BoolVar(&allProviders, "all", false, "query all providers in DSL registry")
-	fs.BoolVar(&failFast, "fail-fast", false, "stop on first error in batch mode")
-	fs.StringVar(&api, "api", "chat.completions", "api name for DSL match selection")
-	fs.BoolVar(&stream, "stream", false, "stream flag for DSL match selection")
-	fs.StringVar(&upstreamKey, "uk", "", "upstream api key")
-	fs.StringVar(&upstreamKey, "upstream-key", "", "upstream api key")
-	fs.StringVar(&baseURLOv, "base-url", "", "override base url")
-	fs.BoolVar(&debug, "debug", false, "print upstream raw response body")
-	if err := fs.Parse(args); err != nil {
-		return err
+	provider     string
+	providersCSV string
+	allProviders bool
+	failFast     bool
+
+	api         string
+	stream      bool
+	upstreamKey string
+	baseURLOv   string
+	debug       bool
+}
+
+func newBalanceGetCmd() *cobra.Command {
+	opts := balanceGetOptions{
+		cfgPath: "onr.yaml",
+		api:     "chat.completions",
 	}
+	cmd := &cobra.Command{
+		Use:   "get",
+		Short: "查询一个或多个 provider 的余额",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runBalanceGetWithOptions(opts)
+		},
+	}
+	fs := cmd.Flags()
+	fs.StringVar(&opts.cfgPath, "config", "onr.yaml", "config yaml path")
+	fs.StringVar(&opts.keysPath, "keys", "", "keys.yaml path")
+	fs.StringVar(&opts.providersDir, "providers-dir", "", "providers dir path")
+	fs.StringVarP(&opts.provider, "provider", "p", "", "provider name")
+	fs.StringVar(&opts.providersCSV, "providers", "", "providers list for batch mode, comma separated")
+	fs.BoolVar(&opts.allProviders, "all", false, "query all providers in DSL registry")
+	fs.BoolVar(&opts.failFast, "fail-fast", false, "stop on first error in batch mode")
+	fs.StringVar(&opts.api, "api", "chat.completions", "api name for DSL match selection")
+	fs.BoolVar(&opts.stream, "stream", false, "stream flag for DSL match selection")
+	fs.StringVar(&opts.upstreamKey, "upstream-key", "", "upstream api key")
+	fs.StringVar(&opts.upstreamKey, "uk", "", "upstream api key")
+	fs.StringVar(&opts.baseURLOv, "base-url", "", "override base url")
+	fs.BoolVar(&opts.debug, "debug", false, "print upstream raw response body")
+	return cmd
+}
 
-	api = strings.TrimSpace(api)
+func runBalanceGetWithOptions(opts balanceGetOptions) error {
+	api := strings.TrimSpace(opts.api)
 	if api == "" {
 		return errors.New("missing api: use --api")
 	}
 
-	cfg, _ := store.LoadConfigIfExists(strings.TrimSpace(cfgPath))
-	keysPath, _ = store.ResolveDataPaths(cfg, keysPath, "")
-	if strings.TrimSpace(providersDir) == "" {
+	cfg, _ := store.LoadConfigIfExists(strings.TrimSpace(opts.cfgPath))
+	keysPath, _ := store.ResolveDataPaths(cfg, opts.keysPath, "")
+	providersDir := strings.TrimSpace(opts.providersDir)
+	if providersDir == "" {
 		if cfg != nil && strings.TrimSpace(cfg.Providers.Dir) != "" {
 			providersDir = strings.TrimSpace(cfg.Providers.Dir)
 		} else {
@@ -84,7 +95,7 @@ func runBalanceGet(args []string) error {
 		return fmt.Errorf("load providers dir %s failed: %w", providersDir, err)
 	}
 
-	targets, err := resolveTargetProviders(reg, provider, providersCSV, allProviders)
+	targets, err := resolveTargetProviders(reg, opts.provider, opts.providersCSV, opts.allProviders)
 	if err != nil {
 		return err
 	}
@@ -97,7 +108,7 @@ func runBalanceGet(args []string) error {
 	success := 0
 	fail := 0
 	var debugOut io.Writer
-	if debug {
+	if opts.debug {
 		debugOut = os.Stdout
 	}
 	for _, p := range targets {
@@ -105,20 +116,20 @@ func runBalanceGet(args []string) error {
 		if !ok {
 			fail++
 			fmt.Printf("provider=%s error=%q\n", p, "provider not found in registry")
-			if failFast {
+			if opts.failFast {
 				return fmt.Errorf("provider %q not found in %s", p, providersDir)
 			}
 			continue
 		}
 
-		key := strings.TrimSpace(upstreamKey)
-		baseURL := strings.TrimSpace(baseURLOv)
+		key := strings.TrimSpace(opts.upstreamKey)
+		baseURL := strings.TrimSpace(opts.baseURLOv)
 		if key == "" || baseURL == "" {
 			next, found := ks.NextKey(p)
 			if !found {
 				fail++
 				fmt.Printf("provider=%s error=%q\n", p, "no upstream key in keys.yaml")
-				if failFast {
+				if opts.failFast {
 					return fmt.Errorf("provider %q has no key in %s (or env override)", p, keysPath)
 				}
 				continue
@@ -133,7 +144,7 @@ func runBalanceGet(args []string) error {
 		if key == "" {
 			fail++
 			fmt.Printf("provider=%s error=%q\n", p, "upstream key is empty")
-			if failFast {
+			if opts.failFast {
 				return errors.New("upstream key is empty")
 			}
 			continue
@@ -145,7 +156,7 @@ func runBalanceGet(args []string) error {
 			File:     pf,
 			Meta: dslmeta.Meta{
 				API:      api,
-				IsStream: stream,
+				IsStream: opts.stream,
 			},
 			BaseURL:  baseURL,
 			APIKey:   key,
@@ -155,7 +166,7 @@ func runBalanceGet(args []string) error {
 		if qerr != nil {
 			fail++
 			fmt.Printf("provider=%s error=%q\n", p, qerr.Error())
-			if failFast {
+			if opts.failFast {
 				return qerr
 			}
 			continue

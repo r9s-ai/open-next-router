@@ -1,77 +1,71 @@
 package cli
 
 import (
-	"flag"
-	"fmt"
-	"io"
 	"os"
 	"strings"
 
 	"github.com/r9s-ai/open-next-router/cmd/onr-admin/tui"
+	"github.com/spf13/cobra"
 )
 
 func Run(args []string) error {
-	if len(args) == 0 {
-		printRootHelp(os.Stdout)
-		return nil
+	root := newRootCmd()
+	if len(args) > 0 && strings.HasPrefix(args[0], "-") && args[0] != "-h" && args[0] != "--help" {
+		// 兼容旧行为：直接传 flag 时默认进入 tui。
+		args = append([]string{"tui"}, args...)
 	}
-	switch args[0] {
-	case "help", "-h", "--help":
-		printRootHelp(os.Stdout)
-		return nil
-	case "tui":
-		return runTUI(args[1:])
-	case "token":
-		return runToken(args[1:])
-	case "crypto":
-		return runCrypto(args[1:])
-	case "validate":
-		return runValidate(args[1:])
-	case "balance":
-		return runBalance(args[1:])
-	default:
-		if strings.HasPrefix(args[0], "-") {
-			return runTUI(args)
-		}
-		return fmt.Errorf("unknown command %q", args[0])
-	}
+	root.SetArgs(args)
+	return root.Execute()
 }
 
-func printRootHelp(w io.Writer) {
-	fmt.Fprintln(w, "onr-admin - ONR 管理命令")
-	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "用法:")
-	fmt.Fprintln(w, "  onr-admin <command> <subcommand> [flags]")
-	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "命令:")
-	fmt.Fprintln(w, "  token create            生成 Token Key (onr:v1?)")
-	fmt.Fprintln(w, "  token create phase      分阶段输出 Token 生成结果")
-	fmt.Fprintln(w, "  crypto encrypt          将明文加密为 ENC[v1:aesgcm:...]")
-	fmt.Fprintln(w, "  crypto encrypt-keys     一键加密 keys.yaml 中明文 value")
-	fmt.Fprintln(w, "  crypto gen-master-key   生成随机 ONR_MASTER_KEY")
-	fmt.Fprintln(w, "  validate all            校验 keys/models/providers")
-	fmt.Fprintln(w, "  validate keys           校验 keys.yaml")
-	fmt.Fprintln(w, "  validate models         校验 models.yaml")
-	fmt.Fprintln(w, "  validate providers      校验 providers DSL 目录")
-	fmt.Fprintln(w, "  balance get             按 providers DSL 查询上游余额")
-	fmt.Fprintln(w, "  tui                     打开交互式管理界面")
+func newRootCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:           "onr-admin",
+		Short:         "ONR 管理命令",
+		SilenceUsage:  true,
+		SilenceErrors: true,
+	}
+	cmd.AddCommand(
+		newTokenCmd(),
+		newCryptoCmd(),
+		newValidateCmd(),
+		newBalanceCmd(),
+		newTUICmd(),
+	)
+	return cmd
 }
 
-func runTUI(args []string) error {
-	var cfgPath string
-	var keysPath string
-	var modelsPath string
-	var backup bool
-
-	fs := flag.NewFlagSet("tui", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	fs.StringVar(&cfgPath, "config", "onr.yaml", "config yaml path")
-	fs.StringVar(&cfgPath, "c", "onr.yaml", "config yaml path")
-	fs.StringVar(&keysPath, "keys", "", "keys.yaml path (override config keys.file)")
-	fs.StringVar(&modelsPath, "models", "", "models.yaml path (override config models.file)")
-	fs.BoolVar(&backup, "backup", true, "backup yaml before saving")
-	if err := fs.Parse(args); err != nil {
-		return err
+func newTUICmd() *cobra.Command {
+	opts := tuiOptions{
+		cfgPath: "onr.yaml",
+		backup:  true,
+		stdin:   os.Stdin,
+		stdout:  os.Stdout,
 	}
-	return tui.Run(cfgPath, keysPath, modelsPath, backup, os.Stdin, os.Stdout)
+	cmd := &cobra.Command{
+		Use:   "tui",
+		Short: "打开交互式管理界面",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runTUIWithOptions(opts)
+		},
+	}
+	fs := cmd.Flags()
+	fs.StringVarP(&opts.cfgPath, "config", "c", "onr.yaml", "config yaml path")
+	fs.StringVar(&opts.keysPath, "keys", "", "keys.yaml path (override config keys.file)")
+	fs.StringVar(&opts.modelsPath, "models", "", "models.yaml path (override config models.file)")
+	fs.BoolVar(&opts.backup, "backup", true, "backup yaml before saving")
+	return cmd
+}
+
+type tuiOptions struct {
+	cfgPath    string
+	keysPath   string
+	modelsPath string
+	backup     bool
+	stdin      *os.File
+	stdout     *os.File
+}
+
+func runTUIWithOptions(opts tuiOptions) error {
+	return tui.Run(opts.cfgPath, opts.keysPath, opts.modelsPath, opts.backup, opts.stdin, opts.stdout)
 }
