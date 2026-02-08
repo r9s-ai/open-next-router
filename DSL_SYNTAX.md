@@ -891,6 +891,97 @@ Multiple: yes
 
 - Shorthand for `cache_write_tokens = <jsonpath>;` (single JSONPath only; no arithmetic).
 
+### 7.10 balance (upstream balance query)
+
+#### balance_mode
+
+```text
+Syntax:  balance_mode <mode>;
+Default: —
+Context: balance
+Multiple: no
+```
+
+- Supported: `openai` / `custom`.
+
+#### method
+
+```text
+Syntax:  method <GET|POST>;
+Default: GET
+Context: balance
+Multiple: yes
+```
+
+#### path
+
+```text
+Syntax:  path <path-or-url>;
+Default: —
+Context: balance
+Multiple: yes
+```
+
+- Required in `balance_mode custom`.
+- Supports absolute URL or path relative to provider `base_url`.
+
+#### balance / used
+
+```text
+Syntax:  balance = <expr>;
+Syntax:  used = <expr>;
+Default: —
+Context: balance
+Multiple: yes
+```
+
+- Restricted expression: JSONPath / number with `+` `-` only.
+
+#### balance_path / used_path
+
+```text
+Syntax:  balance_path <jsonpath>;
+Syntax:  used_path <jsonpath>;
+Default: —
+Context: balance
+Multiple: yes
+```
+
+- `balance_path` is required if `balance` is not set in custom mode.
+
+#### balance_unit
+
+```text
+Syntax:  balance_unit <string>;
+Default: USD
+Context: balance
+Multiple: yes
+```
+
+- Allowed values: `USD` / `CNY`.
+
+#### set_header / del_header
+
+```text
+Syntax:  set_header <Header-Name> <expr>;
+Syntax:  del_header <Header-Name>;
+Default: —
+Context: balance
+Multiple: yes
+```
+
+#### subscription_path / usage_path
+
+```text
+Syntax:  subscription_path <path-or-url>;
+Syntax:  usage_path <path-or-url>;
+Default: OpenAI dashboard defaults
+Context: balance
+Multiple: yes
+```
+
+- Optional overrides for `balance_mode openai`.
+
 ---
 
 ## 8. Built-in variables (reference)

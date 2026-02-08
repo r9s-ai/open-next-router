@@ -21,6 +21,7 @@ type ProviderFile struct {
 	Error    ProviderError
 	Usage    ProviderUsage
 	Finish   ProviderFinishReason
+	Balance  ProviderBalance
 }
 
 type Registry struct {
@@ -133,12 +134,16 @@ func (r *Registry) ReloadFromDir(providersDir string) (LoadResult, error) {
 			continue
 		}
 
-		routing, headers, req, response, perr, usage, finish, err := parseProviderConfig(path, content)
+		routing, headers, req, response, perr, usage, finish, balance, err := parseProviderConfig(path, content)
 		if err != nil {
 			skipped = append(skipped, entry.Name())
 			continue
 		}
 		if err := validateProviderBaseURL(path, providerName, routing); err != nil {
+			skipped = append(skipped, entry.Name())
+			continue
+		}
+		if err := validateProviderBalance(path, providerName, balance); err != nil {
 			skipped = append(skipped, entry.Name())
 			continue
 		}
@@ -153,6 +158,7 @@ func (r *Registry) ReloadFromDir(providersDir string) (LoadResult, error) {
 			Error:    perr,
 			Usage:    usage,
 			Finish:   finish,
+			Balance:  balance,
 		}
 		loaded = append(loaded, providerName)
 	}

@@ -46,6 +46,14 @@
 //
 //   - ExtractUsage
 //
+//   - Balance extraction:
+//
+//   - ProviderBalance, MatchBalance, BalanceQueryConfig
+//
+//   - ParseBalanceExpr, BalanceExpr
+//
+//   - ExtractBalance
+//
 // # Host integration
 //
 // This package only depends on Go stdlib and other open-next-router/pkg packages.

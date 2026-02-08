@@ -116,6 +116,12 @@ go run ./cmd/onr-admin crypto gen-master-key --export
 # 校验 keys/models/providers
 go run ./cmd/onr-admin validate all --config ./onr.yaml
 
+# 按 providers DSL 查询上游余额
+go run ./cmd/onr-admin balance get --config ./onr.yaml -p openai
+go run ./cmd/onr-admin balance get --config ./onr.yaml --providers openai,openrouter,deepseek
+go run ./cmd/onr-admin balance get --config ./onr.yaml --all
+go run ./cmd/onr-admin balance get --config ./onr.yaml -p moonshot --debug
+
 # 进入交互式 TUI
 go run ./cmd/onr-admin tui --config ./onr.yaml
 ```

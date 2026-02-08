@@ -27,6 +27,8 @@ func Run(args []string) error {
 		return runCrypto(args[1:])
 	case "validate":
 		return runValidate(args[1:])
+	case "balance":
+		return runBalance(args[1:])
 	default:
 		if strings.HasPrefix(args[0], "-") {
 			return runTUI(args)
@@ -51,6 +53,7 @@ func printRootHelp(w io.Writer) {
 	fmt.Fprintln(w, "  validate keys           校验 keys.yaml")
 	fmt.Fprintln(w, "  validate models         校验 models.yaml")
 	fmt.Fprintln(w, "  validate providers      校验 providers DSL 目录")
+	fmt.Fprintln(w, "  balance get             按 providers DSL 查询上游余额")
 	fmt.Fprintln(w, "  tui                     打开交互式管理界面")
 }
 

@@ -200,73 +200,15 @@ func getIntByPath(root map[string]any, path string) int {
 		return 0
 	}
 	parts := strings.Split(strings.TrimPrefix(p, "$."), ".")
-	return getIntByParts(root, parts)
-}
-
-func getIntByParts(cur any, parts []string) int {
-	for i, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			return 0
-		}
-		name, idx, hasIdx, isStar := splitIndex(part)
-		if name != "" {
-			m, ok := cur.(map[string]any)
-			if !ok {
-				return 0
-			}
-			cur, ok = m[name]
-			if !ok {
-				return 0
-			}
-		}
-		if hasIdx {
-			arr, ok := cur.([]any)
-			if !ok {
-				return 0
-			}
-			if isStar {
-				sum := 0
-				rest := parts[i+1:]
-				if len(rest) == 0 {
-					for _, item := range arr {
-						sum += coerceInt(item)
-					}
-					return sum
-				}
-				for _, item := range arr {
-					sum += getIntByParts(item, rest)
-				}
-				return sum
-			}
-			if idx < 0 || idx >= len(arr) {
-				return 0
-			}
-			cur = arr[idx]
-		}
+	vals, ok := collectPathValues(root, parts)
+	if !ok {
+		return 0
 	}
-	return coerceInt(cur)
-}
-
-func splitIndex(s string) (name string, idx int, hasIdx bool, isStar bool) {
-	open := strings.IndexByte(s, '[')
-	if open < 0 {
-		return s, 0, false, false
+	sum := 0
+	for _, v := range vals {
+		sum += coerceInt(v)
 	}
-	close := strings.IndexByte(s, ']')
-	if close < 0 || close < open {
-		return s, 0, false, false
-	}
-	name = s[:open]
-	inner := strings.TrimSpace(s[open+1 : close])
-	if inner == "*" {
-		return name, 0, true, true
-	}
-	n, err := strconv.Atoi(inner)
-	if err != nil {
-		return name, 0, false, false
-	}
-	return name, n, true, false
+	return sum
 }
 
 func coerceInt(v any) int {

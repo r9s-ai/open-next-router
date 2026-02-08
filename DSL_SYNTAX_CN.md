@@ -933,6 +933,97 @@ Multiple: yes
 - 建议仅配合 `usage_extract custom;` 使用；同字段多次出现时后者覆盖前者。
 - 等价于 `cache_write_tokens = <jsonpath>;` 的简写（仅能写单个 JSONPath，不支持加减）。
 
+### 7.10 balance（上游余额查询）
+
+#### balance_mode
+
+```text
+Syntax:  balance_mode <mode>;
+Default: —
+Context: balance
+Multiple: no
+```
+
+- 支持：`openai` / `custom`。
+
+#### method
+
+```text
+Syntax:  method <GET|POST>;
+Default: GET
+Context: balance
+Multiple: yes
+```
+
+#### path
+
+```text
+Syntax:  path <path-or-url>;
+Default: —
+Context: balance
+Multiple: yes
+```
+
+- `balance_mode custom` 时必填。
+- 支持绝对 URL 或相对 provider `base_url` 的路径。
+
+#### balance / used
+
+```text
+Syntax:  balance = <expr>;
+Syntax:  used = <expr>;
+Default: —
+Context: balance
+Multiple: yes
+```
+
+- 受限表达式：只支持 JSONPath / 数值常量 + `+` `-`。
+
+#### balance_path / used_path
+
+```text
+Syntax:  balance_path <jsonpath>;
+Syntax:  used_path <jsonpath>;
+Default: —
+Context: balance
+Multiple: yes
+```
+
+- 在 custom 模式下，如果未设置 `balance`，则 `balance_path` 必填。
+
+#### balance_unit
+
+```text
+Syntax:  balance_unit <string>;
+Default: USD
+Context: balance
+Multiple: yes
+```
+
+- 仅支持：`USD` / `CNY`。
+
+#### set_header / del_header
+
+```text
+Syntax:  set_header <Header-Name> <expr>;
+Syntax:  del_header <Header-Name>;
+Default: —
+Context: balance
+Multiple: yes
+```
+
+#### subscription_path / usage_path
+
+```text
+Syntax:  subscription_path <path-or-url>;
+Syntax:  usage_path <path-or-url>;
+Default: OpenAI dashboard 默认路径
+Context: balance
+Multiple: yes
+```
+
+- `balance_mode openai` 的可选覆盖项。
+
 ---
 
 ## 8. 内置变量参考

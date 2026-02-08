@@ -2,6 +2,7 @@
 onr.yaml
 models.yaml
 keys.yaml
+keys.yaml.*
 .env
 
 # Build outputs

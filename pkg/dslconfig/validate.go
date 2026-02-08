@@ -64,7 +64,7 @@ func ValidateProviderFile(path string) (ProviderFile, error) {
 			p, providerName, expected,
 		)
 	}
-	routing, headers, req, response, perr, usage, finish, err := parseProviderConfig(p, content)
+	routing, headers, req, response, perr, usage, finish, balance, err := parseProviderConfig(p, content)
 	if err != nil {
 		return ProviderFile{}, err
 	}
@@ -83,6 +83,9 @@ func ValidateProviderFile(path string) (ProviderFile, error) {
 	if err := validateProviderFinishReason(p, providerName, finish); err != nil {
 		return ProviderFile{}, err
 	}
+	if err := validateProviderBalance(p, providerName, balance); err != nil {
+		return ProviderFile{}, err
+	}
 	return ProviderFile{
 		Name:     providerName,
 		Path:     p,
@@ -94,6 +97,7 @@ func ValidateProviderFile(path string) (ProviderFile, error) {
 		Error:    perr,
 		Usage:    usage,
 		Finish:   finish,
+		Balance:  balance,
 	}, nil
 }
 
@@ -191,6 +195,153 @@ func validateProviderFinishReason(path, providerName string, finish ProviderFini
 		scope := fmt.Sprintf("match[%d].metrics", i)
 		if err := validateFinishReasonExtractConfig(path, providerName, scope, m.Extract); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func validateProviderBalance(path, providerName string, balance ProviderBalance) error {
+	if err := validateBalanceQueryConfig(path, providerName, "defaults.balance", balance.Defaults); err != nil {
+		return err
+	}
+	for i, m := range balance.Matches {
+		scope := fmt.Sprintf("match[%d].balance", i)
+		if err := validateBalanceQueryConfig(path, providerName, scope, m.Query); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateBalanceQueryConfig(path, providerName, scope string, cfg BalanceQueryConfig) error {
+	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
+	if mode == "" {
+		return nil
+	}
+	if err := validateBalanceMode(path, providerName, scope, cfg.Mode, mode); err != nil {
+		return err
+	}
+	if err := validateBalanceMethod(path, providerName, scope, cfg.Method); err != nil {
+		return err
+	}
+	if err := validateBalancePaths(path, providerName, scope, cfg); err != nil {
+		return err
+	}
+	if err := validateBalanceExpr(path, providerName, scope, "balance", cfg.BalanceExpr); err != nil {
+		return err
+	}
+	if err := validateBalanceExpr(path, providerName, scope, "used", cfg.UsedExpr); err != nil {
+		return err
+	}
+	if err := validateCustomBalanceConfig(path, providerName, scope, mode, cfg); err != nil {
+		return err
+	}
+	if err := validateBalanceUnit(path, providerName, scope, cfg.Unit); err != nil {
+		return err
+	}
+	if err := validateBalanceURLPath(path, providerName, scope, "subscription_path", cfg.SubscriptionPath); err != nil {
+		return err
+	}
+	if err := validateBalanceURLPath(path, providerName, scope, "usage_path", cfg.UsagePath); err != nil {
+		return err
+	}
+	return validateBalanceHeaders(path, providerName, scope, cfg.Headers)
+}
+
+func validateBalanceMode(path, providerName, scope, raw, mode string) error {
+	switch mode {
+	case balanceModeOpenAI, balanceModeCustom:
+		return nil
+	default:
+		return fmt.Errorf("provider %q in %q: %s unsupported balance_mode %q", providerName, path, scope, raw)
+	}
+}
+
+func validateBalanceMethod(path, providerName, scope, methodRaw string) error {
+	method := strings.ToUpper(strings.TrimSpace(methodRaw))
+	if method == "" || method == "GET" || method == "POST" {
+		return nil
+	}
+	return fmt.Errorf("provider %q in %q: %s method must be GET or POST", providerName, path, scope)
+}
+
+func validateBalancePaths(path, providerName, scope string, cfg BalanceQueryConfig) error {
+	for _, pair := range []struct {
+		name string
+		val  string
+	}{
+		{"balance_path", cfg.BalancePath},
+		{"used_path", cfg.UsedPath},
+	} {
+		v := strings.TrimSpace(pair.val)
+		if v == "" {
+			continue
+		}
+		if !strings.HasPrefix(v, "$.") {
+			return fmt.Errorf("provider %q in %q: %s %s must start with '$.'", providerName, path, scope, pair.name)
+		}
+	}
+	return nil
+}
+
+func validateBalanceExpr(path, providerName, scope, field, expr string) error {
+	trimmed := strings.TrimSpace(expr)
+	if trimmed == "" {
+		return nil
+	}
+	if _, err := ParseBalanceExpr(trimmed); err != nil {
+		return fmt.Errorf("provider %q in %q: %s invalid %s expr: %w", providerName, path, scope, field, err)
+	}
+	return nil
+}
+
+func validateCustomBalanceConfig(path, providerName, scope, mode string, cfg BalanceQueryConfig) error {
+	if mode != balanceModeCustom {
+		return nil
+	}
+	if strings.TrimSpace(cfg.Path) == "" {
+		return fmt.Errorf("provider %q in %q: %s path is required when balance_mode=custom", providerName, path, scope)
+	}
+	if strings.TrimSpace(cfg.BalanceExpr) == "" && strings.TrimSpace(cfg.BalancePath) == "" {
+		return fmt.Errorf("provider %q in %q: %s requires balance_path or balance expr", providerName, path, scope)
+	}
+	return nil
+}
+
+func validateBalanceUnit(path, providerName, scope, unitRaw string) error {
+	unit := strings.TrimSpace(unitRaw)
+	if unit == "" || unit == "USD" || unit == "CNY" {
+		return nil
+	}
+	return fmt.Errorf("provider %q in %q: %s balance_unit must be USD or CNY", providerName, path, scope)
+}
+
+func validateBalanceURLPath(path, providerName, scope, field, value string) error {
+	v := strings.TrimSpace(value)
+	if v == "" {
+		return nil
+	}
+	if strings.HasPrefix(v, "/") || strings.HasPrefix(v, "http://") || strings.HasPrefix(v, "https://") {
+		return nil
+	}
+	return fmt.Errorf("provider %q in %q: %s %s must start with / or http(s)://", providerName, path, scope, field)
+}
+
+func validateBalanceHeaders(path, providerName, scope string, headers []HeaderOp) error {
+	const (
+		opHeaderSet = "header_set"
+		opHeaderDel = "header_del"
+	)
+	for i, op := range headers {
+		opScope := fmt.Sprintf("%s.headers[%d]", scope, i)
+		if op.Op != opHeaderSet && op.Op != opHeaderDel {
+			return fmt.Errorf("provider %q in %q: %s unsupported header op %q", providerName, path, opScope, op.Op)
+		}
+		if strings.TrimSpace(op.NameExpr) == "" {
+			return fmt.Errorf("provider %q in %q: %s name is empty", providerName, path, opScope)
+		}
+		if op.Op == opHeaderSet && strings.TrimSpace(op.ValueExpr) == "" {
+			return fmt.Errorf("provider %q in %q: %s value is empty", providerName, path, opScope)
 		}
 	}
 	return nil

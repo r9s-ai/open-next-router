@@ -240,6 +240,12 @@ go run ./cmd/onr-admin crypto gen-master-key --export
 # validate configs
 go run ./cmd/onr-admin validate all --config ./onr.yaml
 
+# query provider balance from DSL config
+go run ./cmd/onr-admin balance get --config ./onr.yaml -p openai
+go run ./cmd/onr-admin balance get --config ./onr.yaml --providers openai,openrouter,deepseek
+go run ./cmd/onr-admin balance get --config ./onr.yaml --all
+go run ./cmd/onr-admin balance get --config ./onr.yaml -p moonshot --debug
+
 # open interactive UI
 go run ./cmd/onr-admin tui --config ./onr.yaml
 ```
