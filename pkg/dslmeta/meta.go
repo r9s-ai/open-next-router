@@ -17,6 +17,12 @@ type Meta struct {
 	// APIKey is the selected upstream key (token) used by auth directives.
 	APIKey string
 
+	// OAuthAccessToken is the runtime OAuth access token resolved by oauth directives.
+	OAuthAccessToken string
+
+	// OAuthCacheKey is the runtime cache identity for OAuth token refresh/invalidation.
+	OAuthCacheKey string
+
 	// ActualModelName is the original request model.
 	ActualModelName string
 

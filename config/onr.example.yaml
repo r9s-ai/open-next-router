@@ -21,6 +21,13 @@ models:
   # Model routing file (model -> providers)
   file: "./models.yaml"
 
+oauth:
+  token_persist:
+    # Persist OAuth access tokens to local files (for OAuth-enabled providers).
+    enabled: false
+    # Directory used when token persistence is enabled.
+    dir: "./run/oauth"
+
 pricing:
   # Global switch for runtime cost calculation.
   enabled: false

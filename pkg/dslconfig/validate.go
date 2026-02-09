@@ -74,6 +74,9 @@ func ValidateProviderFile(path string) (ProviderFile, error) {
 	if err := validateProviderRequestTransform(p, providerName, req); err != nil {
 		return ProviderFile{}, err
 	}
+	if err := validateProviderHeaders(p, providerName, headers); err != nil {
+		return ProviderFile{}, err
+	}
 	if err := validateProviderResponse(p, providerName, response); err != nil {
 		return ProviderFile{}, err
 	}
@@ -109,6 +112,110 @@ func validateProviderResponse(path, providerName string, resp ProviderResponse) 
 		scope := fmt.Sprintf("match[%d].response", i)
 		if err := validateResponseDirective(path, providerName, scope, m.Response); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func validateProviderHeaders(path, providerName string, headers ProviderHeaders) error {
+	if err := validatePhaseHeaders(path, providerName, "defaults.auth", headers.Defaults); err != nil {
+		return err
+	}
+	for i, m := range headers.Matches {
+		scope := fmt.Sprintf("match[%d].auth", i)
+		if err := validatePhaseHeaders(path, providerName, scope, m.Headers); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validatePhaseHeaders(path, providerName, scope string, phase PhaseHeaders) error {
+	if err := validateHeaderOps(path, providerName, scope+".headers", append(append([]HeaderOp(nil), phase.Auth...), phase.Request...)); err != nil {
+		return err
+	}
+	return validateOAuthConfig(path, providerName, scope+".oauth", phase.OAuth)
+}
+
+func validateHeaderOps(path, providerName, scope string, headers []HeaderOp) error {
+	const (
+		opHeaderSet = "header_set"
+		opHeaderDel = "header_del"
+	)
+	for i, op := range headers {
+		opScope := fmt.Sprintf("%s[%d]", scope, i)
+		if op.Op != opHeaderSet && op.Op != opHeaderDel {
+			return fmt.Errorf("provider %q in %q: %s unsupported header op %q", providerName, path, opScope, op.Op)
+		}
+		if strings.TrimSpace(op.NameExpr) == "" {
+			return fmt.Errorf("provider %q in %q: %s name is empty", providerName, path, opScope)
+		}
+		if op.Op == opHeaderSet && strings.TrimSpace(op.ValueExpr) == "" {
+			return fmt.Errorf("provider %q in %q: %s value is empty", providerName, path, opScope)
+		}
+	}
+	return nil
+}
+
+func validateOAuthConfig(path, providerName, scope string, cfg OAuthConfig) error {
+	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
+	if mode == "" {
+		if cfg.IsEmpty() {
+			return nil
+		}
+		return fmt.Errorf("provider %q in %q: %s requires oauth_mode", providerName, path, scope)
+	}
+	if _, ok := oauthBuiltinTemplates[mode]; !ok {
+		return fmt.Errorf("provider %q in %q: %s unsupported oauth_mode %q", providerName, path, scope, cfg.Mode)
+	}
+
+	method := strings.ToUpper(strings.TrimSpace(cfg.Method))
+	if method != "" && method != "GET" && method != "POST" {
+		return fmt.Errorf("provider %q in %q: %s oauth_method must be GET or POST", providerName, path, scope)
+	}
+	ct := strings.ToLower(strings.TrimSpace(cfg.ContentType))
+	if ct != "" && ct != oauthContentTypeForm && ct != oauthContentTypeJSON {
+		return fmt.Errorf("provider %q in %q: %s oauth_content_type must be form or json", providerName, path, scope)
+	}
+	if cfg.TimeoutMs != nil && *cfg.TimeoutMs <= 0 {
+		return fmt.Errorf("provider %q in %q: %s oauth_timeout_ms must be > 0", providerName, path, scope)
+	}
+	if cfg.RefreshSkewSec != nil && *cfg.RefreshSkewSec < 0 {
+		return fmt.Errorf("provider %q in %q: %s oauth_refresh_skew_sec must be >= 0", providerName, path, scope)
+	}
+	if cfg.FallbackTTLSeconds != nil && *cfg.FallbackTTLSeconds <= 0 {
+		return fmt.Errorf("provider %q in %q: %s oauth_fallback_ttl_sec must be > 0", providerName, path, scope)
+	}
+	if mode != oauthModeCustom && len(cfg.Form) > 0 {
+		// allow field overrides in builtin modes
+		for i, f := range cfg.Form {
+			if strings.TrimSpace(f.Key) == "" {
+				return fmt.Errorf("provider %q in %q: %s oauth_form[%d] key is empty", providerName, path, scope, i)
+			}
+		}
+	}
+	if mode == oauthModeCustom {
+		if strings.TrimSpace(cfg.TokenURLExpr) == "" {
+			return fmt.Errorf("provider %q in %q: %s oauth_token_url is required in custom mode", providerName, path, scope)
+		}
+		if len(cfg.Form) == 0 {
+			return fmt.Errorf("provider %q in %q: %s oauth_form is required in custom mode", providerName, path, scope)
+		}
+	}
+	for _, pair := range []struct {
+		name string
+		val  string
+	}{
+		{name: "oauth_token_path", val: cfg.TokenPath},
+		{name: "oauth_expires_in_path", val: cfg.ExpiresInPath},
+		{name: "oauth_token_type_path", val: cfg.TokenTypePath},
+	} {
+		p := strings.TrimSpace(pair.val)
+		if p == "" {
+			continue
+		}
+		if !strings.HasPrefix(p, "$.") {
+			return fmt.Errorf("provider %q in %q: %s %s must start with '$.'", providerName, path, scope, pair.name)
 		}
 	}
 	return nil
@@ -336,23 +443,7 @@ func validateBalanceURLPath(path, providerName, scope, field, value string) erro
 }
 
 func validateBalanceHeaders(path, providerName, scope string, headers []HeaderOp) error {
-	const (
-		opHeaderSet = "header_set"
-		opHeaderDel = "header_del"
-	)
-	for i, op := range headers {
-		opScope := fmt.Sprintf("%s.headers[%d]", scope, i)
-		if op.Op != opHeaderSet && op.Op != opHeaderDel {
-			return fmt.Errorf("provider %q in %q: %s unsupported header op %q", providerName, path, opScope, op.Op)
-		}
-		if strings.TrimSpace(op.NameExpr) == "" {
-			return fmt.Errorf("provider %q in %q: %s name is empty", providerName, path, opScope)
-		}
-		if op.Op == opHeaderSet && strings.TrimSpace(op.ValueExpr) == "" {
-			return fmt.Errorf("provider %q in %q: %s value is empty", providerName, path, opScope)
-		}
-	}
-	return nil
+	return validateHeaderOps(path, providerName, scope+".headers", headers)
 }
 
 func validateFinishReasonExtractConfig(path, providerName, scope string, cfg FinishReasonExtractConfig) error {

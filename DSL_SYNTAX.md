@@ -180,6 +180,37 @@ auth { auth_header_key api_key; }
 
 Effect: `<Header-Name>: <channel.key>`
 
+#### OAuth token exchange + bearer injection
+
+```conf
+auth {
+  oauth_mode openai;              # openai|gemini|qwen|claude|iflow|antigravity|kimi|custom
+  oauth_refresh_token $channel.key;
+  auth_oauth_bearer;
+}
+```
+
+- `oauth_mode` enables runtime OAuth token exchange before upstream calls.
+- `auth_oauth_bearer;` injects `Authorization: Bearer <oauth.access_token>`.
+- Builtin modes provide provider-specific defaults (token endpoint / request format).
+- `custom` mode requires explicit `oauth_token_url` and at least one `oauth_form`.
+- Optional overrides:
+  - `oauth_token_url <expr>;`
+  - `oauth_client_id <expr>;`
+  - `oauth_client_secret <expr>;`
+  - `oauth_refresh_token <expr>;` (default: `$channel.key`)
+  - `oauth_scope <expr>;`
+  - `oauth_audience <expr>;`
+  - `oauth_method <GET|POST>;`
+  - `oauth_content_type <form|json>;`
+  - `oauth_form <key> <expr>;` (multiple allowed)
+  - `oauth_token_path <jsonpath>;` (default: `$.access_token`)
+  - `oauth_expires_in_path <jsonpath>;` (default: `$.expires_in`)
+  - `oauth_token_type_path <jsonpath>;` (default: `$.token_type`)
+  - `oauth_timeout_ms <int>;` (default: `5000`)
+  - `oauth_refresh_skew_sec <int>;` (default: `300`)
+  - `oauth_fallback_ttl_sec <int>;` (default: `1800`)
+
 ### 5.3 request
 
 In v0.1, `request` provides request-header operations and lightweight JSON body transforms.
@@ -593,6 +624,59 @@ Multiple: yes
 - Sets `<Header-Name>: <channel.key>`.
 - `<Header-Name>` can be an identifier or a string (use string to support `-`).
 - Token/value is not configurable in `.conf` (fixed to channel key).
+
+#### oauth_mode
+
+```text
+Syntax:  oauth_mode <mode>;
+Default: —
+Context: auth
+Multiple: yes (last wins)
+```
+
+- Allowed `<mode>`: `openai|gemini|qwen|claude|iflow|antigravity|kimi|custom`.
+- Enables runtime OAuth token exchange.
+
+#### auth_oauth_bearer
+
+```text
+Syntax:  auth_oauth_bearer;
+Default: —
+Context: auth
+Multiple: yes
+```
+
+- Sets `Authorization: Bearer <oauth.access_token>`.
+
+#### OAuth auth directives
+
+```text
+Syntax:
+  oauth_token_url <expr>;
+  oauth_client_id <expr>;
+  oauth_client_secret <expr>;
+  oauth_refresh_token <expr>;
+  oauth_scope <expr>;
+  oauth_audience <expr>;
+  oauth_method <GET|POST>;
+  oauth_content_type <form|json>;
+  oauth_form <key> <expr>;
+  oauth_token_path <jsonpath>;
+  oauth_expires_in_path <jsonpath>;
+  oauth_token_type_path <jsonpath>;
+  oauth_timeout_ms <int>;
+  oauth_refresh_skew_sec <int>;
+  oauth_fallback_ttl_sec <int>;
+Default: mode-specific (builtin) or required fields in custom mode
+Context: auth
+Multiple:
+  - oauth_form: yes
+  - others: yes (last wins)
+```
+
+- `custom` mode requires:
+  - `oauth_token_url`
+  - at least one `oauth_form`
 
 ### 7.5 request
 

@@ -121,6 +121,9 @@ func parseProvidersFromMergedFile(path string, content string) (map[string]Provi
 			if err := validateProviderBaseURL(path, providerName, routing); err != nil {
 				return nil, nil, err
 			}
+			if err := validateProviderHeaders(path, providerName, headers); err != nil {
+				return nil, nil, err
+			}
 			if err := validateProviderUsage(path, providerName, usage); err != nil {
 				return nil, nil, err
 			}

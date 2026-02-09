@@ -10,6 +10,66 @@ func parseAuthPhase(s *scanner, phase *PhaseHeaders) error {
 	if lb.kind != tokLBrace {
 		return s.errAt(lb, "expected '{' after auth")
 	}
+
+	handlers := map[string]func(*scanner, *PhaseHeaders) error{
+		"auth_bearer":       parseAuthBearerStmt,
+		"auth_header_key":   parseAuthHeaderKeyStmt,
+		"auth_oauth_bearer": parseAuthOAuthBearerStmt,
+		"oauth_mode": func(s *scanner, phase *PhaseHeaders) error {
+			mode, err := parseModeArgStmt(s, "oauth_mode")
+			if err != nil {
+				return err
+			}
+			phase.OAuth.Mode = strings.TrimSpace(mode)
+			return nil
+		},
+		"oauth_token_url": func(s *scanner, phase *PhaseHeaders) error {
+			return parseOAuthExprStmt(s, "oauth_token_url", &phase.OAuth.TokenURLExpr)
+		},
+		"oauth_client_id": func(s *scanner, phase *PhaseHeaders) error {
+			return parseOAuthExprStmt(s, "oauth_client_id", &phase.OAuth.ClientIDExpr)
+		},
+		"oauth_client_secret": func(s *scanner, phase *PhaseHeaders) error {
+			return parseOAuthExprStmt(s, "oauth_client_secret", &phase.OAuth.ClientSecretExpr)
+		},
+		"oauth_refresh_token": func(s *scanner, phase *PhaseHeaders) error {
+			return parseOAuthExprStmt(s, "oauth_refresh_token", &phase.OAuth.RefreshTokenExpr)
+		},
+		"oauth_scope": func(s *scanner, phase *PhaseHeaders) error {
+			return parseOAuthExprStmt(s, "oauth_scope", &phase.OAuth.ScopeExpr)
+		},
+		"oauth_audience": func(s *scanner, phase *PhaseHeaders) error {
+			return parseOAuthExprStmt(s, "oauth_audience", &phase.OAuth.AudienceExpr)
+		},
+		"oauth_method": func(s *scanner, phase *PhaseHeaders) error {
+			return parseOAuthMethodStmt(s, &phase.OAuth)
+		},
+		"oauth_content_type": func(s *scanner, phase *PhaseHeaders) error {
+			return parseOAuthContentTypeStmt(s, &phase.OAuth)
+		},
+		"oauth_token_path": func(s *scanner, phase *PhaseHeaders) error {
+			return parseOAuthLiteralStmt(s, "oauth_token_path", &phase.OAuth.TokenPath)
+		},
+		"oauth_expires_in_path": func(s *scanner, phase *PhaseHeaders) error {
+			return parseOAuthLiteralStmt(s, "oauth_expires_in_path", &phase.OAuth.ExpiresInPath)
+		},
+		"oauth_token_type_path": func(s *scanner, phase *PhaseHeaders) error {
+			return parseOAuthLiteralStmt(s, "oauth_token_type_path", &phase.OAuth.TokenTypePath)
+		},
+		"oauth_timeout_ms": func(s *scanner, phase *PhaseHeaders) error {
+			return parseOAuthIntStmt(s, "oauth_timeout_ms", &phase.OAuth.TimeoutMs)
+		},
+		"oauth_refresh_skew_sec": func(s *scanner, phase *PhaseHeaders) error {
+			return parseOAuthIntStmt(s, "oauth_refresh_skew_sec", &phase.OAuth.RefreshSkewSec)
+		},
+		"oauth_fallback_ttl_sec": func(s *scanner, phase *PhaseHeaders) error {
+			return parseOAuthIntStmt(s, "oauth_fallback_ttl_sec", &phase.OAuth.FallbackTTLSeconds)
+		},
+		"oauth_form": func(s *scanner, phase *PhaseHeaders) error {
+			return parseOAuthFormStmt(s, &phase.OAuth)
+		},
+	}
+
 	for {
 		tok := s.nextNonTrivia()
 		switch tok.kind {
@@ -18,19 +78,14 @@ func parseAuthPhase(s *scanner, phase *PhaseHeaders) error {
 		case tokRBrace:
 			return nil
 		case tokIdent:
-			switch tok.text {
-			case "auth_bearer":
-				if err := parseAuthBearerStmt(s, phase); err != nil {
+			if handler, ok := handlers[tok.text]; ok {
+				if err := handler(s, phase); err != nil {
 					return err
 				}
-			case "auth_header_key":
-				if err := parseAuthHeaderKeyStmt(s, phase); err != nil {
-					return err
-				}
-			default:
-				if err := skipStmtOrBlock(s); err != nil {
-					return err
-				}
+				continue
+			}
+			if err := skipStmtOrBlock(s); err != nil {
+				return err
 			}
 		default:
 			// ignore
@@ -260,6 +315,18 @@ func parseAuthBearerStmt(s *scanner, phase *PhaseHeaders) error {
 	return nil
 }
 
+func parseAuthOAuthBearerStmt(s *scanner, phase *PhaseHeaders) error {
+	if err := consumeSemicolon(s, "auth_oauth_bearer"); err != nil {
+		return err
+	}
+	phase.Auth = append(phase.Auth, HeaderOp{
+		Op:        "header_set",
+		NameExpr:  `"Authorization"`,
+		ValueExpr: `concat("Bearer ", ` + exprOAuthAccessToken + `)`,
+	})
+	return nil
+}
+
 func parseAuthHeaderKeyStmt(s *scanner, phase *PhaseHeaders) error {
 	// auth_header_key <Header-Name>;
 	nameTok := s.nextNonTrivia()
@@ -328,6 +395,113 @@ func parseDelHeaderStmt(s *scanner, phase *PhaseHeaders) error {
 	phase.Request = append(phase.Request, HeaderOp{
 		Op:       "header_del",
 		NameExpr: strconv.Quote(strings.TrimSpace(name)),
+	})
+	return nil
+}
+
+func parseOAuthExprStmt(s *scanner, _ string, out *string) error {
+	expr, err := consumeExprUntilSemicolon(s)
+	if err != nil {
+		return err
+	}
+	*out = strings.TrimSpace(expr)
+	return nil
+}
+
+func parseOAuthLiteralStmt(s *scanner, directive string, out *string) error {
+	tok := s.nextNonTrivia()
+	if tok.kind == tokOther && tok.text == "=" {
+		return s.errAt(tok, directive+" does not use '='; use: "+directive+" <value>;")
+	}
+	expr, err := consumeExprUntilSemicolonWithFirst(s, tok)
+	if err != nil {
+		return err
+	}
+	v := strings.TrimSpace(expr)
+	if strings.HasPrefix(v, "\"") && strings.HasSuffix(v, "\"") {
+		v = strings.TrimSpace(unquoteString(v))
+	}
+	*out = v
+	return nil
+}
+
+func parseOAuthMethodStmt(s *scanner, cfg *OAuthConfig) error {
+	tok := s.nextNonTrivia()
+	if tok.kind == tokOther && tok.text == "=" {
+		return s.errAt(tok, "oauth_method does not use '='; use: oauth_method <GET|POST>;")
+	}
+	expr, err := consumeExprUntilSemicolonWithFirst(s, tok)
+	if err != nil {
+		return err
+	}
+	v := strings.ToUpper(strings.TrimSpace(expr))
+	v = strings.Trim(v, "\"")
+	if v == "" {
+		return s.errAt(tok, "oauth_method requires value")
+	}
+	cfg.Method = v
+	return nil
+}
+
+func parseOAuthContentTypeStmt(s *scanner, cfg *OAuthConfig) error {
+	tok := s.nextNonTrivia()
+	if tok.kind == tokOther && tok.text == "=" {
+		return s.errAt(tok, "oauth_content_type does not use '='; use: oauth_content_type <form|json>;")
+	}
+	expr, err := consumeExprUntilSemicolonWithFirst(s, tok)
+	if err != nil {
+		return err
+	}
+	v := strings.ToLower(strings.TrimSpace(expr))
+	v = strings.Trim(v, "\"")
+	if v == "" {
+		return s.errAt(tok, "oauth_content_type requires value")
+	}
+	cfg.ContentType = v
+	return nil
+}
+
+func parseOAuthIntStmt(s *scanner, directive string, out **int) error {
+	tok := s.nextNonTrivia()
+	if tok.kind == tokOther && tok.text == "=" {
+		return s.errAt(tok, directive+" does not use '='; use: "+directive+" <int>;")
+	}
+	expr, err := consumeExprUntilSemicolonWithFirst(s, tok)
+	if err != nil {
+		return err
+	}
+	v := strings.TrimSpace(strings.Trim(expr, `"`))
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return s.errAt(tok, directive+" expects integer")
+	}
+	*out = &n
+	return nil
+}
+
+func parseOAuthFormStmt(s *scanner, cfg *OAuthConfig) error {
+	keyTok := s.nextNonTrivia()
+	switch keyTok.kind {
+	case tokIdent, tokString:
+		// ok
+	default:
+		return s.errAt(keyTok, "oauth_form expects key")
+	}
+	key := keyTok.text
+	if keyTok.kind == tokString {
+		key = unquoteString(keyTok.text)
+	}
+	expr, err := consumeExprUntilSemicolon(s)
+	if err != nil {
+		return err
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return s.errAt(keyTok, "oauth_form key is empty")
+	}
+	cfg.Form = append(cfg.Form, OAuthFormField{
+		Key:       key,
+		ValueExpr: strings.TrimSpace(expr),
 	})
 	return nil
 }

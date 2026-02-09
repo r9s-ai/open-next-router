@@ -123,6 +123,8 @@ func evalStringExpr(expr string, meta *dslmeta.Meta) string {
 		return meta.BaseURL
 	case exprChannelKey:
 		return meta.APIKey
+	case exprOAuthAccessToken:
+		return meta.OAuthAccessToken
 	case exprRequestModel:
 		return meta.ActualModelName
 	case exprRequestMapped:

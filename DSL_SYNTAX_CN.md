@@ -182,6 +182,37 @@ auth { auth_header_key api_key; }
 
 效果：`<Header-Name>: <channel.key>`
 
+#### OAuth 换 token + Bearer 注入
+
+```conf
+auth {
+  oauth_mode openai;              # openai|gemini|qwen|claude|iflow|antigravity|kimi|custom
+  oauth_refresh_token $channel.key;
+  auth_oauth_bearer;
+}
+```
+
+- `oauth_mode`：开启运行时 OAuth token 交换。
+- `auth_oauth_bearer;`：注入 `Authorization: Bearer <oauth.access_token>`。
+- 内置 mode 会提供默认 token endpoint 与请求格式。
+- `custom` 模式必须显式配置 `oauth_token_url`，并至少有一条 `oauth_form`。
+- 可选覆盖项：
+  - `oauth_token_url <expr>;`
+  - `oauth_client_id <expr>;`
+  - `oauth_client_secret <expr>;`
+  - `oauth_refresh_token <expr>;`（默认 `$channel.key`）
+  - `oauth_scope <expr>;`
+  - `oauth_audience <expr>;`
+  - `oauth_method <GET|POST>;`
+  - `oauth_content_type <form|json>;`
+  - `oauth_form <key> <expr>;`（可多条）
+  - `oauth_token_path <jsonpath>;`（默认 `$.access_token`）
+  - `oauth_expires_in_path <jsonpath>;`（默认 `$.expires_in`）
+  - `oauth_token_type_path <jsonpath>;`（默认 `$.token_type`）
+  - `oauth_timeout_ms <int>;`（默认 `5000`）
+  - `oauth_refresh_skew_sec <int>;`（默认 `300`）
+  - `oauth_fallback_ttl_sec <int>;`（默认 `1800`）
+
 ### 5.3 request（请求处理）
 
 > v0.1：`request` phase 同时承担“请求头操作”与“请求体（JSON）变换”的能力。
@@ -620,6 +651,59 @@ Multiple: yes
 - 效果：设置 `<Header-Name>: <channel.key>`。
 - `<Header-Name>` 支持标识符或字符串（建议用字符串以支持 `-`）。
 - 不支持配置 token/value（固定取渠道 key）。
+
+#### oauth_mode
+
+```text
+Syntax:  oauth_mode <mode>;
+Default: —
+Context: auth
+Multiple: yes（最后一条生效）
+```
+
+- `<mode>` 可选：`openai|gemini|qwen|claude|iflow|antigravity|kimi|custom`。
+- 含义：开启运行时 OAuth token 交换。
+
+#### auth_oauth_bearer
+
+```text
+Syntax:  auth_oauth_bearer;
+Default: —
+Context: auth
+Multiple: yes
+```
+
+- 效果：设置 `Authorization: Bearer <oauth.access_token>`。
+
+#### OAuth 相关指令
+
+```text
+Syntax:
+  oauth_token_url <expr>;
+  oauth_client_id <expr>;
+  oauth_client_secret <expr>;
+  oauth_refresh_token <expr>;
+  oauth_scope <expr>;
+  oauth_audience <expr>;
+  oauth_method <GET|POST>;
+  oauth_content_type <form|json>;
+  oauth_form <key> <expr>;
+  oauth_token_path <jsonpath>;
+  oauth_expires_in_path <jsonpath>;
+  oauth_token_type_path <jsonpath>;
+  oauth_timeout_ms <int>;
+  oauth_refresh_skew_sec <int>;
+  oauth_fallback_ttl_sec <int>;
+Default: 内置 mode 有默认值；custom 模式需显式配置关键字段
+Context: auth
+Multiple:
+  - oauth_form: yes
+  - 其他: yes（最后一条生效）
+```
+
+- `custom` 模式必填：
+  - `oauth_token_url`
+  - 至少一条 `oauth_form`
 
 ### 7.5 request（请求处理）
 

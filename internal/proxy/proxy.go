@@ -22,6 +22,7 @@ import (
 	"github.com/r9s-ai/open-next-router/pkg/apitransform"
 	"github.com/r9s-ai/open-next-router/pkg/dslconfig"
 	"github.com/r9s-ai/open-next-router/pkg/dslmeta"
+	"github.com/r9s-ai/open-next-router/pkg/oauthclient"
 	"github.com/r9s-ai/open-next-router/pkg/pricing"
 	"github.com/r9s-ai/open-next-router/pkg/trafficdump"
 	"github.com/r9s-ai/open-next-router/pkg/usageestimate"
@@ -65,8 +66,14 @@ type Client struct {
 	// Example: {"openai": "http://127.0.0.1:7890"}.
 	ProxyByProvider map[string]string
 
+	OAuthTokenPersistEnabled bool
+	OAuthTokenPersistDir     string
+
 	mu          sync.Mutex
 	httpByProxy map[string]*http.Client
+
+	oauthMu     sync.Mutex
+	oauthClient *oauthclient.Client
 
 	pricingMu      sync.RWMutex
 	pricing        *pricing.Resolver
@@ -647,31 +654,47 @@ func (c *Client) doUpstreamRequest(gc *gin.Context, provider string, pf dslconfi
 	upstreamURL := baseURL + m.RequestURLPath
 
 	reqCtx, cancel := context.WithTimeout(gc.Request.Context(), c.WriteTimeout)
-	req, err := http.NewRequestWithContext(reqCtx, gc.Request.Method, upstreamURL, bytes.NewReader(reqBody))
-	if err != nil {
-		cancel()
-		return nil, func() {}, err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	pf.Headers.Apply(m, req.Header)
-
-	if rec := trafficdump.FromContext(gc); rec != nil && rec.MaxBytes() > 0 {
-		limited, truncated := trafficdump.LimitBytes(reqBody, rec.MaxBytes())
-		trafficdump.AppendUpstreamRequest(gc, req.Method, upstreamURL, req.Header, limited, false, truncated)
-	}
-
 	httpc, err := c.httpClientForProvider(provider)
 	if err != nil {
 		cancel()
 		return nil, func() {}, err
 	}
-	resp, err := httpc.Do(req)
-	if err != nil {
-		cancel()
-		return nil, func() {}, err
+
+	var lastResp *http.Response
+	for attempt := 0; attempt < 2; attempt++ {
+		req, reqErr := http.NewRequestWithContext(reqCtx, gc.Request.Method, upstreamURL, bytes.NewReader(reqBody))
+		if reqErr != nil {
+			cancel()
+			return nil, func() {}, reqErr
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		if oauthErr := c.prepareOAuthForUpstream(reqCtx, provider, pf, m); oauthErr != nil {
+			cancel()
+			return nil, func() {}, oauthErr
+		}
+		pf.Headers.Apply(m, req.Header)
+
+		if rec := trafficdump.FromContext(gc); rec != nil && rec.MaxBytes() > 0 {
+			limited, truncated := trafficdump.LimitBytes(reqBody, rec.MaxBytes())
+			trafficdump.AppendUpstreamRequest(gc, req.Method, upstreamURL, req.Header, limited, false, truncated)
+		}
+
+		resp, doErr := httpc.Do(req)
+		if doErr != nil {
+			cancel()
+			return nil, func() {}, doErr
+		}
+		lastResp = resp
+		if attempt == 0 && resp.StatusCode == http.StatusUnauthorized && strings.TrimSpace(m.OAuthCacheKey) != "" {
+			_ = resp.Body.Close()
+			c.invalidateOAuthCache(m.OAuthCacheKey)
+			m.OAuthAccessToken = ""
+			continue
+		}
+		return resp, cancel, nil
 	}
-	return resp, cancel, nil
+	return lastResp, cancel, nil
 }
 
 func isEffectiveStream(clientStream bool, resp *http.Response) bool {

@@ -36,6 +36,14 @@ type Config struct {
 		File string `yaml:"file"`
 	} `yaml:"models"`
 
+	OAuth struct {
+		// TokenPersist controls whether OAuth access tokens should be persisted to disk.
+		TokenPersist struct {
+			Enabled bool   `yaml:"enabled"`
+			Dir     string `yaml:"dir"`
+		} `yaml:"token_persist"`
+	} `yaml:"oauth"`
+
 	Pricing struct {
 		Enabled bool `yaml:"enabled"`
 		// File points to base model pricing data.
@@ -107,6 +115,9 @@ func applyDefaults(cfg *Config) {
 	if strings.TrimSpace(cfg.Models.File) == "" {
 		cfg.Models.File = "./models.yaml"
 	}
+	if strings.TrimSpace(cfg.OAuth.TokenPersist.Dir) == "" {
+		cfg.OAuth.TokenPersist.Dir = "./run/oauth"
+	}
 	if strings.TrimSpace(cfg.Pricing.File) == "" {
 		cfg.Pricing.File = "./price.yaml"
 	}
@@ -158,6 +169,10 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v := strings.TrimSpace(os.Getenv("ONR_MODELS_FILE")); v != "" {
 		cfg.Models.File = v
+	}
+	cfg.OAuth.TokenPersist.Enabled = envBool("ONR_OAUTH_TOKEN_PERSIST_ENABLED", cfg.OAuth.TokenPersist.Enabled)
+	if v := strings.TrimSpace(os.Getenv("ONR_OAUTH_TOKEN_PERSIST_DIR")); v != "" {
+		cfg.OAuth.TokenPersist.Dir = v
 	}
 	if v := strings.TrimSpace(os.Getenv("ONR_PRICE_FILE")); v != "" {
 		cfg.Pricing.File = v
@@ -222,6 +237,9 @@ func validate(cfg *Config) error {
 	}
 	if cfg.TrafficDump.MaxBytes < 0 {
 		return errors.New("traffic_dump.max_bytes must be non-negative")
+	}
+	if cfg.OAuth.TokenPersist.Enabled && strings.TrimSpace(cfg.OAuth.TokenPersist.Dir) == "" {
+		return errors.New("oauth.token_persist.dir is required when oauth.token_persist.enabled=true")
 	}
 	return nil
 }

@@ -27,6 +27,7 @@ type UpstreamHeaders struct {
 type PhaseHeaders struct {
 	Auth    []HeaderOp
 	Request []HeaderOp
+	OAuth   OAuthConfig
 }
 
 type HeaderOp struct {
@@ -37,24 +38,14 @@ type HeaderOp struct {
 }
 
 func (p ProviderHeaders) Apply(meta *dslmeta.Meta, hdr http.Header) {
-	if meta == nil || hdr == nil {
+	if hdr == nil {
 		return
 	}
-	api := strings.TrimSpace(meta.API)
-	if api == "" {
+	phase, ok := p.Effective(meta)
+	if !ok {
 		return
 	}
-
-	ops := make([]HeaderOp, 0, len(p.Defaults.Auth)+len(p.Defaults.Request))
-	ops = append(ops, p.Defaults.Auth...)
-	ops = append(ops, p.Defaults.Request...)
-
-	if m, ok := p.selectMatch(api, meta.IsStream); ok {
-		ops = append(ops, m.Headers.Auth...)
-		ops = append(ops, m.Headers.Request...)
-	}
-
-	for _, op := range ops {
+	for _, op := range append(append([]HeaderOp(nil), phase.Auth...), phase.Request...) {
 		name := strings.TrimSpace(evalStringExpr(op.NameExpr, meta))
 		switch op.Op {
 		case "header_set":
@@ -69,6 +60,29 @@ func (p ProviderHeaders) Apply(meta *dslmeta.Meta, hdr http.Header) {
 			hdr.Del(name)
 		}
 	}
+}
+
+func (p ProviderHeaders) Effective(meta *dslmeta.Meta) (PhaseHeaders, bool) {
+	if meta == nil {
+		return PhaseHeaders{}, false
+	}
+	api := strings.TrimSpace(meta.API)
+	if api == "" {
+		return PhaseHeaders{}, false
+	}
+
+	out := PhaseHeaders{
+		Auth:    append([]HeaderOp(nil), p.Defaults.Auth...),
+		Request: append([]HeaderOp(nil), p.Defaults.Request...),
+		OAuth:   p.Defaults.OAuth,
+	}
+
+	if m, ok := p.selectMatch(api, meta.IsStream); ok {
+		out.Auth = append(out.Auth, m.Headers.Auth...)
+		out.Request = append(out.Request, m.Headers.Request...)
+		out.OAuth = out.OAuth.Merge(m.Headers.OAuth)
+	}
+	return out, true
 }
 
 func (p ProviderHeaders) selectMatch(api string, stream bool) (MatchHeaders, bool) {

@@ -248,6 +248,22 @@ Or override via environment variables:
 - `ONR_UPSTREAM_PROXY_OPENAI=http://127.0.0.1:7890`
 - `ONR_UPSTREAM_PROXY_ANTHROPIC=http://127.0.0.1:7891`
 
+## OAuth Token Persistence
+
+When provider DSL `auth` uses OAuth directives, ONR can persist exchanged access tokens to local files.
+
+```yaml
+oauth:
+  token_persist:
+    enabled: true
+    dir: "./run/oauth"
+```
+
+Environment overrides:
+
+- `ONR_OAUTH_TOKEN_PERSIST_ENABLED=true|false`
+- `ONR_OAUTH_TOKEN_PERSIST_DIR=./run/oauth`
+
 ## Provider Selection
 
 - Override: `x-onr-provider: <provider>`
