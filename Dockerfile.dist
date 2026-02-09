@@ -1,7 +1,8 @@
 FROM alpine:3.20
 RUN adduser -D -H -u 10001 app
-# The binary is provided by GoReleaser in the build context
-COPY onr /usr/local/bin/onr
+# The binary is provided by GoReleaser (dockers_v2) under a platform subdir.
+ARG TARGETPLATFORM
+COPY ${TARGETPLATFORM}/onr /usr/local/bin/onr
 USER app
 WORKDIR /home/app
 EXPOSE 3000
