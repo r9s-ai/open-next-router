@@ -440,6 +440,11 @@ func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey
 	if err != nil {
 		return nil, err
 	}
+	if strings.TrimSpace(model) == "" {
+		if v, ok := gc.Get("onr.model"); ok {
+			model = strings.TrimSpace(fmt.Sprintf("%v", v))
+		}
+	}
 	if mo := auth.TokenModelOverride(gc); mo != "" {
 		model = mo
 		if root != nil {

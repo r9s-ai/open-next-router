@@ -18,6 +18,24 @@ func TestMapGeminiGenerateContentToOpenAIChatCompletions_Basic(t *testing.T) {
 	}
 }
 
+func TestMapGeminiGenerateContentToOpenAIChatCompletions_ModelAndStream(t *testing.T) {
+	in := []byte(`{
+  "model":"gpt-4o-mini",
+  "stream":true,
+  "stream_options":{"include_usage":true},
+  "contents":[{"role":"user","parts":[{"text":"hi"}]}],
+  "generationConfig":{"maxOutputTokens":32}
+}`)
+	out, err := MapGeminiGenerateContentToOpenAIChatCompletions(in)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	s := string(out)
+	if !containsAll(s, `"model":"gpt-4o-mini"`, `"stream":true`, `"include_usage":true`, `"max_tokens":32`) {
+		t.Fatalf("unexpected mapped output: %s", s)
+	}
+}
+
 func TestMapOpenAIChatCompletionsToGeminiGenerateContentResponse_Basic(t *testing.T) {
 	in := []byte(`{
   "choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}],

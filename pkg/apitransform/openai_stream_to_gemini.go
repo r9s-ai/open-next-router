@@ -1,7 +1,6 @@
 package apitransform
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/r9s-ai/open-next-router/pkg/apitypes"
@@ -26,9 +25,6 @@ func MapOpenAIChatCompletionsChunkToGeminiResponse(body []byte) ([]byte, bool, e
 // MapOpenAIChatCompletionsChunkToGeminiResponseObject maps one OpenAI chat chunk object to one Gemini response object.
 func MapOpenAIChatCompletionsChunkToGeminiResponseObject(root apitypes.JSONObject) (apitypes.JSONObject, bool, error) {
 	choices, _ := root["choices"].([]any)
-	if len(choices) == 0 {
-		return nil, false, fmt.Errorf("choices is required")
-	}
 
 	candidates := make([]any, 0, len(choices))
 	hasPayload := false

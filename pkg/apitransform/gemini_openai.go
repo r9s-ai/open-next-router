@@ -32,12 +32,22 @@ func MapGeminiGenerateContentToOpenAIChatCompletions(body []byte) ([]byte, error
 func MapGeminiGenerateContentToOpenAIChatCompletionsObject(root apitypes.JSONObject) (apitypes.JSONObject, error) {
 	out := apitypes.JSONObject{}
 	messages := mapGeminiContentsToOpenAIMessages(root["contents"])
-	messages = prependGeminiSystemInstruction(root["system_instruction"], messages)
+	messages = prependGeminiSystemInstruction(firstObject(root, "system_instruction", "systemInstruction"), messages)
 	if len(messages) > 0 {
 		out["messages"] = messages
 	}
 
-	if cfg, _ := root["generation_config"].(map[string]any); cfg != nil {
+	if model := strings.TrimSpace(jsonutil.CoerceString(root["model"])); model != "" {
+		out["model"] = model
+	}
+	if stream, ok := root["stream"].(bool); ok {
+		out["stream"] = stream
+	}
+	if so, _ := root["stream_options"].(map[string]any); so != nil {
+		out["stream_options"] = so
+	}
+
+	if cfg := firstObject(root, "generation_config", "generationConfig"); cfg != nil {
 		if v, ok := cfg["temperature"].(float64); ok {
 			out["temperature"] = v
 		}
@@ -53,6 +63,15 @@ func MapGeminiGenerateContentToOpenAIChatCompletionsObject(root apitypes.JSONObj
 	}
 
 	return out, nil
+}
+
+func firstObject(root apitypes.JSONObject, keys ...string) map[string]any {
+	for _, key := range keys {
+		if m, _ := root[key].(map[string]any); m != nil {
+			return m
+		}
+	}
+	return nil
 }
 
 func mapGeminiContentsToOpenAIMessages(rawContents any) []any {

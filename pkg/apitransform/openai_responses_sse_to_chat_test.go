@@ -159,3 +159,25 @@ func TestTransformOpenAIResponsesSSEToChatCompletionsSSE_FlushOnEOF(t *testing.T
 		t.Fatalf("unexpected output: %s", s)
 	}
 }
+
+func TestTransformOpenAIResponsesSSEToChatCompletionsSSE_DoneShouldBeLastWhenCompletedComesEarly(t *testing.T) {
+	in := "" +
+		"event: response.completed\n" +
+		"data: {\"response\":{\"id\":\"resp_1\",\"created_at\":1700000000,\"model\":\"gpt-4o-mini\",\"status\":\"completed\",\"output\":[{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"Hello\"}]}]}}\n\n" +
+		"event: response.output_text.delta\n" +
+		"data: {\"delta\":\"Hello\"}\n\n"
+
+	var buf bytes.Buffer
+	if err := TransformOpenAIResponsesSSEToChatCompletionsSSE(bytes.NewBufferString(in), &buf); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	s := buf.String()
+	if strings.Count(s, "data: [DONE]") != 1 {
+		t.Fatalf("DONE should appear exactly once, got output: %s", s)
+	}
+	deltaPos := strings.Index(s, "\"delta\":{\"content\":\"Hello\"}")
+	donePos := strings.LastIndex(s, "data: [DONE]")
+	if deltaPos < 0 || donePos < 0 || deltaPos > donePos {
+		t.Fatalf("DONE should be emitted after content delta, got output: %s", s)
+	}
+}

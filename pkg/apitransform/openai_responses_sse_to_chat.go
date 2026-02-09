@@ -49,6 +49,9 @@ func TransformOpenAIResponsesSSEToChatCompletionsSSE(r io.Reader, w io.Writer) e
 						return err
 					}
 				}
+				if err := s.EmitFinalIfPending(); err != nil {
+					return err
+				}
 				return nil
 			}
 			return err
@@ -121,6 +124,9 @@ type responsesSSEToChatState struct {
 	toolCallArgsByID            map[string]string
 	toolCallNameSent            map[string]bool
 	toolCallCanonicalIDByItemID map[string]string
+
+	pendingFinalRoot map[string]any
+	emittedFinal     bool
 }
 
 func (s *responsesSSEToChatState) HandleEvent(ev *sseEvent) error {
@@ -138,9 +144,9 @@ func (s *responsesSSEToChatState) HandleEvent(ev *sseEvent) error {
 		return err
 	}
 
-	// Final response: either an explicit completed event, or any payload with "response" object / status.
-	if s.shouldEmitFinal(eventName, root) {
-		return s.emitFinalFrom(root)
+	// Capture final response candidate and emit at EOF to avoid early [DONE] in out-of-order streams.
+	if s.shouldCaptureFinal(eventName, root) {
+		s.captureFinal(root)
 	}
 	return nil
 }
@@ -209,7 +215,8 @@ func (s *responsesSSEToChatState) handleTypedEvent(eventNameLower string, root m
 	case "response.function_call_arguments.done":
 		return true, nil
 	case "response.completed":
-		return false, nil // allow final emit below
+		s.captureFinal(root)
+		return true, nil
 	default:
 		return false, nil
 	}
@@ -279,20 +286,50 @@ func (s *responsesSSEToChatState) handleFunctionCallArgsDelta(root map[string]an
 	return s.sendToolCallDelta(callID, "", delta)
 }
 
-func (s *responsesSSEToChatState) shouldEmitFinal(eventName string, root map[string]any) bool {
+func (s *responsesSSEToChatState) shouldCaptureFinal(eventName string, root map[string]any) bool {
 	if strings.Contains(strings.ToLower(strings.TrimSpace(eventName)), "completed") {
 		return true
 	}
 	if root == nil {
 		return false
 	}
-	if root["response"] != nil {
-		return true
+	if resp, _ := root["response"].(map[string]any); resp != nil {
+		return isTerminalStatus(jsonutil.CoerceString(resp["status"]))
 	}
-	if strings.TrimSpace(jsonutil.CoerceString(root["status"])) != "" {
-		return true
+	if root["status"] != nil {
+		return isTerminalStatus(jsonutil.CoerceString(root["status"]))
 	}
 	return false
+}
+
+func (s *responsesSSEToChatState) captureFinal(root map[string]any) {
+	if s == nil || root == nil {
+		return
+	}
+	s.pendingFinalRoot = root
+}
+
+func (s *responsesSSEToChatState) EmitFinalIfPending() error {
+	if s == nil || s.emittedFinal {
+		return nil
+	}
+	if s.pendingFinalRoot == nil {
+		return nil
+	}
+	if err := s.emitFinalFrom(s.pendingFinalRoot); err != nil {
+		return err
+	}
+	s.emittedFinal = true
+	return nil
+}
+
+func isTerminalStatus(status string) bool {
+	s := strings.ToLower(strings.TrimSpace(status))
+	switch s {
+	case "completed", "incomplete", "failed", "canceled":
+		return true
+	}
+	return s == "cancel"+"led"
 }
 
 func (s *responsesSSEToChatState) emitFinalFrom(root map[string]any) error {
