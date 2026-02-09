@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/r9s-ai/open-next-router/cmd/onr-admin/store"
-	"github.com/r9s-ai/open-next-router/pkg/dslconfig"
-	"github.com/r9s-ai/open-next-router/pkg/pricing"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/pricing"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )

@@ -10,7 +10,7 @@ import (
 	"github.com/r9s-ai/open-next-router/internal/auth"
 	"github.com/r9s-ai/open-next-router/internal/config"
 	"github.com/r9s-ai/open-next-router/internal/proxy"
-	"github.com/r9s-ai/open-next-router/pkg/trafficdump"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/trafficdump"
 )
 
 func makeGeminiHandler(cfg *config.Config, st *state, pclient *proxy.Client) gin.HandlerFunc {

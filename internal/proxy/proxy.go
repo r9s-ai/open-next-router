@@ -19,13 +19,13 @@ import (
 	xproxy "golang.org/x/net/proxy"
 
 	"github.com/r9s-ai/open-next-router/internal/auth"
-	"github.com/r9s-ai/open-next-router/pkg/apitransform"
-	"github.com/r9s-ai/open-next-router/pkg/dslconfig"
-	"github.com/r9s-ai/open-next-router/pkg/dslmeta"
-	"github.com/r9s-ai/open-next-router/pkg/oauthclient"
-	"github.com/r9s-ai/open-next-router/pkg/pricing"
-	"github.com/r9s-ai/open-next-router/pkg/trafficdump"
-	"github.com/r9s-ai/open-next-router/pkg/usageestimate"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/apitransform"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/oauthclient"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/pricing"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/trafficdump"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/usageestimate"
 )
 
 const (

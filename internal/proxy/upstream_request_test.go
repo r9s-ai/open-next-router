@@ -10,8 +10,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/r9s-ai/open-next-router/pkg/dslconfig"
-	"github.com/r9s-ai/open-next-router/pkg/dslmeta"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
 )
 
 func TestDoUpstreamRequest_DoesNotCancelBodyImmediately(t *testing.T) {

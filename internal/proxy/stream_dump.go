@@ -6,7 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/r9s-ai/open-next-router/pkg/trafficdump"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/trafficdump"
 )
 
 type streamDumpState struct {

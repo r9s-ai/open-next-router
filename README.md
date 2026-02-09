@@ -227,6 +227,29 @@ Env override:
 
 - `cmd/onr-admin/USAGE.md`
 
+## Multi-Module Layout
+
+The repository now uses three Go modules:
+
+- `.` (onr runtime/server)
+- `onr-core` (shared library for external ecosystem and internal reuse)
+- `cmd/onr-admin` (admin CLI/TUI/Web module)
+
+For local multi-module development, use the repository root `go.work`.
+
+Quick checks:
+
+```bash
+# onr
+go test ./...
+
+# onr-core
+(cd onr-core && go test ./...)
+
+# onr-admin
+(cd cmd/onr-admin && go test ./...)
+```
+
 ## Upstream HTTP Proxy (per provider)
 
 You can configure an outbound HTTP proxy per upstream provider in `onr.yaml`:

@@ -13,7 +13,7 @@ import (
 	"github.com/r9s-ai/open-next-router/internal/models"
 	"github.com/r9s-ai/open-next-router/internal/onrserver"
 	"github.com/r9s-ai/open-next-router/internal/version"
-	"github.com/r9s-ai/open-next-router/pkg/dslconfig"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
 	"gopkg.in/yaml.v3"
 )
 

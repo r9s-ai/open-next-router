@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/r9s-ai/open-next-router/pkg/pricing"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/pricing"
 )
 
 func TestParseProviderTargets(t *testing.T) {

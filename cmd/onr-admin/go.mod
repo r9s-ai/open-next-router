@@ -8,7 +8,7 @@ require (
 	github.com/charmbracelet/bubbles v0.21.1
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
-	github.com/r9s-ai/open-next-router v0.0.0
+	github.com/r9s-ai/open-next-router/onr-core v0.0.0
 	github.com/spf13/cobra v1.10.2
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -41,4 +41,4 @@ require (
 	golang.org/x/text v0.32.0 // indirect
 )
 
-replace github.com/r9s-ai/open-next-router => ../..
+replace github.com/r9s-ai/open-next-router/onr-core => ../../onr-core

@@ -14,7 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/r9s-ai/open-next-router/pkg/dslconfig"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
 )
 
 func TestE2EMock_ChatCompletions_AnthropicMessages_NonStream(t *testing.T) {

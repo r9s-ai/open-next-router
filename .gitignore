@@ -20,8 +20,6 @@ run/
 *.log
 *.test
 *.prof
-go.work
-go.work.sum
 
 # IDE
 .DS_Store

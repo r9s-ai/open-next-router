@@ -56,7 +56,10 @@ jobs:
           cache: true
 
       - name: Run tests
-        run: go test -v ./...
+        run: |
+          go test -v ./...
+          (cd onr-core && go test -v ./...)
+          (cd cmd/onr-admin && go test -v ./...)
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3

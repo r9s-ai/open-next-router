@@ -11,8 +11,8 @@ import (
 	"github.com/r9s-ai/open-next-router/internal/config"
 	"github.com/r9s-ai/open-next-router/internal/proxy"
 	"github.com/r9s-ai/open-next-router/internal/requestid"
-	"github.com/r9s-ai/open-next-router/pkg/dslconfig"
-	"github.com/r9s-ai/open-next-router/pkg/trafficdump"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/trafficdump"
 )
 
 func NewRouter(cfg *config.Config, st *state, reg *dslconfig.Registry, pclient *proxy.Client, accessLogger *log.Logger, accessLoggerColor bool) *gin.Engine {

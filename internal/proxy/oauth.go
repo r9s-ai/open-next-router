@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/r9s-ai/open-next-router/pkg/dslconfig"
-	"github.com/r9s-ai/open-next-router/pkg/dslmeta"
-	"github.com/r9s-ai/open-next-router/pkg/oauthclient"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/oauthclient"
 )
 
 func (c *Client) prepareOAuthForUpstream(ctx context.Context, provider string, pf dslconfig.ProviderFile, meta *dslmeta.Meta) error {

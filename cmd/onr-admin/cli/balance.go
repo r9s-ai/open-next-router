@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/r9s-ai/open-next-router/cmd/onr-admin/store"
-	"github.com/r9s-ai/open-next-router/internal/keystore"
-	"github.com/r9s-ai/open-next-router/pkg/balancequery"
-	"github.com/r9s-ai/open-next-router/pkg/dslconfig"
-	"github.com/r9s-ai/open-next-router/pkg/dslmeta"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/balancequery"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/keystore"
 	"github.com/spf13/cobra"
 )
 

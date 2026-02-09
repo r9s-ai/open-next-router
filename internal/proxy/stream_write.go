@@ -9,10 +9,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/r9s-ai/open-next-router/pkg/apitransform"
-	"github.com/r9s-ai/open-next-router/pkg/dslconfig"
-	"github.com/r9s-ai/open-next-router/pkg/dslmeta"
-	"github.com/r9s-ai/open-next-router/pkg/trafficdump"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/apitransform"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/trafficdump"
 )
 
 type countingWriter struct {

@@ -19,8 +19,8 @@ import (
 	"github.com/r9s-ai/open-next-router/internal/keystore"
 	"github.com/r9s-ai/open-next-router/internal/models"
 	"github.com/r9s-ai/open-next-router/internal/proxy"
-	"github.com/r9s-ai/open-next-router/pkg/dslconfig"
-	"github.com/r9s-ai/open-next-router/pkg/pricing"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/pricing"
 )
 
 func Run(cfgPath string) error {

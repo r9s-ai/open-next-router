@@ -11,28 +11,29 @@ open-next-router (ONR) is centered around a **nginx-like, atomic DSL configurati
   - **No implicit guessing / auto-compat** based on `path/api/model`.
   - Do not introduce hidden rules like “if path contains X then transform”.
 - When adding capabilities, prefer adding **atomic DSL directives** (e.g. `req_map/resp_map/sse_parse`) and implement
-  parsing/validation/semantics in `pkg/dslconfig`, then execute strictly according to the selected directives.
+  parsing/validation/semantics in `onr-core/pkg/dslconfig`, then execute strictly according to the selected directives.
 
 ## Directories & Boundaries
 
 - Runtime server: `internal/onrserver/*`
 - Proxy/execution engine: `internal/proxy/*`
-- DSL (parsing/validation/semantic model/reusable utilities): `pkg/dslconfig/*`
+- Core reusable library: `onr-core/pkg/*`
+- DSL (parsing/validation/semantic model/reusable utilities): `onr-core/pkg/dslconfig/*`
 - Provider configs: `config/providers/*.conf`
 
 Boundary rules:
 
-- Put reusable, HTTP/Gin-free logic in `pkg/*` when possible (e.g. JSON/SSE converters).
-- `internal/*` may depend on `pkg/*`; the reverse is not allowed.
+- Put reusable, HTTP/Gin-free logic in `onr-core/pkg/*` when possible (e.g. JSON/SSE converters).
+- `internal/*` and `cmd/onr-admin/*` may depend on `onr-core/pkg/*`; the reverse is not allowed.
 
 ## DSL Change Checklist
 
 When adding/modifying a DSL directive, you must also do:
 
-1. **Parsing**: add syntax support in `pkg/dslconfig/parse_*.go` (nginx-style; every statement ends with `;`).
-2. **Validation**: add allowlist/constraints in `pkg/dslconfig/validate.go` to keep runtime behavior controlled.
+1. **Parsing**: add syntax support in `onr-core/pkg/dslconfig/parse_*.go` (nginx-style; every statement ends with `;`).
+2. **Validation**: add allowlist/constraints in `onr-core/pkg/dslconfig/validate.go` to keep runtime behavior controlled.
 3. **Docs**: update `DSL_SYNTAX.md` with syntax, semantics, examples, and limitations.
-4. **Tests**: add/update `pkg/dslconfig/*_test.go` to cover parsing + critical semantics.
+4. **Tests**: add/update `onr-core/pkg/dslconfig/*_test.go` to cover parsing + critical semantics.
 
 ## Compatibility / Transformation Features
 
