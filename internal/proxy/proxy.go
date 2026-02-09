@@ -153,8 +153,8 @@ func (c *Client) handleNonStreamResponse(
 	// traffic dump: upstream response (original bytes)
 	if rec := trafficdump.FromContext(gc); rec != nil && rec.MaxBytes() > 0 {
 		ct := strings.ToLower(resp.Header.Get("Content-Type"))
-		binary := !strings.Contains(ct, "json") && !strings.HasPrefix(ct, "text/")
 		limited, truncated := trafficdump.LimitBytes(respBody, rec.MaxBytes())
+		binary := isBinaryDumpPayload(ct, limited)
 		trafficdump.AppendUpstreamResponse(gc, resp.Status, resp.Header, limited, binary, truncated)
 	}
 
@@ -190,8 +190,8 @@ func (c *Client) handleNonStreamResponse(
 	// traffic dump: proxy response (final downstream bytes)
 	if rec := trafficdump.FromContext(gc); rec != nil && rec.MaxBytes() > 0 {
 		ct := strings.ToLower(outCT)
-		binary := !strings.Contains(ct, "json") && !strings.HasPrefix(ct, "text/")
 		limited, truncated := trafficdump.LimitBytes(respOutBody, rec.MaxBytes())
+		binary := isBinaryDumpPayload(ct, limited)
 		trafficdump.AppendProxyResponse(gc, limited, binary, truncated, resp.StatusCode)
 	}
 
