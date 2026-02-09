@@ -1,0 +1,11 @@
+{
+  "model": "claude-haiku-4-5",
+  "stream": true,
+  "messages": [
+    {
+      "role": "user",
+      "content": "call tool get_weather for SF"
+    }
+  ],
+  "max_tokens": 64
+}

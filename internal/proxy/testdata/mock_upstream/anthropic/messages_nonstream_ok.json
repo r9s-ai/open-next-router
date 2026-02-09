@@ -1,0 +1,18 @@
+{
+  "model": "claude-haiku-4-5-20251001",
+  "id": "msg_01mocknonstream",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "Hi"
+    }
+  ],
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 12,
+    "output_tokens": 4
+  }
+}

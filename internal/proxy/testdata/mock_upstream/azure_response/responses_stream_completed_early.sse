@@ -1,0 +1,5 @@
+event: response.completed
+data: {"response":{"id":"resp_mock_1","created_at":1700000000,"model":"gpt-4o-mini","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Hello"}]}]}}
+
+event: response.output_text.delta
+data: {"delta":"Hello"}

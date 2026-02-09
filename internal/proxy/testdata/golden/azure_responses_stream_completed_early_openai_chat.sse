@@ -1,0 +1,5 @@
+data: {"choices":[{"delta":{"content":"Hello"},"index":0}],"created":0,"id":"chatcmpl_mock","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{},"finish_reason":"stop","index":0}],"created":0,"id":"chatcmpl_mock","model":"gpt-4o-mini","object":"chat.completion.chunk"}
+
+data: [DONE]

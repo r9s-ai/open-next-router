@@ -1,0 +1,7 @@
+data: {"choices":[{"delta":{"content":"Hi","role":"assistant"},"index":0}],"created":0,"id":"chatcmpl_mock","model":"gemini-2.0-flash","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"content":"!"},"finish_reason":"stop","index":0}],"created":0,"id":"chatcmpl_mock","model":"gemini-2.0-flash","object":"chat.completion.chunk"}
+
+data: {"choices":[],"created":0,"id":"chatcmpl_mock","model":"gemini-2.0-flash","object":"chat.completion.chunk","usage":{"completion_tokens":2,"prompt_tokens":1,"total_tokens":3}}
+
+data: [DONE]

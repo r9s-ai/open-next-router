@@ -1,0 +1,10 @@
+{
+  "model": "claude-haiku-4-5",
+  "messages": [
+    {
+      "role": "user",
+      "content": "say hi in one word"
+    }
+  ],
+  "max_tokens": 32
+}
