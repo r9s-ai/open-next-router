@@ -23,6 +23,7 @@ provider "t" {
     response {
       json_del "$.usage";
       json_set "$.foo" "bar";
+      json_set_if_absent "$.bar" "baz";
       json_rename "$.a" "$.b";
       sse_json_del_if "$.type" "message_delta" "$.usage";
     }
@@ -34,15 +35,18 @@ provider "t" {
 	require.NoError(t, err)
 
 	d := pf.Response.Defaults
-	require.Len(t, d.JSONOps, 3)
+	require.Len(t, d.JSONOps, 4)
 	require.Equal(t, "json_del", d.JSONOps[0].Op)
 	require.Equal(t, "$.usage", d.JSONOps[0].Path)
 	require.Equal(t, "json_set", d.JSONOps[1].Op)
 	require.Equal(t, "$.foo", d.JSONOps[1].Path)
 	require.Equal(t, "\"bar\"", d.JSONOps[1].ValueExpr)
-	require.Equal(t, "json_rename", d.JSONOps[2].Op)
-	require.Equal(t, "$.a", d.JSONOps[2].FromPath)
-	require.Equal(t, "$.b", d.JSONOps[2].ToPath)
+	require.Equal(t, "json_set_if_absent", d.JSONOps[2].Op)
+	require.Equal(t, "$.bar", d.JSONOps[2].Path)
+	require.Equal(t, "\"baz\"", d.JSONOps[2].ValueExpr)
+	require.Equal(t, "json_rename", d.JSONOps[3].Op)
+	require.Equal(t, "$.a", d.JSONOps[3].FromPath)
+	require.Equal(t, "$.b", d.JSONOps[3].ToPath)
 
 	require.Len(t, d.SSEJSONDelIf, 1)
 	require.Equal(t, "$.type", d.SSEJSONDelIf[0].CondPath)

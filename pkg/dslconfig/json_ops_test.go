@@ -28,6 +28,22 @@ func TestApplyJSONOps_TableDriven(t *testing.T) {
 			want: map[string]any{"a": float64(1), "stream_options": map[string]any{"include_usage": true}},
 		},
 		{
+			name: "json_set_if_absent_sets_when_missing",
+			in:   map[string]any{"a": 1},
+			ops: []JSONOp{
+				{Op: "json_set_if_absent", Path: "$.instructions", ValueExpr: "\"\""},
+			},
+			want: map[string]any{"a": float64(1), "instructions": ""},
+		},
+		{
+			name: "json_set_if_absent_skips_when_present",
+			in:   map[string]any{"instructions": "keep-me"},
+			ops: []JSONOp{
+				{Op: "json_set_if_absent", Path: "$.instructions", ValueExpr: "\"\""},
+			},
+			want: map[string]any{"instructions": "keep-me"},
+		},
+		{
 			name: "json_del_missing_is_ok",
 			in:   map[string]any{"a": 1},
 			ops:  []JSONOp{{Op: "json_del", Path: "$.nope"}},

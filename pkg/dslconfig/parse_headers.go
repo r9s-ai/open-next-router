@@ -122,7 +122,13 @@ func parseRequestPhaseWithTransform(s *scanner, phase *PhaseHeaders, transform *
 			if t == nil {
 				return skipStmtOrBlock(s)
 			}
-			return parseJSONSetStmt(s, t)
+			return parseJSONSetStmt(s, t, jsonOpSet)
+		},
+		"json_set_if_absent": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
+			if t == nil {
+				return skipStmtOrBlock(s)
+			}
+			return parseJSONSetStmt(s, t, jsonOpSetIfAbsent)
 		},
 		"json_del": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
 			if t == nil {
@@ -219,14 +225,18 @@ func parseModelMapDefaultStmt(s *scanner, cfg *ModelMapConfig) error {
 	return nil
 }
 
-func parseJSONSetStmt(s *scanner, t *RequestTransform) error {
-	// json_set <jsonpath> <expr>;
+func parseJSONSetStmt(s *scanner, t *RequestTransform, op string) error {
+	// json_set/json_set_if_absent <jsonpath> <expr>;
+	opName := strings.TrimSpace(op)
+	if opName == "" {
+		opName = jsonOpSet
+	}
 	pathTok := s.nextNonTrivia()
 	switch pathTok.kind {
 	case tokIdent, tokString:
 		// ok
 	default:
-		return s.errAt(pathTok, "json_set expects json path")
+		return s.errAt(pathTok, opName+" expects json path")
 	}
 	path := pathTok.text
 	if pathTok.kind == tokString {
@@ -237,7 +247,7 @@ func parseJSONSetStmt(s *scanner, t *RequestTransform) error {
 		return err
 	}
 	t.JSONOps = append(t.JSONOps, JSONOp{
-		Op:        jsonOpSet,
+		Op:        opName,
 		Path:      strings.TrimSpace(path),
 		ValueExpr: strings.TrimSpace(valueExpr),
 	})

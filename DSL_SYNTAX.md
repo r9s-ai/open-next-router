@@ -262,11 +262,12 @@ request {
 - If no `model_map <from> ...;` matches, the default expression is used for `$request.model_mapped`.
 - If not configured, `$request.model_mapped` defaults to `$request.model`.
 
-#### json_set / json_del / json_rename (multiple allowed)
+#### json_set / json_set_if_absent / json_del / json_rename (multiple allowed)
 
 ```conf
 request {
   json_set "$.stream" true;
+  json_set_if_absent "$.instructions" "";
   json_set "$.user" "alice";
   json_rename "$.max_tokens" "$.max_completion_tokens";
   json_del "$.tools";
@@ -276,6 +277,7 @@ request {
 - Applies lightweight transforms to the upstream request JSON.
 - JSONPath (v0.1) supports an object-path subset: `$.a.b.c` (no array indices for these request ops).
 - `json_set` value expressions support: `true/false/null`, integer, string literal, variable, `concat(...)`.
+- `json_set_if_absent` only sets when the path does not exist; existing values are preserved.
 
 #### req_map
 
@@ -375,7 +377,7 @@ Available modes depend on the built-in implementation. v0.1 includes:
 - `openai_responses_to_openai_chat` (`resp_map`): OpenAI/Azure `/responses` JSON → OpenAI `chat.completions` JSON
 - `openai_responses_to_openai_chat_chunks` (`sse_parse`): OpenAI/Azure `/responses` SSE → OpenAI `chat.completions` SSE chunks
 
-#### json_del / json_set / json_rename (response JSON ops)
+#### json_del / json_set / json_set_if_absent / json_rename (response JSON ops)
 
 These directives apply **best-effort** JSON mutations to the downstream response body.
 
@@ -383,6 +385,7 @@ These directives apply **best-effort** JSON mutations to the downstream response
 response {
   json_del "$.usage";
   json_set "$.foo" "bar";
+  json_set_if_absent "$.bar" "baz";
   json_rename "$.a" "$.b";
 }
 ```
@@ -738,6 +741,18 @@ Multiple: yes
 
 - Sets a JSON value on the upstream request payload.
 - JSONPath is limited to object paths: `$.a.b.c`.
+
+#### json_set_if_absent
+
+```text
+Syntax:  json_set_if_absent <jsonpath> <value-expr>;
+Default: —
+Context: request/response
+Multiple: yes
+```
+
+- Sets a JSON value only when the path does not exist.
+- If the path already exists (including `null`), the original value is kept.
 
 #### json_del
 

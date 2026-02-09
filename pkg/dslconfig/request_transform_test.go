@@ -99,3 +99,41 @@ provider "azure-openai" {
 		t.Fatalf("unexpected RequestURLPath: %q", m.RequestURLPath)
 	}
 }
+
+func TestRequestJSONSetIfAbsent_Parsed(t *testing.T) {
+	conf := `
+syntax "next-router/0.1";
+
+provider "t" {
+  defaults {
+    request {
+      json_set_if_absent "$.instructions" "";
+    }
+  }
+}
+`
+	routing, headers, req, response, perr, usage, finish, balance, err := parseProviderConfig("t.conf", conf)
+	if err != nil {
+		t.Fatalf("parseProviderConfig: %v", err)
+	}
+	_ = routing
+	_ = headers
+	_ = response
+	_ = perr
+	_ = usage
+	_ = finish
+	_ = balance
+	if len(req.Defaults.JSONOps) != 1 {
+		t.Fatalf("expected 1 json op, got %d", len(req.Defaults.JSONOps))
+	}
+	op := req.Defaults.JSONOps[0]
+	if op.Op != "json_set_if_absent" {
+		t.Fatalf("unexpected op: %q", op.Op)
+	}
+	if op.Path != "$.instructions" {
+		t.Fatalf("unexpected path: %q", op.Path)
+	}
+	if op.ValueExpr != "\"\"" {
+		t.Fatalf("unexpected value expr: %q", op.ValueExpr)
+	}
+}

@@ -272,11 +272,12 @@ request {
 - 当没有任何 `model_map <from> ...;` 命中时，使用该默认表达式作为 `$request.model_mapped`
 - 如未配置该指令：`$request.model_mapped` 默认等于 `$request.model`
 
-#### json_set / json_del / json_rename（可多条）
+#### json_set / json_set_if_absent / json_del / json_rename（可多条）
 
 ```conf
 request {
   json_set "$.stream" true;
+  json_set_if_absent "$.instructions" "";
   json_set "$.user" "alice";
   json_rename "$.max_tokens" "$.max_completion_tokens";
   json_del "$.tools";
@@ -288,6 +289,7 @@ request {
 - 用途：对“已生成的上游请求 JSON”做轻量变换（在旧 adaptor 的 `ConvertRequest` 之后执行）
 - JSONPath（v0.1）仅支持对象路径：`$.a.b.c`（不支持数组下标 `[]`）
 - `json_set` 的值表达式支持：`true/false/null`、整数、字符串字面量、变量/concat
+- `json_set_if_absent`：仅当路径不存在时写入；已存在值会保留
 
 #### req_map
 
@@ -392,7 +394,7 @@ response { sse_parse <mode>; }
 - `openai_responses_to_openai_chat`（`resp_map`）：OpenAI/Azure `/responses` JSON → OpenAI `chat.completions` JSON
 - `openai_responses_to_openai_chat_chunks`（`sse_parse`）：OpenAI/Azure `/responses` SSE → OpenAI `chat.completions` SSE chunks
 
-#### json_del / json_set / json_rename（响应 JSON 操作）
+#### json_del / json_set / json_set_if_absent / json_rename（响应 JSON 操作）
 
 这些指令会对下游响应体做**尽力而为（best-effort）**的 JSON 变换：
 
@@ -400,6 +402,7 @@ response { sse_parse <mode>; }
 response {
   json_del "$.usage";
   json_set "$.foo" "bar";
+  json_set_if_absent "$.bar" "baz";
   json_rename "$.a" "$.b";
 }
 ```
@@ -767,6 +770,18 @@ Multiple: yes
 - 对“已生成的上游请求 JSON”设置字段；不存在的对象路径会自动创建。
 - JSONPath（v0.1）仅支持对象路径：`$.a.b.c`（不支持数组下标 `[]`）。
 - `<expr>` 在此处支持：`true/false/null`、整数、字符串字面量、变量/concat。
+
+#### json_set_if_absent
+
+```text
+Syntax:  json_set_if_absent <jsonpath> <expr>;
+Default: —
+Context: request/response
+Multiple: yes
+```
+
+- 仅当路径不存在时设置字段。
+- 若路径已存在（包括值为 `null`），则保留原值不覆盖。
 
 #### json_del
 

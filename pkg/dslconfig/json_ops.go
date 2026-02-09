@@ -34,6 +34,18 @@ func ApplyJSONOps(meta *dslmeta.Meta, in any, ops []JSONOp) (any, error) {
 			if err := jsonSet(obj, op.Path, val); err != nil {
 				return nil, err
 			}
+		case jsonOpSetIfAbsent:
+			exists, err := jsonPathExists(obj, op.Path)
+			if err != nil {
+				return nil, err
+			}
+			if exists {
+				continue
+			}
+			val := evalJSONValueExpr(meta, op.ValueExpr)
+			if err := jsonSet(obj, op.Path, val); err != nil {
+				return nil, err
+			}
 		case jsonOpDel:
 			if err := jsonDel(obj, op.Path); err != nil {
 				return nil, err
@@ -47,6 +59,30 @@ func ApplyJSONOps(meta *dslmeta.Meta, in any, ops []JSONOp) (any, error) {
 		}
 	}
 	return obj, nil
+}
+
+func jsonPathExists(root map[string]any, path string) (bool, error) {
+	parts, err := parseObjectPath(path)
+	if err != nil {
+		return false, err
+	}
+	if len(parts) == 0 {
+		return false, nil
+	}
+	cur := root
+	for i := 0; i < len(parts)-1; i++ {
+		next, ok := cur[parts[i]]
+		if !ok {
+			return false, nil
+		}
+		m, ok := next.(map[string]any)
+		if !ok {
+			return false, nil
+		}
+		cur = m
+	}
+	_, ok := cur[parts[len(parts)-1]]
+	return ok, nil
 }
 
 func evalJSONValueExpr(meta *dslmeta.Meta, expr string) any {

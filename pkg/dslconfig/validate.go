@@ -237,7 +237,7 @@ func validateResponseDirective(path, providerName, scope string, d ResponseDirec
 	for i, op := range d.JSONOps {
 		opScope := fmt.Sprintf("%s.json_op[%d]", scope, i)
 		switch strings.ToLower(strings.TrimSpace(op.Op)) {
-		case "json_set", "json_del":
+		case "json_set", "json_set_if_absent", "json_del":
 			if _, err := parseObjectPath(op.Path); err != nil {
 				return fmt.Errorf("provider %q in %q: %s invalid json path: %w", providerName, path, opScope, err)
 			}

@@ -32,6 +32,10 @@ func parseResponsePhase(s *scanner, resp *ResponseDirective) error {
 				if err := parseRespJSONSetStmt(s, resp); err != nil {
 					return err
 				}
+			case jsonOpSetIfAbsent:
+				if err := parseRespJSONSetIfAbsentStmt(s, resp); err != nil {
+					return err
+				}
 			case jsonOpDel:
 				if err := parseRespJSONDelStmt(s, resp); err != nil {
 					return err
@@ -104,6 +108,31 @@ func parseRespJSONSetStmt(s *scanner, resp *ResponseDirective) error {
 	}
 	resp.JSONOps = append(resp.JSONOps, JSONOp{
 		Op:        jsonOpSet,
+		Path:      strings.TrimSpace(path),
+		ValueExpr: strings.TrimSpace(valueExpr),
+	})
+	return nil
+}
+
+func parseRespJSONSetIfAbsentStmt(s *scanner, resp *ResponseDirective) error {
+	// json_set_if_absent <jsonpath> <expr>;
+	pathTok := s.nextNonTrivia()
+	switch pathTok.kind {
+	case tokIdent, tokString:
+		// ok
+	default:
+		return s.errAt(pathTok, "json_set_if_absent expects json path")
+	}
+	path := pathTok.text
+	if pathTok.kind == tokString {
+		path = unquoteString(pathTok.text)
+	}
+	valueExpr, err := consumeExprUntilSemicolon(s)
+	if err != nil {
+		return err
+	}
+	resp.JSONOps = append(resp.JSONOps, JSONOp{
+		Op:        jsonOpSetIfAbsent,
 		Path:      strings.TrimSpace(path),
 		ValueExpr: strings.TrimSpace(valueExpr),
 	})
