@@ -21,7 +21,7 @@ import (
 func newBalanceCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "balance",
-		Short: "按 providers DSL 查询上游余额",
+		Short: "Query upstream balance via providers DSL",
 	}
 	cmd.AddCommand(newBalanceGetCmd())
 	return cmd
@@ -51,7 +51,7 @@ func newBalanceGetCmd() *cobra.Command {
 	}
 	cmd := &cobra.Command{
 		Use:   "get",
-		Short: "查询一个或多个 provider 的余额",
+		Short: "Query balance for one or more providers",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runBalanceGetWithOptions(opts)
 		},

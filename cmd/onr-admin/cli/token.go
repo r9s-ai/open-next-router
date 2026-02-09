@@ -14,7 +14,7 @@ import (
 func newTokenCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "token",
-		Short: "Token 生成工具",
+		Short: "Token helper",
 	}
 	cmd.AddCommand(newTokenCreateCmd())
 	return cmd
@@ -26,7 +26,7 @@ func newTokenCreateCmd() *cobra.Command {
 	}
 	cmd := &cobra.Command{
 		Use:   "create",
-		Short: "生成 Token Key (onr:v1?)",
+		Short: "Generate Token Key (onr:v1?)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			token, err := buildToken(opts)
 			if err != nil {
@@ -47,7 +47,7 @@ func newTokenCreatePhaseCmd() *cobra.Command {
 	}
 	cmd := &cobra.Command{
 		Use:   "phase <query|uri>",
-		Short: "分阶段输出 Token 生成结果",
+		Short: "Print token output by phase",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			phase := strings.ToLower(strings.TrimSpace(args[0]))
@@ -92,7 +92,7 @@ func addTokenCreateFlags(cmd *cobra.Command, opts *tokenCreateOptions) {
 	fs.StringVarP(&opts.provider, "provider", "p", "", "provider")
 	fs.StringVarP(&opts.modelOverride, "model", "m", "", "model override")
 	fs.StringVar(&opts.upstreamKey, "upstream-key", "", "BYOK upstream key")
-	// 保留旧参数 uk 兼容。
+	// Backward compatibility for legacy flag name.
 	fs.StringVar(&opts.upstreamKey, "uk", "", "BYOK upstream key")
 }
 

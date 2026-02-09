@@ -19,7 +19,7 @@ import (
 func newPricingCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "pricing",
-		Short: "同步模型价格到 price.yaml",
+		Short: "Sync model pricing into price.yaml",
 	}
 	cmd.AddCommand(newPricingSyncCmd(), newPricingProvidersCmd())
 	return cmd
@@ -49,7 +49,7 @@ func newPricingSyncCmd() *cobra.Command {
 	}
 	cmd := &cobra.Command{
 		Use:   "sync",
-		Short: "从 models.dev 拉取并写入 price.yaml",
+		Short: "Fetch from models.dev and write price.yaml",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPricingSyncWithOptions(opts)
 		},
@@ -150,7 +150,7 @@ func newPricingProvidersCmd() *cobra.Command {
 	}
 	cmd := &cobra.Command{
 		Use:   "providers",
-		Short: "列出 models.dev 上的 provider",
+		Short: "List providers from models.dev",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPricingProvidersWithOptions(opts)
 		},

@@ -224,7 +224,7 @@ Env override:
 
 `onr-admin` command usage is documented in:
 
-- `cmd/onr-admin/USAGE_CN.md`
+- `cmd/onr-admin/USAGE.md`
 
 ## Upstream HTTP Proxy (per provider)
 

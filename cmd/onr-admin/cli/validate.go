@@ -14,7 +14,7 @@ import (
 func newValidateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "validate",
-		Short: "校验 keys/models/providers",
+		Short: "Validate keys/models/providers",
 	}
 	cmd.AddCommand(
 		newValidateTargetCmd("all"),
@@ -36,7 +36,7 @@ func newValidateTargetCmd(target string) *cobra.Command {
 	opts := validateOptions{cfgPath: "onr.yaml"}
 	cmd := &cobra.Command{
 		Use:   target,
-		Short: "校验 " + target,
+		Short: "Validate " + target,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runValidateTarget(target, opts)
 		},

@@ -17,7 +17,7 @@ import (
 func newCryptoCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "crypto",
-		Short: "加密与密钥管理工具",
+		Short: "Crypto and key helpers",
 	}
 	cmd.AddCommand(
 		newCryptoEncryptCmd(),
@@ -31,7 +31,7 @@ func newCryptoEncryptCmd() *cobra.Command {
 	var text string
 	cmd := &cobra.Command{
 		Use:   "encrypt",
-		Short: "将明文加密为 ENC[v1:aesgcm:...]",
+		Short: "Encrypt plaintext to ENC[v1:aesgcm:...]",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			plain := strings.TrimSpace(text)
 			if plain == "" {
@@ -61,7 +61,7 @@ func newCryptoGenMasterKeyCmd() *cobra.Command {
 	var exportLine bool
 	cmd := &cobra.Command{
 		Use:   "gen-master-key",
-		Short: "生成随机 ONR_MASTER_KEY",
+		Short: "Generate a random ONR_MASTER_KEY",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			buf := make([]byte, 32)
 			if _, err := rand.Read(buf); err != nil {
@@ -96,7 +96,7 @@ func newCryptoEncryptKeysCmd() *cobra.Command {
 	opts := cryptoEncryptKeysOptions{cfgPath: "onr.yaml", backup: true}
 	cmd := &cobra.Command{
 		Use:   "encrypt-keys",
-		Short: "一键加密 keys.yaml 中明文 value",
+		Short: "Encrypt plaintext values in keys.yaml",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, _ := store.LoadConfigIfExists(strings.TrimSpace(opts.cfgPath))
 			keysPath, _ := store.ResolveDataPaths(cfg, opts.keysPath, "")
