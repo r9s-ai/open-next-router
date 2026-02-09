@@ -24,7 +24,7 @@ models:
 oauth:
   token_persist:
     # Persist OAuth access tokens to local files (for OAuth-enabled providers).
-    enabled: false
+    enabled: true
     # Directory used when token persistence is enabled.
     dir: "./run/oauth"
 

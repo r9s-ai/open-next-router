@@ -77,7 +77,19 @@ Sync model pricing from `https://models.dev/api.json` into `price.yaml`.
 ./bin/onr-admin pricing sync -p gemini --models gemini-2.5-flash --out ./price.yaml
 ```
 
-## 7. tui
+## 7. oauth
+
+Get OpenAI OAuth `refresh_token` (authorization code + PKCE flow, similar to CLIProxyAPI Codex login).
+
+```bash
+# Launch browser login and print refresh_token
+./bin/onr-admin oauth refresh-token
+
+# If running on headless server, copy URL manually
+./bin/onr-admin oauth refresh-token --no-browser --callback-port 2468
+```
+
+## 8. tui
 
 Open the interactive TUI (dump log viewer).
 
