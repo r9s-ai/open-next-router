@@ -452,6 +452,9 @@ metrics {
 
 - Optional escape hatch for providers that expose finish reason in a custom location.
 
+Runtime cost calculation switch is controlled globally by `onr.yaml`:
+`pricing.enabled: true|false`.
+
 ## 6. Expression context (built-in variables)
 
 In `<expr>` positions, you can reference:

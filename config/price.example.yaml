@@ -1,0 +1,14 @@
+version: v1
+source:
+  url: "https://models.dev/api.json"
+  fetched_at: "2026-02-09T00:00:00Z"
+  providers:
+    - openai
+unit: "usd_per_1m_tokens"
+entries:
+  - model: "gpt-4o-mini"
+    provider: "openai"
+    cost:
+      input: 0.15
+      output: 0.60
+      cache_read: 0.08

@@ -222,33 +222,9 @@ Env override:
 
 ## Admin CLI (onr-admin)
 
-`onr-admin` uses subcommands (kubeadm-style):
+`onr-admin` command usage is documented in:
 
-```bash
-# generate token key
-go run ./cmd/onr-admin token create --config ./onr.yaml --access-key-name client-a -p openai -m gpt-4o-mini
-
-# encrypt secret to ENC[...]
-go run ./cmd/onr-admin crypto encrypt --text 'sk-xxxx'
-
-# encrypt plaintext values in keys.yaml
-go run ./cmd/onr-admin crypto encrypt-keys --config ./onr.yaml
-
-# generate random ONR_MASTER_KEY (base64)
-go run ./cmd/onr-admin crypto gen-master-key --export
-
-# validate configs
-go run ./cmd/onr-admin validate all --config ./onr.yaml
-
-# query provider balance from DSL config
-go run ./cmd/onr-admin balance get --config ./onr.yaml -p openai
-go run ./cmd/onr-admin balance get --config ./onr.yaml --providers openai,openrouter,deepseek
-go run ./cmd/onr-admin balance get --config ./onr.yaml --all
-go run ./cmd/onr-admin balance get --config ./onr.yaml -p moonshot --debug
-
-# open interactive UI
-go run ./cmd/onr-admin tui --config ./onr.yaml
-```
+- `cmd/onr-admin/USAGE_CN.md`
 
 ## Upstream HTTP Proxy (per provider)
 

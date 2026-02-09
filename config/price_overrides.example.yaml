@@ -1,0 +1,16 @@
+version: v1
+providers:
+  openai:
+    multiplier: 1.02
+    models:
+      gpt-4o-mini:
+        cost:
+          output: 0.62
+
+channels:
+  "openai/key1":
+    multiplier: 1.05
+    models:
+      gpt-4o-mini:
+        cost:
+          input: 0.16

@@ -30,6 +30,7 @@ func newRootCmd() *cobra.Command {
 		newCryptoCmd(),
 		newValidateCmd(),
 		newBalanceCmd(),
+		newPricingCmd(),
 		newTUICmd(),
 	)
 	return cmd

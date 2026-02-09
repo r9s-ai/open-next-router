@@ -22,6 +22,7 @@ import (
 	"github.com/r9s-ai/open-next-router/pkg/apitransform"
 	"github.com/r9s-ai/open-next-router/pkg/dslconfig"
 	"github.com/r9s-ai/open-next-router/pkg/dslmeta"
+	"github.com/r9s-ai/open-next-router/pkg/pricing"
 	"github.com/r9s-ai/open-next-router/pkg/trafficdump"
 	"github.com/r9s-ai/open-next-router/pkg/usageestimate"
 )
@@ -50,6 +51,7 @@ type Result struct {
 	Usage          map[string]any
 	UsageStage     string
 	FinishReason   string
+	Cost           map[string]any
 }
 
 type Client struct {
@@ -65,6 +67,10 @@ type Client struct {
 
 	mu          sync.Mutex
 	httpByProxy map[string]*http.Client
+
+	pricingMu      sync.RWMutex
+	pricing        *pricing.Resolver
+	pricingEnabled bool
 }
 
 type proxyCtx struct {
@@ -157,6 +163,7 @@ func (c *Client) handleNonStreamResponse(
 
 	usage, usageStage := estimateNonStreamUsage(c.UsageEst, pf, m, api, model, reqBody, metricsBody)
 	finishReason := extractNonStreamFinishReason(pf, m, metricsBody)
+	cost := c.computeCost(m, provider, key.Name, usage)
 
 	respOutBody, outCT, didTransform, err = applyNonStreamResponseJSONOps(respOutBody, outCT, resp, m, respDir.JSONOps, didTransform)
 	if err != nil {
@@ -193,6 +200,7 @@ func (c *Client) handleNonStreamResponse(
 		Usage:          usage,
 		UsageStage:     usageStage,
 		FinishReason:   finishReason,
+		Cost:           cost,
 	}, nil
 }
 
@@ -429,6 +437,7 @@ func (c *Client) handleStreamResponse(
 		StreamTail:    usageTail.Bytes(),
 	})
 	usage := usageMap(out.Usage)
+	cost := c.computeCost(m, provider, key.Name, usage)
 	return &Result{
 		Provider:       provider,
 		ProviderKey:    key.Name,
@@ -441,6 +450,7 @@ func (c *Client) handleStreamResponse(
 		Usage:          usage,
 		UsageStage:     out.Stage,
 		FinishReason:   finishReason,
+		Cost:           cost,
 	}, nil
 }
 
@@ -833,4 +843,83 @@ func usageMap(u *dslconfig.Usage) map[string]any {
 		m["cache_write_tokens"] = u.InputTokenDetails.CacheWriteTokens
 	}
 	return m
+}
+
+func (c *Client) SetPricingResolver(r *pricing.Resolver) {
+	if c == nil {
+		return
+	}
+	c.pricingMu.Lock()
+	c.pricing = r
+	c.pricingMu.Unlock()
+}
+
+func (c *Client) SetPricingEnabled(enabled bool) {
+	if c == nil {
+		return
+	}
+	c.pricingMu.Lock()
+	c.pricingEnabled = enabled
+	c.pricingMu.Unlock()
+}
+
+func (c *Client) getPricingResolver() *pricing.Resolver {
+	if c == nil {
+		return nil
+	}
+	c.pricingMu.RLock()
+	defer c.pricingMu.RUnlock()
+	return c.pricing
+}
+
+func (c *Client) isPricingEnabled() bool {
+	if c == nil {
+		return false
+	}
+	c.pricingMu.RLock()
+	defer c.pricingMu.RUnlock()
+	return c.pricingEnabled
+}
+
+func (c *Client) computeCost(
+	meta *dslmeta.Meta,
+	provider string,
+	keyName string,
+	usage map[string]any,
+) map[string]any {
+	if usage == nil || meta == nil {
+		return nil
+	}
+	if !c.isPricingEnabled() {
+		return nil
+	}
+	resolver := c.getPricingResolver()
+	if resolver == nil {
+		return nil
+	}
+	model := strings.TrimSpace(meta.DSLModelMapped)
+	if model == "" {
+		model = strings.TrimSpace(meta.ActualModelName)
+	}
+	out, ok := resolver.Compute(provider, keyName, model, usage)
+	if !ok {
+		return nil
+	}
+	return map[string]any{
+		"cost_total":            out.TotalCost,
+		"cost_input":            out.InputCost,
+		"cost_output":           out.OutputCost,
+		"cost_cache_read":       out.CacheReadCost,
+		"cost_cache_write":      out.CacheWriteCost,
+		"billable_input_tokens": out.BillableInputTokens,
+		"cost_multiplier":       out.Multiplier,
+		"cost_model":            out.Model,
+		"cost_channel":          out.Channel,
+		"cost_unit":             out.Unit,
+		"cost_rate_unit":        out.RateUnit,
+		"price_input":           out.InputRate,
+		"price_output":          out.OutputRate,
+		"price_cache_read":      out.CacheReadRate,
+		"price_cache_write":     out.CacheWriteRate,
+	}
 }

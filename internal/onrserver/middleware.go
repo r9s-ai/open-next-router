@@ -59,6 +59,36 @@ func requestLoggerWithColor(l *log.Logger, color bool) gin.HandlerFunc {
 		if v, ok := c.Get("onr.usage_cache_write_tokens"); ok {
 			fields["cache_write_tokens"] = v
 		}
+		if v, ok := c.Get("onr.cost_total"); ok {
+			fields["cost_total"] = v
+		}
+		if v, ok := c.Get("onr.cost_input"); ok {
+			fields["cost_input"] = v
+		}
+		if v, ok := c.Get("onr.cost_output"); ok {
+			fields["cost_output"] = v
+		}
+		if v, ok := c.Get("onr.cost_cache_read"); ok {
+			fields["cost_cache_read"] = v
+		}
+		if v, ok := c.Get("onr.cost_cache_write"); ok {
+			fields["cost_cache_write"] = v
+		}
+		if v, ok := c.Get("onr.billable_input_tokens"); ok {
+			fields["billable_input_tokens"] = v
+		}
+		if v, ok := c.Get("onr.cost_multiplier"); ok {
+			fields["cost_multiplier"] = v
+		}
+		if v, ok := c.Get("onr.cost_model"); ok {
+			fields["cost_model"] = v
+		}
+		if v, ok := c.Get("onr.cost_channel"); ok {
+			fields["cost_channel"] = v
+		}
+		if v, ok := c.Get("onr.cost_unit"); ok {
+			fields["cost_unit"] = v
+		}
 		if v, ok := c.Get("onr.latency_ms"); ok {
 			fields["latency_ms"] = v
 		} else {

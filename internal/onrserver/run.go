@@ -20,6 +20,7 @@ import (
 	"github.com/r9s-ai/open-next-router/internal/models"
 	"github.com/r9s-ai/open-next-router/internal/proxy"
 	"github.com/r9s-ai/open-next-router/pkg/dslconfig"
+	"github.com/r9s-ai/open-next-router/pkg/pricing"
 )
 
 func Run(cfgPath string) error {
@@ -75,6 +76,12 @@ func Run(cfgPath string) error {
 		UsageEst:        &cfg.UsageEstimation,
 		ProxyByProvider: cfg.UpstreamProxies.ByProvider,
 	}
+	pricingResolver, err := pricing.LoadResolver(cfg.Pricing.File, cfg.Pricing.OverridesFile)
+	if err != nil {
+		return fmt.Errorf("load pricing files failed: %w", err)
+	}
+	pclient.SetPricingResolver(pricingResolver)
+	pclient.SetPricingEnabled(cfg.Pricing.Enabled)
 
 	st := &state{
 		keys:        keys,
@@ -82,7 +89,7 @@ func Run(cfgPath string) error {
 	}
 	st.SetStartedAtUnix(startedAt)
 
-	installReloadSignalHandler(cfg, st, reg)
+	installReloadSignalHandler(cfg, st, reg, pclient)
 
 	engine := NewRouter(cfg, st, reg, pclient, accessLogger, accessColor)
 
@@ -150,7 +157,7 @@ func writePIDFile(cfg *config.Config) (io.Closer, error) {
 	return closerFunc(func() error { return os.Remove(path) }), nil
 }
 
-func installReloadSignalHandler(cfg *config.Config, st *state, reg *dslconfig.Registry) {
+func installReloadSignalHandler(cfg *config.Config, st *state, reg *dslconfig.Registry, pclient *proxy.Client) {
 	if cfg == nil || st == nil || reg == nil {
 		return
 	}
@@ -160,7 +167,7 @@ func installReloadSignalHandler(cfg *config.Config, st *state, reg *dslconfig.Re
 	go func() {
 		for range ch {
 			mu.Lock()
-			err := reloadRuntime(cfg, st, reg)
+			err := reloadRuntime(cfg, st, reg, pclient)
 			mu.Unlock()
 			if err != nil {
 				log.Printf("reload failed: %v", err)
@@ -171,9 +178,9 @@ func installReloadSignalHandler(cfg *config.Config, st *state, reg *dslconfig.Re
 	}()
 }
 
-func reloadRuntime(cfg *config.Config, st *state, reg *dslconfig.Registry) error {
-	if cfg == nil || st == nil || reg == nil {
-		return errors.New("reload: nil cfg/state/registry")
+func reloadRuntime(cfg *config.Config, st *state, reg *dslconfig.Registry, pclient *proxy.Client) error {
+	if cfg == nil || st == nil || reg == nil || pclient == nil {
+		return errors.New("reload: nil cfg/state/registry/pclient")
 	}
 	if _, err := reg.ReloadFromDir(cfg.Providers.Dir); err != nil {
 		return fmt.Errorf("reload providers dir %q: %w", cfg.Providers.Dir, err)
@@ -186,7 +193,13 @@ func reloadRuntime(cfg *config.Config, st *state, reg *dslconfig.Registry) error
 	if err != nil {
 		return fmt.Errorf("reload models file %q: %w", cfg.Models.File, err)
 	}
+	pricingResolver, err := pricing.LoadResolver(cfg.Pricing.File, cfg.Pricing.OverridesFile)
+	if err != nil {
+		return fmt.Errorf("reload pricing files failed: %w", err)
+	}
 	st.SetKeys(ks)
 	st.SetModelRouter(mr)
+	pclient.SetPricingResolver(pricingResolver)
+	pclient.SetPricingEnabled(cfg.Pricing.Enabled)
 	return nil
 }

@@ -36,6 +36,14 @@ type Config struct {
 		File string `yaml:"file"`
 	} `yaml:"models"`
 
+	Pricing struct {
+		Enabled bool `yaml:"enabled"`
+		// File points to base model pricing data.
+		File string `yaml:"file"`
+		// OverridesFile points to local pricing overrides (channel/provider multipliers and model overrides).
+		OverridesFile string `yaml:"overrides_file"`
+	} `yaml:"pricing"`
+
 	// UpstreamProxies configures outbound HTTP proxy by provider name.
 	// Values are proxy URLs (e.g. "http://127.0.0.1:7890").
 	UpstreamProxies struct {
@@ -99,6 +107,12 @@ func applyDefaults(cfg *Config) {
 	if strings.TrimSpace(cfg.Models.File) == "" {
 		cfg.Models.File = "./models.yaml"
 	}
+	if strings.TrimSpace(cfg.Pricing.File) == "" {
+		cfg.Pricing.File = "./price.yaml"
+	}
+	if strings.TrimSpace(cfg.Pricing.OverridesFile) == "" {
+		cfg.Pricing.OverridesFile = "./price_overrides.yaml"
+	}
 
 	if cfg.UpstreamProxies.ByProvider == nil {
 		cfg.UpstreamProxies.ByProvider = map[string]string{}
@@ -144,6 +158,13 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v := strings.TrimSpace(os.Getenv("ONR_MODELS_FILE")); v != "" {
 		cfg.Models.File = v
+	}
+	if v := strings.TrimSpace(os.Getenv("ONR_PRICE_FILE")); v != "" {
+		cfg.Pricing.File = v
+	}
+	cfg.Pricing.Enabled = envBool("ONR_PRICING_ENABLED", cfg.Pricing.Enabled)
+	if v := strings.TrimSpace(os.Getenv("ONR_PRICE_OVERRIDES_FILE")); v != "" {
+		cfg.Pricing.OverridesFile = v
 	}
 
 	applyProviderProxyEnvOverrides(cfg)

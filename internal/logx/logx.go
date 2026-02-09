@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -89,11 +90,17 @@ func formatFields(fields map[string]any) string {
 		return ""
 	}
 	tokenKeys := map[string]struct{}{
-		"input_tokens":       {},
-		"output_tokens":      {},
-		"total_tokens":       {},
-		"cache_read_tokens":  {},
-		"cache_write_tokens": {},
+		"input_tokens":          {},
+		"output_tokens":         {},
+		"total_tokens":          {},
+		"cache_read_tokens":     {},
+		"cache_write_tokens":    {},
+		"billable_input_tokens": {},
+		"cost_total":            {},
+		"cost_input":            {},
+		"cost_output":           {},
+		"cost_cache_read":       {},
+		"cost_cache_write":      {},
 	}
 
 	keys := make([]string, 0, len(fields))
@@ -133,6 +140,14 @@ func formatFields(fields map[string]any) string {
 				return
 			}
 			parts = append(parts, fmt.Sprintf("%s=%s", k, t))
+		case float64:
+			s := strings.TrimSpace(strconv.FormatFloat(t, 'f', 12, 64))
+			s = strings.TrimRight(s, "0")
+			s = strings.TrimRight(s, ".")
+			if s == "" || s == "-" {
+				s = "0"
+			}
+			parts = append(parts, fmt.Sprintf("%s=%s", k, s))
 		default:
 			s := strings.TrimSpace(fmt.Sprintf("%v", v))
 			if s == "" || s == "<nil>" {
@@ -153,6 +168,12 @@ func formatFields(fields map[string]any) string {
 		"total_tokens",
 		"cache_read_tokens",
 		"cache_write_tokens",
+		"billable_input_tokens",
+		"cost_input",
+		"cost_output",
+		"cost_cache_read",
+		"cost_cache_write",
+		"cost_total",
 	} {
 		appendIfPresent(k)
 	}

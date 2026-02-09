@@ -3,6 +3,8 @@ onr.yaml
 models.yaml
 keys.yaml
 keys.yaml.*
+price.yaml
+price.yaml.*
 .env
 
 # Build outputs
