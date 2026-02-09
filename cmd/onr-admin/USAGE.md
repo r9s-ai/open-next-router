@@ -79,14 +79,38 @@ Sync model pricing from `https://models.dev/api.json` into `price.yaml`.
 
 ## 7. oauth
 
-Get OpenAI OAuth `refresh_token` (authorization code + PKCE flow, similar to CLIProxyAPI Codex login).
+Get OAuth `refresh_token` for a selected provider profile (authorization code flow).
 
 ```bash
-# Launch browser login and print refresh_token
-./bin/onr-admin oauth refresh-token
+# Provider is required
+./bin/onr-admin oauth refresh-token --provider openai
 
-# If running on headless server, copy URL manually
-./bin/onr-admin oauth refresh-token --no-browser --callback-port 2468
+# Select built-in provider profile
+./bin/onr-admin oauth refresh-token --provider claude
+./bin/onr-admin oauth refresh-token --provider gemini --client-id "<your-google-client-id>" --client-secret "<your-google-client-secret>"
+./bin/onr-admin oauth refresh-token --provider qwen
+./bin/onr-admin oauth refresh-token --provider kimi
+
+# client-secret can be loaded from env automatically:
+#   ONR_OAUTH_<PROVIDER>_CLIENT_SECRET
+export ONR_OAUTH_IFLOW_CLIENT_SECRET="<your-iflow-client-secret>"
+./bin/onr-admin oauth refresh-token --provider iflow
+
+# Headless server mode: print URL and wait callback
+./bin/onr-admin oauth refresh-token --provider openai --no-browser --callback-port 2468
+
+# qwen/kimi use OAuth device-code flow (prints verification URL and optional user code)
+./bin/onr-admin oauth refresh-token --provider qwen --no-browser
+
+# Custom provider: override OAuth endpoints/params explicitly
+./bin/onr-admin oauth refresh-token \
+  --provider custom \
+  --auth-url "https://example.com/oauth/authorize" \
+  --token-url "https://example.com/oauth/token" \
+  --client-id "your-client-id" \
+  --client-secret "your-client-secret" \
+  --scope "openid profile offline_access" \
+  --auth-param "prompt=consent"
 ```
 
 ## 8. tui

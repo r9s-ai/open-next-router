@@ -6,6 +6,7 @@ keys.yaml.*
 price.yaml
 price.yaml.*
 .env
+.env.oauth
 run/
 
 # Build outputs
