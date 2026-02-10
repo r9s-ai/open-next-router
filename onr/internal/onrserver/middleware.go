@@ -7,8 +7,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/r9s-ai/open-next-router/internal/logx"
-	"github.com/r9s-ai/open-next-router/internal/requestid"
+	"github.com/r9s-ai/open-next-router/onr/internal/logx"
+	"github.com/r9s-ai/open-next-router/onr/internal/requestid"
 )
 
 func requestLoggerWithColor(l *log.Logger, color bool) gin.HandlerFunc {

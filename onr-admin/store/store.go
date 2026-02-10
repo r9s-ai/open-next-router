@@ -811,7 +811,7 @@ func validateModelsDoc(doc *yaml.Node) error {
 }
 
 func upstreamEnvVar(provider, name string, index int) string {
-	// Keep consistent with internal/keystore env var behavior.
+	// Keep consistent with onr-core/pkg/keystore env var behavior.
 	p := strings.ToUpper(strings.TrimSpace(provider))
 	n := strings.ToUpper(strings.TrimSpace(name))
 	if n == "" {

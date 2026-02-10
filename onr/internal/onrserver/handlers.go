@@ -10,11 +10,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/r9s-ai/open-next-router/internal/auth"
-	"github.com/r9s-ai/open-next-router/internal/config"
-	"github.com/r9s-ai/open-next-router/internal/proxy"
-	"github.com/r9s-ai/open-next-router/internal/requestid"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/config"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/trafficdump"
+	"github.com/r9s-ai/open-next-router/onr/internal/auth"
+	"github.com/r9s-ai/open-next-router/onr/internal/proxy"
+	"github.com/r9s-ai/open-next-router/onr/internal/requestid"
 )
 
 const openAIInvalidRequestType = "invalid_request_error"

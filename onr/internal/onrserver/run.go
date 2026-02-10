@@ -15,12 +15,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/r9s-ai/open-next-router/internal/config"
-	"github.com/r9s-ai/open-next-router/internal/keystore"
-	"github.com/r9s-ai/open-next-router/internal/models"
-	"github.com/r9s-ai/open-next-router/internal/proxy"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/config"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/keystore"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/models"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/pricing"
+	"github.com/r9s-ai/open-next-router/onr/internal/proxy"
 )
 
 func Run(cfgPath string) error {

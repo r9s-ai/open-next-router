@@ -18,7 +18,6 @@ import (
 	"github.com/gin-gonic/gin"
 	xproxy "golang.org/x/net/proxy"
 
-	"github.com/r9s-ai/open-next-router/internal/auth"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/apitransform"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
@@ -26,6 +25,7 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/pricing"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/trafficdump"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/usageestimate"
+	"github.com/r9s-ai/open-next-router/onr/internal/auth"
 )
 
 const (
