@@ -19,6 +19,7 @@ This triggers `.github/workflows/release.yml`, which runs tests and GoReleaser.
 Outputs:
 
 - GitHub release assets for `onr` and `onr-admin`
+- Provider DSL bundle: `open-next-router_providers_vX.Y.Z.tar.gz`
 - GHCR image: `ghcr.io/r9s-ai/open-next-router:<version>` and `latest`
 
 ## 2) onr-core module release (stable external import)
