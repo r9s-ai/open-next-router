@@ -5,5 +5,4 @@ toolchain go1.24.11
 use (
 	.
 	./onr-core
-	./cmd/onr-admin
 )

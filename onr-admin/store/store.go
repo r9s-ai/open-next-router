@@ -192,7 +192,7 @@ func writeAtomic(path string, data []byte, backup bool) error {
 		return errors.New("missing path")
 	}
 	dir := filepath.Dir(p)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return err
 	}
 
@@ -219,6 +219,7 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	defer func() { _ = in.Close() }()
+	// #nosec G304 -- destination path is controlled by admin command inputs.
 	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
@@ -277,18 +278,17 @@ func mappingSet(m *yaml.Node, key string, val *yaml.Node) {
 	)
 }
 
-func mappingDel(m *yaml.Node, key string) bool {
+func mappingDel(m *yaml.Node, key string) {
 	if m == nil || m.Kind != yaml.MappingNode {
-		return false
+		return
 	}
 	for i := 0; i+1 < len(m.Content); i += 2 {
 		k := m.Content[i]
 		if k != nil && k.Value == key {
 			m.Content = append(m.Content[:i], m.Content[i+2:]...)
-			return true
+			return
 		}
 	}
-	return false
 }
 
 func providersMap(doc *yaml.Node) (*yaml.Node, error) {

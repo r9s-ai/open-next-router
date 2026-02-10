@@ -20,9 +20,6 @@ jobs:
           - name: onr-core
             path: onr-core
             go_mod: onr-core/go.mod
-          - name: onr-admin
-            path: cmd/onr-admin
-            go_mod: cmd/onr-admin/go.mod
 
     steps:
       - name: Checkout code

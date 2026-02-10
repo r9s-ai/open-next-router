@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/r9s-ai/open-next-router/cmd/onr-admin/store"
+	"github.com/r9s-ai/open-next-router/onr-admin/store"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/keystore"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/models"
@@ -61,7 +61,7 @@ func runValidateTarget(target string, opts validateOptions) error {
 		if cfg != nil && strings.TrimSpace(cfg.Providers.Dir) != "" {
 			providersDir = strings.TrimSpace(cfg.Providers.Dir)
 		} else {
-			providersDir = "./config/providers"
+			providersDir = defaultProvidersDir
 		}
 	}
 

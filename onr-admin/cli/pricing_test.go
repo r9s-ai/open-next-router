@@ -13,7 +13,7 @@ func TestParseProviderTargets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseProviderTargets err=%v", err)
 	}
-	if len(out) != 2 || out[0] != "gemini" || out[1] != "openai" {
+	if len(out) != 2 || out[0] != "gemini" || out[1] != providerOpenAI {
 		t.Fatalf("out=%v", out)
 	}
 }
@@ -55,7 +55,7 @@ func TestBuildProviderRows(t *testing.T) {
 func TestResolvePricingSyncProvidersFromConfig(t *testing.T) {
 	dir := t.TempDir()
 	providersDir := filepath.Join(dir, "providers")
-	if err := os.MkdirAll(providersDir, 0o755); err != nil {
+	if err := os.MkdirAll(providersDir, 0o750); err != nil {
 		t.Fatalf("mkdir providers: %v", err)
 	}
 	providerConf := `
@@ -80,7 +80,7 @@ provider "openai" {
 	if err != nil {
 		t.Fatalf("resolvePricingSyncProviders err=%v", err)
 	}
-	if len(out) != 1 || out[0] != "openai" {
+	if len(out) != 1 || out[0] != providerOpenAI {
 		t.Fatalf("providers=%v", out)
 	}
 }

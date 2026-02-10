@@ -4,7 +4,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/r9s-ai/open-next-router/cmd/onr-admin/tui"
+	"github.com/r9s-ai/open-next-router/onr-admin/tui"
 	"github.com/spf13/cobra"
 )
 

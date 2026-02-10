@@ -24,7 +24,7 @@ open-next-router (ONR) is centered around a **nginx-like, atomic DSL configurati
 Boundary rules:
 
 - Put reusable, HTTP/Gin-free logic in `onr-core/pkg/*` when possible (e.g. JSON/SSE converters).
-- `internal/*` and `cmd/onr-admin/*` may depend on `onr-core/pkg/*`; the reverse is not allowed.
+- `internal/*` and `onr-admin/*` may depend on `onr-core/pkg/*`; the reverse is not allowed.
 
 ## DSL Change Checklist
 

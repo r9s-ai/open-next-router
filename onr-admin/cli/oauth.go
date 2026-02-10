@@ -22,7 +22,10 @@ import (
 )
 
 const (
-	defaultOpenAIAuthURL  = "https://auth.openai.com/oauth/authorize"
+	providerOpenAI = "openai"
+
+	defaultOpenAIAuthURL = "https://auth.openai.com/oauth/authorize"
+	// #nosec G101 -- OAuth endpoint URL, not a credential.
 	defaultOpenAITokenURL = "https://auth.openai.com/oauth/token"
 	defaultOpenAIClientID = "app_EMoamEEZ73f0CkXaXp7hrann"
 
@@ -130,13 +133,13 @@ type oauthProviderProfile struct {
 func resolveOAuthProviderProfile(provider string) (oauthProviderProfile, error) {
 	p := strings.ToLower(strings.TrimSpace(provider))
 	if p == "" {
-		p = "openai"
+		p = providerOpenAI
 	}
 	switch p {
-	case "openai", "openai-oauth", "codex":
+	case providerOpenAI, "openai-oauth", "codex":
 		return oauthProviderProfile{
 			Flow:     oauthFlowAuthCode,
-			Name:     "openai",
+			Name:     providerOpenAI,
 			AuthURL:  defaultOpenAIAuthURL,
 			TokenURL: defaultOpenAITokenURL,
 			ClientID: defaultOpenAIClientID,
@@ -599,7 +602,7 @@ func pollOAuthDeviceToken(ctx context.Context, in oauthDevicePollRequest) (strin
 		}
 		select {
 		case <-ctx.Done():
-			return "", fmt.Errorf("device flow cancelled: %w", ctx.Err())
+			return "", fmt.Errorf("device flow canceled: %w", ctx.Err())
 		case <-time.After(interval):
 		}
 	}
@@ -686,7 +689,8 @@ func exchangeOAuthDeviceTokenOnce(ctx context.Context, in oauthDevicePollRequest
 
 func startOAuthCallbackServer(port int, cbCh chan<- oauthCallback) (*http.Server, error) {
 	addr := fmt.Sprintf(":%d", port)
-	ln, err := net.Listen("tcp", addr)
+	var lc net.ListenConfig
+	ln, err := lc.Listen(context.Background(), "tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("callback port %d unavailable: %w", port, err)
 	}
@@ -965,11 +969,11 @@ func openBrowser(target string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.Command("open", target)
+		cmd = exec.CommandContext(context.Background(), "open", target)
 	case "windows":
-		cmd = exec.Command("cmd", "/c", "start", target)
+		cmd = exec.CommandContext(context.Background(), "cmd", "/c", "start", target)
 	default:
-		cmd = exec.Command("xdg-open", target)
+		cmd = exec.CommandContext(context.Background(), "xdg-open", target)
 	}
 	return cmd.Start()
 }
@@ -987,7 +991,7 @@ func printRefreshTokenNextSteps(provider, token string) {
 	masked := maskToken(token)
 	p := strings.TrimSpace(provider)
 	if p == "" {
-		p = "openai"
+		p = providerOpenAI
 	}
 	fmt.Fprintf(os.Stderr,
 		"\nNext steps:\n1. Save this token to keys.yaml (or your secret manager) as an upstream key value.\n2. Use that key in provider %q OAuth channel (e.g. oauth_refresh_token $channel.key;).\n3. Restart ONR and test the upstream API.\nToken (masked): %s\n",

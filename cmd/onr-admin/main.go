@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/r9s-ai/open-next-router/cmd/onr-admin/cli"
+	"github.com/r9s-ai/open-next-router/onr-admin/cli"
 )
 
 func main() {

@@ -9,12 +9,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/r9s-ai/open-next-router/cmd/onr-admin/store"
+	"github.com/r9s-ai/open-next-router/onr-admin/store"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/pricing"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
+
+const defaultProvidersDir = "./config/providers"
 
 func newPricingCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -86,7 +88,7 @@ func runPricingSyncWithOptions(opts pricingSyncOptions) error {
 	for _, provider := range providers {
 		if _, ok := fetch.Catalog.ResolveProviderID(provider); !ok {
 			skippedProviders++
-			fmt.Fprintf(os.Stdout, "skip provider=%s reason=not_found_in_models_dev\n", provider)
+			_, _ = fmt.Fprintf(os.Stdout, "skip provider=%s reason=not_found_in_models_dev\n", provider)
 			continue
 		}
 		prices, resolvedProvider, xerr := fetch.Catalog.ExtractPrices(provider, models)
@@ -115,7 +117,7 @@ func runPricingSyncWithOptions(opts pricingSyncOptions) error {
 		return err
 	}
 
-	fmt.Fprintf(os.Stdout, "pricing synced: providers=%d models=%d out=%s fetched_at=%s\n",
+	_, _ = fmt.Fprintf(os.Stdout, "pricing synced: providers=%d models=%d out=%s fetched_at=%s\n",
 		len(priceFile.Source.Providers),
 		len(priceFile.Entries),
 		strings.TrimSpace(opts.outPath),
@@ -129,7 +131,7 @@ func resolvePricingSyncProviders(opts pricingSyncOptions) ([]string, error) {
 		return providers, nil
 	}
 	cfg, _ := store.LoadConfigIfExists(strings.TrimSpace(opts.cfgPath))
-	providersDir := "./config/providers"
+	providersDir := defaultProvidersDir
 	if cfg != nil && strings.TrimSpace(cfg.Providers.Dir) != "" {
 		providersDir = strings.TrimSpace(cfg.Providers.Dir)
 	}
@@ -171,13 +173,13 @@ func runPricingProvidersWithOptions(opts pricingProvidersOptions) error {
 	}
 	rows := buildProviderRows(fetch.Catalog, strings.TrimSpace(opts.search))
 	if len(rows) == 0 {
-		fmt.Fprintln(os.Stdout, "no providers matched")
+		_, _ = fmt.Fprintln(os.Stdout, "no providers matched")
 		return nil
 	}
 	for _, row := range rows {
-		fmt.Fprintln(os.Stdout, row)
+		_, _ = fmt.Fprintln(os.Stdout, row)
 	}
-	fmt.Fprintf(os.Stdout, "total=%d fetched_at=%s\n", len(rows), fetch.FetchedAt.Format(time.RFC3339))
+	_, _ = fmt.Fprintf(os.Stdout, "total=%d fetched_at=%s\n", len(rows), fetch.FetchedAt.Format(time.RFC3339))
 	return nil
 }
 

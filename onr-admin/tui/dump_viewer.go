@@ -15,7 +15,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/r9s-ai/open-next-router/cmd/onr-admin/store"
+	"github.com/r9s-ai/open-next-router/onr-admin/store"
 )
 
 type dumpViewerState int
@@ -152,10 +152,10 @@ type dumpFileMsg struct {
 	err     error
 }
 
-func newDumpViewerProgram(dumpsDir string, in io.Reader, out io.Writer) (*tea.Program, error) {
+func newDumpViewerProgram(dumpsDir string, in io.Reader, out io.Writer) *tea.Program {
 	m := newDumpViewerModel(dumpsDir)
 	p := tea.NewProgram(m, tea.WithInput(in), tea.WithOutput(out), tea.WithAltScreen())
-	return p, nil
+	return p
 }
 
 func newDumpViewerModel(dumpsDir string) dumpViewerModel {

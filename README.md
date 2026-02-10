@@ -225,15 +225,14 @@ Env override:
 
 `onr-admin` command usage is documented in:
 
-- `cmd/onr-admin/USAGE.md`
+- `onr-admin/USAGE.md`
 
 ## Multi-Module Layout
 
-The repository now uses three Go modules:
+The repository now uses two Go modules:
 
-- `.` (onr runtime/server)
+- `.` (onr runtime/server + onr-admin CLI)
 - `onr-core` (shared library for external ecosystem and internal reuse)
-- `cmd/onr-admin` (admin CLI/TUI/Web module)
 
 For local multi-module development, use the repository root `go.work`.
 
@@ -246,8 +245,8 @@ go test ./...
 # onr-core
 (cd onr-core && go test ./...)
 
-# onr-admin
-(cd cmd/onr-admin && go test ./...)
+# onr-admin (included in root module)
+go test ./...
 ```
 
 ## Upstream HTTP Proxy (per provider)

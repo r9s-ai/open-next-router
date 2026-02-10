@@ -5,7 +5,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/r9s-ai/open-next-router/cmd/onr-admin/store"
+	"github.com/r9s-ai/open-next-router/onr-admin/store"
 )
 
 func Run(cfgPath string, in io.Reader, out io.Writer) error {
@@ -15,10 +15,7 @@ func Run(cfgPath string, in io.Reader, out io.Writer) error {
 		dumpsDir = strings.TrimSpace(cfg.TrafficDump.Dir)
 	}
 
-	p, err := newDumpViewerProgram(dumpsDir, in, out)
-	if err != nil {
-		return err
-	}
+	p := newDumpViewerProgram(dumpsDir, in, out)
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("tui run failed: %w", err)
 	}

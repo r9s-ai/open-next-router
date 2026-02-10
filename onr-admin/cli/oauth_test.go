@@ -69,8 +69,8 @@ func TestResolveOAuthProviderProfileAlias(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve profile err=%v", err)
 	}
-	if p.Name != "openai" {
-		t.Fatalf("profile name=%q want=openai", p.Name)
+	if p.Name != providerOpenAI {
+		t.Fatalf("profile name=%q want=%s", p.Name, providerOpenAI)
 	}
 	if p.AuthURL != defaultOpenAIAuthURL {
 		t.Fatalf("auth_url=%q want=%q", p.AuthURL, defaultOpenAIAuthURL)
