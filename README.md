@@ -140,6 +140,7 @@ Observability:
 
 - Recommended: `Authorization: Bearer <ACCESS_KEY_FROM_KEYS_YAML>`
 - Compatible headers: `x-api-key` / `x-goog-api-key`
+- `onr.yaml` can omit `auth` entirely when using `keys.yaml` `access_keys`
 - Optional legacy mode: `auth.api_key` (master key in `onr.yaml`)
 
 ### URI-like token key (onr:v1?)

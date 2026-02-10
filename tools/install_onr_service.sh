@@ -324,11 +324,6 @@ server:
   write_timeout_ms: 60000
   pid_file: "${pid_file}"
 
-auth:
-  # Optional legacy master key.
-  # Recommended: use keys.yaml access_keys for client authentication.
-  api_key: ""
-
 providers:
   dir: "${PROVIDERS_DIR}"
 
