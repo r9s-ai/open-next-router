@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
@@ -33,16 +34,12 @@ func newCryptoEncryptCmd() *cobra.Command {
 		Use:   "encrypt",
 		Short: "Encrypt plaintext to ENC[v1:aesgcm:...]",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			plain := strings.TrimSpace(text)
-			if plain == "" {
-				b, err := io.ReadAll(os.Stdin)
-				if err != nil {
-					return fmt.Errorf("read stdin: %w", err)
-				}
-				plain = strings.TrimSpace(string(b))
+			plain, err := resolveEncryptPlaintext(strings.TrimSpace(text), cmd.InOrStdin(), isTerminalReader(cmd.InOrStdin()))
+			if err != nil {
+				return err
 			}
 			if plain == "" {
-				return errors.New("missing input: provide --text or pipe stdin")
+				return errors.New("missing input: provide --text, enter a line, or pipe stdin")
 			}
 			out, err := keystore.Encrypt(plain)
 			if err != nil {
@@ -54,6 +51,40 @@ func newCryptoEncryptCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&text, "text", "", "plain text to encrypt (if empty, read from stdin)")
 	return cmd
+}
+
+func resolveEncryptPlaintext(text string, in io.Reader, inTerminal bool) (string, error) {
+	plain := strings.TrimSpace(text)
+	if plain != "" {
+		return plain, nil
+	}
+
+	if inTerminal {
+		r := bufio.NewReader(in)
+		line, err := r.ReadString('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return "", fmt.Errorf("read stdin: %w", err)
+		}
+		return strings.TrimSpace(line), nil
+	}
+
+	b, err := io.ReadAll(in)
+	if err != nil {
+		return "", fmt.Errorf("read stdin: %w", err)
+	}
+	return strings.TrimSpace(string(b)), nil
+}
+
+func isTerminalReader(r io.Reader) bool {
+	f, ok := r.(*os.File)
+	if !ok {
+		return false
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
 }
 
 func newCryptoGenMasterKeyCmd() *cobra.Command {
