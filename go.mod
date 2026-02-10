@@ -1,8 +1,8 @@
 module github.com/r9s-ai/open-next-router
 
-go 1.24.2
+go 1.25.3
 
-toolchain go1.24.11
+toolchain go1.25.3
 
 require (
 	github.com/charmbracelet/bubbles v0.21.1
