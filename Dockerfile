@@ -7,10 +7,8 @@ COPY . .
 RUN go build -o /usr/local/bin/onr ./cmd/onr
 
 FROM alpine:3.20
-RUN adduser -D -H -u 10001 app
-USER app
 
-WORKDIR /home/app
+WORKDIR /root
 COPY --from=build /usr/local/bin/onr /usr/local/bin/onr
 
 EXPOSE 3300
