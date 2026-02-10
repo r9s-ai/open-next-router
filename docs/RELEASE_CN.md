@@ -63,7 +63,7 @@ git push origin v1.2.0
 - ✅ 生成 Changelog
 - ✅ 创建 GitHub Release
 - ✅ 上传构建产物和 checksum
-- ✅ 上传 provider DSL 压缩包（`open-next-router_providers_vX.Y.Z.tar.gz`）
+- ✅ 上传 config 压缩包（`open-next-router_config_vX.Y.Z.tar.gz`，包含 `config/providers/*.conf` 与 `config/*.example.yaml`）
 
 6. **验证发布**
 

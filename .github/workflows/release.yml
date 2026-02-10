@@ -83,23 +83,23 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
 
-      - name: Package providers archive
+      - name: Package config archive
         shell: bash
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
-          archive="dist/open-next-router_providers_${tag}.tar.gz"
-          tar -czf "${archive}" -C config providers
+          archive="dist/open-next-router_config_${tag}.tar.gz"
+          tar -czf "${archive}" config
           sha256sum "${archive}" >> dist/checksums.txt
-          echo "PROVIDERS_ARCHIVE=${archive}" >> "$GITHUB_ENV"
+          echo "CONFIG_ARCHIVE=${archive}" >> "$GITHUB_ENV"
 
-      - name: Upload providers archive to release
+      - name: Upload config archive to release
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          gh release upload "${GITHUB_REF_NAME}" "${PROVIDERS_ARCHIVE}" dist/checksums.txt --clobber
+          gh release upload "${GITHUB_REF_NAME}" "${CONFIG_ARCHIVE}" dist/checksums.txt --clobber
 
       - name: Upload artifacts to workflow
         uses: actions/upload-artifact@v4
