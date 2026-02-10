@@ -15,8 +15,13 @@ open-next-router (ONR) is centered around a **nginx-like, atomic DSL configurati
 
 ## Directories & Boundaries
 
-- Runtime server: `internal/onrserver/*`
-- Proxy/execution engine: `internal/proxy/*`
+- Runtime CLI logic (entry glue, config test, signals): `onr/*`
+- Runtime server: `onr/internal/onrserver/*`
+- Proxy/execution engine: `onr/internal/proxy/*`
+- Runtime-only shared utilities: `onr/internal/{auth,logx,requestid}/*`
+- Version/build info (shared): `internal/version/*`
+- Admin implementation (not for external import): `onr-admin/internal/{cli,store,tui}/*`
+- Admin public facade (imported by `cmd/onr-admin`): `onr-admin/cli/*`
 - Core reusable library: `onr-core/pkg/*`
 - DSL (parsing/validation/semantic model/reusable utilities): `onr-core/pkg/dslconfig/*`
 - Provider configs: `config/providers/*.conf`
@@ -24,7 +29,10 @@ open-next-router (ONR) is centered around a **nginx-like, atomic DSL configurati
 Boundary rules:
 
 - Put reusable, HTTP/Gin-free logic in `onr-core/pkg/*` when possible (e.g. JSON/SSE converters).
-- `internal/*` and `onr-admin/*` may depend on `onr-core/pkg/*`; the reverse is not allowed.
+- `onr/internal/*` and `onr-admin/*` may depend on `onr-core/pkg/*`; the reverse is not allowed.
+- Respect Go `internal/` import boundaries:
+  - `onr/internal/*` may only be imported by code under `onr/`.
+  - `onr-admin/internal/*` may only be imported by code under `onr-admin/`.
 
 ## DSL Change Checklist
 
@@ -38,9 +46,14 @@ When adding/modifying a DSL directive, you must also do:
 ## Compatibility / Transformation Features
 
 - Compatibility must be **opt-in and explicit** via DSL (e.g. `req_map ...;`, `resp_map ...;`, `sse_parse ...;`).
-- Do not implement compatibility by adding implicit rules in `internal/proxy`.
+- Do not implement compatibility by adding implicit rules in `onr/internal/proxy`.
 - SSE transformations must handle: `event:`/`data:` framing, blank-line flush, `data: [DONE]`,
   and tool-call event incremental/aggregation semantics.
+
+## Language & Docs
+
+- Source code (identifiers, comments), CLI help/output, and documentation must be written in English.
+- Chinese documentation is allowed only as a separate file with the `_CN` suffix (e.g. `DSL_SYNTAX_CN.md`).
 
 ## Development & Verification
 
