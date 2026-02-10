@@ -58,6 +58,5 @@ When adding/modifying a DSL directive, you must also do:
 ## Development & Verification
 
 - Go code must pass `gofmt`.
-- After changes, run at least: `go test ./...`.
 - After changing provider configs (`config/providers/*.conf`), keep or add a test to validate the providers directory
   can be parsed and validated (e.g. `ValidateProvidersDir`).

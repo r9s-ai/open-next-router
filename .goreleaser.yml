@@ -189,6 +189,21 @@ release:
 
     ## Installation
 
+    ### One-Click Installer (Linux)
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/r9s-ai/open-next-router/{{.Tag}}/tools/install_onr_service.sh -o install_onr_service.sh
+    chmod +x install_onr_service.sh
+
+    # systemd
+    sudo ./install_onr_service.sh --mode service --version {{.Tag}} --api-key 'change-me'
+
+    # docker
+    sudo ./install_onr_service.sh --mode docker --version {{.Tag}} --api-key 'change-me'
+
+    # docker-compose
+    sudo ./install_onr_service.sh --mode docker-compose --version {{.Tag}} --api-key 'change-me'
+    ```
+
     ### Download Binary
     Download the appropriate binary for your platform from the assets below.
 
