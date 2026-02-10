@@ -81,7 +81,7 @@ docker compose up --build
 3) Call
 
 ```bash
-curl -sS http://127.0.0.1:3000/v1/chat/completions \
+curl -sS http://127.0.0.1:3300/v1/chat/completions \
   -H "Authorization: Bearer change-me" \
   -H "Content-Type: application/json" \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello"}]}'
@@ -309,7 +309,7 @@ In addition to OpenAI-style endpoints, open-next-router supports a subset of Gem
 Example (force provider selection via header):
 
 ```bash
-curl -sS http://127.0.0.1:3000/v1beta/models/gemini-2.0-flash:generateContent \
+curl -sS http://127.0.0.1:3300/v1beta/models/gemini-2.0-flash:generateContent \
   -H "Authorization: Bearer change-me" \
   -H "x-onr-provider: gemini" \
   -H "Content-Type: application/json" \

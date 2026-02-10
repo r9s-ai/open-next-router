@@ -23,3 +23,9 @@ providers:
         # Recommended: provide env override:
         #   ONR_UPSTREAM_KEY_GEMINI_KEY1=AIzaSy...
         value: ""
+
+# Access keys for clients (for token key: onr:v1?...&k64=...).
+access_keys:
+  - name: "client-a"
+    value: ""
+    comment: "example client access key (set via env: ONR_ACCESS_KEY_CLIENT_A)"

@@ -12,7 +12,7 @@ SERVICE_NAME="onr"
 CONTAINER_NAME="onr"
 SERVICE_USER="onr"
 SERVICE_GROUP="onr"
-LISTEN=":3000"
+LISTEN=":3300"
 HOST_PORT=""
 API_KEY=""
 FORCE=0
@@ -55,7 +55,7 @@ Options:
   --mode <service|docker|docker-compose> Install mode (required)
   --version <vX.Y.Z|X.Y.Z>     Runtime release tag only (default: latest runtime v*)
   --api-key <value>            ONR API key (required on first install)
-  --listen <addr>              ONR listen address (default: :3000)
+  --listen <addr>              ONR listen address (default: :3300)
   --host-port <port>           Docker host port (default: same as listen port)
   --service-name <name>        systemd service name / default container name (default: onr)
   --container-name <name>      Docker container name (default: onr)

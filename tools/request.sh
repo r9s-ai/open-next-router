@@ -28,8 +28,8 @@ Examples:
   tools/request.sh --stream -X POST /v1/chat/completions --json '{"model":"gpt-4o-mini","stream":true,"messages":[{"role":"user","content":"hi"}]}'
 
 Env (auto source repo .env if exists):
-  ONR_BASE_URL    Default: derived from ONR_LISTEN or http://127.0.0.1:3000
-  ONR_LISTEN      e.g. :3000
+  ONR_BASE_URL    Default: derived from ONR_LISTEN or http://127.0.0.1:3300
+  ONR_LISTEN      e.g. :3300
   ONR_API_KEY     used as Authorization: Bearer <key>
 EOF
   exit 2
@@ -40,7 +40,7 @@ infer_base_url() {
     echo "${ONR_BASE_URL}"
     return
   fi
-  local listen="${ONR_LISTEN:-:3000}"
+  local listen="${ONR_LISTEN:-:3300}"
   listen="$(echo "${listen}" | xargs)"
   if [[ "${listen}" == http://* || "${listen}" == https://* ]]; then
     echo "${listen}"

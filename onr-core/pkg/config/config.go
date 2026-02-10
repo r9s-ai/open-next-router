@@ -95,7 +95,7 @@ func Load(path string) (*Config, error) {
 
 func applyDefaults(cfg *Config) {
 	if strings.TrimSpace(cfg.Server.Listen) == "" {
-		cfg.Server.Listen = ":3000"
+		cfg.Server.Listen = ":3300"
 	}
 	if cfg.Server.ReadTimeoutMs <= 0 {
 		cfg.Server.ReadTimeoutMs = 60000

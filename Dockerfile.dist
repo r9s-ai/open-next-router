@@ -6,6 +6,6 @@ COPY ${TARGETPLATFORM}/onr /usr/local/bin/onr
 COPY ${TARGETPLATFORM}/onr-admin /usr/local/bin/onr-admin
 USER app
 WORKDIR /home/app
-EXPOSE 3000
+EXPOSE 3300
 ENTRYPOINT ["/usr/local/bin/onr"]
 CMD ["--config", "/etc/onr/onr.yaml"]

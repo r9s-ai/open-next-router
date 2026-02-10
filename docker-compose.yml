@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "3300:3300"
     volumes:
       # Mount your runtime config (create it from config/onr.example.yaml).
       - ./onr.yaml:/etc/onr/onr.yaml:ro

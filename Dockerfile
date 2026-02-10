@@ -13,6 +13,6 @@ USER app
 WORKDIR /home/app
 COPY --from=build /usr/local/bin/onr /usr/local/bin/onr
 
-EXPOSE 3000
+EXPOSE 3300
 ENTRYPOINT ["/usr/local/bin/onr"]
 CMD ["--config", "/etc/onr/onr.yaml"]

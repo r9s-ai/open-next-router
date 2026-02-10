@@ -24,7 +24,7 @@ auth:
 	if err != nil {
 		t.Fatalf("Load err=%v", err)
 	}
-	if cfg.Server.Listen != ":3000" {
+	if cfg.Server.Listen != ":3300" {
 		t.Fatalf("default listen=%q", cfg.Server.Listen)
 	}
 	if cfg.Keys.File == "" || cfg.Models.File == "" || cfg.Providers.Dir == "" {
