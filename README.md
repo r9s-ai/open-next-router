@@ -11,6 +11,7 @@
 [![GitHub Release](https://img.shields.io/github/v/release/r9s-ai/open-next-router)](https://github.com/r9s-ai/open-next-router/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![GitHub Stars](https://img.shields.io/github/stars/r9s-ai/open-next-router?style=social)](https://github.com/r9s-ai/open-next-router)
+
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/r9s-ai/open-next-router)
 [![Telegram](https://img.shields.io/badge/Telegram-Join-blue?logo=telegram)](https://t.me/opennextrouter)
 
