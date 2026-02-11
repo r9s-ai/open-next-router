@@ -68,15 +68,61 @@ jobs:
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Resolve previous onr-core tag
+        id: prev
+        shell: bash
+        run: |
+          current="${GITHUB_REF_NAME}"
+          mapfile -t tags < <(git tag -l 'onr-core/v*' --sort=version:refname)
+
+          prev=""
+          for i in "${!tags[@]}"; do
+            if [[ "${tags[$i]}" == "${current}" ]]; then
+              if (( i > 0 )); then
+                prev="${tags[$((i - 1))]}"
+              fi
+              break
+            fi
+          done
+
+          echo "previous_tag=${prev}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes with onr-core tag scope
+        id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          prev="${{ steps.prev.outputs.previous_tag }}"
+
+          if [[ -n "${prev}" ]]; then
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+              -f tag_name="${tag}" \
+              -f target_commitish="${GITHUB_SHA}" \
+              -f previous_tag_name="${prev}" \
+              --jq '.body' > generated_notes.md
+          else
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+              -f tag_name="${tag}" \
+              -f target_commitish="${GITHUB_SHA}" \
+              --jq '.body' > generated_notes.md
+          fi
+
+          {
+            echo "Go module:"
+            echo '```bash'
+            echo "go get github.com/r9s-ai/open-next-router/onr-core@${{ steps.meta.outputs.version }}"
+            echo '```'
+            echo
+            cat generated_notes.md
+          } > release_body.md
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: onr-core ${{ steps.meta.outputs.version }}
-          generate_release_notes: true
+          generate_release_notes: false
           prerelease: ${{ steps.meta.outputs.prerelease == 'true' }}
-          body: |
-            Go module:
-            ```bash
-            go get github.com/r9s-ai/open-next-router/onr-core@${{ steps.meta.outputs.version }}
-            ```
+          body_path: release_body.md
