@@ -198,13 +198,13 @@ curl -sS http://127.0.0.1:3300/v1/chat/completions \
 ## Architecture (high level)
 
 ```text
-                 ┌─────────────────────────────────────────┐
-                 │              open-next-router           │
-                 │                (Gin server)             │
-                 └─────────────────────────────────────────┘
-                                   │
-                                   │ Auth: Bearer / x-api-key
-                                   ▼
+                    ┌─────────────────────────────────────────┐
+                    │              open-next-router           │
+                    │                (Gin server)             │
+                    └─────────────────────────────────────────┘
+                                      │
+                                      │ Auth: Bearer / x-api-key
+                                      ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              Request Pipeline                               │
 │                                                                             │
@@ -224,18 +224,18 @@ curl -sS http://127.0.0.1:3300/v1/chat/completions \
 │  - metrics/pricing: usage_extract, cost estimation (optional)               │
 │                                                                             │
 │                                                                             │
-│                           ┌──────────────────────────┐                      │
-│                           │        upstream          │                      │
-│                           │ provider base_url + path │                      │
-│                           └──────────────────────────┘                      │
+│                         ┌──────────────────────────┐                        │
+│                         │        upstream          │                        │
+│                         │ provider base_url + path │                        │
+│                         └──────────────────────────┘                        │
 └─────────────────────────────────────────────────────────────────────────────┘
-                                     │
-                                     ▼
-                   ┌──────────────────────────────────────────┐
-                   │                Upstream APIs             │
-                   │   OpenAI-compatible and native provider  │
-                   │   APIs (Anthropic, Gemini, etc.)         │
-                   └──────────────────────────────────────────┘
+                                      │
+                                      ▼
+                    ┌──────────────────────────────────────────┐
+                    │                Upstream APIs             │
+                    │   OpenAI-compatible and native provider  │
+                    │   APIs (Anthropic, Gemini, etc.)         │
+                    └──────────────────────────────────────────┘
 
 Observability:
 - [ONR] one-line request log
