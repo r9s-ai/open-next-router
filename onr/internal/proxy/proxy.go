@@ -167,10 +167,21 @@ func (c *Client) handleNonStreamResponse(
 	// but before response json ops (json_del/json_set/json_rename) so operators can strip fields
 	// from downstream without losing upstream usage/finish_reason signals.
 	metricsBody := respOutBody
+	estimateEnabled := shouldEstimateUsage(resp.StatusCode)
 
-	usage, usageStage := estimateNonStreamUsage(c.UsageEst, pf, m, api, model, reqBody, metricsBody)
-	finishReason := extractNonStreamFinishReason(pf, m, metricsBody)
-	cost := c.computeCost(m, provider, key.Name, usage)
+	usage := map[string]any(nil)
+	usageStage := ""
+	if estimateEnabled {
+		usage, usageStage = estimateNonStreamUsage(c.UsageEst, pf, m, api, model, reqBody, metricsBody)
+	}
+	finishReason := ""
+	if estimateEnabled {
+		finishReason = extractNonStreamFinishReason(pf, m, metricsBody)
+	}
+	cost := map[string]any(nil)
+	if estimateEnabled {
+		cost = c.computeCost(m, provider, key.Name, usage)
+	}
 
 	respOutBody, outCT, didTransform, err = applyNonStreamResponseJSONOps(respOutBody, outCT, resp, m, respDir.JSONOps, didTransform)
 	if err != nil {
@@ -422,9 +433,10 @@ func (c *Client) handleStreamResponse(
 	}
 
 	// best-effort: extract metrics from SSE stream tail via pkg/dslconfig aggregator
+	estimateEnabled := shouldEstimateUsage(resp.StatusCode)
 	var upstreamUsage *dslconfig.Usage
 	finishReason := ""
-	if usageTail.Len() > 0 {
+	if estimateEnabled && usageTail.Len() > 0 {
 		usageCfg, _ := pf.Usage.Select(m)
 		finishCfg, _ := pf.Finish.Select(m)
 		agg := dslconfig.NewStreamMetricsAggregator(m, usageCfg, finishCfg)
@@ -436,15 +448,21 @@ func (c *Client) handleStreamResponse(
 		finishReason = strings.TrimSpace(fr)
 	}
 
-	out := usageestimate.Estimate(c.UsageEst, usageestimate.Input{
-		API:           api,
-		Model:         model,
-		UpstreamUsage: upstreamUsage,
-		RequestBody:   reqBody,
-		StreamTail:    usageTail.Bytes(),
-	})
-	usage := usageMap(out.Usage)
-	cost := c.computeCost(m, provider, key.Name, usage)
+	usage := map[string]any(nil)
+	usageStage := ""
+	cost := map[string]any(nil)
+	if estimateEnabled {
+		out := usageestimate.Estimate(c.UsageEst, usageestimate.Input{
+			API:           api,
+			Model:         model,
+			UpstreamUsage: upstreamUsage,
+			RequestBody:   reqBody,
+			StreamTail:    usageTail.Bytes(),
+		})
+		usage = usageMap(out.Usage)
+		usageStage = out.Stage
+		cost = c.computeCost(m, provider, key.Name, usage)
+	}
 	return &Result{
 		Provider:       provider,
 		ProviderKey:    key.Name,
@@ -455,10 +473,14 @@ func (c *Client) handleStreamResponse(
 		Status:         resp.StatusCode,
 		LatencyMs:      time.Since(start).Milliseconds(),
 		Usage:          usage,
-		UsageStage:     out.Stage,
+		UsageStage:     usageStage,
 		FinishReason:   finishReason,
 		Cost:           cost,
 	}, nil
+}
+
+func shouldEstimateUsage(statusCode int) bool {
+	return statusCode == http.StatusOK
 }
 
 func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey, api string, stream bool) (*proxyCtx, error) {
