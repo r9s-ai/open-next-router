@@ -4,9 +4,13 @@
 
 **A lightweight API gateway for routing OpenAI-compatible endpoints to multiple upstream providers**
 
+[![CI](https://github.com/r9s-ai/open-next-router/actions/workflows/ci.yml/badge.svg)](https://github.com/r9s-ai/open-next-router/actions/workflows/ci.yml)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/r9s-ai/open-next-router)](https://github.com/r9s-ai/open-next-router/blob/main/go.mod)
+[![Go Reference](https://pkg.go.dev/badge/github.com/r9s-ai/open-next-router.svg)](https://pkg.go.dev/github.com/r9s-ai/open-next-router)
+[![Go Report Card](https://goreportcard.com/badge/github.com/r9s-ai/open-next-router)](https://goreportcard.com/report/github.com/r9s-ai/open-next-router)
+[![GitHub Release](https://img.shields.io/github/v/release/r9s-ai/open-next-router)](https://github.com/r9s-ai/open-next-router/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![GitHub Stars](https://img.shields.io/github/stars/r9s-ai/open-next-router?style=social)](https://github.com/r9s-ai/open-next-router)
-[![GitHub Issues](https://img.shields.io/badge/github-issues-blue?logo=github)](https://github.com/r9s-ai/open-next-router/issues)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/r9s-ai/open-next-router)
 [![Telegram](https://img.shields.io/badge/Telegram-Join-blue?logo=telegram)](https://t.me/opennextrouter)
 
