@@ -1,0 +1,170 @@
+locale: zh-CN
+
+block_titles:
+  top: "文件级"
+  provider: "Provider"
+  defaults: "Defaults"
+  match: "Match"
+  upstream_config: "Upstream Config"
+  auth: "Auth"
+  request: "Request"
+  upstream: "Upstream"
+  response: "Response"
+  error: "Error"
+  metrics: "Metrics"
+  balance: "Balance"
+  models: "Models"
+
+directive_text:
+  auth:
+    summary: "声明认证相关指令。"
+  auth_bearer:
+    summary: "Sets `Authorization: Bearer <channel.key>`."
+  auth_header_key:
+    summary: "Sets `<Header-Name>: <channel.key>`."
+  auth_oauth_bearer:
+    summary: "Sets `Authorization: Bearer <oauth.access_token>`."
+  balance:
+    summary: "声明余额查询相关指令。"
+  balance_expr:
+    summary: "Custom expression for balance value extraction."
+  balance_mode:
+    summary: "选择内建或自定义余额查询模式。"
+  balance_path:
+    summary: "JSON path used to read balance amount from response."
+  balance_unit:
+    summary: "设置余额数值的单位标签。"
+  base_url:
+    summary: "设置 provider 默认 upstream base URL。"
+  cache_read_tokens:
+    summary: "Custom extraction expression for cache read tokens."
+  cache_read_tokens_path:
+    summary: "Path override for cache-read token extraction (custom mode)."
+  cache_write_tokens:
+    summary: "Custom extraction expression for cache write tokens."
+  cache_write_tokens_path:
+    summary: "Path override for cache-write token extraction (custom mode)."
+  defaults:
+    summary: "声明对所有 match 生效的默认阶段。"
+  del_header:
+    summary: "语义依赖所在 block。"
+  del_query:
+    summary: "Deletes upstream query parameter."
+  error:
+    summary: "声明上游错误归一化指令。"
+  error_map:
+    summary: "将上游错误归一化到目标错误结构。"
+  finish_reason_extract:
+    summary: "从响应或 SSE 载荷提取 finish reason。"
+  finish_reason_path:
+    summary: "Path override for finish_reason extraction (custom mode)."
+  id_allow_regex:
+    summary: "Filter extracted model ids by regex allowlist."
+  id_path:
+    summary: "JSON path to extract model id(s) from models response."
+  id_regex:
+    summary: "Regex rewrite applied to extracted model ids."
+  input_tokens:
+    summary: "Custom extraction expression for input/prompt tokens."
+  input_tokens_path:
+    summary: "Path override for input token extraction (custom mode)."
+  json_del:
+    summary: "语义依赖所在 block。"
+  json_rename:
+    summary: "语义依赖所在 block。"
+  json_set:
+    summary: "语义依赖所在 block。"
+  json_set_if_absent:
+    summary: "语义依赖所在 block。"
+  match:
+    summary: "声明按 api 和可选 stream 选择的路由规则。"
+  method:
+    summary: "语义依赖所在 block。"
+  metrics:
+    summary: "声明 token 与 finish reason 提取指令。"
+  model_map:
+    summary: "Maps input model name to upstream model expression."
+  model_map_default:
+    summary: "Fallback mapped model expression when no rule matches."
+  models:
+    summary: "声明模型列表查询相关指令。"
+  models_mode:
+    summary: "选择内建或自定义模型查询模式。"
+  oauth_audience:
+    summary: "Sets OAuth audience expression for token exchange."
+  oauth_client_id:
+    summary: "Sets OAuth client id expression for token exchange."
+  oauth_client_secret:
+    summary: "Sets OAuth client secret expression for token exchange."
+  oauth_content_type:
+    summary: "Sets payload encoding for OAuth token request."
+  oauth_expires_in_path:
+    summary: "JSONPath to extract `expires_in` from OAuth response."
+  oauth_fallback_ttl_sec:
+    summary: "Fallback token TTL when provider does not return expires_in."
+  oauth_form:
+    summary: "Adds one form field to OAuth token request body."
+  oauth_method:
+    summary: "Sets HTTP method for OAuth token request."
+  oauth_mode:
+    summary: "选择 OAuth token 获取模式。"
+  oauth_refresh_skew_sec:
+    summary: "Refresh token ahead of expiry by this many seconds."
+  oauth_refresh_token:
+    summary: "Sets OAuth refresh token expression for token exchange."
+  oauth_scope:
+    summary: "Sets OAuth scope expression for token exchange."
+  oauth_timeout_ms:
+    summary: "Sets timeout in milliseconds for OAuth token request."
+  oauth_token_path:
+    summary: "JSONPath to extract access token from OAuth response."
+  oauth_token_type_path:
+    summary: "JSONPath to extract token type from OAuth response."
+  oauth_token_url:
+    summary: "Overrides token endpoint URL (typically with `oauth_mode custom`)."
+  output_tokens:
+    summary: "Custom extraction expression for output/completion tokens."
+  output_tokens_path:
+    summary: "Path override for output token extraction (custom mode)."
+  path:
+    summary: "语义依赖所在 block。"
+  provider:
+    summary: "声明一个 provider 块。"
+  req_map:
+    summary: "在 API 模式之间映射请求 JSON。"
+  request:
+    summary: "声明请求改写与映射指令。"
+  resp_map:
+    summary: "在 API 模式之间映射非流式响应 JSON。"
+  resp_passthrough:
+    summary: "Passes upstream response through without schema mapping."
+  response:
+    summary: "声明下游响应映射与转换指令。"
+  set_header:
+    summary: "语义依赖所在 block。"
+  set_path:
+    summary: "Sets upstream request path."
+  set_query:
+    summary: "Sets/upserts upstream query parameter."
+  sse_json_del_if:
+    summary: "For SSE JSON event payloads, conditionally delete one field."
+  sse_parse:
+    summary: "在 API 模式之间映射流式 SSE 事件。"
+  subscription_path:
+    summary: "Optional path to query subscription endpoint."
+  syntax:
+    summary: "声明 DSL 语法版本。"
+  total_tokens:
+    summary: "Custom extraction expression for total tokens."
+  upstream:
+    summary: "声明 upstream 路径与查询参数指令。"
+  upstream_config:
+    summary: "声明 provider 级 upstream 基础 URL 配置。"
+  usage_extract:
+    summary: "从响应或 SSE 载荷提取 usage token 字段。"
+  usage_path:
+    summary: "Optional path to query usage endpoint."
+  used:
+    summary: "Custom expression for used value extraction."
+  used_path:
+    summary: "JSON path used to read used amount from response."

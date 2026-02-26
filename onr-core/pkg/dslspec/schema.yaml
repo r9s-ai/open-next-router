@@ -1,0 +1,484 @@
+version: next-router/0.1
+blocks:
+  - id: top
+    kind: top
+  - id: provider
+    kind: block
+  - id: defaults
+    kind: block
+  - id: match
+    kind: block
+  - id: upstream_config
+    kind: block
+  - id: auth
+    kind: block
+  - id: request
+    kind: block
+  - id: upstream
+    kind: block
+  - id: response
+    kind: block
+  - id: error
+    kind: block
+  - id: metrics
+    kind: block
+  - id: balance
+    kind: block
+  - id: models
+    kind: block
+
+directives:
+  - id: auth
+    name: auth
+    allowed_in: [defaults, match]
+    kind: block
+    repeatable: false
+  - id: auth_bearer
+    name: auth_bearer
+    allowed_in: [auth]
+    kind: statement
+    repeatable: false
+  - id: auth_header_key
+    name: auth_header_key
+    allowed_in: [auth]
+    kind: statement
+    repeatable: false
+  - id: auth_oauth_bearer
+    name: auth_oauth_bearer
+    allowed_in: [auth]
+    kind: statement
+    repeatable: false
+  - id: balance
+    name: balance
+    allowed_in: [defaults]
+    kind: block
+    repeatable: false
+  - id: balance_expr
+    name: balance_expr
+    allowed_in: [balance]
+    kind: statement
+    repeatable: false
+  - id: balance_mode
+    name: balance_mode
+    allowed_in: [balance]
+    kind: statement
+    repeatable: false
+    modes: [custom, openai]
+    args:
+      - name: mode
+        type: enum
+        required: true
+        enum: [custom, openai]
+  - id: balance_path
+    name: balance_path
+    allowed_in: [balance]
+    kind: statement
+    repeatable: false
+  - id: balance_unit
+    name: balance_unit
+    allowed_in: [balance]
+    kind: statement
+    repeatable: false
+    args:
+      - name: unit
+        type: enum
+        required: true
+        enum: [CNY, USD]
+  - id: base_url
+    name: base_url
+    allowed_in: [upstream_config]
+    kind: statement
+    repeatable: false
+  - id: cache_read_tokens
+    name: cache_read_tokens
+    allowed_in: [metrics]
+    kind: statement
+    repeatable: false
+  - id: cache_read_tokens_path
+    name: cache_read_tokens_path
+    allowed_in: [metrics]
+    kind: statement
+    repeatable: false
+  - id: cache_write_tokens
+    name: cache_write_tokens
+    allowed_in: [metrics]
+    kind: statement
+    repeatable: false
+  - id: cache_write_tokens_path
+    name: cache_write_tokens_path
+    allowed_in: [metrics]
+    kind: statement
+    repeatable: false
+  - id: defaults
+    name: defaults
+    allowed_in: [provider]
+    kind: block
+    repeatable: false
+  - id: del_header
+    name: del_header
+    allowed_in: [request, balance, models]
+    kind: statement
+    repeatable: false
+  - id: del_query
+    name: del_query
+    allowed_in: [upstream]
+    kind: statement
+    repeatable: false
+  - id: error
+    name: error
+    allowed_in: [defaults, match]
+    kind: block
+    repeatable: false
+  - id: error_map
+    name: error_map
+    allowed_in: [error]
+    kind: statement
+    repeatable: false
+    modes: [common, openai, passthrough]
+    args:
+      - name: mode
+        type: enum
+        required: true
+        enum: [common, openai, passthrough]
+  - id: finish_reason_extract
+    name: finish_reason_extract
+    allowed_in: [metrics]
+    kind: statement
+    repeatable: false
+    modes: [anthropic, custom, gemini, openai]
+    args:
+      - name: mode
+        type: enum
+        required: true
+        enum: [anthropic, custom, gemini, openai]
+  - id: finish_reason_path
+    name: finish_reason_path
+    allowed_in: [metrics]
+    kind: statement
+    repeatable: false
+  - id: id_allow_regex
+    name: id_allow_regex
+    allowed_in: [models]
+    kind: statement
+    repeatable: false
+  - id: id_path
+    name: id_path
+    allowed_in: [models]
+    kind: statement
+    repeatable: false
+  - id: id_regex
+    name: id_regex
+    allowed_in: [models]
+    kind: statement
+    repeatable: false
+  - id: input_tokens
+    name: input_tokens
+    allowed_in: [metrics]
+    kind: statement
+    repeatable: false
+  - id: input_tokens_path
+    name: input_tokens_path
+    allowed_in: [metrics]
+    kind: statement
+    repeatable: false
+  - id: json_del
+    name: json_del
+    allowed_in: [request, response]
+    kind: statement
+    repeatable: false
+  - id: json_rename
+    name: json_rename
+    allowed_in: [request, response]
+    kind: statement
+    repeatable: false
+  - id: json_set
+    name: json_set
+    allowed_in: [request, response]
+    kind: statement
+    repeatable: false
+  - id: json_set_if_absent
+    name: json_set_if_absent
+    allowed_in: [request, response]
+    kind: statement
+    repeatable: false
+  - id: match
+    name: match
+    allowed_in: [provider]
+    kind: block
+    repeatable: true
+  - id: method
+    name: method
+    allowed_in: [balance, models]
+    kind: statement
+    repeatable: false
+    args:
+      - name: method
+        type: enum
+        required: true
+        enum: [GET, POST]
+  - id: metrics
+    name: metrics
+    allowed_in: [defaults, match]
+    kind: block
+    repeatable: false
+  - id: model_map
+    name: model_map
+    allowed_in: [request]
+    kind: statement
+    repeatable: false
+  - id: model_map_default
+    name: model_map_default
+    allowed_in: [request]
+    kind: statement
+    repeatable: false
+  - id: models
+    name: models
+    allowed_in: [defaults]
+    kind: block
+    repeatable: false
+  - id: models_mode
+    name: models_mode
+    allowed_in: [models]
+    kind: statement
+    repeatable: false
+    modes: [custom, gemini, openai]
+    args:
+      - name: mode
+        type: enum
+        required: true
+        enum: [custom, gemini, openai]
+  - id: oauth_audience
+    name: oauth_audience
+    allowed_in: [auth]
+    kind: statement
+    repeatable: false
+  - id: oauth_client_id
+    name: oauth_client_id
+    allowed_in: [auth]
+    kind: statement
+    repeatable: false
+  - id: oauth_client_secret
+    name: oauth_client_secret
+    allowed_in: [auth]
+    kind: statement
+    repeatable: false
+  - id: oauth_content_type
+    name: oauth_content_type
+    allowed_in: [auth]
+    kind: statement
+    repeatable: false
+    args:
+      - name: content_type
+        type: enum
+        required: true
+        enum: [form, json]
+  - id: oauth_expires_in_path
+    name: oauth_expires_in_path
+    allowed_in: [auth]
+    kind: statement
+    repeatable: false
+  - id: oauth_fallback_ttl_sec
+    name: oauth_fallback_ttl_sec
+    allowed_in: [auth]
+    kind: statement
+    repeatable: false
+  - id: oauth_form
+    name: oauth_form
+    allowed_in: [auth]
+    kind: statement
+    repeatable: false
+  - id: oauth_method
+    name: oauth_method
+    allowed_in: [auth]
+    kind: statement
+    repeatable: false
+    args:
+      - name: method
+        type: enum
+        required: true
+        enum: [GET, POST]
+  - id: oauth_mode
+    name: oauth_mode
+    allowed_in: [auth]
+    kind: statement
+    repeatable: false
+    modes: [antigravity, claude, custom, gemini, iflow, kimi, openai, qwen]
+    args:
+      - name: mode
+        type: enum
+        required: true
+        enum: [antigravity, claude, custom, gemini, iflow, kimi, openai, qwen]
+  - id: oauth_refresh_skew_sec
+    name: oauth_refresh_skew_sec
+    allowed_in: [auth]
+    kind: statement
+    repeatable: false
+  - id: oauth_refresh_token
+    name: oauth_refresh_token
+    allowed_in: [auth]
+    kind: statement
+    repeatable: false
+  - id: oauth_scope
+    name: oauth_scope
+    allowed_in: [auth]
+    kind: statement
+    repeatable: false
+  - id: oauth_timeout_ms
+    name: oauth_timeout_ms
+    allowed_in: [auth]
+    kind: statement
+    repeatable: false
+  - id: oauth_token_path
+    name: oauth_token_path
+    allowed_in: [auth]
+    kind: statement
+    repeatable: false
+  - id: oauth_token_type_path
+    name: oauth_token_type_path
+    allowed_in: [auth]
+    kind: statement
+    repeatable: false
+  - id: oauth_token_url
+    name: oauth_token_url
+    allowed_in: [auth]
+    kind: statement
+    repeatable: false
+  - id: output_tokens
+    name: output_tokens
+    allowed_in: [metrics]
+    kind: statement
+    repeatable: false
+  - id: output_tokens_path
+    name: output_tokens_path
+    allowed_in: [metrics]
+    kind: statement
+    repeatable: false
+  - id: path
+    name: path
+    allowed_in: [balance, models]
+    kind: statement
+    repeatable: false
+  - id: provider
+    name: provider
+    allowed_in: [top]
+    kind: block
+    repeatable: false
+  - id: req_map
+    name: req_map
+    allowed_in: [request]
+    kind: statement
+    repeatable: false
+    modes: [anthropic_to_openai_chat, gemini_to_openai_chat, openai_chat_to_anthropic_messages, openai_chat_to_gemini_generate_content, openai_chat_to_openai_responses]
+    args:
+      - name: mode
+        type: enum
+        required: true
+        enum: [anthropic_to_openai_chat, gemini_to_openai_chat, openai_chat_to_anthropic_messages, openai_chat_to_gemini_generate_content, openai_chat_to_openai_responses]
+  - id: request
+    name: request
+    allowed_in: [defaults, match]
+    kind: block
+    repeatable: false
+  - id: resp_map
+    name: resp_map
+    allowed_in: [response]
+    kind: statement
+    repeatable: false
+    modes: [anthropic_to_openai_chat, gemini_to_openai_chat, openai_responses_to_openai_chat, openai_to_anthropic_messages, openai_to_gemini_chat, openai_to_gemini_generate_content]
+    args:
+      - name: mode
+        type: enum
+        required: true
+        enum: [anthropic_to_openai_chat, gemini_to_openai_chat, openai_responses_to_openai_chat, openai_to_anthropic_messages, openai_to_gemini_chat, openai_to_gemini_generate_content]
+  - id: resp_passthrough
+    name: resp_passthrough
+    allowed_in: [response]
+    kind: statement
+    repeatable: false
+  - id: response
+    name: response
+    allowed_in: [defaults, match]
+    kind: block
+    repeatable: false
+  - id: set_header
+    name: set_header
+    allowed_in: [request, balance, models]
+    kind: statement
+    repeatable: false
+  - id: set_path
+    name: set_path
+    allowed_in: [upstream]
+    kind: statement
+    repeatable: false
+  - id: set_query
+    name: set_query
+    allowed_in: [upstream]
+    kind: statement
+    repeatable: false
+  - id: sse_json_del_if
+    name: sse_json_del_if
+    allowed_in: [response]
+    kind: statement
+    repeatable: false
+  - id: sse_parse
+    name: sse_parse
+    allowed_in: [response]
+    kind: statement
+    repeatable: false
+    modes: [anthropic_to_openai_chunks, gemini_to_openai_chat_chunks, openai_responses_to_openai_chat_chunks, openai_to_anthropic_chunks, openai_to_gemini_chunks]
+    args:
+      - name: mode
+        type: enum
+        required: true
+        enum: [anthropic_to_openai_chunks, gemini_to_openai_chat_chunks, openai_responses_to_openai_chat_chunks, openai_to_anthropic_chunks, openai_to_gemini_chunks]
+  - id: subscription_path
+    name: subscription_path
+    allowed_in: [balance]
+    kind: statement
+    repeatable: false
+  - id: syntax
+    name: syntax
+    allowed_in: [top]
+    kind: statement
+    repeatable: false
+  - id: total_tokens
+    name: total_tokens
+    allowed_in: [metrics]
+    kind: statement
+    repeatable: false
+  - id: upstream
+    name: upstream
+    allowed_in: [match]
+    kind: block
+    repeatable: false
+  - id: upstream_config
+    name: upstream_config
+    allowed_in: [defaults]
+    kind: block
+    repeatable: false
+  - id: usage_extract
+    name: usage_extract
+    allowed_in: [metrics]
+    kind: statement
+    repeatable: false
+    modes: [anthropic, custom, gemini, openai]
+    args:
+      - name: mode
+        type: enum
+        required: true
+        enum: [anthropic, custom, gemini, openai]
+  - id: usage_path
+    name: usage_path
+    allowed_in: [balance]
+    kind: statement
+    repeatable: false
+  - id: used
+    name: used
+    allowed_in: [balance]
+    kind: statement
+    repeatable: false
+  - id: used_path
+    name: used_path
+    allowed_in: [balance]
+    kind: statement
+    repeatable: false

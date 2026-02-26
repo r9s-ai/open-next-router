@@ -1,0 +1,170 @@
+locale: en
+
+block_titles:
+  top: "File-level"
+  provider: "Provider"
+  defaults: "Defaults"
+  match: "Match"
+  upstream_config: "Upstream Config"
+  auth: "Auth"
+  request: "Request"
+  upstream: "Upstream"
+  response: "Response"
+  error: "Error"
+  metrics: "Metrics"
+  balance: "Balance"
+  models: "Models"
+
+directive_text:
+  auth:
+    summary: "Declares authentication directives."
+  auth_bearer:
+    summary: "Sets `Authorization: Bearer <channel.key>`."
+  auth_header_key:
+    summary: "Sets `<Header-Name>: <channel.key>`."
+  auth_oauth_bearer:
+    summary: "Sets `Authorization: Bearer <oauth.access_token>`."
+  balance:
+    summary: "Declares provider balance query directives."
+  balance_expr:
+    summary: "Custom expression for balance value extraction."
+  balance_mode:
+    summary: "Selects built-in or custom balance query mode."
+  balance_path:
+    summary: "JSON path used to read balance amount from response."
+  balance_unit:
+    summary: "Sets currency/unit label for balance value."
+  base_url:
+    summary: "Sets provider default upstream base URL."
+  cache_read_tokens:
+    summary: "Custom extraction expression for cache read tokens."
+  cache_read_tokens_path:
+    summary: "Path override for cache-read token extraction (custom mode)."
+  cache_write_tokens:
+    summary: "Custom extraction expression for cache write tokens."
+  cache_write_tokens_path:
+    summary: "Path override for cache-write token extraction (custom mode)."
+  defaults:
+    summary: "Declares default phases for all match rules."
+  del_header:
+    summary: "Semantics depend on block context."
+  del_query:
+    summary: "Deletes upstream query parameter."
+  error:
+    summary: "Declares upstream error normalization directives."
+  error_map:
+    summary: "Normalizes upstream error payload to target error schema."
+  finish_reason_extract:
+    summary: "Extracts finish reason from response or SSE payload."
+  finish_reason_path:
+    summary: "Path override for finish_reason extraction (custom mode)."
+  id_allow_regex:
+    summary: "Filter extracted model ids by regex allowlist."
+  id_path:
+    summary: "JSON path to extract model id(s) from models response."
+  id_regex:
+    summary: "Regex rewrite applied to extracted model ids."
+  input_tokens:
+    summary: "Custom extraction expression for input/prompt tokens."
+  input_tokens_path:
+    summary: "Path override for input token extraction (custom mode)."
+  json_del:
+    summary: "Semantics depend on block context."
+  json_rename:
+    summary: "Semantics depend on block context."
+  json_set:
+    summary: "Semantics depend on block context."
+  json_set_if_absent:
+    summary: "Semantics depend on block context."
+  match:
+    summary: "Declares one route rule selected by api and optional stream."
+  method:
+    summary: "Semantics depend on block context."
+  metrics:
+    summary: "Declares token and finish reason extraction directives."
+  model_map:
+    summary: "Maps input model name to upstream model expression."
+  model_map_default:
+    summary: "Fallback mapped model expression when no rule matches."
+  models:
+    summary: "Declares provider model list query directives."
+  models_mode:
+    summary: "Selects built-in or custom models query mode."
+  oauth_audience:
+    summary: "Sets OAuth audience expression for token exchange."
+  oauth_client_id:
+    summary: "Sets OAuth client id expression for token exchange."
+  oauth_client_secret:
+    summary: "Sets OAuth client secret expression for token exchange."
+  oauth_content_type:
+    summary: "Sets payload encoding for OAuth token request."
+  oauth_expires_in_path:
+    summary: "JSONPath to extract `expires_in` from OAuth response."
+  oauth_fallback_ttl_sec:
+    summary: "Fallback token TTL when provider does not return expires_in."
+  oauth_form:
+    summary: "Adds one form field to OAuth token request body."
+  oauth_method:
+    summary: "Sets HTTP method for OAuth token request."
+  oauth_mode:
+    summary: "Selects OAuth token fetch mode."
+  oauth_refresh_skew_sec:
+    summary: "Refresh token ahead of expiry by this many seconds."
+  oauth_refresh_token:
+    summary: "Sets OAuth refresh token expression for token exchange."
+  oauth_scope:
+    summary: "Sets OAuth scope expression for token exchange."
+  oauth_timeout_ms:
+    summary: "Sets timeout in milliseconds for OAuth token request."
+  oauth_token_path:
+    summary: "JSONPath to extract access token from OAuth response."
+  oauth_token_type_path:
+    summary: "JSONPath to extract token type from OAuth response."
+  oauth_token_url:
+    summary: "Overrides token endpoint URL (typically with `oauth_mode custom`)."
+  output_tokens:
+    summary: "Custom extraction expression for output/completion tokens."
+  output_tokens_path:
+    summary: "Path override for output token extraction (custom mode)."
+  path:
+    summary: "Semantics depend on block context."
+  provider:
+    summary: "Declares one provider block."
+  req_map:
+    summary: "Maps request JSON between API schemas."
+  request:
+    summary: "Declares request rewrite and mapping directives."
+  resp_map:
+    summary: "Maps non-stream response JSON between schemas."
+  resp_passthrough:
+    summary: "Passes upstream response through without schema mapping."
+  response:
+    summary: "Declares downstream mapping and transformation directives."
+  set_header:
+    summary: "Semantics depend on block context."
+  set_path:
+    summary: "Sets upstream request path."
+  set_query:
+    summary: "Sets/upserts upstream query parameter."
+  sse_json_del_if:
+    summary: "For SSE JSON event payloads, conditionally delete one field."
+  sse_parse:
+    summary: "Maps stream SSE events/chunks between schemas."
+  subscription_path:
+    summary: "Optional path to query subscription endpoint."
+  syntax:
+    summary: "Declares DSL syntax version."
+  total_tokens:
+    summary: "Custom extraction expression for total tokens."
+  upstream:
+    summary: "Declares upstream path and query directives."
+  upstream_config:
+    summary: "Declares provider-level upstream base URL config."
+  usage_extract:
+    summary: "Extracts usage token fields from response or SSE payload."
+  usage_path:
+    summary: "Optional path to query usage endpoint."
+  used:
+    summary: "Custom expression for used value extraction."
+  used_path:
+    summary: "JSON path used to read used amount from response."

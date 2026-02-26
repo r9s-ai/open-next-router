@@ -36,6 +36,168 @@ The directory can be customized via `providers.dir` (config) or `ONR_PROVIDERS_D
   - [7.11 models (upstream model list query)](#711-models-upstream-model-list-query)
 - [8. Built-in variables (reference)](#8-built-in-variables-reference)
 
+## 0. Auto-generated Directive Index (MVP)
+
+<!-- BEGIN GENERATED: dslspec-reference -->
+> This section is auto-generated from `dslspec`. Do not edit manually.
+
+### File-level (`top`)
+
+| Directive | Args | Modes | Repeatable | Summary |
+|---|---|---|---|---|
+| `provider` | - | - | no | Declares one provider block. |
+| `syntax` | - | - | no | Declares DSL syntax version. |
+
+### Provider (`provider`)
+
+| Directive | Args | Modes | Repeatable | Summary |
+|---|---|---|---|---|
+| `defaults` | - | - | no | Declares default phases for all match rules. |
+| `match` | - | - | yes | Declares one route rule selected by api and optional stream. |
+
+### Defaults (`defaults`)
+
+| Directive | Args | Modes | Repeatable | Summary |
+|---|---|---|---|---|
+| `auth` | - | - | no | Declares authentication directives. |
+| `balance` | - | - | no | Declares provider balance query directives. |
+| `error` | - | - | no | Declares upstream error normalization directives. |
+| `metrics` | - | - | no | Declares token and finish reason extraction directives. |
+| `models` | - | - | no | Declares provider model list query directives. |
+| `request` | - | - | no | Declares request rewrite and mapping directives. |
+| `response` | - | - | no | Declares downstream mapping and transformation directives. |
+| `upstream_config` | - | - | no | Declares provider-level upstream base URL config. |
+
+### Match (`match`)
+
+| Directive | Args | Modes | Repeatable | Summary |
+|---|---|---|---|---|
+| `auth` | - | - | no | Declares authentication directives. |
+| `error` | - | - | no | Declares upstream error normalization directives. |
+| `metrics` | - | - | no | Declares token and finish reason extraction directives. |
+| `request` | - | - | no | Declares request rewrite and mapping directives. |
+| `response` | - | - | no | Declares downstream mapping and transformation directives. |
+| `upstream` | - | - | no | Declares upstream path and query directives. |
+
+### Upstream Config (`upstream_config`)
+
+| Directive | Args | Modes | Repeatable | Summary |
+|---|---|---|---|---|
+| `base_url` | - | - | no | Sets provider default upstream base URL. |
+
+### Auth (`auth`)
+
+| Directive | Args | Modes | Repeatable | Summary |
+|---|---|---|---|---|
+| `auth_bearer` | - | - | no | Sets `Authorization: Bearer <channel.key>`. |
+| `auth_header_key` | - | - | no | Sets `<Header-Name>: <channel.key>`. |
+| `auth_oauth_bearer` | - | - | no | Sets `Authorization: Bearer <oauth.access_token>`. |
+| `oauth_audience` | - | - | no | Sets OAuth audience expression for token exchange. |
+| `oauth_client_id` | - | - | no | Sets OAuth client id expression for token exchange. |
+| `oauth_client_secret` | - | - | no | Sets OAuth client secret expression for token exchange. |
+| `oauth_content_type` | content_type:enum{form\|json} | - | no | Sets payload encoding for OAuth token request. |
+| `oauth_expires_in_path` | - | - | no | JSONPath to extract `expires_in` from OAuth response. |
+| `oauth_fallback_ttl_sec` | - | - | no | Fallback token TTL when provider does not return expires_in. |
+| `oauth_form` | - | - | no | Adds one form field to OAuth token request body. |
+| `oauth_method` | method:enum{GET\|POST} | - | no | Sets HTTP method for OAuth token request. |
+| `oauth_mode` | mode:enum{antigravity\|claude\|custom\|gemini\|iflow\|kimi\|openai\|qwen} | antigravity, claude, custom, gemini, iflow, kimi, openai, qwen | no | Selects OAuth token fetch mode. |
+| `oauth_refresh_skew_sec` | - | - | no | Refresh token ahead of expiry by this many seconds. |
+| `oauth_refresh_token` | - | - | no | Sets OAuth refresh token expression for token exchange. |
+| `oauth_scope` | - | - | no | Sets OAuth scope expression for token exchange. |
+| `oauth_timeout_ms` | - | - | no | Sets timeout in milliseconds for OAuth token request. |
+| `oauth_token_path` | - | - | no | JSONPath to extract access token from OAuth response. |
+| `oauth_token_type_path` | - | - | no | JSONPath to extract token type from OAuth response. |
+| `oauth_token_url` | - | - | no | Overrides token endpoint URL (typically with `oauth_mode custom`). |
+
+### Request (`request`)
+
+| Directive | Args | Modes | Repeatable | Summary |
+|---|---|---|---|---|
+| `del_header` | - | - | no | Semantics depend on block context. |
+| `json_del` | - | - | no | Semantics depend on block context. |
+| `json_rename` | - | - | no | Semantics depend on block context. |
+| `json_set` | - | - | no | Semantics depend on block context. |
+| `json_set_if_absent` | - | - | no | Semantics depend on block context. |
+| `model_map` | - | - | no | Maps input model name to upstream model expression. |
+| `model_map_default` | - | - | no | Fallback mapped model expression when no rule matches. |
+| `req_map` | mode:enum{anthropic_to_openai_chat\|gemini_to_openai_chat\|openai_chat_to_anthropic_messages\|openai_chat_to_gemini_generate_content\|openai_chat_to_openai_responses} | anthropic_to_openai_chat, gemini_to_openai_chat, openai_chat_to_anthropic_messages, openai_chat_to_gemini_generate_content, openai_chat_to_openai_responses | no | Maps request JSON between API schemas. |
+| `set_header` | - | - | no | Semantics depend on block context. |
+
+### Upstream (`upstream`)
+
+| Directive | Args | Modes | Repeatable | Summary |
+|---|---|---|---|---|
+| `del_query` | - | - | no | Deletes upstream query parameter. |
+| `set_path` | - | - | no | Sets upstream request path. |
+| `set_query` | - | - | no | Sets/upserts upstream query parameter. |
+
+### Response (`response`)
+
+| Directive | Args | Modes | Repeatable | Summary |
+|---|---|---|---|---|
+| `json_del` | - | - | no | Semantics depend on block context. |
+| `json_rename` | - | - | no | Semantics depend on block context. |
+| `json_set` | - | - | no | Semantics depend on block context. |
+| `json_set_if_absent` | - | - | no | Semantics depend on block context. |
+| `resp_map` | mode:enum{anthropic_to_openai_chat\|gemini_to_openai_chat\|openai_responses_to_openai_chat\|openai_to_anthropic_messages\|openai_to_gemini_chat\|openai_to_gemini_generate_content} | anthropic_to_openai_chat, gemini_to_openai_chat, openai_responses_to_openai_chat, openai_to_anthropic_messages, openai_to_gemini_chat, openai_to_gemini_generate_content | no | Maps non-stream response JSON between schemas. |
+| `resp_passthrough` | - | - | no | Passes upstream response through without schema mapping. |
+| `sse_json_del_if` | - | - | no | For SSE JSON event payloads, conditionally delete one field. |
+| `sse_parse` | mode:enum{anthropic_to_openai_chunks\|gemini_to_openai_chat_chunks\|openai_responses_to_openai_chat_chunks\|openai_to_anthropic_chunks\|openai_to_gemini_chunks} | anthropic_to_openai_chunks, gemini_to_openai_chat_chunks, openai_responses_to_openai_chat_chunks, openai_to_anthropic_chunks, openai_to_gemini_chunks | no | Maps stream SSE events/chunks between schemas. |
+
+### Error (`error`)
+
+| Directive | Args | Modes | Repeatable | Summary |
+|---|---|---|---|---|
+| `error_map` | mode:enum{common\|openai\|passthrough} | common, openai, passthrough | no | Normalizes upstream error payload to target error schema. |
+
+### Metrics (`metrics`)
+
+| Directive | Args | Modes | Repeatable | Summary |
+|---|---|---|---|---|
+| `cache_read_tokens` | - | - | no | Custom extraction expression for cache read tokens. |
+| `cache_read_tokens_path` | - | - | no | Path override for cache-read token extraction (custom mode). |
+| `cache_write_tokens` | - | - | no | Custom extraction expression for cache write tokens. |
+| `cache_write_tokens_path` | - | - | no | Path override for cache-write token extraction (custom mode). |
+| `finish_reason_extract` | mode:enum{anthropic\|custom\|gemini\|openai} | anthropic, custom, gemini, openai | no | Extracts finish reason from response or SSE payload. |
+| `finish_reason_path` | - | - | no | Path override for finish_reason extraction (custom mode). |
+| `input_tokens` | - | - | no | Custom extraction expression for input/prompt tokens. |
+| `input_tokens_path` | - | - | no | Path override for input token extraction (custom mode). |
+| `output_tokens` | - | - | no | Custom extraction expression for output/completion tokens. |
+| `output_tokens_path` | - | - | no | Path override for output token extraction (custom mode). |
+| `total_tokens` | - | - | no | Custom extraction expression for total tokens. |
+| `usage_extract` | mode:enum{anthropic\|custom\|gemini\|openai} | anthropic, custom, gemini, openai | no | Extracts usage token fields from response or SSE payload. |
+
+### Balance (`balance`)
+
+| Directive | Args | Modes | Repeatable | Summary |
+|---|---|---|---|---|
+| `balance_expr` | - | - | no | Custom expression for balance value extraction. |
+| `balance_mode` | mode:enum{custom\|openai} | custom, openai | no | Selects built-in or custom balance query mode. |
+| `balance_path` | - | - | no | JSON path used to read balance amount from response. |
+| `balance_unit` | unit:enum{CNY\|USD} | - | no | Sets currency/unit label for balance value. |
+| `del_header` | - | - | no | Semantics depend on block context. |
+| `method` | method:enum{GET\|POST} | - | no | Semantics depend on block context. |
+| `path` | - | - | no | Semantics depend on block context. |
+| `set_header` | - | - | no | Semantics depend on block context. |
+| `subscription_path` | - | - | no | Optional path to query subscription endpoint. |
+| `usage_path` | - | - | no | Optional path to query usage endpoint. |
+| `used` | - | - | no | Custom expression for used value extraction. |
+| `used_path` | - | - | no | JSON path used to read used amount from response. |
+
+### Models (`models`)
+
+| Directive | Args | Modes | Repeatable | Summary |
+|---|---|---|---|---|
+| `del_header` | - | - | no | Semantics depend on block context. |
+| `id_allow_regex` | - | - | no | Filter extracted model ids by regex allowlist. |
+| `id_path` | - | - | no | JSON path to extract model id(s) from models response. |
+| `id_regex` | - | - | no | Regex rewrite applied to extracted model ids. |
+| `method` | method:enum{GET\|POST} | - | no | Semantics depend on block context. |
+| `models_mode` | mode:enum{custom\|gemini\|openai} | custom, gemini, openai | no | Selects built-in or custom models query mode. |
+| `path` | - | - | no | Semantics depend on block context. |
+| `set_header` | - | - | no | Semantics depend on block context. |
+<!-- END GENERATED: dslspec-reference -->
+
 ---
 
 ## 1. Conventions

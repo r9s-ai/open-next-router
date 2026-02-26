@@ -1,4 +1,4 @@
-.PHONY: run build build-all test version release-dry release-snapshot clean help hooks
+.PHONY: run build build-all test dslspec-sync spec-locale-check spec-impl-check dsl-spec-check dsl-docs-gen dsl-docs-check version release-dry release-snapshot clean help hooks
 
 # Get version from root release tags only (ignore submodule tags like onr-core/v*)
 VERSION ?= $(shell git describe --tags --match 'v*' --always --dirty 2>/dev/null || echo "dev")
@@ -31,6 +31,23 @@ build-all: ## Build for all platforms using GoReleaser
 test: ## Run tests
 	go test -v ./...
 	cd onr-core && go test -v ./...
+
+dslspec-sync: ## Sync dslspec schema/i18n from runtime directive metadata
+	go run ./cmd/onr-dslspec-sync --repo-root .
+
+spec-locale-check: ## Validate dslspec locale coverage
+	cd onr-core && go test -v ./pkg/dslspec -run TestSpecLocaleCheck_BuiltinBundles
+
+spec-impl-check: ## Validate dslspec/runtime metadata consistency
+	cd onr-core && go test -v ./pkg/dslconfig -run TestSpecImplCheck_DirectiveCoverage
+
+dsl-spec-check: spec-locale-check spec-impl-check ## Run all dslspec consistency checks
+
+dsl-docs-gen: ## Generate dslspec markdown regions in DSL docs
+	go run ./cmd/onr-dsldocgen --repo-root .
+
+dsl-docs-check: dsl-docs-gen ## Verify generated DSL docs are up to date
+	git diff --exit-code -- DSL_SYNTAX.md DSL_SYNTAX_CN.md
 
 version: ## Show version information
 	@echo "Version:    $(VERSION)"

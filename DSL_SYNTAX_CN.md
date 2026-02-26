@@ -33,6 +33,168 @@ Provider 配置文件位于本仓库 `config/providers/*.conf`，在启动时（
   - [7.9 metrics（用量提取--usage）](#79-metrics用量提取--usage)
 - [8. 内置变量参考](#8-内置变量参考)
 
+## 0. 自动生成的指令索引（MVP）
+
+<!-- BEGIN GENERATED: dslspec-reference -->
+> 本节由 `dslspec` 自动生成，请勿手工编辑。
+
+### 文件级（`top`）
+
+| 指令 | 参数 | 模式 | 可重复 | 说明 |
+|---|---|---|---|---|
+| `provider` | - | - | 否 | 声明一个 provider 块。 |
+| `syntax` | - | - | 否 | 声明 DSL 语法版本。 |
+
+### Provider（`provider`）
+
+| 指令 | 参数 | 模式 | 可重复 | 说明 |
+|---|---|---|---|---|
+| `defaults` | - | - | 否 | 声明对所有 match 生效的默认阶段。 |
+| `match` | - | - | 是 | 声明按 api 和可选 stream 选择的路由规则。 |
+
+### Defaults（`defaults`）
+
+| 指令 | 参数 | 模式 | 可重复 | 说明 |
+|---|---|---|---|---|
+| `auth` | - | - | 否 | 声明认证相关指令。 |
+| `balance` | - | - | 否 | 声明余额查询相关指令。 |
+| `error` | - | - | 否 | 声明上游错误归一化指令。 |
+| `metrics` | - | - | 否 | 声明 token 与 finish reason 提取指令。 |
+| `models` | - | - | 否 | 声明模型列表查询相关指令。 |
+| `request` | - | - | 否 | 声明请求改写与映射指令。 |
+| `response` | - | - | 否 | 声明下游响应映射与转换指令。 |
+| `upstream_config` | - | - | 否 | 声明 provider 级 upstream 基础 URL 配置。 |
+
+### Match（`match`）
+
+| 指令 | 参数 | 模式 | 可重复 | 说明 |
+|---|---|---|---|---|
+| `auth` | - | - | 否 | 声明认证相关指令。 |
+| `error` | - | - | 否 | 声明上游错误归一化指令。 |
+| `metrics` | - | - | 否 | 声明 token 与 finish reason 提取指令。 |
+| `request` | - | - | 否 | 声明请求改写与映射指令。 |
+| `response` | - | - | 否 | 声明下游响应映射与转换指令。 |
+| `upstream` | - | - | 否 | 声明 upstream 路径与查询参数指令。 |
+
+### Upstream Config（`upstream_config`）
+
+| 指令 | 参数 | 模式 | 可重复 | 说明 |
+|---|---|---|---|---|
+| `base_url` | - | - | 否 | 设置 provider 默认 upstream base URL。 |
+
+### Auth（`auth`）
+
+| 指令 | 参数 | 模式 | 可重复 | 说明 |
+|---|---|---|---|---|
+| `auth_bearer` | - | - | 否 | Sets `Authorization: Bearer <channel.key>`. |
+| `auth_header_key` | - | - | 否 | Sets `<Header-Name>: <channel.key>`. |
+| `auth_oauth_bearer` | - | - | 否 | Sets `Authorization: Bearer <oauth.access_token>`. |
+| `oauth_audience` | - | - | 否 | Sets OAuth audience expression for token exchange. |
+| `oauth_client_id` | - | - | 否 | Sets OAuth client id expression for token exchange. |
+| `oauth_client_secret` | - | - | 否 | Sets OAuth client secret expression for token exchange. |
+| `oauth_content_type` | content_type:enum{form\|json} | - | 否 | Sets payload encoding for OAuth token request. |
+| `oauth_expires_in_path` | - | - | 否 | JSONPath to extract `expires_in` from OAuth response. |
+| `oauth_fallback_ttl_sec` | - | - | 否 | Fallback token TTL when provider does not return expires_in. |
+| `oauth_form` | - | - | 否 | Adds one form field to OAuth token request body. |
+| `oauth_method` | method:enum{GET\|POST} | - | 否 | Sets HTTP method for OAuth token request. |
+| `oauth_mode` | mode:enum{antigravity\|claude\|custom\|gemini\|iflow\|kimi\|openai\|qwen} | antigravity, claude, custom, gemini, iflow, kimi, openai, qwen | 否 | 选择 OAuth token 获取模式。 |
+| `oauth_refresh_skew_sec` | - | - | 否 | Refresh token ahead of expiry by this many seconds. |
+| `oauth_refresh_token` | - | - | 否 | Sets OAuth refresh token expression for token exchange. |
+| `oauth_scope` | - | - | 否 | Sets OAuth scope expression for token exchange. |
+| `oauth_timeout_ms` | - | - | 否 | Sets timeout in milliseconds for OAuth token request. |
+| `oauth_token_path` | - | - | 否 | JSONPath to extract access token from OAuth response. |
+| `oauth_token_type_path` | - | - | 否 | JSONPath to extract token type from OAuth response. |
+| `oauth_token_url` | - | - | 否 | Overrides token endpoint URL (typically with `oauth_mode custom`). |
+
+### Request（`request`）
+
+| 指令 | 参数 | 模式 | 可重复 | 说明 |
+|---|---|---|---|---|
+| `del_header` | - | - | 否 | 语义依赖所在 block。 |
+| `json_del` | - | - | 否 | 语义依赖所在 block。 |
+| `json_rename` | - | - | 否 | 语义依赖所在 block。 |
+| `json_set` | - | - | 否 | 语义依赖所在 block。 |
+| `json_set_if_absent` | - | - | 否 | 语义依赖所在 block。 |
+| `model_map` | - | - | 否 | Maps input model name to upstream model expression. |
+| `model_map_default` | - | - | 否 | Fallback mapped model expression when no rule matches. |
+| `req_map` | mode:enum{anthropic_to_openai_chat\|gemini_to_openai_chat\|openai_chat_to_anthropic_messages\|openai_chat_to_gemini_generate_content\|openai_chat_to_openai_responses} | anthropic_to_openai_chat, gemini_to_openai_chat, openai_chat_to_anthropic_messages, openai_chat_to_gemini_generate_content, openai_chat_to_openai_responses | 否 | 在 API 模式之间映射请求 JSON。 |
+| `set_header` | - | - | 否 | 语义依赖所在 block。 |
+
+### Upstream（`upstream`）
+
+| 指令 | 参数 | 模式 | 可重复 | 说明 |
+|---|---|---|---|---|
+| `del_query` | - | - | 否 | Deletes upstream query parameter. |
+| `set_path` | - | - | 否 | Sets upstream request path. |
+| `set_query` | - | - | 否 | Sets/upserts upstream query parameter. |
+
+### Response（`response`）
+
+| 指令 | 参数 | 模式 | 可重复 | 说明 |
+|---|---|---|---|---|
+| `json_del` | - | - | 否 | 语义依赖所在 block。 |
+| `json_rename` | - | - | 否 | 语义依赖所在 block。 |
+| `json_set` | - | - | 否 | 语义依赖所在 block。 |
+| `json_set_if_absent` | - | - | 否 | 语义依赖所在 block。 |
+| `resp_map` | mode:enum{anthropic_to_openai_chat\|gemini_to_openai_chat\|openai_responses_to_openai_chat\|openai_to_anthropic_messages\|openai_to_gemini_chat\|openai_to_gemini_generate_content} | anthropic_to_openai_chat, gemini_to_openai_chat, openai_responses_to_openai_chat, openai_to_anthropic_messages, openai_to_gemini_chat, openai_to_gemini_generate_content | 否 | 在 API 模式之间映射非流式响应 JSON。 |
+| `resp_passthrough` | - | - | 否 | Passes upstream response through without schema mapping. |
+| `sse_json_del_if` | - | - | 否 | For SSE JSON event payloads, conditionally delete one field. |
+| `sse_parse` | mode:enum{anthropic_to_openai_chunks\|gemini_to_openai_chat_chunks\|openai_responses_to_openai_chat_chunks\|openai_to_anthropic_chunks\|openai_to_gemini_chunks} | anthropic_to_openai_chunks, gemini_to_openai_chat_chunks, openai_responses_to_openai_chat_chunks, openai_to_anthropic_chunks, openai_to_gemini_chunks | 否 | 在 API 模式之间映射流式 SSE 事件。 |
+
+### Error（`error`）
+
+| 指令 | 参数 | 模式 | 可重复 | 说明 |
+|---|---|---|---|---|
+| `error_map` | mode:enum{common\|openai\|passthrough} | common, openai, passthrough | 否 | 将上游错误归一化到目标错误结构。 |
+
+### Metrics（`metrics`）
+
+| 指令 | 参数 | 模式 | 可重复 | 说明 |
+|---|---|---|---|---|
+| `cache_read_tokens` | - | - | 否 | Custom extraction expression for cache read tokens. |
+| `cache_read_tokens_path` | - | - | 否 | Path override for cache-read token extraction (custom mode). |
+| `cache_write_tokens` | - | - | 否 | Custom extraction expression for cache write tokens. |
+| `cache_write_tokens_path` | - | - | 否 | Path override for cache-write token extraction (custom mode). |
+| `finish_reason_extract` | mode:enum{anthropic\|custom\|gemini\|openai} | anthropic, custom, gemini, openai | 否 | 从响应或 SSE 载荷提取 finish reason。 |
+| `finish_reason_path` | - | - | 否 | Path override for finish_reason extraction (custom mode). |
+| `input_tokens` | - | - | 否 | Custom extraction expression for input/prompt tokens. |
+| `input_tokens_path` | - | - | 否 | Path override for input token extraction (custom mode). |
+| `output_tokens` | - | - | 否 | Custom extraction expression for output/completion tokens. |
+| `output_tokens_path` | - | - | 否 | Path override for output token extraction (custom mode). |
+| `total_tokens` | - | - | 否 | Custom extraction expression for total tokens. |
+| `usage_extract` | mode:enum{anthropic\|custom\|gemini\|openai} | anthropic, custom, gemini, openai | 否 | 从响应或 SSE 载荷提取 usage token 字段。 |
+
+### Balance（`balance`）
+
+| 指令 | 参数 | 模式 | 可重复 | 说明 |
+|---|---|---|---|---|
+| `balance_expr` | - | - | 否 | Custom expression for balance value extraction. |
+| `balance_mode` | mode:enum{custom\|openai} | custom, openai | 否 | 选择内建或自定义余额查询模式。 |
+| `balance_path` | - | - | 否 | JSON path used to read balance amount from response. |
+| `balance_unit` | unit:enum{CNY\|USD} | - | 否 | 设置余额数值的单位标签。 |
+| `del_header` | - | - | 否 | 语义依赖所在 block。 |
+| `method` | method:enum{GET\|POST} | - | 否 | 语义依赖所在 block。 |
+| `path` | - | - | 否 | 语义依赖所在 block。 |
+| `set_header` | - | - | 否 | 语义依赖所在 block。 |
+| `subscription_path` | - | - | 否 | Optional path to query subscription endpoint. |
+| `usage_path` | - | - | 否 | Optional path to query usage endpoint. |
+| `used` | - | - | 否 | Custom expression for used value extraction. |
+| `used_path` | - | - | 否 | JSON path used to read used amount from response. |
+
+### Models（`models`）
+
+| 指令 | 参数 | 模式 | 可重复 | 说明 |
+|---|---|---|---|---|
+| `del_header` | - | - | 否 | 语义依赖所在 block。 |
+| `id_allow_regex` | - | - | 否 | Filter extracted model ids by regex allowlist. |
+| `id_path` | - | - | 否 | JSON path to extract model id(s) from models response. |
+| `id_regex` | - | - | 否 | Regex rewrite applied to extracted model ids. |
+| `method` | method:enum{GET\|POST} | - | 否 | 语义依赖所在 block。 |
+| `models_mode` | mode:enum{custom\|gemini\|openai} | custom, gemini, openai | 否 | 选择内建或自定义模型查询模式。 |
+| `path` | - | - | 否 | 语义依赖所在 block。 |
+| `set_header` | - | - | 否 | 语义依赖所在 block。 |
+<!-- END GENERATED: dslspec-reference -->
+
 ---
 
 ## 1. 基本约定
