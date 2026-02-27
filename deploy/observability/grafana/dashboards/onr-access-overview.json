@@ -22,143 +22,591 @@
   "links": [],
   "panels": [
     {
-      "datasource": {"type": "loki", "uid": "loki"},
-      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "unit": "reqps"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
       "id": 1,
-      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "single", "sort": "none"}},
-      "targets": [{"expr": "sum(count_over_time({job=\"onr-access\"}[1m]))", "refId": "A"}],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"}[1m]))",
+          "refId": "A"
+        }
+      ],
       "title": "Request Rate (RPS)",
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "loki", "uid": "loki"},
-      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "unit": "percentunit", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 0.05}]}}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
       "id": 2,
-      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "single", "sort": "none"}},
-      "targets": [{"expr": "sum(count_over_time({job=\"onr-access\",status=~\"4..|5..\"}[5m])) / sum(count_over_time({job=\"onr-access\"}[5m]))", "refId": "A"}],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({job=\"onr-access\",status=~\"4..|5..\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"}[5m])) / sum(count_over_time({job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"}[5m]))",
+          "refId": "A"
+        }
+      ],
       "title": "Error Rate (5m)",
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "loki", "uid": "loki"},
-      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "unit": "ms"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
       "id": 3,
-      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "single", "sort": "none"}},
-      "targets": [{"expr": "quantile_over_time(0.95, {job=\"onr-access\"} | logfmt | unwrap latency_ms [5m])", "refId": "A"}],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "quantile_over_time(0.95, {job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"} | logfmt | unwrap latency_ms [5m])",
+          "refId": "A"
+        }
+      ],
       "title": "Latency P95 (ms)",
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "loki", "uid": "loki"},
-      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "unit": "currencyUSD"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20},
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 20
+      },
       "id": 4,
-      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "single", "sort": "none"}},
-      "targets": [{"expr": "sum_over_time({job=\"onr-access\"} | logfmt | unwrap cost_total [5m])", "refId": "A"}],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum_over_time({job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"} | logfmt | unwrap cost_total [5m])",
+          "refId": "A"
+        }
+      ],
       "title": "Cost Total (5m)",
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "loki", "uid": "loki"},
-      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 28},
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 28
+      },
       "id": 5,
-      "options": {"legend": {"displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "single", "sort": "none"}},
-      "targets": [{"expr": "sum by (appname) (count_over_time({job=\"onr-access\"}[5m]))", "refId": "A"}],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (appname) (count_over_time({job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"}[5m]))",
+          "refId": "A"
+        }
+      ],
       "title": "Requests by AppName (5m)",
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "loki", "uid": "loki"},
-      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 28},
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 28
+      },
       "id": 6,
-      "options": {"legend": {"displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "single", "sort": "none"}},
-      "targets": [{"expr": "sum by (provider) (count_over_time({job=\"onr-access\"}[5m]))", "refId": "A"}],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (provider) (count_over_time({job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"}[5m]))",
+          "refId": "A"
+        }
+      ],
       "title": "Requests by Provider (5m)",
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "loki", "uid": "loki"},
-      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 46},
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 46
+      },
       "id": 7,
-      "options": {"displayLabels": ["name", "percent"], "legend": {"displayMode": "table", "placement": "bottom", "showLegend": true, "values": ["percent", "value"]}, "pieType": "pie", "tooltip": {"mode": "single", "sort": "none"}},
+      "options": {
+        "displayLabels": [
+          "name",
+          "percent"
+        ],
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "values": [
+            "percent",
+            "value"
+          ]
+        },
+        "pieType": "pie",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
       "targets": [
-        {"expr": "sum by (appname) (count_over_time({job=\"onr-access\",appname!=\"\"}[5m]))", "legendFormat": "{{appname}}", "refId": "A"},
-        {"expr": "sum(count_over_time({job=\"onr-access\",appname=\"\"}[5m]))", "legendFormat": "unknown", "refId": "B"}
+        {
+          "expr": "sum by (appname) (count_over_time({job=\"onr-access\",appname!=\"\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"}[5m]))",
+          "legendFormat": "{{appname}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(count_over_time({job=\"onr-access\",appname=\"\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"}[5m]))",
+          "legendFormat": "unknown",
+          "refId": "B"
+        }
       ],
       "title": "AppName Share (5m)",
       "type": "piechart"
     },
     {
-      "datasource": {"type": "loki", "uid": "loki"},
-      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "unit": "short"}, "overrides": []},
-      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 8},
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 8
+      },
       "id": 8,
-      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"expr": "sum(sum_over_time({job=\"onr-access\"} | logfmt | unwrap input_tokens [5m]))", "refId": "A"}],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "sum(sum_over_time({job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"} | logfmt | unwrap input_tokens [5m]))",
+          "refId": "A"
+        }
+      ],
       "title": "Input Tokens (5m)",
       "type": "stat"
     },
     {
-      "datasource": {"type": "loki", "uid": "loki"},
-      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "unit": "short"}, "overrides": []},
-      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 8},
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 8
+      },
       "id": 9,
-      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"expr": "sum(sum_over_time({job=\"onr-access\"} | logfmt | unwrap output_tokens [5m]))", "refId": "A"}],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "sum(sum_over_time({job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"} | logfmt | unwrap output_tokens [5m]))",
+          "refId": "A"
+        }
+      ],
       "title": "Output Tokens (5m)",
       "type": "stat"
     },
     {
-      "datasource": {"type": "loki", "uid": "loki"},
-      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "unit": "short"}, "overrides": []},
-      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 8},
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 8
+      },
       "id": 10,
-      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"expr": "sum(sum_over_time({job=\"onr-access\"} | logfmt | unwrap total_tokens [5m]))", "refId": "A"}],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "sum(sum_over_time({job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"} | logfmt | unwrap total_tokens [5m]))",
+          "refId": "A"
+        }
+      ],
       "title": "Total Tokens (5m)",
       "type": "stat"
     },
     {
-      "datasource": {"type": "loki", "uid": "loki"},
-      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "unit": "short"}, "overrides": []},
-      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 8},
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 8
+      },
       "id": 11,
-      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"expr": "sum(sum_over_time({job=\"onr-access\"} | logfmt | unwrap cache_read_tokens [5m]))", "refId": "A"}],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "sum(sum_over_time({job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"} | logfmt | unwrap cache_read_tokens [5m]))",
+          "refId": "A"
+        }
+      ],
       "title": "Cache Read Tokens (5m)",
       "type": "stat"
     },
     {
-      "datasource": {"type": "loki", "uid": "loki"},
-      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "unit": "short"}, "overrides": []},
-      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 8},
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 8
+      },
       "id": 12,
-      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"expr": "sum(sum_over_time({job=\"onr-access\"} | logfmt | unwrap cache_write_tokens [5m]))", "refId": "A"}],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "sum(sum_over_time({job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"} | logfmt | unwrap cache_write_tokens [5m]))",
+          "refId": "A"
+        }
+      ],
       "title": "Cache Write Tokens (5m)",
       "type": "stat"
     },
     {
-      "datasource": {"type": "loki", "uid": "loki"},
-      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "unit": "short"}, "overrides": []},
-      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 8},
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 8
+      },
       "id": 13,
-      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"expr": "sum(sum_over_time({job=\"onr-access\"} | logfmt | unwrap total_tokens [$__range])) * 60 / $__range_s", "refId": "A"}],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "sum(sum_over_time({job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"} | logfmt | unwrap total_tokens [$__range])) * 60 / $__range_s",
+          "refId": "A"
+        }
+      ],
       "title": "Throughput (tok/min)",
       "type": "stat"
     },
     {
-      "datasource": {"type": "loki", "uid": "loki"},
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"},
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisPlacement": "auto",
             "barAlignment": 0,
@@ -168,78 +616,213 @@
             "lineWidth": 1,
             "pointSize": 4,
             "showPoints": "never",
-            "stacking": {"group": "A", "mode": "normal"}
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
           },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 36},
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 36
+      },
       "id": 14,
-      "options": {"legend": {"displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
       "targets": [
-        {"expr": "sum(sum_over_time({job=\"onr-access\"} | logfmt | unwrap input_tokens [1d]))", "legendFormat": "Input", "refId": "A"},
-        {"expr": "sum(sum_over_time({job=\"onr-access\"} | logfmt | unwrap output_tokens [1d]))", "legendFormat": "Output", "refId": "B"},
-        {"expr": "sum(sum_over_time({job=\"onr-access\"} | logfmt | unwrap cache_read_tokens [1d]))", "legendFormat": "Cache Read", "refId": "C"},
-        {"expr": "sum(sum_over_time({job=\"onr-access\"} | logfmt | unwrap cache_write_tokens [1d]))", "legendFormat": "Cache Write", "refId": "D"}
+        {
+          "expr": "sum(sum_over_time({job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"} | logfmt | unwrap input_tokens [1d]))",
+          "legendFormat": "Input",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(sum_over_time({job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"} | logfmt | unwrap output_tokens [1d]))",
+          "legendFormat": "Output",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(sum_over_time({job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"} | logfmt | unwrap cache_read_tokens [1d]))",
+          "legendFormat": "Cache Read",
+          "refId": "C"
+        },
+        {
+          "expr": "sum(sum_over_time({job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"} | logfmt | unwrap cache_write_tokens [1d]))",
+          "legendFormat": "Cache Write",
+          "refId": "D"
+        }
       ],
       "title": "Daily Token Usage (By Type)",
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "loki", "uid": "loki"},
-      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "unit": "short"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 46},
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 46
+      },
       "id": 15,
       "options": {
         "displayMode": "gradient",
         "namePlacement": "left",
         "orientation": "horizontal",
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "showUnfilled": true
       },
       "targets": [
-        {"expr": "sum(sum_over_time({job=\"onr-access\"} | logfmt | unwrap input_tokens [$__range]))", "legendFormat": "Input", "refId": "A"},
-        {"expr": "sum(sum_over_time({job=\"onr-access\"} | logfmt | unwrap output_tokens [$__range]))", "legendFormat": "Output", "refId": "B"},
-        {"expr": "sum(sum_over_time({job=\"onr-access\"} | logfmt | unwrap cache_read_tokens [$__range]))", "legendFormat": "Cache Read", "refId": "C"},
-        {"expr": "sum(sum_over_time({job=\"onr-access\"} | logfmt | unwrap cache_write_tokens [$__range]))", "legendFormat": "Cache Write", "refId": "D"}
+        {
+          "expr": "sum(sum_over_time({job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"} | logfmt | unwrap input_tokens [$__range]))",
+          "legendFormat": "Input",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(sum_over_time({job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"} | logfmt | unwrap output_tokens [$__range]))",
+          "legendFormat": "Output",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(sum_over_time({job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"} | logfmt | unwrap cache_read_tokens [$__range]))",
+          "legendFormat": "Cache Read",
+          "refId": "C"
+        },
+        {
+          "expr": "sum(sum_over_time({job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"} | logfmt | unwrap cache_write_tokens [$__range]))",
+          "legendFormat": "Cache Write",
+          "refId": "D"
+        }
       ],
       "title": "Tokens by Type",
       "type": "bargauge"
     },
     {
-      "datasource": {"type": "loki", "uid": "loki"},
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
       "fieldConfig": {
-        "defaults": {"color": {"mode": "palette-classic"}, "unit": "short"},
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        },
         "overrides": [
-          {"matcher": {"id": "byName", "options": "tokens"}, "properties": [{"id": "unit", "value": "short"}]},
-          {"matcher": {"id": "byName", "options": "cost"}, "properties": [{"id": "unit", "value": "currencyUSD"}]}
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "tokens"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cost"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              }
+            ]
+          }
         ]
       },
-      "gridPos": {"h": 10, "w": 12, "x": 0, "y": 54},
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 54
+      },
       "id": 16,
-      "options": {"cellHeight": "sm", "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true},
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
       "targets": [
         {
-          "expr": "topk(10, sum by (model) (sum_over_time({job=\"onr-access\"} | logfmt | model!=\"\" | unwrap total_tokens [$__range])))",
+          "expr": "topk(10, sum by (model) (sum_over_time({job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"} | logfmt | model!=\"\" | unwrap total_tokens [$__range])))",
           "queryType": "instant",
           "refId": "A"
         },
         {
-          "expr": "(sum by (model) (sum_over_time({job=\"onr-access\"} | logfmt | model!=\"\" | unwrap cost_total [$__range]))) and on(model) topk(10, sum by (model) (sum_over_time({job=\"onr-access\"} | logfmt | model!=\"\" | unwrap total_tokens [$__range])))",
+          "expr": "(sum by (model) (sum_over_time({job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"} | logfmt | model!=\"\" | unwrap cost_total [$__range]))) and on(model) topk(10, sum by (model) (sum_over_time({job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"} | logfmt | model!=\"\" | unwrap total_tokens [$__range])))",
           "queryType": "instant",
           "refId": "B"
         }
       ],
       "transformations": [
-        {"id": "labelsToFields", "options": {"mode": "columns"}},
-        {"id": "merge", "options": {}},
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
         {
           "id": "organize",
           "options": {
-            "excludeByName": {"Time": true},
-            "indexByName": {"model": 0, "Value #A": 1, "Value #B": 2},
-            "renameByName": {"Value #A": "tokens", "Value #B": "cost"}
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "model": 0,
+              "Value #A": 1,
+              "Value #B": 2
+            },
+            "renameByName": {
+              "Value #A": "tokens",
+              "Value #B": "cost"
+            }
           }
         }
       ],
@@ -247,55 +830,294 @@
       "type": "table"
     },
     {
-      "datasource": {"type": "loki", "uid": "loki"},
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
       "fieldConfig": {
-        "defaults": {"color": {"mode": "palette-classic"}, "unit": "short"},
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        },
         "overrides": [
-          {"matcher": {"id": "byName", "options": "tokens"}, "properties": [{"id": "unit", "value": "short"}]},
-          {"matcher": {"id": "byName", "options": "cost"}, "properties": [{"id": "unit", "value": "currencyUSD"}]}
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "tokens"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cost"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              }
+            ]
+          }
         ]
       },
-      "gridPos": {"h": 10, "w": 12, "x": 12, "y": 54},
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 54
+      },
       "id": 17,
-      "options": {"cellHeight": "sm", "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true},
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
       "targets": [
         {
-          "expr": "topk(10, sum by (cost_channel) (sum_over_time({job=\"onr-access\"} | logfmt | cost_channel!=\"\" | unwrap total_tokens [$__range])))",
+          "expr": "topk(10, sum by (cost_channel) (sum_over_time({job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"} | logfmt | cost_channel!=\"\" | unwrap total_tokens [$__range])))",
           "queryType": "instant",
           "refId": "A"
         },
         {
-          "expr": "(sum by (cost_channel) (sum_over_time({job=\"onr-access\"} | logfmt | cost_channel!=\"\" | unwrap cost_total [$__range]))) and on(cost_channel) topk(10, sum by (cost_channel) (sum_over_time({job=\"onr-access\"} | logfmt | cost_channel!=\"\" | unwrap total_tokens [$__range])))",
+          "expr": "(sum by (cost_channel) (sum_over_time({job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"} | logfmt | cost_channel!=\"\" | unwrap cost_total [$__range]))) and on(cost_channel) topk(10, sum by (cost_channel) (sum_over_time({job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"} | logfmt | cost_channel!=\"\" | unwrap total_tokens [$__range])))",
           "queryType": "instant",
           "refId": "B"
         }
       ],
       "transformations": [
-        {"id": "labelsToFields", "options": {"mode": "columns"}},
-        {"id": "merge", "options": {}},
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
         {
           "id": "organize",
           "options": {
-            "excludeByName": {"Time": true},
-            "indexByName": {"cost_channel": 0, "Value #A": 1, "Value #B": 2},
-            "renameByName": {"Value #A": "tokens", "Value #B": "cost"}
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "cost_channel": 0,
+              "Value #A": 1,
+              "Value #B": 2
+            },
+            "renameByName": {
+              "Value #A": "tokens",
+              "Value #B": "cost"
+            }
           }
         }
       ],
       "title": "Top Channels by Tokens",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 64
+      },
+      "id": 18,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "expr": "{job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"} | logfmt",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Line": true,
+              "line": true,
+              "job": true,
+              "app": true,
+              "detected_level": true,
+              "filename": true,
+              "level": true,
+              "onr_ts": true,
+              "latency_col": true,
+              "client_ip": true
+            },
+            "indexByName": {
+              "Time": 0,
+              "status": 1,
+              "method": 2,
+              "path": 3,
+              "provider": 4,
+              "model": 5,
+              "appname": 6,
+              "latency_ms": 7,
+              "total_tokens": 8,
+              "cost_total": 9,
+              "request_id": 10
+            },
+            "renameByName": {}
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Time",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "title": "Parsed Access Logs",
       "type": "table"
     }
   ],
   "refresh": "10s",
   "schemaVersion": 39,
   "style": "dark",
-  "tags": ["onr", "loki"],
-  "templating": {"list": []},
-  "time": {"from": "now-6h", "to": "now"},
+  "tags": [
+    "onr",
+    "loki"
+  ],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "definition": "label_values({job=\"onr-access\"}, provider)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "provider",
+        "multi": true,
+        "name": "provider",
+        "options": [],
+        "query": "label_values({job=\"onr-access\"}, provider)",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "definition": "label_values({job=\"onr-access\"}, status)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "status",
+        "multi": true,
+        "name": "status",
+        "options": [],
+        "query": "label_values({job=\"onr-access\"}, status)",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 3,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "definition": "label_values({job=\"onr-access\"}, appname)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "appname",
+        "multi": true,
+        "name": "appname",
+        "options": [],
+        "query": "label_values({job=\"onr-access\"}, appname)",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "",
   "title": "ONR Access Log Overview",
   "uid": "onr-access-overview",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
