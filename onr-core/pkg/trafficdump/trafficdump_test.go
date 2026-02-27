@@ -296,3 +296,35 @@ func TestRequestID_PrefersHeaderWhenPresent(t *testing.T) {
 		t.Fatalf("got=%q want=%q", got, "rid_header_1")
 	}
 }
+
+func TestRecorderErr_OnWriteFailure(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tmp := t.TempDir()
+	cfg := Config{
+		Enabled:     true,
+		Dir:         tmp,
+		FilePath:    "{{.request_id}}.log",
+		MaxBytes:    1024 * 1024,
+		MaskSecrets: true,
+	}
+
+	w := httptest.NewRecorder()
+	gc, _ := gin.CreateTestContext(w)
+	gc.Request = httptest.NewRequest("POST", "/v1/test", strings.NewReader(`{"x":1}`))
+
+	rec, err := StartWithRequestID(gc, cfg, "rid_test_err_1")
+	if err != nil {
+		t.Fatalf("StartWithRequestID error: %v", err)
+	}
+
+	// Close the underlying file descriptor directly to force subsequent write errors.
+	if err := rec.f.Close(); err != nil {
+		t.Fatalf("close recorder file: %v", err)
+	}
+	AppendOriginRequest(gc, []byte(`{"x":1}`), false, false)
+	if rec.Err() == nil {
+		t.Fatal("expected recorder write error, got nil")
+	}
+	rec.Close()
+}

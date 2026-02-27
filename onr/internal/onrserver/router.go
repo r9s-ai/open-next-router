@@ -131,10 +131,23 @@ func trafficDumpMiddleware(cfg *config.Config, requestIDHeaderKey string) gin.Ha
 	return func(c *gin.Context) {
 		rec, err := trafficdump.StartWithHeaderKey(c, tdcfg, requestIDHeaderKey)
 		if err != nil {
+			log.Printf(
+				"[ONR] WARN | traffic_dump | traffic dump start failed, skip for request | error=%v path=%s",
+				err,
+				c.Request.URL.Path,
+			)
 			c.Next()
 			return
 		}
 		c.Next()
 		rec.Close()
+		if werr := rec.Err(); werr != nil {
+			log.Printf(
+				"[ONR] WARN | traffic_dump | traffic dump write failed | request_id=%s error=%v path=%s",
+				trafficdump.RequestIDWithHeaderKey(c, requestIDHeaderKey),
+				werr,
+				c.Request.URL.Path,
+			)
+		}
 	}
 }

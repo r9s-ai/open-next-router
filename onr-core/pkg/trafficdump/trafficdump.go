@@ -39,6 +39,7 @@ type Recorder struct {
 	maxBytes int
 	mask     bool
 	closed   bool
+	err      error
 }
 
 func Enabled(cfg Config) bool { return cfg.Enabled }
@@ -179,7 +180,9 @@ func (r *Recorder) Close() {
 		return
 	}
 	r.closed = true
-	_ = r.f.Close()
+	if err := r.f.Close(); err != nil {
+		r.setErrLocked(err)
+	}
 }
 
 func (r *Recorder) MaxBytes() int {
@@ -191,14 +194,28 @@ func (r *Recorder) MaxBytes() int {
 	return r.maxBytes
 }
 
+func (r *Recorder) Err() error {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.err
+}
+
 func (r *Recorder) writeLine(s string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closed {
 		return
 	}
-	_, _ = r.f.WriteString(s)
-	_, _ = r.f.WriteString("\n")
+	if _, err := r.f.WriteString(s); err != nil {
+		r.setErrLocked(err)
+		return
+	}
+	if _, err := r.f.WriteString("\n"); err != nil {
+		r.setErrLocked(err)
+	}
 }
 
 func (r *Recorder) writeBlock(title string, content []byte, binary bool, truncated bool) {
@@ -207,23 +224,56 @@ func (r *Recorder) writeBlock(title string, content []byte, binary bool, truncat
 	if r.closed {
 		return
 	}
-	_, _ = r.f.WriteString(title)
-	_, _ = r.f.WriteString("\n")
+	if _, err := r.f.WriteString(title); err != nil {
+		r.setErrLocked(err)
+		return
+	}
+	if _, err := r.f.WriteString("\n"); err != nil {
+		r.setErrLocked(err)
+		return
+	}
 	if binary {
-		_, _ = r.f.WriteString("[base64]\n")
+		if _, err := r.f.WriteString("[base64]\n"); err != nil {
+			r.setErrLocked(err)
+			return
+		}
 		enc := base64.StdEncoding.EncodeToString(content)
-		_, _ = r.f.WriteString(enc)
-		_, _ = r.f.WriteString("\n")
+		if _, err := r.f.WriteString(enc); err != nil {
+			r.setErrLocked(err)
+			return
+		}
+		if _, err := r.f.WriteString("\n"); err != nil {
+			r.setErrLocked(err)
+			return
+		}
 	} else {
-		_, _ = r.f.Write(content)
+		if _, err := r.f.Write(content); err != nil {
+			r.setErrLocked(err)
+			return
+		}
 		if len(content) == 0 || content[len(content)-1] != '\n' {
-			_, _ = r.f.WriteString("\n")
+			if _, err := r.f.WriteString("\n"); err != nil {
+				r.setErrLocked(err)
+				return
+			}
 		}
 	}
 	if truncated {
-		_, _ = r.f.WriteString("[truncated]\n")
+		if _, err := r.f.WriteString("[truncated]\n"); err != nil {
+			r.setErrLocked(err)
+			return
+		}
 	}
-	_, _ = r.f.WriteString("\n")
+	if _, err := r.f.WriteString("\n"); err != nil {
+		r.setErrLocked(err)
+	}
+}
+
+func (r *Recorder) setErrLocked(err error) {
+	if err == nil || r.err != nil {
+		return
+	}
+	r.err = err
 }
 
 func maskIfNeeded(key, val string, on bool) string {
