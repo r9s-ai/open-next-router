@@ -34,3 +34,6 @@ report.xml
 # Observability runtime data
 deploy/observability/promtail-data/
 deploy/observability/loki-data/
+
+# test provider conf
+config/providers/*-test.conf
