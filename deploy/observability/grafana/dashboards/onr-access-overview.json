@@ -255,7 +255,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 28
+        "y": 76
       },
       "id": 6,
       "options": {
@@ -1022,6 +1022,47 @@
       ],
       "title": "Parsed Access Logs",
       "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 28
+      },
+      "id": 19,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (status) (count_over_time({job=\"onr-access\",provider=~\"$provider\",status=~\"$status\",appname=~\"$appname\"}[5m]))",
+          "refId": "A"
+        }
+      ],
+      "title": "Requests by Status (5m)",
+      "type": "timeseries"
     }
   ],
   "refresh": "10s",
@@ -1118,6 +1159,6 @@
   "timezone": "",
   "title": "ONR Access Log Overview",
   "uid": "onr-access-overview",
-  "version": 2,
+  "version": 5,
   "weekStart": ""
 }
