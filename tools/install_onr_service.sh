@@ -22,6 +22,7 @@ DRY_RUN=0
 CONFIG_DIR="/etc/onr"
 STATE_DIR="/var/lib/onr"
 BIN_DIR="/usr/local/bin"
+DUMPS_DIR="${CONFIG_DIR}/dumps"
 
 CONFIG_FILE="${CONFIG_DIR}/onr.yaml"
 ENV_FILE="${CONFIG_DIR}/onr.env"
@@ -217,7 +218,7 @@ extract_listen_port() {
 }
 
 ensure_runtime_dirs() {
-  run_cmd install -d -m 0750 "${CONFIG_DIR}" "${PROVIDERS_DIR}" "${STATE_DIR}" "${STATE_DIR}/oauth"
+  run_cmd install -d -m 0750 "${CONFIG_DIR}" "${PROVIDERS_DIR}" "${DUMPS_DIR}" "${STATE_DIR}" "${STATE_DIR}/oauth"
 }
 
 copy_seed_file() {
@@ -458,8 +459,9 @@ EOF
 
 set_permissions_service() {
   run_cmd chown -R root:"${SERVICE_GROUP}" "${CONFIG_DIR}"
-  run_cmd chmod 0750 "${CONFIG_DIR}" "${PROVIDERS_DIR}"
+  run_cmd chmod 0750 "${CONFIG_DIR}" "${PROVIDERS_DIR}" "${DUMPS_DIR}"
   run_cmd chmod 0750 "${STATE_DIR}" "${STATE_DIR}/oauth"
+  run_cmd chown "${SERVICE_USER}:${SERVICE_GROUP}" "${DUMPS_DIR}"
 
   [[ -f "${CONFIG_FILE}" ]] && run_cmd chmod 0640 "${CONFIG_FILE}"
   [[ -f "${ENV_FILE}" ]] && run_cmd chmod 0640 "${ENV_FILE}"
@@ -478,7 +480,7 @@ set_permissions_service() {
 
 set_permissions_docker() {
   run_cmd chown -R 10001:10001 "${CONFIG_DIR}" "${STATE_DIR}"
-  run_cmd chmod 0750 "${CONFIG_DIR}" "${PROVIDERS_DIR}" "${STATE_DIR}" "${STATE_DIR}/oauth"
+  run_cmd chmod 0750 "${CONFIG_DIR}" "${PROVIDERS_DIR}" "${DUMPS_DIR}" "${STATE_DIR}" "${STATE_DIR}/oauth"
 
   [[ -f "${CONFIG_FILE}" ]] && run_cmd chmod 0640 "${CONFIG_FILE}"
   [[ -f "${ENV_FILE}" ]] && run_cmd chmod 0640 "${ENV_FILE}"
