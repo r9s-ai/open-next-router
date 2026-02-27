@@ -20,7 +20,7 @@ scrape_configs:
       - drop:
           expression: '\|\s[A-Z]+\s"/(?:[^v].*|v[^1].*)"'
       - regex:
-          expression: '^(?P<file_ts>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[ONR\] (?P<onr_ts>[^|]+)\s\|\s(?P<status>\d{3})\s\|\s(?P<latency_col>[^|]+)\s\|\s(?P<client_ip>[^|]+)\s\|\s(?P<method>\S+)\s"(?P<path>[^"]+)"(?:\s\|\s(?P<kv>.*))?$'
+          expression: '^\[ONR\]\s(?P<onr_ts>[^|]+)\s\|\s(?P<status>\d{3})\s\|\s(?P<latency_col>[^|]+)\s\|\s(?P<client_ip>[^|]+)\s\|\s(?P<method>\S+)\s"(?P<path>[^"]+)"(?:\s\|\s(?P<kv>.*))?$'
       - logfmt:
           source: kv
           mapping:

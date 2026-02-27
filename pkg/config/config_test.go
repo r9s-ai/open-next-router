@@ -89,6 +89,7 @@ upstream_proxies:
 	t.Setenv("ONR_UPSTREAM_PROXY_OPENAI", "http://127.0.0.1:8888")
 	t.Setenv("ONR_UPSTREAM_PROXY_QWEN", "")
 	t.Setenv("ONR_ACCESS_LOG_PATH", "/tmp/access.log")
+	t.Setenv("ONR_LOG_LEVEL", "WARN")
 	t.Setenv("ONR_ACCESS_LOG_FORMAT", "$method $path")
 	t.Setenv("ONR_ACCESS_LOG_FORMAT_PRESET", "onr_minimal")
 	t.Setenv("ONR_ACCESS_LOG_ROTATE_ENABLED", "true")
@@ -130,6 +131,9 @@ upstream_proxies:
 	}
 	if cfg.Logging.AccessLogFormat != "$method $path" {
 		t.Fatalf("access_log_format not overridden: %q", cfg.Logging.AccessLogFormat)
+	}
+	if cfg.Logging.Level != "warn" {
+		t.Fatalf("logging.level not overridden/normalized: %q", cfg.Logging.Level)
 	}
 	if cfg.Logging.AccessLogFormatPreset != "onr_minimal" {
 		t.Fatalf("access_log_format_preset not overridden: %q", cfg.Logging.AccessLogFormatPreset)
@@ -288,6 +292,14 @@ func TestValidate(t *testing.T) {
 	t.Run("invalid access log rotate max_age_days", func(t *testing.T) {
 		cfg := newValidConfig()
 		cfg.Logging.AccessLogRotate.MaxAgeDays = -1
+		if err := validate(cfg); err == nil {
+			t.Fatalf("expected error")
+		}
+	})
+
+	t.Run("invalid logging level", func(t *testing.T) {
+		cfg := newValidConfig()
+		cfg.Logging.Level = "verbose"
 		if err := validate(cfg); err == nil {
 			t.Fatalf("expected error")
 		}

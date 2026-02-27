@@ -27,6 +27,9 @@ func TestOpenAccessLogger_RotateEnabled(t *testing.T) {
 	if l == nil {
 		t.Fatalf("expected logger")
 	}
+	if l.Flags() != 0 {
+		t.Fatalf("expected logger flags=0, got=%d", l.Flags())
+	}
 	if color {
 		t.Fatalf("expected color disabled for file logger")
 	}
@@ -57,6 +60,9 @@ func TestOpenAccessLogger_RotateDisabledFileAppend(t *testing.T) {
 	if l == nil {
 		t.Fatalf("expected logger")
 	}
+	if l.Flags() != 0 {
+		t.Fatalf("expected logger flags=0, got=%d", l.Flags())
+	}
 	if color {
 		t.Fatalf("expected color disabled for file logger")
 	}
@@ -84,5 +90,28 @@ func TestOpenAccessLogger_RotateEnabledEmptyPath(t *testing.T) {
 
 	if _, _, _, err := openAccessLogger(cfg); err == nil {
 		t.Fatalf("expected error")
+	}
+}
+
+func TestOpenAccessLogger_StdoutNoStdTimePrefix(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Logging.AccessLog = true
+	cfg.Logging.AccessLogPath = ""
+
+	l, closer, color, err := openAccessLogger(cfg)
+	if err != nil {
+		t.Fatalf("openAccessLogger err=%v", err)
+	}
+	if closer != nil {
+		t.Fatalf("expected nil closer for stdout logger")
+	}
+	if !color {
+		t.Fatalf("expected color enabled for stdout logger")
+	}
+	if l == nil {
+		t.Fatalf("expected logger")
+	}
+	if l.Flags() != 0 {
+		t.Fatalf("expected logger flags=0, got=%d", l.Flags())
 	}
 }

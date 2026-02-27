@@ -16,7 +16,7 @@ func requestLoggerWithColor(l *log.Logger, color bool, requestIDHeaderKey string
 	requestIDHeaderKey = requestid.ResolveHeaderKey(requestIDHeaderKey)
 	collector := accesslog.NewCollector(requestIDHeaderKey, appnameInferEnabled, appnameInferUnknown)
 	if l == nil {
-		l = log.New(os.Stdout, "", log.LstdFlags)
+		l = log.New(os.Stdout, "", 0)
 	}
 	return func(c *gin.Context) {
 		start := time.Now()

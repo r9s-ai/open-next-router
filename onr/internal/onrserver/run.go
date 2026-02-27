@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -37,6 +38,10 @@ func Run(cfgPath string) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+	sysLogger, err := logx.NewSystemLogger(cfg.Logging.Level)
+	if err != nil {
+		return fmt.Errorf("init system log: %w", err)
+	}
 
 	accessLogger, accessClose, accessColor, err := openAccessLogger(cfg)
 	if err != nil {
@@ -59,7 +64,7 @@ func Run(cfgPath string) error {
 	if err != nil {
 		return fmt.Errorf("load providers dir %q: %w", cfg.Providers.Dir, err)
 	}
-	logSkippedProviders(cfg.Providers.Dir, loadRes.SkippedFiles, false)
+	logSkippedProviders(sysLogger, cfg.Providers.Dir, loadRes.SkippedFiles, false)
 
 	keys, err := keystore.Load(cfg.Keys.File)
 	if err != nil {
@@ -101,8 +106,8 @@ func Run(cfgPath string) error {
 	st.SetStartedAtUnix(startedAt)
 
 	reloadMu := &sync.Mutex{}
-	installReloadSignalHandler(cfg, st, reg, pclient, reloadMu)
-	autoReloadClose, err := installProvidersAutoReload(cfg, reg, reloadMu)
+	installReloadSignalHandler(cfg, st, reg, pclient, reloadMu, sysLogger)
+	autoReloadClose, err := installProvidersAutoReload(cfg, reg, reloadMu, sysLogger)
 	if err != nil {
 		return fmt.Errorf("init providers auto reload: %w", err)
 	}
@@ -120,7 +125,10 @@ func Run(cfgPath string) error {
 	}
 	engine := NewRouter(cfg, st, reg, pclient, accessLogger, accessColor, "X-Onr-Request-Id", accessFormatter)
 
-	log.Printf("open-next-router listening on %s", cfg.Server.Listen)
+	logStartupSummary(sysLogger, cfg, cfgPath)
+	sysLogger.Info(logx.SystemCategoryServer, "open-next-router listening", map[string]any{
+		"listen_url": resolveListenURL(cfg.Server.Listen),
+	})
 	if err := engine.Run(cfg.Server.Listen); err != nil {
 		return fmt.Errorf("run: %w", err)
 	}
@@ -138,7 +146,7 @@ func openAccessLogger(cfg *config.Config) (*log.Logger, io.Closer, bool, error) 
 	}
 	if path == "" {
 		// default: stdout (same as current behavior)
-		return log.New(os.Stdout, "", log.LstdFlags), nil, true, nil
+		return log.New(os.Stdout, "", 0), nil, true, nil
 	}
 	if cfg.Logging.AccessLogRotate.Enabled {
 		w, err := logx.NewAccessRotateWriter(logx.AccessLogRotateOptions{
@@ -151,7 +159,7 @@ func openAccessLogger(cfg *config.Config) (*log.Logger, io.Closer, bool, error) 
 		if err != nil {
 			return nil, nil, false, err
 		}
-		return log.New(w, "", log.LstdFlags), w, false, nil
+		return log.New(w, "", 0), w, false, nil
 	}
 
 	dir := filepath.Dir(path)
@@ -165,7 +173,7 @@ func openAccessLogger(cfg *config.Config) (*log.Logger, io.Closer, bool, error) 
 	if err != nil {
 		return nil, nil, false, err
 	}
-	return log.New(f, "", log.LstdFlags), f, false, nil
+	return log.New(f, "", 0), f, false, nil
 }
 
 type closerFunc func() error
@@ -200,7 +208,7 @@ func writePIDFile(cfg *config.Config) (io.Closer, error) {
 	return closerFunc(func() error { return os.Remove(path) }), nil
 }
 
-func installReloadSignalHandler(cfg *config.Config, st *state, reg *dslconfig.Registry, pclient *proxy.Client, mu *sync.Mutex) {
+func installReloadSignalHandler(cfg *config.Config, st *state, reg *dslconfig.Registry, pclient *proxy.Client, mu *sync.Mutex, logger *logx.SystemLogger) {
 	if cfg == nil || st == nil || reg == nil || mu == nil {
 		return
 	}
@@ -209,26 +217,18 @@ func installReloadSignalHandler(cfg *config.Config, st *state, reg *dslconfig.Re
 	go func() {
 		for range ch {
 			mu.Lock()
-			providersRes, err := reloadRuntime(cfg, st, reg, pclient)
+			providersRes, err := reloadRuntime(cfg, st, reg, pclient, logger)
 			mu.Unlock()
 			if err != nil {
-				log.Printf("reload failed (signal): %v", err)
+				logReloadFailed(logger, "signal", err)
 				continue
 			}
-			log.Printf(
-				"reload ok (signal): providers_dir=%q changed_providers=%s keys_file=%q models_file=%q pricing_file=%q pricing_overrides_file=%q",
-				cfg.Providers.Dir,
-				providerNamesForLog(providersRes.ChangedProviders),
-				cfg.Keys.File,
-				cfg.Models.File,
-				cfg.Pricing.File,
-				cfg.Pricing.OverridesFile,
-			)
+			logReloadOK(logger, "signal", cfg, providersRes)
 		}
 	}()
 }
 
-func reloadProvidersRuntime(cfg *config.Config, reg *dslconfig.Registry) (providersReloadResult, error) {
+func reloadProvidersRuntime(cfg *config.Config, reg *dslconfig.Registry, logger *logx.SystemLogger) (providersReloadResult, error) {
 	if cfg == nil || reg == nil {
 		return providersReloadResult{}, errors.New("reload providers: nil cfg/registry")
 	}
@@ -237,7 +237,7 @@ func reloadProvidersRuntime(cfg *config.Config, reg *dslconfig.Registry) (provid
 	if err != nil {
 		return providersReloadResult{}, fmt.Errorf("reload providers dir %q: %w", cfg.Providers.Dir, err)
 	}
-	logSkippedProviders(cfg.Providers.Dir, loadRes.SkippedFiles, true)
+	logSkippedProviders(logger, cfg.Providers.Dir, loadRes.SkippedFiles, true)
 	after := snapshotProviderFingerprints(reg)
 	return providersReloadResult{
 		LoadResult:       loadRes,
@@ -245,11 +245,11 @@ func reloadProvidersRuntime(cfg *config.Config, reg *dslconfig.Registry) (provid
 	}, nil
 }
 
-func reloadRuntime(cfg *config.Config, st *state, reg *dslconfig.Registry, pclient *proxy.Client) (providersReloadResult, error) {
+func reloadRuntime(cfg *config.Config, st *state, reg *dslconfig.Registry, pclient *proxy.Client, logger *logx.SystemLogger) (providersReloadResult, error) {
 	if cfg == nil || st == nil || reg == nil || pclient == nil {
 		return providersReloadResult{}, errors.New("reload: nil cfg/state/registry/pclient")
 	}
-	providersRes, err := reloadProvidersRuntime(cfg, reg)
+	providersRes, err := reloadProvidersRuntime(cfg, reg, logger)
 	if err != nil {
 		return providersReloadResult{}, err
 	}
@@ -272,7 +272,7 @@ func reloadRuntime(cfg *config.Config, st *state, reg *dslconfig.Registry, pclie
 	return providersRes, nil
 }
 
-func logSkippedProviders(providersDir string, skipped []string, reloading bool) {
+func logSkippedProviders(logger *logx.SystemLogger, providersDir string, skipped []string, reloading bool) {
 	if len(skipped) == 0 {
 		return
 	}
@@ -280,11 +280,93 @@ func logSkippedProviders(providersDir string, skipped []string, reloading bool) 
 	if reloading {
 		phase = "reload"
 	}
-	warn := "WARNING"
-	if logx.ColorEnabled() {
-		warn = "\x1b[1;33mWARNING\x1b[0m"
+	logger.Warn(logx.SystemCategoryProviders, "providers skipped invalid files", map[string]any{
+		"phase":                 phase,
+		"providers_dir":         providersDir,
+		"skipped_invalid_files": strings.Join(skipped, ","),
+	})
+}
+
+func logStartupSummary(logger *logx.SystemLogger, cfg *config.Config, cfgPath string) {
+	if cfg == nil {
+		return
 	}
-	log.Printf("[ONR] %s [providers/%s] dir=%q skipped_invalid_files=%s", warn, phase, providersDir, strings.Join(skipped, ", "))
+	logger.Info(logx.SystemCategoryStartup, "startup config loaded", map[string]any{
+		"config_path":   strings.TrimSpace(cfgPath),
+		"providers_dir": cfg.Providers.Dir,
+		"keys_file":     cfg.Keys.File,
+		"models_file":   cfg.Models.File,
+	})
+	logger.Info(logx.SystemCategoryStartup, "startup runtime flags", map[string]any{
+		"traffic_dump_enabled":              cfg.TrafficDump.Enabled,
+		"traffic_dump_dir":                  cfg.TrafficDump.Dir,
+		"traffic_dump_max_bytes":            cfg.TrafficDump.MaxBytes,
+		"access_log_enabled":                cfg.Logging.AccessLog,
+		"access_log_target":                 accessLogTarget(cfg),
+		"providers_auto_reload_enabled":     cfg.Providers.AutoReload.Enabled,
+		"providers_auto_reload_debounce_ms": cfg.Providers.AutoReload.DebounceMs,
+	})
+}
+
+func logReloadFailed(logger *logx.SystemLogger, source string, err error) {
+	if err == nil {
+		return
+	}
+	logger.Error(logx.SystemCategoryReload, "reload failed", map[string]any{
+		"source": source,
+		"error":  err.Error(),
+	})
+}
+
+func logReloadOK(logger *logx.SystemLogger, source string, cfg *config.Config, providersRes providersReloadResult) {
+	if cfg == nil {
+		return
+	}
+	logger.Info(logx.SystemCategoryReload, "reload ok", map[string]any{
+		"source":                 source,
+		"providers_dir":          cfg.Providers.Dir,
+		"changed_providers":      providerNamesForLog(providersRes.ChangedProviders),
+		"keys_file":              cfg.Keys.File,
+		"models_file":            cfg.Models.File,
+		"pricing_file":           cfg.Pricing.File,
+		"pricing_overrides_file": cfg.Pricing.OverridesFile,
+	})
+}
+
+func accessLogTarget(cfg *config.Config) string {
+	if cfg == nil || !cfg.Logging.AccessLog {
+		return "disabled"
+	}
+	if strings.TrimSpace(cfg.Logging.AccessLogPath) == "" {
+		return "stdout"
+	}
+	return strings.TrimSpace(cfg.Logging.AccessLogPath)
+}
+
+func resolveListenURL(listen string) string {
+	v := strings.TrimSpace(listen)
+	if v == "" {
+		return ""
+	}
+	if strings.HasPrefix(v, "http://") || strings.HasPrefix(v, "https://") {
+		return v
+	}
+	if strings.HasPrefix(v, ":") {
+		return "http://127.0.0.1" + v
+	}
+	host, port, err := net.SplitHostPort(v)
+	if err == nil {
+		h := strings.TrimSpace(host)
+		switch h {
+		case "", "0.0.0.0", "::", "[::]":
+			h = "127.0.0.1"
+		}
+		if strings.Contains(h, ":") && !strings.HasPrefix(h, "[") && !strings.HasSuffix(h, "]") {
+			h = "[" + h + "]"
+		}
+		return "http://" + h + ":" + strings.TrimSpace(port)
+	}
+	return "http://" + v
 }
 
 func providerNamesForLog(names []string) string {

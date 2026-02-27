@@ -3,7 +3,6 @@ package onrserver
 import (
 	"io"
 	"io/fs"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,10 +11,11 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
+	"github.com/r9s-ai/open-next-router/onr/internal/logx"
 	"github.com/r9s-ai/open-next-router/pkg/config"
 )
 
-func installProvidersAutoReload(cfg *config.Config, reg *dslconfig.Registry, mu *sync.Mutex) (io.Closer, error) {
+func installProvidersAutoReload(cfg *config.Config, reg *dslconfig.Registry, mu *sync.Mutex, logger *logx.SystemLogger) (io.Closer, error) {
 	if cfg == nil || reg == nil || mu == nil {
 		return nil, nil
 	}
@@ -65,17 +65,13 @@ func installProvidersAutoReload(cfg *config.Config, reg *dslconfig.Registry, mu 
 		}
 		runReload := func() {
 			mu.Lock()
-			reloadRes, err := reloadProvidersRuntime(cfg, reg)
+			reloadRes, err := reloadProvidersRuntime(cfg, reg, logger)
 			mu.Unlock()
 			if err != nil {
-				log.Printf("reload failed (providers auto): %v", err)
+				logReloadFailed(logger, "providers_auto", err)
 				return
 			}
-			log.Printf(
-				"reload ok (providers auto): providers_dir=%q changed_providers=%s",
-				cfg.Providers.Dir,
-				providerNamesForLog(reloadRes.ChangedProviders),
-			)
+			logReloadOK(logger, "providers_auto", cfg, reloadRes)
 		}
 
 		for {
@@ -92,7 +88,10 @@ func installProvidersAutoReload(cfg *config.Config, reg *dslconfig.Registry, mu 
 				if !ok {
 					return
 				}
-				log.Printf("providers auto-reload watcher error: %v", err)
+				logger.Error(logx.SystemCategoryProviders, "providers auto-reload watcher error", map[string]any{
+					"source": "providers_auto",
+					"error":  err.Error(),
+				})
 			case evt, ok := <-watcher.Events:
 				if !ok {
 					return
@@ -100,7 +99,11 @@ func installProvidersAutoReload(cfg *config.Config, reg *dslconfig.Registry, mu 
 				if evt.Op&fsnotify.Create != 0 {
 					if fi, statErr := os.Stat(evt.Name); statErr == nil && fi.IsDir() {
 						if addErr := addWatchRecursive(watcher, evt.Name); addErr != nil {
-							log.Printf("providers auto-reload add watch failed: path=%q err=%v", evt.Name, addErr)
+							logger.Warn(logx.SystemCategoryProviders, "providers auto-reload add watch failed", map[string]any{
+								"source": "providers_auto",
+								"path":   evt.Name,
+								"error":  addErr.Error(),
+							})
 						}
 					}
 				}
@@ -116,11 +119,11 @@ func installProvidersAutoReload(cfg *config.Config, reg *dslconfig.Registry, mu 
 		}
 	}()
 
-	log.Printf(
-		"providers auto-reload enabled: dir=%q debounce_ms=%d",
-		dir,
-		cfg.Providers.AutoReload.DebounceMs,
-	)
+	logger.Info(logx.SystemCategoryProviders, "providers auto-reload enabled", map[string]any{
+		"source":        "providers_auto",
+		"providers_dir": dir,
+		"debounce_ms":   cfg.Providers.AutoReload.DebounceMs,
+	})
 	return closerFunc(func() error {
 		close(stopCh)
 		_ = watcher.Close()

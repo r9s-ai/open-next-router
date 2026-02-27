@@ -501,6 +501,32 @@ Captured sections:
 - `=== UPSTREAM RESPONSE ===`
 - `=== PROXY RESPONSE ===`
 
+## System Log (runtime)
+
+System logs are emitted to `stderr` in single-line text with a fixed prefix, and optional trailing KV fields.
+
+Configuration (config or env):
+
+- `logging.level` (`debug` | `info` | `warn` | `error`)
+- `ONR_LOG_LEVEL`
+
+Example:
+
+```text
+[ONR] 2026/02/27 - 12:34:56 | INFO | startup | startup config loaded | config_path=./onr.yaml providers_dir=./config/providers keys_file=./keys.yaml models_file=./models.yaml
+[ONR] 2026/02/27 - 12:34:56 | INFO | startup | startup runtime flags | access_log_enabled=true access_log_target=stdout traffic_dump_enabled=false providers_auto_reload_enabled=false
+[ONR] 2026/02/27 - 12:34:56 | INFO | server | open-next-router listening | listen_url=http://127.0.0.1:3300
+```
+
+Startup summary includes key runtime status fields:
+
+- `config_path`
+- `providers_dir` / `keys_file` / `models_file`
+- `traffic_dump_enabled` / `traffic_dump_dir` / `traffic_dump_max_bytes`
+- `access_log_enabled` / `access_log_target`
+- `providers_auto_reload_enabled` / `providers_auto_reload_debounce_ms`
+- `listen_url` (server listening log)
+
 ## Access Log Rotation
 
 Built-in access log rotation is optional and applies to file output (`logging.access_log_path`).

@@ -226,7 +226,7 @@ func applyDefaults(cfg *Config) {
 	if !cfg.TrafficDump.MaskSecrets {
 		cfg.TrafficDump.MaskSecrets = true
 	}
-	if cfg.Logging.Level == "" {
+	if strings.TrimSpace(cfg.Logging.Level) == "" {
 		cfg.Logging.Level = "info"
 	}
 	// default true for local debugging
@@ -315,6 +315,9 @@ func applyEnvTrafficDumpOverrides(cfg *Config) {
 }
 
 func applyEnvLoggingOverrides(cfg *Config) {
+	if v := strings.TrimSpace(os.Getenv("ONR_LOG_LEVEL")); v != "" {
+		cfg.Logging.Level = v
+	}
 	if v := strings.TrimSpace(os.Getenv("ONR_ACCESS_LOG_PATH")); v != "" {
 		cfg.Logging.AccessLogPath = v
 	}
@@ -353,6 +356,12 @@ func envInt(name string) (int, bool) {
 }
 
 func validate(cfg *Config) error {
+	if normalized, err := normalizeLogLevel(cfg.Logging.Level); err != nil {
+		return err
+	} else {
+		cfg.Logging.Level = normalized
+	}
+
 	for prov, raw := range cfg.UpstreamProxies.ByProvider {
 		p := strings.ToLower(strings.TrimSpace(prov))
 		v := strings.TrimSpace(raw)
@@ -394,6 +403,21 @@ func validate(cfg *Config) error {
 		return errors.New("logging.access_log_rotate.max_age_days must be >= 0")
 	}
 	return nil
+}
+
+func normalizeLogLevel(level string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "", "info":
+		return "info", nil
+	case "debug":
+		return "debug", nil
+	case "warn":
+		return "warn", nil
+	case "error":
+		return "error", nil
+	default:
+		return "", errors.New("logging.level must be one of: debug, info, warn, error")
+	}
 }
 
 func envBool(name string, def bool) bool {

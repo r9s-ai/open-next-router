@@ -77,6 +77,8 @@ traffic_dump:
   mask_secrets: true
 
 logging:
+  # System log minimum level: debug | info | warn | error
+  # Env override: ONR_LOG_LEVEL
   level: "info"
   # Access log output (nginx-like):
   # - access_log: enable/disable
