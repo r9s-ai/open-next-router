@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -41,6 +42,9 @@ auth:
 	}
 	if !cfg.TrafficDump.MaskSecrets {
 		t.Fatalf("mask_secrets default should be true")
+	}
+	if len(cfg.TrafficDump.Sections) != 0 {
+		t.Fatalf("traffic_dump.sections default should be empty, got=%v", cfg.TrafficDump.Sections)
 	}
 	if !cfg.Logging.AccessLog {
 		t.Fatalf("access_log default should be true")
@@ -86,6 +90,7 @@ upstream_proxies:
 	t.Setenv("ONR_TRAFFIC_DUMP_ENABLED", "1")
 	t.Setenv("ONR_TRAFFIC_DUMP_MAX_BYTES", "1024")
 	t.Setenv("ONR_TRAFFIC_DUMP_MASK_SECRETS", "off")
+	t.Setenv("ONR_TRAFFIC_DUMP_SECTIONS", "META, origin_request, upstream_response")
 	t.Setenv("ONR_UPSTREAM_PROXY_OPENAI", "http://127.0.0.1:8888")
 	t.Setenv("ONR_UPSTREAM_PROXY_QWEN", "")
 	t.Setenv("ONR_ACCESS_LOG_PATH", "/tmp/access.log")
@@ -122,6 +127,9 @@ upstream_proxies:
 	}
 	if !cfg.TrafficDump.Enabled || cfg.TrafficDump.MaxBytes != 1024 || cfg.TrafficDump.MaskSecrets {
 		t.Fatalf("traffic_dump not overridden: %+v", cfg.TrafficDump)
+	}
+	if !reflect.DeepEqual(cfg.TrafficDump.Sections, []string{"meta", "origin_request", "upstream_response"}) {
+		t.Fatalf("traffic_dump.sections not overridden/normalized: %v", cfg.TrafficDump.Sections)
 	}
 	if cfg.UpstreamProxies.ByProvider["openai"] != "http://127.0.0.1:8888" {
 		t.Fatalf("openai proxy not overridden")
@@ -328,5 +336,49 @@ func TestHelpers(t *testing.T) {
 	out := normalizeProviderStringMap(in)
 	if len(out) != 1 || out["openai"] != "http://127.0.0.1:1" {
 		t.Fatalf("unexpected normalized map: %#v", out)
+	}
+}
+
+func TestLoad_TrafficDumpSectionsYAML(t *testing.T) {
+	t.Run("valid and normalized", func(t *testing.T) {
+		path := writeConfigFile(t, `
+auth:
+  api_key: "k"
+traffic_dump:
+  sections: ["META", "origin_request", "origin_request", "upstream_response"]
+`)
+		cfg, err := Load(path)
+		if err != nil {
+			t.Fatalf("Load err=%v", err)
+		}
+		want := []string{"meta", "origin_request", "upstream_response"}
+		if !reflect.DeepEqual(cfg.TrafficDump.Sections, want) {
+			t.Fatalf("sections=%v want=%v", cfg.TrafficDump.Sections, want)
+		}
+	})
+
+	t.Run("invalid section should fail", func(t *testing.T) {
+		path := writeConfigFile(t, `
+auth:
+  api_key: "k"
+traffic_dump:
+  sections: ["meta", "bad_section"]
+`)
+		if _, err := Load(path); err == nil {
+			t.Fatalf("expected error")
+		}
+	})
+}
+
+func TestLoad_TrafficDumpSectionsEnvInvalid(t *testing.T) {
+	path := writeConfigFile(t, `
+auth:
+  api_key: "k"
+traffic_dump:
+  sections: ["meta"]
+`)
+	t.Setenv("ONR_TRAFFIC_DUMP_SECTIONS", "meta,not_exists")
+	if _, err := Load(path); err == nil {
+		t.Fatalf("expected error")
 	}
 }

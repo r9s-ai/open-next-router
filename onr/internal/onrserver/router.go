@@ -127,6 +127,7 @@ func trafficDumpMiddleware(cfg *config.Config, requestIDHeaderKey string) gin.Ha
 		FilePath:    cfg.TrafficDump.FilePath,
 		MaxBytes:    cfg.TrafficDump.MaxBytes,
 		MaskSecrets: cfg.TrafficDump.MaskSecrets,
+		Sections:    cfg.TrafficDump.Sections,
 	}
 	return func(c *gin.Context) {
 		rec, err := trafficdump.StartWithHeaderKey(c, tdcfg, requestIDHeaderKey)

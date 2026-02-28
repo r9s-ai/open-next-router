@@ -75,6 +75,10 @@ traffic_dump:
   file_path: "{{.request_id}}.log"
   max_bytes: 1048576
   mask_secrets: true
+  # Optional section allowlist. Empty means all sections are enabled.
+  # Allowed: meta, origin_request, upstream_request, upstream_response, proxy_response, stream
+  # sections: ["meta", "origin_request", "upstream_response"]
+  sections: []
 
 logging:
   # System log minimum level: debug | info | warn | error

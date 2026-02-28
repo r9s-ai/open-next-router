@@ -328,3 +328,115 @@ func TestRecorderErr_OnWriteFailure(t *testing.T) {
 	}
 	rec.Close()
 }
+
+func TestRecorderSections_OnlyMeta(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tmp := t.TempDir()
+	cfg := Config{
+		Enabled:     true,
+		Dir:         tmp,
+		FilePath:    "{{.request_id}}.log",
+		MaxBytes:    1024 * 1024,
+		MaskSecrets: true,
+		Sections:    []string{"meta"},
+	}
+
+	w := httptest.NewRecorder()
+	gc, _ := gin.CreateTestContext(w)
+	gc.Request = httptest.NewRequest("POST", "/v1/test", strings.NewReader(`{"x":1}`))
+	gc.Request.Header.Set("Content-Type", "application/json")
+
+	rec, err := StartWithRequestID(gc, cfg, "rid_meta_only")
+	if err != nil {
+		t.Fatalf("StartWithRequestID error: %v", err)
+	}
+	t.Cleanup(func() { rec.Close() })
+
+	AppendOriginRequest(gc, []byte(`{"x":1}`), false, false)
+	AppendUpstreamRequest(gc, "POST", "https://example.com/x", map[string][]string{"Content-Type": {"application/json"}}, []byte(`{"u":1}`), false, false)
+	AppendUpstreamResponse(gc, "200 OK", map[string][]string{"Content-Type": {"application/json"}}, []byte(`{"u":1}`), false, false)
+	AppendProxyResponse(gc, []byte(`{"p":1}`), false, false, 200)
+	AppendStreamSummary(gc, 10, "", false)
+
+	rec.Close()
+	b, err := os.ReadFile(filepath.Join(tmp, "rid_meta_only.log"))
+	if err != nil {
+		t.Fatalf("read dump file: %v", err)
+	}
+	s := string(b)
+	if !strings.Contains(s, "=== META ===") {
+		t.Fatalf("expected meta section: %s", s)
+	}
+	if strings.Contains(s, "=== ORIGIN REQUEST ===") ||
+		strings.Contains(s, "=== UPSTREAM REQUEST ===") ||
+		strings.Contains(s, "=== UPSTREAM RESPONSE ===") ||
+		strings.Contains(s, "=== PROXY RESPONSE ===") ||
+		strings.Contains(s, "=== STREAM ===") {
+		t.Fatalf("unexpected non-meta section: %s", s)
+	}
+}
+
+func TestRecorderSections_DisableResponsesAndStream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tmp := t.TempDir()
+	cfg := Config{
+		Enabled:     true,
+		Dir:         tmp,
+		FilePath:    "{{.request_id}}.log",
+		MaxBytes:    1024 * 1024,
+		MaskSecrets: true,
+		Sections:    []string{"meta", "origin_request", "upstream_request"},
+	}
+
+	w := httptest.NewRecorder()
+	gc, _ := gin.CreateTestContext(w)
+	gc.Request = httptest.NewRequest("POST", "/v1/test", strings.NewReader(`{"x":1}`))
+	gc.Request.Header.Set("Content-Type", "application/json")
+
+	rec, err := StartWithRequestID(gc, cfg, "rid_disable_resp")
+	if err != nil {
+		t.Fatalf("StartWithRequestID error: %v", err)
+	}
+	t.Cleanup(func() { rec.Close() })
+
+	AppendOriginRequest(gc, []byte(`{"x":1}`), false, false)
+	AppendUpstreamRequest(gc, "POST", "https://example.com/x", map[string][]string{"Content-Type": {"application/json"}}, []byte(`{"u":1}`), false, false)
+	AppendUpstreamResponse(gc, "200 OK", map[string][]string{"Content-Type": {"application/json"}}, []byte(`{"u":1}`), false, false)
+	AppendProxyResponse(gc, []byte(`{"p":1}`), false, false, 200)
+	AppendStreamSummary(gc, 10, "", false)
+
+	rec.Close()
+	b, err := os.ReadFile(filepath.Join(tmp, "rid_disable_resp.log"))
+	if err != nil {
+		t.Fatalf("read dump file: %v", err)
+	}
+	s := string(b)
+	if !strings.Contains(s, "=== ORIGIN REQUEST ===") || !strings.Contains(s, "=== UPSTREAM REQUEST ===") {
+		t.Fatalf("expected request sections: %s", s)
+	}
+	if strings.Contains(s, "=== UPSTREAM RESPONSE ===") || strings.Contains(s, "=== PROXY RESPONSE ===") || strings.Contains(s, "=== STREAM ===") {
+		t.Fatalf("unexpected disabled sections: %s", s)
+	}
+}
+
+func TestStartWithRequestID_InvalidSections(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	w := httptest.NewRecorder()
+	gc, _ := gin.CreateTestContext(w)
+	gc.Request = httptest.NewRequest("POST", "/v1/test", strings.NewReader(`{"x":1}`))
+
+	_, err := StartWithRequestID(gc, Config{
+		Enabled:     true,
+		Dir:         t.TempDir(),
+		FilePath:    "{{.request_id}}.log",
+		MaxBytes:    1024,
+		MaskSecrets: true,
+		Sections:    []string{"meta", "bad_section"},
+	}, "rid_invalid_section")
+	if err == nil {
+		t.Fatalf("expected invalid sections error")
+	}
+}

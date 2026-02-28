@@ -2,8 +2,10 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -16,6 +18,15 @@ const (
 	defaultAccessLogRotateMaxBackups = 14
 	defaultAccessLogRotateMaxAgeDays = 14
 )
+
+var allowedTrafficDumpSections = []string{
+	"meta",
+	"origin_request",
+	"upstream_request",
+	"upstream_response",
+	"proxy_response",
+	"stream",
+}
 
 type AccessLogRotateConfig struct {
 	Enabled    bool `yaml:"enabled"`
@@ -143,11 +154,12 @@ type Config struct {
 	UsageEstimation usageestimate.Config `yaml:"usage_estimation"`
 
 	TrafficDump struct {
-		Enabled     bool   `yaml:"enabled"`
-		Dir         string `yaml:"dir"`
-		FilePath    string `yaml:"file_path"`
-		MaxBytes    int    `yaml:"max_bytes"`
-		MaskSecrets bool   `yaml:"mask_secrets"`
+		Enabled     bool     `yaml:"enabled"`
+		Dir         string   `yaml:"dir"`
+		FilePath    string   `yaml:"file_path"`
+		MaxBytes    int      `yaml:"max_bytes"`
+		MaskSecrets bool     `yaml:"mask_secrets"`
+		Sections    []string `yaml:"sections"`
 	} `yaml:"traffic_dump"`
 
 	Logging LoggingConfig `yaml:"logging"`
@@ -312,6 +324,9 @@ func applyEnvTrafficDumpOverrides(cfg *Config) {
 		cfg.TrafficDump.MaxBytes = n
 	}
 	cfg.TrafficDump.MaskSecrets = envBool("ONR_TRAFFIC_DUMP_MASK_SECRETS", cfg.TrafficDump.MaskSecrets)
+	if v := strings.TrimSpace(os.Getenv("ONR_TRAFFIC_DUMP_SECTIONS")); v != "" {
+		cfg.TrafficDump.Sections = splitCommaTrim(v)
+	}
 }
 
 func applyEnvLoggingOverrides(cfg *Config) {
@@ -382,6 +397,11 @@ func validate(cfg *Config) error {
 	if cfg.TrafficDump.MaxBytes < 0 {
 		return errors.New("traffic_dump.max_bytes must be non-negative")
 	}
+	normalizedSections, err := normalizeTrafficDumpSections(cfg.TrafficDump.Sections)
+	if err != nil {
+		return err
+	}
+	cfg.TrafficDump.Sections = normalizedSections
 	if cfg.OAuth.TokenPersist.Enabled && strings.TrimSpace(cfg.OAuth.TokenPersist.Dir) == "" {
 		return errors.New("oauth.token_persist.dir is required when oauth.token_persist.enabled=true")
 	}
@@ -433,6 +453,45 @@ func envBool(name string, def bool) bool {
 	default:
 		return def
 	}
+}
+
+func normalizeTrafficDumpSections(sections []string) ([]string, error) {
+	if len(sections) == 0 {
+		return nil, nil
+	}
+	normalized := make([]string, 0, len(sections))
+	seen := make(map[string]struct{}, len(sections))
+	for _, raw := range sections {
+		sec := strings.ToLower(strings.TrimSpace(raw))
+		if sec == "" {
+			continue
+		}
+		if !slices.Contains(allowedTrafficDumpSections, sec) {
+			return nil, fmt.Errorf("traffic_dump.sections contains unsupported section %q (allowed: %s)", raw, strings.Join(allowedTrafficDumpSections, ","))
+		}
+		if _, ok := seen[sec]; ok {
+			continue
+		}
+		seen[sec] = struct{}{}
+		normalized = append(normalized, sec)
+	}
+	if len(normalized) == 0 {
+		return nil, nil
+	}
+	return normalized, nil
+}
+
+func splitCommaTrim(v string) []string {
+	parts := strings.Split(v, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		s := strings.TrimSpace(p)
+		if s == "" {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
 }
 
 var envProviderProxyPattern = regexp.MustCompile(`^ONR_UPSTREAM_PROXY_([A-Z0-9_]+)$`)

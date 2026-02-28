@@ -21,9 +21,25 @@ import (
 
 const (
 	ctxKeyRecorder = "onr.traffic_dump_recorder"
+
+	sectionMeta            = "meta"
+	sectionOriginRequest   = "origin_request"
+	sectionUpstreamRequest = "upstream_request"
+	sectionUpstreamResp    = "upstream_response"
+	sectionProxyResponse   = "proxy_response"
+	sectionStream          = "stream"
 )
 
 var imageB64FieldRegex = regexp.MustCompile(`"(b64_json|image|mask)"\s*:\s*"[^"]*"`)
+
+var allTrafficDumpSections = map[string]struct{}{
+	sectionMeta:            {},
+	sectionOriginRequest:   {},
+	sectionUpstreamRequest: {},
+	sectionUpstreamResp:    {},
+	sectionProxyResponse:   {},
+	sectionStream:          {},
+}
 
 type Config struct {
 	Enabled     bool
@@ -31,15 +47,17 @@ type Config struct {
 	FilePath    string
 	MaxBytes    int
 	MaskSecrets bool
+	Sections    []string
 }
 
 type Recorder struct {
-	mu       sync.Mutex
-	f        *os.File
-	maxBytes int
-	mask     bool
-	closed   bool
-	err      error
+	mu              sync.Mutex
+	f               *os.File
+	maxBytes        int
+	mask            bool
+	enabledSections map[string]struct{}
+	closed          bool
+	err             error
 }
 
 func Enabled(cfg Config) bool { return cfg.Enabled }
@@ -101,6 +119,10 @@ func startWithRequestIDAndHeaderKey(c *gin.Context, cfg Config, requestID string
 	if cfg.MaxBytes < 0 {
 		return nil, errors.New("traffic_dump.max_bytes must be non-negative")
 	}
+	enabledSections, err := normalizeSections(cfg.Sections)
+	if err != nil {
+		return nil, err
+	}
 
 	rid := strings.TrimSpace(requestID)
 	headerKey = requestid.ResolveHeaderKey(headerKey)
@@ -138,25 +160,28 @@ func startWithRequestIDAndHeaderKey(c *gin.Context, cfg Config, requestID string
 	}
 
 	r := &Recorder{
-		f:        f,
-		maxBytes: cfg.MaxBytes,
-		mask:     cfg.MaskSecrets,
+		f:               f,
+		maxBytes:        cfg.MaxBytes,
+		mask:            cfg.MaskSecrets,
+		enabledSections: enabledSections,
 	}
 	c.Set(ctxKeyRecorder, r)
 
-	r.writeLine("=== META ===")
-	r.writeLine(fmt.Sprintf("time=%s", time.Now().Format(time.RFC3339)))
-	r.writeLine(fmt.Sprintf("request_id=%s", rid))
-	r.writeLine(fmt.Sprintf("method=%s", c.Request.Method))
-	r.writeLine(fmt.Sprintf("path=%s", maskURLIfNeeded(c.Request.URL.String(), r.mask)))
-	r.writeLine(fmt.Sprintf("client_ip=%s", c.ClientIP()))
-	r.writeLine("headers:")
-	for k, vals := range c.Request.Header {
-		for _, v := range vals {
-			r.writeLine(fmt.Sprintf("  %s: %s", k, maskIfNeeded(k, v, r.mask)))
+	if r.sectionEnabled(sectionMeta) {
+		r.writeLine("=== META ===")
+		r.writeLine(fmt.Sprintf("time=%s", time.Now().Format(time.RFC3339)))
+		r.writeLine(fmt.Sprintf("request_id=%s", rid))
+		r.writeLine(fmt.Sprintf("method=%s", c.Request.Method))
+		r.writeLine(fmt.Sprintf("path=%s", maskURLIfNeeded(c.Request.URL.String(), r.mask)))
+		r.writeLine(fmt.Sprintf("client_ip=%s", c.ClientIP()))
+		r.writeLine("headers:")
+		for k, vals := range c.Request.Header {
+			for _, v := range vals {
+				r.writeLine(fmt.Sprintf("  %s: %s", k, maskIfNeeded(k, v, r.mask)))
+			}
 		}
+		r.writeLine("")
 	}
-	r.writeLine("")
 
 	return r, nil
 }
@@ -276,6 +301,38 @@ func (r *Recorder) setErrLocked(err error) {
 	r.err = err
 }
 
+func (r *Recorder) sectionEnabled(section string) bool {
+	if r == nil {
+		return false
+	}
+	if len(r.enabledSections) == 0 {
+		return true
+	}
+	_, ok := r.enabledSections[section]
+	return ok
+}
+
+func normalizeSections(raw []string) (map[string]struct{}, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	enabled := make(map[string]struct{}, len(raw))
+	for _, secRaw := range raw {
+		sec := strings.ToLower(strings.TrimSpace(secRaw))
+		if sec == "" {
+			continue
+		}
+		if _, ok := allTrafficDumpSections[sec]; !ok {
+			return nil, fmt.Errorf("traffic_dump.sections contains unsupported section %q", secRaw)
+		}
+		enabled[sec] = struct{}{}
+	}
+	if len(enabled) == 0 {
+		return nil, nil
+	}
+	return enabled, nil
+}
+
 func maskIfNeeded(key, val string, on bool) string {
 	if !on {
 		return val
@@ -369,6 +426,9 @@ func redactImageBase64Fields(body []byte) []byte {
 
 func AppendOriginRequest(c *gin.Context, body []byte, binary bool, truncated bool) {
 	if r := FromContext(c); r != nil {
+		if !r.sectionEnabled(sectionOriginRequest) {
+			return
+		}
 		ct := ""
 		path := ""
 		if c != nil && c.Request != nil && c.Request.URL != nil {
@@ -397,6 +457,9 @@ func AppendUpstreamRequest(
 	truncated bool,
 ) {
 	if r := FromContext(c); r != nil {
+		if !r.sectionEnabled(sectionUpstreamRequest) {
+			return
+		}
 		r.writeLine("=== UPSTREAM REQUEST ===")
 		r.writeLine(fmt.Sprintf("%s %s", method, maskURLIfNeeded(url, r.mask)))
 		ct := ""
@@ -434,6 +497,9 @@ func AppendUpstreamResponse(
 	truncated bool,
 ) {
 	if r := FromContext(c); r != nil {
+		if !r.sectionEnabled(sectionUpstreamResp) {
+			return
+		}
 		r.writeLine("=== UPSTREAM RESPONSE ===")
 		r.writeLine(statusLine)
 		ct := ""
@@ -464,6 +530,9 @@ func AppendUpstreamResponse(
 
 func AppendProxyResponse(c *gin.Context, body []byte, binary bool, truncated bool, statusCode int) {
 	if r := FromContext(c); r != nil {
+		if !r.sectionEnabled(sectionProxyResponse) {
+			return
+		}
 		r.writeLine("=== PROXY RESPONSE ===")
 		r.writeLine(fmt.Sprintf("status=%d", statusCode))
 		r.writeLine("")
@@ -491,6 +560,9 @@ func AppendProxyResponse(c *gin.Context, body []byte, binary bool, truncated boo
 // It is intentionally generic, so both passthrough and transformed streams can reuse it.
 func AppendStreamSummary(c *gin.Context, bytesCopied int64, errMsg string, ignoredClientDisconnect bool) {
 	if r := FromContext(c); r != nil {
+		if !r.sectionEnabled(sectionStream) {
+			return
+		}
 		r.writeLine("=== STREAM ===")
 		r.writeLine(fmt.Sprintf("bytes_copied=%d", bytesCopied))
 		if strings.TrimSpace(errMsg) != "" {

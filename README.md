@@ -492,14 +492,16 @@ Configuration (config or env):
 - `traffic_dump.file_path` / `ONR_TRAFFIC_DUMP_FILE_PATH` (template supports `{{.request_id}}`)
 - `traffic_dump.max_bytes` / `ONR_TRAFFIC_DUMP_MAX_BYTES`
 - `traffic_dump.mask_secrets` / `ONR_TRAFFIC_DUMP_MASK_SECRETS`
+- `traffic_dump.sections` / `ONR_TRAFFIC_DUMP_SECTIONS` (comma-separated allowlist; empty means all sections)
 
-Captured sections:
+Captured sections (default: all; configurable via `traffic_dump.sections`):
 
 - `=== META ===`
 - `=== ORIGIN REQUEST ===`
 - `=== UPSTREAM REQUEST ===`
 - `=== UPSTREAM RESPONSE ===`
 - `=== PROXY RESPONSE ===`
+- `=== STREAM ===`
 
 ## System Log (runtime)
 
