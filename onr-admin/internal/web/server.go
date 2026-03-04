@@ -25,7 +25,7 @@ import (
 const (
 	defaultProvidersDir = "./config/providers"
 	defaultDumpsDir     = "./dumps"
-	defaultListen       = "127.0.0.1:3310"
+	defaultListen       = "0.0.0.0:3310"
 	defaultAPIBaseURL   = "http://127.0.0.1:3300"
 	envAPIBaseURL       = "ONR_ADMIN_WEB_CURL_API_BASE_URL"
 	envListen           = "ONR_ADMIN_WEB_LISTEN"

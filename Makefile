@@ -19,6 +19,18 @@ help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
 
 run: ## Run the application locally
+	@if [ ! -f ./onr.yaml ]; then \
+		echo "onr.yaml not found, copying from config/onr.example.yaml"; \
+		cp ./config/onr.example.yaml ./onr.yaml; \
+	fi
+	@if [ ! -f ./keys.yaml ]; then \
+		echo "keys.yaml not found, copying from config/keys.example.yaml"; \
+		cp ./config/keys.example.yaml ./keys.yaml; \
+	fi
+	@if [ ! -f ./models.yaml ]; then \
+		echo "models.yaml not found, copying from config/models.example.yaml"; \
+		cp ./config/models.example.yaml ./models.yaml; \
+	fi
 	GIN_MODE=release go run -ldflags "$(LDFLAGS)" ./cmd/onr --config ./onr.yaml
 
 build: ## Build the main binary

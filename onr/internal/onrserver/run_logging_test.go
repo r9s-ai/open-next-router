@@ -123,8 +123,8 @@ func TestResolveListenURL(t *testing.T) {
 		in   string
 		want string
 	}{
-		{in: ":3300", want: "http://127.0.0.1:3300"},
-		{in: "0.0.0.0:3300", want: "http://127.0.0.1:3300"},
+		{in: ":3300", want: "http://0.0.0.0:3300"},
+		{in: "0.0.0.0:3300", want: "http://0.0.0.0:3300"},
 		{in: "127.0.0.1:3300", want: "http://127.0.0.1:3300"},
 		{in: "https://a.b", want: "https://a.b"},
 	}

@@ -162,7 +162,7 @@ Notes:
 Start local web editor for provider DSL configs.
 
 ```bash
-onr-admin web --config ./onr.yaml --listen 127.0.0.1:3310
+onr-admin web --config ./onr.yaml --listen 0.0.0.0:3310
 ```
 
 Then open `http://127.0.0.1:3310` in your browser.
@@ -176,7 +176,7 @@ export ONR_ADMIN_WEB_CURL_API_BASE_URL="http://127.0.0.1:3300"
 Optional env for web listen address (used when `--listen` is not provided):
 
 ```bash
-export ONR_ADMIN_WEB_LISTEN="127.0.0.1:3310"
+export ONR_ADMIN_WEB_LISTEN="0.0.0.0:3310"
 ```
 
 Behavior:

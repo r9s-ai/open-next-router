@@ -352,14 +352,14 @@ func resolveListenURL(listen string) string {
 		return v
 	}
 	if strings.HasPrefix(v, ":") {
-		return "http://127.0.0.1" + v
+		return "http://0.0.0.0" + v
 	}
 	host, port, err := net.SplitHostPort(v)
 	if err == nil {
 		h := strings.TrimSpace(host)
 		switch h {
 		case "", "0.0.0.0", "::", "[::]":
-			h = "127.0.0.1"
+			h = "0.0.0.0"
 		}
 		if strings.Contains(h, ":") && !strings.HasPrefix(h, "[") && !strings.HasSuffix(h, "]") {
 			h = "[" + h + "]"
