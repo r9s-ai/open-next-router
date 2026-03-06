@@ -1,4 +1,4 @@
-"""Anthropic provider functions."""
+"""Anthropic /v1/messages endpoint functions."""
 
 from anthropic import Anthropic
 
@@ -24,5 +24,4 @@ def stream_chat(prompt, model, api_key, base_url, max_tokens=1024):
         max_tokens=max_tokens,
         messages=[{"role": "user", "content": prompt}],
     ) as stream:
-        for text in stream.text_stream:
-            yield text
+        yield from stream.text_stream

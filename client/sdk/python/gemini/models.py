@@ -1,11 +1,16 @@
-"""Gemini provider functions."""
+"""Gemini models endpoint functions.
+
+Used by CLI command: ``cli.py gemini models ...``.
+Used by CLI command: ``cli.py gemini chats ...``.
+Upstream API family: ``models.generate_content``, ``models.generate_content_stream``,
+and chats streaming calls routed under models family upstream.
+"""
 
 from google import genai
 from google.genai import types
 
 
 def create_client(api_key, base_url):
-    """Create Gemini client with API key and base URL."""
     return genai.Client(api_key=api_key, http_options={"base_url": base_url})
 
 
@@ -25,7 +30,7 @@ def stream_chat(prompt, model, api_key, base_url):
         contents=prompt,
     )
     for chunk in response:
-        if hasattr(chunk, 'text') and chunk.text:
+        if hasattr(chunk, "text") and chunk.text:
             yield chunk.text
 
 
@@ -49,7 +54,6 @@ def stream_chat_multimodal(prompt, model, api_key, base_url, response_modalities
             if part.text is not None:
                 yield {"type": "text", "text": part.text}
                 continue
-
             image = part.as_image()
             if image is not None:
                 yield {"type": "image", "image": image}
