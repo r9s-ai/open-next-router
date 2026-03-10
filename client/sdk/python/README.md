@@ -56,7 +56,7 @@ python cli.py anthropic messages "Hello" --stream -v
 # Gemini
 python cli.py gemini models "Hello" --model gemini-2.5-flash
 python cli.py gemini models "Hello" --stream -v
-python cli.py gemini chats "Draw a guitar" --response-modality TEXT --response-modality IMAGE
+python cli.py gemini chats "Draw a guitar" --response_modalities TEXT,IMAGE
 ```
 
 ### Options
@@ -66,7 +66,7 @@ python cli.py gemini chats "Draw a guitar" --response-modality TEXT --response-m
 | `--stream` | Enable streaming output |
 | `--model` | Specify model (optional) |
 | `-v, --verbose` | Show detailed metrics (provider, model, elapsed_sec, text_tps, status, etc.) |
-| `--response-modality` | Gemini chats only, repeatable option for modalities |
+| `--response_modalities` | Gemini chats only, comma-separated modalities |
 | `--image-output-dir` | Image output directory (Gemini multimodal) |
 
 OpenAI default models:
@@ -115,8 +115,7 @@ eval "$(python cli.py completion --shell zsh)"
 ```bash
 # Gemini multimodal streaming
 python cli.py gemini chats "Draw a guitar" \
-  --response-modality TEXT \
-  --response-modality IMAGE \
+  --response_modalities TEXT,IMAGE \
   --model gemini-3-pro-image-preview \
   --image-output-dir . -v
 ```

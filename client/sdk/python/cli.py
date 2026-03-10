@@ -363,11 +363,9 @@ def gemini_models(prompt, model, stream, verbose):
 @click.argument("prompt")
 @click.option("--model", "-m", default="gemini-3-pro-image-preview", help="Model name")
 @click.option(
-    "--response-modality",
-    "response_modalities",
-    multiple=True,
-    default=("TEXT", "IMAGE"),
-    help="Response modality, repeatable. Example: --response-modality TEXT --response-modality IMAGE",
+    "--response_modalities",
+    default="TEXT,IMAGE",
+    help="Comma-separated response modalities. Example: --response_modalities TEXT,IMAGE",
 )
 @click.option(
     "--image-output-dir",
@@ -386,12 +384,13 @@ def gemini_chats(prompt, model, response_modalities, image_output_dir, verbose):
         _validate_environment()
         output_dir = Path(image_output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
+        modalities = [item.strip() for item in response_modalities.split(",") if item.strip()]
         for event in GEMINI_MODELS_PROVIDER.stream_chat_multimodal(
             prompt,
             model,
             ONR_API_KEY,
             ONR_BASE_URL,
-            list(response_modalities),
+            modalities,
         ):
             if event["type"] == "text":
                 print(event["text"], end="")
