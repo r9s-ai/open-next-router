@@ -4,5 +4,6 @@ toolchain go1.25.3
 
 use (
 	.
+	./client/sdk/golang
 	./onr-core
 )

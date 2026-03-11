@@ -37,3 +37,6 @@ deploy/observability/loki-data/
 
 # test provider conf
 config/providers/*-test.conf
+
+.env
+.env.*
