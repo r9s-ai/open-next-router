@@ -1,0 +1,13 @@
+export { createConfigFromEnv, DEFAULT_BASE_URL } from "./config";
+export type { ClientConfig } from "./config";
+export { formatRequestMetrics } from "./metrics";
+export type { RequestMetrics } from "./metrics";
+export { createEmbedding } from "./openai/embeddings";
+export type { EmbeddingResult } from "./openai/embeddings";
+export { chat as openAIChat, streamChat as openAIStreamChat } from "./openai/chat_completions";
+export { createResponse as openAICreateResponse, streamResponse as openAIStreamResponse } from "./openai/responses";
+export { chat as anthropicChat, streamChat as anthropicStreamChat } from "./anthropic/messages";
+export { chat as geminiChat, streamChat as geminiStreamChat } from "./gemini/models";
+export { streamChatMultimodal } from "./gemini/chats";
+export type { StreamEvent } from "./gemini/chats";
+export { createCLI, run } from "./cli";
