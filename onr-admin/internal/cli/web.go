@@ -20,6 +20,17 @@ func newWebCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "web",
 		Short: "Start web UI for provider config validate/save",
+		Long: strings.TrimSpace(`
+Start web UI for provider config validate/save.
+
+Environment variables:
+  ONR_ADMIN_WEB_LISTEN
+    HTTP listen address used when --listen is not set.
+
+  ONR_ADMIN_WEB_CURL_API_BASE_URL
+    Default API base URL prefilled in the web UI curl/test request area.
+    Default: http://127.0.0.1:3300
+`),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runWebWithOptions(opts)
 		},
