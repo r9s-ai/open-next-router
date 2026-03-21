@@ -394,7 +394,9 @@ func copyHeadersToClient(gc *gin.Context, hdr http.Header, didTransform bool) {
 		if strings.EqualFold(k, "Content-Encoding") && didTransform {
 			continue
 		}
-		gc.Writer.Header().Set(k, vs[0])
+		for _, item := range vs {
+			gc.Writer.Header().Add(k, item)
+		}
 	}
 }
 
