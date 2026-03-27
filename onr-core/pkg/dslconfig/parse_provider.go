@@ -329,6 +329,10 @@ func parseMetricsPhase(s *scanner, usage *UsageExtractConfig, finish *FinishReas
 				if err := parseUsageExtractStmt(s, usage); err != nil {
 					return err
 				}
+			case "usage_fact":
+				if err := parseUsageFactStmt(s, usage); err != nil {
+					return err
+				}
 			case "input_tokens_expr", "output_tokens_expr", "cache_read_tokens_expr", "cache_write_tokens_expr", "total_tokens_expr",
 				"input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "total_tokens":
 				if err := parseUsageExtractAssignStmt(s, usage, tok.text); err != nil {
@@ -485,6 +489,183 @@ func parseUsageExtractAssignStmt(s *scanner, cfg *UsageExtractConfig, key string
 		cfg.TotalTokensExpr = expr
 	}
 	return nil
+}
+
+func parseUsageFactStmt(s *scanner, cfg *UsageExtractConfig) error {
+	// usage_fact <dimension> <unit> <key>=<value>...;
+	dimTok := s.nextNonTrivia()
+	if dimTok.kind == tokLBrace {
+		return s.errAt(dimTok, "usage_fact does not use braces")
+	}
+	dimension, err := parseUsageFactScalar(dimTok, "usage_fact dimension")
+	if err != nil {
+		return err
+	}
+	unitTok := s.nextNonTrivia()
+	unit, err := parseUsageFactScalar(unitTok, "usage_fact unit")
+	if err != nil {
+		return err
+	}
+	fact := usageFactConfig{
+		Dimension: dimension,
+		Unit:      unit,
+		Attrs:     map[string]string{},
+	}
+	if strings.TrimSpace(fact.Dimension) == "" || strings.TrimSpace(fact.Unit) == "" {
+		return s.errAt(unitTok, "usage_fact requires both dimension and unit")
+	}
+	primitiveSet := false
+	for {
+		tok := s.nextNonTrivia()
+		switch tok.kind {
+		case tokEOF:
+			return s.errAt(tok, "unexpected EOF in usage_fact")
+		case tokSemicolon:
+			if !primitiveSet {
+				return s.errAt(tok, "usage_fact requires one of path, count_path, sum_path or expr")
+			}
+			if !usageFactKeyAllowed(fact.Dimension, fact.Unit) {
+				return s.errAt(tok, "usage_fact dimension/unit not allowed: "+usageFactKeyString(normalizeUsageFactKey(fact.Dimension, fact.Unit)))
+			}
+			cfg.facts = append(cfg.facts, fact)
+			return nil
+		case tokIdent:
+			key := tok.text
+			if err := consumeEquals(s); err != nil {
+				return err
+			}
+			valTok := s.nextNonTrivia()
+			if handled, err := parseUsageFactPrimitiveOption(s, tok, key, valTok, &fact, &primitiveSet); handled {
+				if err != nil {
+					return err
+				}
+				continue
+			}
+			if err := parseUsageFactMetaOption(s, tok, key, valTok, &fact); err != nil {
+				return err
+			}
+		default:
+			return s.errAt(tok, "expected usage_fact option or ';'")
+		}
+	}
+}
+
+func parseUsageFactPrimitiveOption(s *scanner, keyTok token, key string, valTok token, fact *usageFactConfig, primitiveSet *bool) (bool, error) {
+	switch key {
+	case "path", "count_path", "sum_path", "expr":
+	default:
+		return false, nil
+	}
+	if *primitiveSet {
+		return true, s.errAt(keyTok, "usage_fact allows only one of path, count_path, sum_path or expr")
+	}
+	val, err := parseUsageFactStringValue(s, valTok, key)
+	if err != nil {
+		return true, err
+	}
+	switch key {
+	case "path":
+		fact.Path = val
+	case "count_path":
+		fact.CountPath = val
+	case "sum_path":
+		fact.SumPath = val
+	case "expr":
+		expr, err := ParseUsageExpr(val)
+		if err != nil {
+			return true, fmt.Errorf("invalid usage_fact expr %q: %w", val, err)
+		}
+		fact.Expr = expr
+	}
+	*primitiveSet = true
+	return true, nil
+}
+
+func parseUsageFactMetaOption(s *scanner, keyTok token, key string, valTok token, fact *usageFactConfig) error {
+	switch {
+	case key == "type":
+		val, err := parseUsageFactStringValue(s, valTok, "type")
+		if err != nil {
+			return err
+		}
+		fact.Type = val
+		return nil
+	case key == "status":
+		val, err := parseUsageFactStringValue(s, valTok, "status")
+		if err != nil {
+			return err
+		}
+		fact.Status = val
+		return nil
+	case key == "fallback":
+		val, err := parseUsageFactBoolValue(s, valTok)
+		if err != nil {
+			return err
+		}
+		fact.Fallback = val
+		return nil
+	case strings.HasPrefix(key, "attr."):
+		val, err := parseUsageFactStringValue(s, valTok, key)
+		if err != nil {
+			return err
+		}
+		attrKey := strings.TrimPrefix(key, "attr.")
+		if strings.TrimSpace(attrKey) == "" {
+			return s.errAt(keyTok, "usage_fact attr name is empty")
+		}
+		fact.Attrs[attrKey] = val
+		return nil
+	default:
+		return s.errAt(keyTok, "unsupported usage_fact option "+key)
+	}
+}
+
+func parseUsageFactScalar(tok token, what string) (string, error) {
+	switch tok.kind {
+	case tokIdent, tokString:
+		val := tok.text
+		if tok.kind == tokString {
+			val = unquoteString(tok.text)
+		}
+		val = strings.TrimSpace(val)
+		if val == "" {
+			return "", fmt.Errorf("%s is empty", what)
+		}
+		return val, nil
+	default:
+		return "", fmt.Errorf("%s expects identifier or string", what)
+	}
+}
+
+func parseUsageFactStringValue(s *scanner, tok token, key string) (string, error) {
+	switch tok.kind {
+	case tokString:
+		return strings.TrimSpace(unquoteString(tok.text)), nil
+	case tokIdent:
+		return strings.TrimSpace(tok.text), nil
+	default:
+		return "", s.errAt(tok, key+" expects string literal or identifier")
+	}
+}
+
+func parseUsageFactBoolValue(s *scanner, tok token) (bool, error) {
+	switch tok.kind {
+	case tokIdent:
+		switch strings.ToLower(strings.TrimSpace(tok.text)) {
+		case "true":
+			return true, nil
+		case "false":
+			return false, nil
+		}
+	case tokString:
+		switch strings.ToLower(strings.TrimSpace(unquoteString(tok.text))) {
+		case "true":
+			return true, nil
+		case "false":
+			return false, nil
+		}
+	}
+	return false, s.errAt(tok, "fallback expects true or false")
 }
 
 func parseUpstreamPhase(s *scanner, m *RoutingMatch) error {

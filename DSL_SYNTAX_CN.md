@@ -20,6 +20,7 @@ Provider 配置文件位于本仓库 `config/providers/*.conf`，在启动时（
   - [5.5 response（响应处理）](#55-response响应处理)
   - [5.6 error（错误归一化）](#56-error错误归一化)
   - [5.7 metrics（用量提取--usage）](#57-metrics用量提取--usage)
+    - [5.7.1 usage_fact（推荐的新写法）](#571-usage_fact推荐的新写法)
 - [6. 可用的 Context（表达式变量）](#6-可用的-context表达式变量)
 - [7. 指令参考（nginx 风格）](#7-指令参考nginx-风格)
   - [7.1 顶层指令](#71-顶层指令)
@@ -31,6 +32,7 @@ Provider 配置文件位于本仓库 `config/providers/*.conf`，在启动时（
   - [7.7 response（响应）](#77-response响应)
   - [7.8 error（错误归一化）](#78-error错误归一化)
   - [7.9 metrics（用量提取--usage）](#79-metrics用量提取--usage)
+    - [7.9.1 usage_fact](#791-usage_fact)
 - [8. 内置变量参考](#8-内置变量参考)
 
 ---
@@ -485,6 +487,29 @@ metrics {
 
 - 这些字段都是“可选覆盖项”，同字段重复出现时以后者为准
 
+#### usage_fact（推荐的新写法）
+
+```conf
+metrics {
+  usage_extract custom;
+
+  usage_fact input token path="$.usage.input_tokens";
+  usage_fact output token path="$.usage.output_tokens";
+  usage_fact cache_read token path="$.usage.cache_read_input_tokens";
+
+  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
+  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
+  usage_fact cache_write token path="$.usage.cache_creation_input_tokens" fallback=true;
+}
+```
+
+- `usage_fact` 用于把不同来源的用量统一抽成规范化事实
+- 目前仅在 `usage_extract custom;` 下启用
+- 第一批支持 `path` / `count_path` / `sum_path` / `expr`
+- `attr.ttl` 用于区分 Anthropic 的 `5m` / `1h` cache write
+- `fallback=true` 用于在更具体的事实不存在时回退到总量字段
+- 目前不支持 `source=...`
+
 #### finish_reason_extract
 
 用于从响应 JSON 中提取 `finish_reason`（用于日志 / 计费上报等）。
@@ -906,6 +931,23 @@ Multiple: no
 ```
 
 - 目前支持：`openai` / `anthropic` / `gemini` / `custom`。
+
+#### usage_fact
+
+```text
+Syntax:  usage_fact <dimension> <unit> path|count_path|sum_path|expr ...;
+Default: —
+Context: metrics
+Multiple: yes
+```
+
+- 仅建议配合 `usage_extract custom;` 使用。
+- 第一批支持固定 registry 维度，不开放任意自定义维度。
+- 支持 `path` / `count_path` / `sum_path` / `expr` 四类原语。
+- `count_path` 可搭配 `type` / `status` 过滤。
+- 支持常量属性，如 `attr.ttl="5m"` / `attr.ttl="1h"`。
+- `fallback=true` 表示在同一 `dimension + unit` 没有更具体事实时再生效。
+- 暂不支持 `source=...`。
 
 #### finish_reason_extract
 

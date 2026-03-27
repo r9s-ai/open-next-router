@@ -48,6 +48,8 @@ Examples:
   tools/request.sh /v1/chat/completions --json '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}' --provider openai
   tools/request.sh /v1/chat/completions --json '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}' --stream
   tools/request.sh /v1/chat/completions --json '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"timeout test"}]}' -- --max-time 15
+  tools/request.sh /v1/messages --json '{"model":"claude-haiku-4-5","max_tokens":128,"messages":[{"role":"user","content":"hi"}]}' --provider anthropic
+  tools/request.sh /v1/messages --json '{"model":"claude-haiku-4-5","max_tokens":128,"messages":[{"role":"user","content":"hi"}]}' --stream --provider anthropic
 
   # Embeddings
   tools/request.sh /v1/embeddings --json '{"model":"text-embedding-3-small","input":"hello world"}'

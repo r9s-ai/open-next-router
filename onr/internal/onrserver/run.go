@@ -91,6 +91,7 @@ func Run(cfgPath string) error {
 		ProxyByProvider:          cfg.UpstreamProxies.ByProvider,
 		OAuthTokenPersistEnabled: cfg.OAuth.TokenPersist.Enabled,
 		OAuthTokenPersistDir:     cfg.OAuth.TokenPersist.Dir,
+		SystemLogger:             sysLogger,
 	}
 	pricingResolver, err := pricing.LoadResolver(cfg.Pricing.File, cfg.Pricing.OverridesFile)
 	if err != nil {

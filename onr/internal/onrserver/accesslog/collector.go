@@ -51,6 +51,7 @@ func (c *Collector) Collect(ctx *gin.Context, latency time.Duration) map[string]
 		}
 	}
 	copyContextFieldsBySpec(ctx, out, accessLogContextFieldSpecs)
+	copyUsageExtraFields(ctx, out)
 	return out
 }
 
@@ -59,6 +60,22 @@ func copyContextFieldsBySpec(ctx *gin.Context, dst map[string]any, specs []conte
 		if v, ok := ctx.Get(s.ctxKey); ok {
 			dst[s.logKey] = v
 		}
+	}
+}
+
+func copyUsageExtraFields(ctx *gin.Context, dst map[string]any) {
+	if ctx == nil || len(ctx.Keys) == 0 {
+		return
+	}
+	for k, v := range ctx.Keys {
+		if !strings.HasPrefix(k, "onr.usage_extra.") {
+			continue
+		}
+		logKey := strings.TrimPrefix(k, "onr.usage_extra.")
+		if strings.TrimSpace(logKey) == "" {
+			continue
+		}
+		dst[logKey] = v
 	}
 }
 

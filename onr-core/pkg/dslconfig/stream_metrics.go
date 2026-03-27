@@ -210,6 +210,9 @@ func isAllZeroUsage(u *Usage) bool {
 	if u.InputTokenDetails != nil && (u.InputTokenDetails.CachedTokens != 0 || u.InputTokenDetails.CacheWriteTokens != 0) {
 		return false
 	}
+	if hasNonZeroUsageFlatFields(u.FlatFields) {
+		return false
+	}
 	return true
 }
 
@@ -252,6 +255,7 @@ func mergeUsagePreferNonZero(dst *Usage, src *Usage) {
 			dst.InputTokenDetails.CacheWriteTokens = src.InputTokenDetails.CacheWriteTokens
 		}
 	}
+	mergeUsageFlatFieldsPreferNonZero(dst, src)
 
 	normalizeUsageFields(dst)
 }
@@ -275,5 +279,70 @@ func normalizeUsageFields(u *Usage) {
 	}
 	if u.TotalTokens == 0 && (u.InputTokens > 0 || u.OutputTokens > 0) {
 		u.TotalTokens = u.InputTokens + u.OutputTokens
+	}
+}
+
+func mergeUsageFlatFieldsPreferNonZero(dst *Usage, src *Usage) {
+	if dst == nil || src == nil || len(src.FlatFields) == 0 {
+		return
+	}
+	if dst.FlatFields == nil {
+		dst.FlatFields = map[string]any{}
+	}
+	for k, v := range src.FlatFields {
+		if strings.TrimSpace(k) == "" {
+			continue
+		}
+		if current, ok := dst.FlatFields[k]; ok {
+			currentInt, currentIsNumber := usageFlatFieldInt(current)
+			nextInt, nextIsNumber := usageFlatFieldInt(v)
+			if currentIsNumber && nextIsNumber {
+				if nextInt > 0 || currentInt == 0 {
+					dst.FlatFields[k] = nextInt
+				}
+				continue
+			}
+		}
+		dst.FlatFields[k] = v
+	}
+}
+
+func hasNonZeroUsageFlatFields(fields map[string]any) bool {
+	for _, v := range fields {
+		if n, ok := usageFlatFieldInt(v); ok && n != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func usageFlatFieldInt(v any) (int, bool) {
+	switch n := v.(type) {
+	case int:
+		return n, true
+	case int8:
+		return int(n), true
+	case int16:
+		return int(n), true
+	case int32:
+		return int(n), true
+	case int64:
+		return int(n), true
+	case uint:
+		return int(n), true
+	case uint8:
+		return int(n), true
+	case uint16:
+		return int(n), true
+	case uint32:
+		return int(n), true
+	case uint64:
+		return int(n), true
+	case float32:
+		return int(n), true
+	case float64:
+		return int(n), true
+	default:
+		return 0, false
 	}
 }

@@ -26,6 +26,7 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/trafficdump"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/usageestimate"
 	"github.com/r9s-ai/open-next-router/onr/internal/auth"
+	"github.com/r9s-ai/open-next-router/onr/internal/logx"
 )
 
 const (
@@ -80,6 +81,8 @@ type Client struct {
 	pricingMu      sync.RWMutex
 	pricing        *pricing.Resolver
 	pricingEnabled bool
+
+	SystemLogger *logx.SystemLogger
 }
 
 type proxyCtx struct {
@@ -173,8 +176,9 @@ func (c *Client) handleNonStreamResponse(
 
 	usage := map[string]any(nil)
 	usageStage := ""
+	var upstreamUsage *dslconfig.Usage
 	if estimateEnabled {
-		usage, usageStage = estimateNonStreamUsage(c.UsageEst, pf, m, api, model, reqBody, metricsBody)
+		usage, usageStage, upstreamUsage = estimateNonStreamUsage(c.UsageEst, pf, m, api, model, reqBody, metricsBody)
 	}
 	finishReason := ""
 	if estimateEnabled {
@@ -184,6 +188,7 @@ func (c *Client) handleNonStreamResponse(
 	if estimateEnabled {
 		cost = c.computeCost(m, provider, key.Name, usage)
 	}
+	c.logUsageFactsDebug(gc, provider, api, stream, model, usageStage, upstreamUsage)
 
 	respOutBody, outCT, didTransform, err = applyNonStreamResponseJSONOps(respOutBody, outCT, resp, m, respDir.JSONOps, didTransform)
 	if err != nil {
@@ -291,7 +296,7 @@ func estimateNonStreamUsage(
 	model string,
 	reqBody []byte,
 	metricsBody []byte,
-) (usage map[string]any, usageStage string) {
+) (usage map[string]any, usageStage string, upstreamUsage *dslconfig.Usage) {
 	if cfg, ok := pf.Usage.Select(meta); ok {
 		u, _, err := dslconfig.ExtractUsage(meta, cfg, metricsBody)
 		if err == nil && u != nil {
@@ -302,7 +307,7 @@ func estimateNonStreamUsage(
 				RequestBody:   reqBody,
 				ResponseBody:  metricsBody,
 			})
-			return usageMap(out.Usage), out.Stage
+			return usageMap(out.Usage), out.Stage, u
 		}
 	}
 	out := usageestimate.Estimate(estCfg, usageestimate.Input{
@@ -311,7 +316,7 @@ func estimateNonStreamUsage(
 		RequestBody:  reqBody,
 		ResponseBody: metricsBody,
 	})
-	return usageMap(out.Usage), out.Stage
+	return usageMap(out.Usage), out.Stage, nil
 }
 
 func extractNonStreamFinishReason(pf dslconfig.ProviderFile, meta *dslmeta.Meta, metricsBody []byte) string {
@@ -467,6 +472,7 @@ func (c *Client) handleStreamResponse(
 		usageStage = out.Stage
 		cost = c.computeCost(m, provider, key.Name, usage)
 	}
+	c.logUsageFactsDebug(gc, provider, api, true, model, usageStage, upstreamUsage)
 	ttftMs, tps := streamPerfMetrics(start, firstWriteAt, usage)
 	return &Result{
 		Provider:       provider,
@@ -484,6 +490,40 @@ func (c *Client) handleStreamResponse(
 		TTFTMs:         ttftMs,
 		TPS:            tps,
 	}, nil
+}
+
+func (c *Client) logUsageFactsDebug(
+	gc *gin.Context,
+	provider string,
+	api string,
+	stream bool,
+	model string,
+	usageStage string,
+	usage *dslconfig.Usage,
+) {
+	if c == nil || c.SystemLogger == nil || usage == nil || len(usage.DebugFacts) == 0 {
+		return
+	}
+	payload, err := json.Marshal(usage.DebugFacts)
+	if err != nil {
+		return
+	}
+	fields := map[string]any{
+		"provider":    strings.TrimSpace(provider),
+		"api":         strings.TrimSpace(api),
+		"stream":      stream,
+		"model":       strings.TrimSpace(model),
+		"usage_stage": strings.TrimSpace(usageStage),
+		"usage_facts": string(payload),
+	}
+	if gc != nil {
+		if rid := strings.TrimSpace(gc.GetString("X-Onr-Request-Id")); rid != "" {
+			fields["request_id"] = rid
+		} else if rid := strings.TrimSpace(gc.GetString("X-Request-Id")); rid != "" {
+			fields["request_id"] = rid
+		}
+	}
+	c.SystemLogger.Debug(logx.SystemCategoryServer, "usage facts extracted", fields)
 }
 
 func streamPerfMetrics(start time.Time, firstWriteAt time.Time, usage map[string]any) (int64, float64) {
@@ -949,6 +989,15 @@ func usageMap(u *dslconfig.Usage) map[string]any {
 	if u.InputTokenDetails != nil {
 		m["cache_read_tokens"] = u.InputTokenDetails.CachedTokens
 		m["cache_write_tokens"] = u.InputTokenDetails.CacheWriteTokens
+	}
+	for k, v := range u.FlatFields {
+		if strings.TrimSpace(k) == "" {
+			continue
+		}
+		if _, exists := m[k]; exists {
+			continue
+		}
+		m[k] = v
 	}
 	return m
 }

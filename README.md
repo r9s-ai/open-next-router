@@ -266,6 +266,7 @@ Observability:
     • routing (when available): api, provider, provider_source, model, stream
     • upstream (when available): upstream_status, finish_reason
     • usage (when available): usage_stage, input_tokens, output_tokens, total_tokens, cache_read_tokens, cache_write_tokens, billable_input_tokens
+    • usage extras (when produced by `usage_fact`): flattened fields such as `cache_write_ttl_5m_tokens`, `cache_write_ttl_1h_tokens`, `server_tool_web_search_calls`
     • cost (when enabled/available): cost_total, cost_input, cost_output, cost_cache_read, cost_cache_write, cost_multiplier, cost_model, cost_channel, cost_unit
         - usage_stage=upstream: usage returned by upstream
         - usage_stage=estimate_*: best-effort estimation when upstream usage is missing/zero

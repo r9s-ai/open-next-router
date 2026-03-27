@@ -4,6 +4,7 @@
 VERSION ?= $(shell git describe --tags --match 'v*' --always --dirty 2>/dev/null || echo "dev")
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
+ENV_FILE ?= ./.env
 
 # Build flags
 LDFLAGS := -s -w \
@@ -31,6 +32,9 @@ run: ## Run the application locally
 		echo "models.yaml not found, copying from config/models.example.yaml"; \
 		cp ./config/models.example.yaml ./models.yaml; \
 	fi
+	@set -a; \
+		if [ -f "$(ENV_FILE)" ]; then . "$(ENV_FILE)"; fi; \
+	set +a; \
 	GIN_MODE=release go run -ldflags "$(LDFLAGS)" ./cmd/onr --config ./onr.yaml
 
 build: ## Build the main binary

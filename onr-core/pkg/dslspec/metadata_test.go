@@ -27,6 +27,18 @@ func TestDirectivesByBlock(t *testing.T) {
 	if !found {
 		t.Fatalf("expected oauth_mode in auth block directives")
 	}
+
+	metrics := DirectivesByBlock("metrics")
+	found = false
+	for _, d := range metrics {
+		if d == "usage_fact" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected usage_fact in metrics block directives")
+	}
 }
 
 func TestDirectiveHover(t *testing.T) {
@@ -49,6 +61,13 @@ func TestDirectiveHoverForExprSuffixDirectives(t *testing.T) {
 		if !ok || hover == "" {
 			t.Fatalf("expected hover for %s", name)
 		}
+	}
+}
+
+func TestDirectiveHoverForUsageFact(t *testing.T) {
+	hover, ok := DirectiveHover("usage_fact")
+	if !ok || hover == "" {
+		t.Fatalf("expected hover for usage_fact")
 	}
 }
 
