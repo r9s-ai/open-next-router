@@ -678,3 +678,61 @@ func TestExtractUsage_BuiltinAnthropicUsageFactOverrideCacheWrite(t *testing.T) 
 		t.Fatalf("CacheWriteTokens got %d, want %d", got, want)
 	}
 }
+
+func TestExtractUsage_UsageFactSameDimensionDeclarationOrder(t *testing.T) {
+	cfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		facts: []usageFactConfig{
+			{Dimension: "input", Unit: "token", Path: "$.usage.first_input_tokens"},
+			{Dimension: "input", Unit: "token", Path: "$.usage.second_input_tokens"},
+			{Dimension: "input", Unit: "token", Path: "$.usage.total_input_tokens", Fallback: true},
+			{Dimension: "output", Unit: "token", Path: "$.usage.output_tokens"},
+		},
+	}
+
+	body := []byte(`{
+	  "usage": {
+	    "first_input_tokens": 3,
+	    "second_input_tokens": 4,
+	    "total_input_tokens": 99,
+	    "output_tokens": 5
+	  }
+	}`)
+
+	usage, _, err := ExtractUsage(nil, cfg, body)
+	if err != nil {
+		t.Fatalf("ExtractUsage: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage")
+	}
+	if got, want := usage.InputTokens, 7; got != want {
+		t.Fatalf("InputTokens got %d, want %d", got, want)
+	}
+	inputFacts := make([]UsageFact, 0, len(usage.DebugFacts))
+	for _, fact := range usage.DebugFacts {
+		if fact.Dimension == "input" && fact.Unit == "token" {
+			inputFacts = append(inputFacts, fact)
+		}
+	}
+	if got, want := len(inputFacts), 2; got != want {
+		t.Fatalf("input debug facts len got %d, want %d", got, want)
+	}
+	if got, want := inputFacts[0].Path, "$.usage.first_input_tokens"; got != want {
+		t.Fatalf("first input fact path got %q, want %q", got, want)
+	}
+	if got, want := inputFacts[0].Quantity, 3; got != want {
+		t.Fatalf("first input fact quantity got %d, want %d", got, want)
+	}
+	if got, want := inputFacts[1].Path, "$.usage.second_input_tokens"; got != want {
+		t.Fatalf("second input fact path got %q, want %q", got, want)
+	}
+	if got, want := inputFacts[1].Quantity, 4; got != want {
+		t.Fatalf("second input fact quantity got %d, want %d", got, want)
+	}
+	for _, fact := range inputFacts {
+		if fact.Fallback {
+			t.Fatalf("unexpected fallback fact in matched input facts: %+v", fact)
+		}
+	}
+}

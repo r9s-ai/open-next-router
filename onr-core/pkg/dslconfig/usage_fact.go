@@ -163,6 +163,9 @@ func groupUsageFactConfigs(facts []usageFactConfig) map[usageFactKey][]usageFact
 func evaluateUsageFactGroup(root map[string]any, facts []usageFactConfig) []usageFactEval {
 	out := make([]usageFactEval, 0, len(facts))
 	var specificMatched bool
+	// Ordering rule for the same dimension+unit:
+	// - non-fallback rules run first, preserving declaration order
+	// - fallback rules only run when no non-fallback rule matched, also preserving declaration order
 	for _, fact := range facts {
 		if fact.Fallback {
 			continue

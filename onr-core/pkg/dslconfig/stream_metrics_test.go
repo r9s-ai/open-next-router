@@ -39,7 +39,7 @@ func TestStreamMetricsAggregator_AnthropicSnapshot(t *testing.T) {
 	)
 
 	// message_start: usage under message.usage
-	_ = agg.OnSSEDataJSON([]byte(`{"type":"message_start","message":{"usage":{"input_tokens":3,"output_tokens":0}}}`))
+	_ = agg.OnSSEDataJSON([]byte(`{"type":"message_start","message":{"usage":{"input_tokens":3,"output_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":5},"cache_creation_input_tokens":5}}}`))
 	// message_delta: usage under top-level usage
 	_ = agg.OnSSEDataJSON([]byte(`{"type":"message_delta","usage":{"input_tokens":0,"output_tokens":7,"cache_read_input_tokens":2,"cache_creation_input_tokens":5}}`))
 	// stop_reason appears in delta for anthropic
@@ -54,6 +54,25 @@ func TestStreamMetricsAggregator_AnthropicSnapshot(t *testing.T) {
 	}
 	if cached != 2 {
 		t.Fatalf("unexpected cached tokens: %d", cached)
+	}
+	if u.FlatFields == nil {
+		t.Fatalf("expected FlatFields")
+	}
+	if got, want := u.FlatFields["cache_write_ttl_5m_tokens"], 5; got != want {
+		t.Fatalf("cache_write_ttl_5m_tokens got %v, want %v", got, want)
+	}
+	if len(u.DebugFacts) == 0 {
+		t.Fatalf("expected DebugFacts")
+	}
+	var foundCacheWrite bool
+	for _, fact := range u.DebugFacts {
+		if fact.Dimension == "cache_write" && fact.Quantity == 5 && fact.Attributes["ttl"] == "5m" {
+			foundCacheWrite = true
+			break
+		}
+	}
+	if !foundCacheWrite {
+		t.Fatalf("expected cache_write ttl debug fact, got %+v", u.DebugFacts)
 	}
 	if fr != "end_turn" {
 		t.Fatalf("unexpected finish_reason: %q", fr)

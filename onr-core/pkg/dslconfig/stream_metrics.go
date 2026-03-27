@@ -3,10 +3,10 @@ package dslconfig
 import (
 	"bytes"
 	"encoding/json"
+	"slices"
 	"strings"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
-	"github.com/r9s-ai/open-next-router/onr-core/pkg/jsonutil"
 )
 
 // StreamMetricsAggregator aggregates best-effort metrics from SSE "data:" JSON payloads.
@@ -25,22 +25,12 @@ type StreamMetricsAggregator struct {
 	usageCfg  UsageExtractConfig
 	finishCfg FinishReasonExtractConfig
 
-	// last usage (for non-anthropic)
+	// merged usage snapshot across SSE events
 	lastUsage        *Usage
 	lastCachedTokens int
 
 	// finish reason (first non-empty)
 	finishReason string
-
-	// anthropic snapshot (best-effort per-field merge across events)
-	anthropicSnap usageSnapshot
-}
-
-type usageSnapshot struct {
-	InputTokens      int
-	OutputTokens     int
-	CacheReadTokens  int
-	CacheWriteTokens int
 }
 
 func NewStreamMetricsAggregator(meta *dslmeta.Meta, usageCfg UsageExtractConfig, finishCfg FinishReasonExtractConfig) *StreamMetricsAggregator {
@@ -74,40 +64,12 @@ func (a *StreamMetricsAggregator) OnSSEDataJSON(payload []byte) error {
 		return nil
 	}
 
+	extractPayload := payload
 	if mode == usageModeAnthropic {
-		// Anthropic SSE events may carry usage at:
-		// - obj.usage (message_delta)
-		// - obj.message.usage (message_start)
-		var obj map[string]any
-		if err := json.Unmarshal(payload, &obj); err != nil || obj == nil {
-			return nil
-		}
-		var usage any
-		if u, ok := obj["usage"]; ok {
-			usage = u
-		} else if msg, ok := obj["message"].(map[string]any); ok {
-			usage = msg["usage"]
-		}
-		um, ok := usage.(map[string]any)
-		if !ok || um == nil {
-			return nil
-		}
-		if v := jsonutil.CoerceInt(um["input_tokens"]); v > 0 {
-			a.anthropicSnap.InputTokens = v
-		}
-		if v := jsonutil.CoerceInt(um["output_tokens"]); v > 0 {
-			a.anthropicSnap.OutputTokens = v
-		}
-		if v := jsonutil.CoerceInt(um["cache_read_input_tokens"]); v > 0 {
-			a.anthropicSnap.CacheReadTokens = v
-		}
-		if v := jsonutil.CoerceInt(um["cache_creation_input_tokens"]); v > 0 {
-			a.anthropicSnap.CacheWriteTokens = v
-		}
-		return nil
+		extractPayload = normalizeAnthropicStreamUsagePayload(payload)
 	}
 
-	u, cachedTokens, err := ExtractUsage(a.meta, a.usageCfg, payload)
+	u, cachedTokens, err := ExtractUsage(a.meta, a.usageCfg, extractPayload)
 	if err != nil {
 		// ignore individual event errors
 		return nil
@@ -124,9 +86,9 @@ func (a *StreamMetricsAggregator) OnSSEDataJSON(payload []byte) error {
 	if cachedTokens > 0 {
 		a.lastCachedTokens = cachedTokens
 	}
-	// For custom mode, total_tokens is derived as input+output unless an explicit TotalTokensExpr is set.
-	// In streaming where usage may be split across events, we must recompute total from the merged fields.
-	if strings.EqualFold(strings.TrimSpace(a.usageCfg.Mode), usageModeCustom) && a.usageCfg.TotalTokensExpr == nil && a.lastUsage != nil {
+	// For anthropic/custom split-stream usage, recompute total from the merged fields unless
+	// custom mode explicitly provides TotalTokensExpr.
+	if shouldRecomputeMergedTotal(strings.TrimSpace(a.usageCfg.Mode), a.usageCfg) && a.lastUsage != nil {
 		normalizeUsageFields(a.lastUsage)
 		a.lastUsage.TotalTokens = a.lastUsage.InputTokens + a.lastUsage.OutputTokens
 	}
@@ -172,31 +134,13 @@ func (a *StreamMetricsAggregator) Result() (usage *Usage, cachedTokens int, fini
 	finishReason = strings.TrimSpace(a.finishReason)
 
 	mode := strings.ToLower(strings.TrimSpace(a.usageCfg.Mode))
-	if mode == usageModeAnthropic {
-		s := a.anthropicSnap
-		if s.InputTokens == 0 && s.OutputTokens == 0 && s.CacheReadTokens == 0 && s.CacheWriteTokens == 0 {
-			return nil, 0, finishReason, false
-		}
-		u := &Usage{
-			InputTokens:      s.InputTokens,
-			OutputTokens:     s.OutputTokens,
-			PromptTokens:     s.InputTokens,
-			CompletionTokens: s.OutputTokens,
-			TotalTokens:      s.InputTokens + s.OutputTokens,
-		}
-		if s.CacheReadTokens > 0 || s.CacheWriteTokens > 0 {
-			u.InputTokenDetails = &ResponseTokenDetails{
-				CachedTokens:     s.CacheReadTokens,
-				CacheWriteTokens: s.CacheWriteTokens,
-			}
-		}
-		return u, s.CacheReadTokens, finishReason, !isAllZeroUsage(u)
-	}
-
 	if a.lastUsage == nil || isAllZeroUsage(a.lastUsage) {
 		return nil, 0, finishReason, false
 	}
 	normalizeUsageFields(a.lastUsage)
+	if shouldRecomputeMergedTotal(mode, a.usageCfg) {
+		a.lastUsage.TotalTokens = a.lastUsage.InputTokens + a.lastUsage.OutputTokens
+	}
 	return a.lastUsage, a.lastCachedTokens, finishReason, true
 }
 
@@ -256,8 +200,41 @@ func mergeUsagePreferNonZero(dst *Usage, src *Usage) {
 		}
 	}
 	mergeUsageFlatFieldsPreferNonZero(dst, src)
+	mergeUsageDebugFactsPreferNonZero(dst, src)
 
 	normalizeUsageFields(dst)
+}
+
+func shouldRecomputeMergedTotal(mode string, cfg UsageExtractConfig) bool {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode == usageModeAnthropic {
+		return true
+	}
+	return mode == usageModeCustom && cfg.TotalTokensExpr == nil
+}
+
+func normalizeAnthropicStreamUsagePayload(payload []byte) []byte {
+	var obj map[string]any
+	if err := json.Unmarshal(payload, &obj); err != nil || obj == nil {
+		return payload
+	}
+	if _, ok := obj["usage"]; ok {
+		return payload
+	}
+	msg, ok := obj["message"].(map[string]any)
+	if !ok || msg == nil {
+		return payload
+	}
+	usage, ok := msg["usage"]
+	if !ok {
+		return payload
+	}
+	obj["usage"] = usage
+	normalized, err := json.Marshal(obj)
+	if err != nil || len(normalized) == 0 {
+		return payload
+	}
+	return normalized
 }
 
 func normalizeUsageFields(u *Usage) {
@@ -305,6 +282,60 @@ func mergeUsageFlatFieldsPreferNonZero(dst *Usage, src *Usage) {
 		}
 		dst.FlatFields[k] = v
 	}
+}
+
+func mergeUsageDebugFactsPreferNonZero(dst *Usage, src *Usage) {
+	if dst == nil || src == nil || len(src.DebugFacts) == 0 {
+		return
+	}
+	if dst.DebugFacts == nil {
+		dst.DebugFacts = make([]UsageFact, 0, len(src.DebugFacts))
+	}
+	indexByKey := make(map[string]int, len(dst.DebugFacts))
+	for i, fact := range dst.DebugFacts {
+		indexByKey[usageFactDebugMergeKey(fact)] = i
+	}
+	for _, fact := range src.DebugFacts {
+		key := usageFactDebugMergeKey(fact)
+		if idx, ok := indexByKey[key]; ok {
+			if fact.Quantity > 0 || dst.DebugFacts[idx].Quantity == 0 {
+				dst.DebugFacts[idx] = cloneUsageFactForMerge(fact)
+			}
+			continue
+		}
+		indexByKey[key] = len(dst.DebugFacts)
+		dst.DebugFacts = append(dst.DebugFacts, cloneUsageFactForMerge(fact))
+	}
+}
+
+func usageFactDebugMergeKey(fact UsageFact) string {
+	key := normalizeUsageFactKey(fact.Dimension, fact.Unit)
+	parts := []string{key.Dimension, key.Unit}
+	if len(fact.Attributes) == 0 {
+		return strings.Join(parts, "|")
+	}
+	attrKeys := make([]string, 0, len(fact.Attributes))
+	for k := range fact.Attributes {
+		attrKeys = append(attrKeys, k)
+	}
+	// Stable merge key regardless of attribute declaration order.
+	slices.Sort(attrKeys)
+	for _, k := range attrKeys {
+		parts = append(parts, strings.TrimSpace(k), strings.TrimSpace(fact.Attributes[k]))
+	}
+	return strings.Join(parts, "|")
+}
+
+func cloneUsageFactForMerge(fact UsageFact) UsageFact {
+	out := fact
+	if len(fact.Attributes) == 0 {
+		return out
+	}
+	out.Attributes = make(map[string]string, len(fact.Attributes))
+	for k, v := range fact.Attributes {
+		out.Attributes[k] = v
+	}
+	return out
 }
 
 func hasNonZeroUsageFlatFields(fields map[string]any) bool {
