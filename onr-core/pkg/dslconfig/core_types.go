@@ -25,8 +25,9 @@ type ResponseTokenDetails struct {
 type UsageFact struct {
 	Dimension  string            `json:"dimension,omitempty"`
 	Unit       string            `json:"unit,omitempty"`
-	Quantity   int               `json:"quantity,omitempty"`
+	Quantity   float64           `json:"quantity,omitempty"`
 	Attributes map[string]string `json:"attributes,omitempty"`
+	Source     string            `json:"source,omitempty"`
 
 	Fallback  bool   `json:"fallback,omitempty"`
 	Path      string `json:"path,omitempty"`

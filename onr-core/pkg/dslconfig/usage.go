@@ -3,6 +3,8 @@ package dslconfig
 import (
 	"encoding/json"
 	"fmt"
+	"mime"
+	"mime/multipart"
 	"strings"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
@@ -81,27 +83,110 @@ func ExtractUsage(meta *dslmeta.Meta, cfg UsageExtractConfig, respBody []byte) (
 	if mode == "" {
 		return nil, 0, nil
 	}
-	var data any
-	if err := json.Unmarshal(respBody, &data); err != nil {
-		return nil, 0, fmt.Errorf("parse response json: %w", err)
+	respRoot, err := responseRootFromBody(cfg, respBody)
+	if err != nil {
+		return nil, 0, err
 	}
-	root, ok := data.(map[string]any)
-	if !ok {
-		return nil, 0, nil
-	}
+	reqRoot := requestRootFromMeta(meta)
+	derivedRoot := derivedRootFromMeta(meta)
 
 	switch mode {
 	case usageModeCustom:
-		usage, cachedTokens, err := extractCustomUsage(root, cfg)
+		usage, cachedTokens, err := extractCustomUsage(reqRoot, respRoot, derivedRoot, cfg)
 		if err != nil {
 			return nil, 0, err
 		}
 		return usage, cachedTokens, nil
 	case usageModeOpenAI, usageModeAnthropic, usageModeGemini:
-		return extractBuiltinUsage(root, cfg)
+		return extractBuiltinUsage(reqRoot, respRoot, derivedRoot, cfg)
 	default:
 		return nil, 0, fmt.Errorf("unsupported usage_extract mode %q", cfg.Mode)
 	}
+}
+
+func responseRootFromBody(cfg UsageExtractConfig, respBody []byte) (map[string]any, error) {
+	var data any
+	if err := json.Unmarshal(respBody, &data); err != nil {
+		if usageConfigAllowsNonJSONResponse(cfg) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("parse response json: %w", err)
+	}
+	root, ok := data.(map[string]any)
+	if !ok {
+		return nil, nil
+	}
+	return root, nil
+}
+
+func usageConfigAllowsNonJSONResponse(cfg UsageExtractConfig) bool {
+	for _, fact := range cfg.facts {
+		switch strings.ToLower(strings.TrimSpace(fact.Source)) {
+		case "request", "derived":
+			return true
+		}
+	}
+	return false
+}
+
+func requestRootFromMeta(meta *dslmeta.Meta) map[string]any {
+	if meta == nil || len(meta.RequestBody) == 0 {
+		return nil
+	}
+	contentType := strings.TrimSpace(meta.RequestContentType)
+	if strings.HasPrefix(strings.ToLower(contentType), "multipart/form-data") {
+		return multipartRequestRootFromMeta(meta.RequestBody, contentType)
+	}
+	var data any
+	if err := json.Unmarshal(meta.RequestBody, &data); err != nil {
+		return nil
+	}
+	root, _ := data.(map[string]any)
+	return root
+}
+
+func derivedRootFromMeta(meta *dslmeta.Meta) map[string]any {
+	if meta == nil || len(meta.DerivedUsage) == 0 {
+		return nil
+	}
+	return meta.DerivedUsage
+}
+
+func multipartRequestRootFromMeta(body []byte, contentType string) map[string]any {
+	_, params, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return nil
+	}
+	boundary := strings.TrimSpace(params["boundary"])
+	if boundary == "" {
+		return nil
+	}
+	reader := multipart.NewReader(strings.NewReader(string(body)), boundary)
+	form, err := reader.ReadForm(32 << 20)
+	if err != nil {
+		return nil
+	}
+	defer form.RemoveAll()
+
+	root := make(map[string]any)
+	for k, vals := range form.Value {
+		switch len(vals) {
+		case 0:
+			continue
+		case 1:
+			root[k] = vals[0]
+		default:
+			items := make([]any, 0, len(vals))
+			for _, v := range vals {
+				items = append(items, v)
+			}
+			root[k] = items
+		}
+	}
+	if len(root) == 0 {
+		return nil
+	}
+	return root
 }
 
 func evalUsageField(root map[string]any, expr *UsageExpr, fallbackPath string) int {

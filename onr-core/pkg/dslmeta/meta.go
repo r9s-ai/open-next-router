@@ -33,5 +33,17 @@ type Meta struct {
 	// DSL routing directives can rewrite it via set_path/set_query/del_query.
 	RequestURLPath string
 
+	// RequestContentType is the raw Content-Type of the incoming request body.
+	RequestContentType string
+
+	// RequestBody holds the original request body bytes when available.
+	// It is used by request-side usage extraction.
+	RequestBody []byte
+
+	// DerivedUsage carries runtime-derived usage signals that are not directly
+	// available from request/response JSON, such as audio duration from binary
+	// response bodies.
+	DerivedUsage map[string]any
+
 	StartTime time.Time
 }

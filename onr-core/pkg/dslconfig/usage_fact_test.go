@@ -3,6 +3,7 @@ package dslconfig
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
@@ -365,6 +366,39 @@ provider "demo" {
 	}
 }
 
+func TestValidateProviderFile_UsageFactAudioSecondAllowed(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.conf")
+	// #nosec G306 -- test data file.
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "demo" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_extract custom;
+      usage_fact input token path="$.usage.input_tokens";
+      usage_fact output token path="$.usage.output_tokens";
+      usage_fact audio.stt second path="$.usage.audio_seconds";
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+	if got := len(pf.Usage.Defaults.facts); got != 3 {
+		t.Fatalf("facts len=%d want=3", got)
+	}
+}
+
 func TestExtractUsage_UsageFactFallbackDoesNotDoubleCountSpecificCacheWriteFacts(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "demo.conf")
@@ -721,18 +755,161 @@ func TestExtractUsage_UsageFactSameDimensionDeclarationOrder(t *testing.T) {
 	if got, want := inputFacts[0].Path, "$.usage.first_input_tokens"; got != want {
 		t.Fatalf("first input fact path got %q, want %q", got, want)
 	}
-	if got, want := inputFacts[0].Quantity, 3; got != want {
-		t.Fatalf("first input fact quantity got %d, want %d", got, want)
+	if got, want := inputFacts[0].Quantity, 3.0; got != want {
+		t.Fatalf("first input fact quantity got %v, want %v", got, want)
 	}
 	if got, want := inputFacts[1].Path, "$.usage.second_input_tokens"; got != want {
 		t.Fatalf("second input fact path got %q, want %q", got, want)
 	}
-	if got, want := inputFacts[1].Quantity, 4; got != want {
-		t.Fatalf("second input fact quantity got %d, want %d", got, want)
+	if got, want := inputFacts[1].Quantity, 4.0; got != want {
+		t.Fatalf("second input fact quantity got %v, want %v", got, want)
 	}
 	for _, fact := range inputFacts {
 		if fact.Fallback {
 			t.Fatalf("unexpected fallback fact in matched input facts: %+v", fact)
 		}
 	}
+}
+
+func TestExtractUsage_UsageFactRequestSource(t *testing.T) {
+	cfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		facts: []usageFactConfig{
+			{Dimension: "input", Unit: "token", Source: "request", Expr: mustParseUsageExpr(t, "$.n")},
+			{Dimension: "output", Unit: "token", Path: "$.usage.output_tokens"},
+			{Dimension: "image.generate", Unit: "image", Source: "request", Expr: mustParseUsageExpr(t, "$.n")},
+		},
+	}
+
+	meta := &dslmeta.Meta{
+		RequestBody: []byte(`{"model":"gpt-image-1","prompt":"draw a cat","n":3}`),
+	}
+	body := []byte(`{
+	  "usage": {
+	    "output_tokens": 7
+	  }
+	}`)
+
+	usage, _, err := ExtractUsage(meta, cfg, body)
+	if err != nil {
+		t.Fatalf("ExtractUsage: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage")
+	}
+	if got, want := usage.InputTokens, 3; got != want {
+		t.Fatalf("InputTokens got %d, want %d", got, want)
+	}
+	if got, want := usage.OutputTokens, 7; got != want {
+		t.Fatalf("OutputTokens got %d, want %d", got, want)
+	}
+	if got, want := usage.FlatFields["image_generate_images"], 3; got != want {
+		t.Fatalf("image_generate_images got %v, want %v", got, want)
+	}
+	var requestFactFound bool
+	for _, fact := range usage.DebugFacts {
+		if fact.Dimension == "image.generate" && fact.Unit == "image" {
+			requestFactFound = true
+			if got, want := fact.Source, "request"; got != want {
+				t.Fatalf("debug fact source got %q, want %q", got, want)
+			}
+		}
+	}
+	if !requestFactFound {
+		t.Fatalf("expected image.generate debug fact")
+	}
+}
+
+func TestExtractUsage_UsageFactDerivedSourceWithNonJSONResponse(t *testing.T) {
+	cfg := UsageExtractConfig{
+		Mode: usageModeOpenAI,
+		facts: []usageFactConfig{
+			{Dimension: "audio.tts", Unit: "second", Source: "derived", Path: "$.audio_duration_seconds"},
+		},
+	}
+
+	meta := &dslmeta.Meta{
+		DerivedUsage: map[string]any{
+			"audio_duration_seconds": 1.608,
+		},
+	}
+
+	usage, _, err := ExtractUsage(meta, cfg, []byte("fake-audio-binary-response"))
+	if err != nil {
+		t.Fatalf("ExtractUsage: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage")
+	}
+	if got, want := usage.FlatFields["audio_tts_seconds"], 1.608; got != want {
+		t.Fatalf("audio_tts_seconds got %v, want %v", got, want)
+	}
+	if len(usage.DebugFacts) != 1 {
+		t.Fatalf("debug facts len=%d want=1", len(usage.DebugFacts))
+	}
+	if got, want := usage.DebugFacts[0].Source, "derived"; got != want {
+		t.Fatalf("debug fact source got %q, want %q", got, want)
+	}
+}
+
+func TestValidateProviderFile_UsageFactDerivedSourceAllowed(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "derived-source.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "derived-source" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_extract openai;
+      usage_fact audio.tts second source="derived" path="$.audio_duration_seconds";
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if _, err := ValidateProviderFile(path); err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+}
+
+func TestValidateProviderFile_UsageFactRequestSourceInvalid(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "invalid-request-source.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "invalid-request-source" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_extract custom;
+      usage_fact input token source="stream_event" path="$.n";
+      usage_fact output token path="$.usage.output_tokens";
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if _, err := ValidateProviderFile(path); err == nil || !strings.Contains(err.Error(), "unsupported source") {
+		t.Fatalf("ValidateProviderFile err=%v, want unsupported source", err)
+	}
+}
+
+func mustParseUsageExpr(t *testing.T, s string) *UsageExpr {
+	t.Helper()
+	expr, err := ParseUsageExpr(s)
+	if err != nil {
+		t.Fatalf("ParseUsageExpr(%q): %v", s, err)
+	}
+	return expr
 }

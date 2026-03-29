@@ -222,6 +222,8 @@ func TestUsageDimensionRegistry_AllowsKnownPairs(t *testing.T) {
 	reg := NewUsageDimensionRegistry(
 		UsageDimension{Dimension: "input", Unit: "token"},
 		UsageDimension{Dimension: "server_tool.web_search", Unit: "call"},
+		UsageDimension{Dimension: "image.generate", Unit: "image"},
+		UsageDimension{Dimension: "audio.tts", Unit: "second"},
 	)
 
 	if !reg.Allows("input", "token") {
@@ -230,7 +232,10 @@ func TestUsageDimensionRegistry_AllowsKnownPairs(t *testing.T) {
 	if !reg.Allows("SERVER_TOOL.WEB_SEARCH", "CALL") {
 		t.Fatalf("expected server_tool.web_search call allowed")
 	}
-	if reg.Allows("image.generate", "image") {
-		t.Fatalf("did not expect image.generate image allowed")
+	if !reg.Allows("image.generate", "image") {
+		t.Fatalf("expected image.generate image allowed")
+	}
+	if !reg.Allows("audio.tts", "second") {
+		t.Fatalf("expected audio.tts second allowed")
 	}
 }

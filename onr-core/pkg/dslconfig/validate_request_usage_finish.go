@@ -158,6 +158,9 @@ func validateUsageFactConfig(path, providerName, scope string, idx int, fact usa
 	if !usageFactKeyAllowed(key.Dimension, key.Unit) {
 		return fmt.Errorf("provider %q in %q: %s usage_fact[%d] unsupported dimension/unit %q %q", providerName, path, scope, idx, fact.Dimension, fact.Unit)
 	}
+	if source := strings.ToLower(strings.TrimSpace(fact.Source)); source != "" && source != "response" && source != "request" && source != "derived" {
+		return fmt.Errorf("provider %q in %q: %s usage_fact[%d] unsupported source %q", providerName, path, scope, idx, fact.Source)
+	}
 
 	primitiveCount := 0
 	if strings.TrimSpace(fact.Path) != "" {

@@ -2,6 +2,7 @@ package dslconfig
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"unicode"
@@ -12,6 +13,7 @@ import (
 type usageFactConfig struct {
 	Dimension string
 	Unit      string
+	Source    string
 
 	Path      string
 	CountPath string
@@ -44,7 +46,7 @@ type UsageDimensionRegistry struct {
 
 type usageFactEval struct {
 	cfg      usageFactConfig
-	quantity int
+	quantity float64
 	matched  bool
 }
 
@@ -55,6 +57,12 @@ var defaultUsageDimensionRegistry = NewUsageDimensionRegistry(
 	UsageDimension{Dimension: "cache_write", Unit: "token"},
 	UsageDimension{Dimension: "server_tool.web_search", Unit: "call"},
 	UsageDimension{Dimension: "server_tool.file_search", Unit: "call"},
+	UsageDimension{Dimension: "image.generate", Unit: "image"},
+	UsageDimension{Dimension: "image.edit", Unit: "image"},
+	UsageDimension{Dimension: "image.variation", Unit: "image"},
+	UsageDimension{Dimension: "audio.tts", Unit: "second"},
+	UsageDimension{Dimension: "audio.stt", Unit: "second"},
+	UsageDimension{Dimension: "audio.translate", Unit: "second"},
 )
 
 func NewUsageDimensionRegistry(keys ...UsageDimension) UsageDimensionRegistry {
@@ -126,12 +134,12 @@ func usageFactValueFromLegacy(cfg UsageExtractConfig, key usageFactKey) (usageFa
 	}
 }
 
-func usageFactQuantities(root map[string]any, facts []usageFactConfig) map[usageFactKey]int {
+func usageFactQuantities(reqRoot, respRoot, derivedRoot map[string]any, facts []usageFactConfig) map[usageFactKey]float64 {
 	grouped := groupUsageFactConfigs(facts)
-	out := make(map[usageFactKey]int, len(grouped))
+	out := make(map[usageFactKey]float64, len(grouped))
 	for key, group := range grouped {
-		resolved := evaluateUsageFactGroup(root, group)
-		total := 0
+		resolved := evaluateUsageFactGroup(reqRoot, respRoot, derivedRoot, group)
+		total := 0.0
 		for _, r := range resolved {
 			if r.matched {
 				total += r.quantity
@@ -142,11 +150,11 @@ func usageFactQuantities(root map[string]any, facts []usageFactConfig) map[usage
 	return out
 }
 
-func evaluateUsageFactConfigs(root map[string]any, facts []usageFactConfig) []usageFactEval {
+func evaluateUsageFactConfigs(reqRoot, respRoot, derivedRoot map[string]any, facts []usageFactConfig) []usageFactEval {
 	grouped := groupUsageFactConfigs(facts)
 	out := make([]usageFactEval, 0, len(facts))
 	for _, group := range grouped {
-		out = append(out, evaluateUsageFactGroup(root, group)...)
+		out = append(out, evaluateUsageFactGroup(reqRoot, respRoot, derivedRoot, group)...)
 	}
 	return out
 }
@@ -160,7 +168,7 @@ func groupUsageFactConfigs(facts []usageFactConfig) map[usageFactKey][]usageFact
 	return out
 }
 
-func evaluateUsageFactGroup(root map[string]any, facts []usageFactConfig) []usageFactEval {
+func evaluateUsageFactGroup(reqRoot, respRoot, derivedRoot map[string]any, facts []usageFactConfig) []usageFactEval {
 	out := make([]usageFactEval, 0, len(facts))
 	var specificMatched bool
 	// Ordering rule for the same dimension+unit:
@@ -170,7 +178,7 @@ func evaluateUsageFactGroup(root map[string]any, facts []usageFactConfig) []usag
 		if fact.Fallback {
 			continue
 		}
-		q, matched := evaluateUsageFact(root, fact)
+		q, matched := evaluateUsageFact(reqRoot, respRoot, derivedRoot, fact)
 		if matched {
 			specificMatched = true
 		}
@@ -183,33 +191,47 @@ func evaluateUsageFactGroup(root map[string]any, facts []usageFactConfig) []usag
 		if !fact.Fallback {
 			continue
 		}
-		q, matched := evaluateUsageFact(root, fact)
+		q, matched := evaluateUsageFact(reqRoot, respRoot, derivedRoot, fact)
 		out = append(out, usageFactEval{cfg: fact, quantity: q, matched: matched})
 	}
 	return out
 }
 
-func evaluateUsageFact(root map[string]any, fact usageFactConfig) (quantity int, matched bool) {
+func evaluateUsageFact(reqRoot, respRoot, derivedRoot map[string]any, fact usageFactConfig) (quantity float64, matched bool) {
+	root := usageFactSourceRoot(reqRoot, respRoot, derivedRoot, fact.Source)
 	if len(root) == 0 {
 		return 0, false
 	}
 	switch {
 	case fact.Expr != nil:
-		return fact.Expr.Eval(root), true
+		return float64(fact.Expr.Eval(root)), true
 	case fact.CountPath != "":
 		return evaluateUsageFactCountPath(root, fact.CountPath, fact.Type, fact.Status)
 	case fact.SumPath != "":
 		_, matched = jsonutil.GetValuesByPath(root, fact.SumPath)
-		return jsonutil.GetIntByPath(root, fact.SumPath), matched
+		return jsonutil.GetFloatByPath(root, fact.SumPath), matched
 	case fact.Path != "":
 		_, matched = jsonutil.GetValuesByPath(root, fact.Path)
-		return jsonutil.GetIntByPath(root, fact.Path), matched
+		return jsonutil.GetFloatByPath(root, fact.Path), matched
 	default:
 		return 0, false
 	}
 }
 
-func evaluateUsageFactCountPath(root map[string]any, path, typ, status string) (quantity int, matched bool) {
+func usageFactSourceRoot(reqRoot, respRoot, derivedRoot map[string]any, source string) map[string]any {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "", "response":
+		return respRoot
+	case "request":
+		return reqRoot
+	case "derived":
+		return derivedRoot
+	default:
+		return nil
+	}
+}
+
+func evaluateUsageFactCountPath(root map[string]any, path, typ, status string) (quantity float64, matched bool) {
 	vals, ok := jsonutil.GetValuesByPath(root, path)
 	if !ok {
 		return 0, false
@@ -219,7 +241,7 @@ func evaluateUsageFactCountPath(root map[string]any, path, typ, status string) (
 		return 0, true
 	}
 	if typ == "" && status == "" {
-		return len(vals), true
+		return float64(len(vals)), true
 	}
 	count := 0
 	for _, v := range vals {
@@ -227,7 +249,7 @@ func evaluateUsageFactCountPath(root map[string]any, path, typ, status string) (
 			count++
 		}
 	}
-	return count, true
+	return float64(count), true
 }
 
 func matchesUsageFactFilter(v any, typ, status string) bool {
@@ -258,15 +280,17 @@ func projectUsageFromFacts(facts []usageFactEval) (*Usage, int, error) {
 		key := normalizeUsageFactKey(fact.cfg.Dimension, fact.cfg.Unit)
 		switch key {
 		case usageFactKey{Dimension: "input", Unit: "token"}:
-			usage.InputTokens += fact.quantity
-			usage.PromptTokens += fact.quantity
+			v := int(math.Round(fact.quantity))
+			usage.InputTokens += v
+			usage.PromptTokens += v
 		case usageFactKey{Dimension: "output", Unit: "token"}:
-			usage.OutputTokens += fact.quantity
-			usage.CompletionTokens += fact.quantity
+			v := int(math.Round(fact.quantity))
+			usage.OutputTokens += v
+			usage.CompletionTokens += v
 		case usageFactKey{Dimension: "cache_read", Unit: "token"}:
-			cachedTokens += fact.quantity
+			cachedTokens += int(math.Round(fact.quantity))
 		case usageFactKey{Dimension: "cache_write", Unit: "token"}:
-			cacheWriteTokens += fact.quantity
+			cacheWriteTokens += int(math.Round(fact.quantity))
 		}
 	}
 
@@ -282,14 +306,14 @@ func projectUsageFromFacts(facts []usageFactEval) (*Usage, int, error) {
 	return usage, cachedTokens, nil
 }
 
-func extractCustomUsage(root map[string]any, cfg UsageExtractConfig) (*Usage, int, error) {
+func extractCustomUsage(reqRoot, respRoot, derivedRoot map[string]any, cfg UsageExtractConfig) (*Usage, int, error) {
 	explicitKeys := map[usageFactKey]struct{}{}
 	for _, fact := range cfg.facts {
 		explicitKeys[normalizeUsageFactKey(fact.Dimension, fact.Unit)] = struct{}{}
 	}
 
 	evals := make([]usageFactEval, 0, len(cfg.facts)+4)
-	evals = append(evals, evaluateUsageFactConfigs(root, cfg.facts)...)
+	evals = append(evals, evaluateUsageFactConfigs(reqRoot, respRoot, derivedRoot, cfg.facts)...)
 
 	legacyCandidates := []usageFactKey{
 		{Dimension: "input", Unit: "token"},
@@ -311,20 +335,20 @@ func extractCustomUsage(root map[string]any, cfg UsageExtractConfig) (*Usage, in
 		}
 		legacyFacts = append(legacyFacts, fact)
 	}
-	evals = append(evals, evaluateUsageFactConfigs(root, legacyFacts)...)
+	evals = append(evals, evaluateUsageFactConfigs(reqRoot, respRoot, derivedRoot, legacyFacts)...)
 
 	usage, cachedTokens, err := projectUsageFromFacts(evals)
 	if err != nil {
 		return nil, 0, err
 	}
 	if cfg.TotalTokensExpr != nil {
-		total := cfg.TotalTokensExpr.Eval(root)
+		total := cfg.TotalTokensExpr.Eval(respRoot)
 		usage.TotalTokens = total
 	}
 	return usage, cachedTokens, nil
 }
 
-func extractBuiltinUsage(root map[string]any, cfg UsageExtractConfig) (*Usage, int, error) {
+func extractBuiltinUsage(reqRoot, respRoot, derivedRoot map[string]any, cfg UsageExtractConfig) (*Usage, int, error) {
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	explicitKeys := map[usageFactKey]struct{}{}
 	for _, fact := range cfg.facts {
@@ -341,12 +365,12 @@ func extractBuiltinUsage(root map[string]any, cfg UsageExtractConfig) (*Usage, i
 	}
 	facts = append(facts, cfg.facts...)
 
-	evals := evaluateUsageFactConfigs(root, facts)
+	evals := evaluateUsageFactConfigs(reqRoot, respRoot, derivedRoot, facts)
 	usage, cachedTokens, err := projectUsageFromFacts(evals)
 	if err != nil {
 		return nil, 0, err
 	}
-	if totalTokens := builtinTotalTokens(root, mode); totalTokens > 0 {
+	if totalTokens := builtinTotalTokens(respRoot, mode); totalTokens > 0 {
 		usage.TotalTokens = totalTokens
 	}
 	return usage, cachedTokens, nil
@@ -407,7 +431,7 @@ func appendUsageFactErrorPrefix(err error, fact usageFactConfig) error {
 }
 
 func buildUsageFlatFields(facts []usageFactEval) map[string]any {
-	totals := map[string]int{}
+	totals := map[string]float64{}
 	matched := map[string]struct{}{}
 	for _, fact := range facts {
 		if !fact.matched {
@@ -425,7 +449,7 @@ func buildUsageFlatFields(facts []usageFactEval) map[string]any {
 	}
 	out := make(map[string]any, len(matched))
 	for key := range matched {
-		out[key] = totals[key]
+		out[key] = normalizeUsageFactFlatFieldValue(totals[key])
 	}
 	return out
 }
@@ -440,6 +464,7 @@ func buildUsageDebugFacts(facts []usageFactEval) []UsageFact {
 			Dimension: fact.cfg.Dimension,
 			Unit:      fact.cfg.Unit,
 			Quantity:  fact.quantity,
+			Source:    normalizeUsageFactSource(fact.cfg.Source),
 			Fallback:  fact.cfg.Fallback,
 			Path:      fact.cfg.Path,
 			CountPath: fact.cfg.CountPath,
@@ -463,6 +488,24 @@ func buildUsageDebugFacts(facts []usageFactEval) []UsageFact {
 		return nil
 	}
 	return out
+}
+
+func normalizeUsageFactSource(source string) string {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "", "response":
+		return "response"
+	case "request":
+		return "request"
+	default:
+		return strings.ToLower(strings.TrimSpace(source))
+	}
+}
+
+func normalizeUsageFactFlatFieldValue(v float64) any {
+	if math.Mod(v, 1) == 0 {
+		return int(v)
+	}
+	return v
 }
 
 func usageFactFlatFieldKey(fact usageFactConfig) (string, bool) {
@@ -515,6 +558,10 @@ func usageFactFlatFieldUnitSuffix(unit string) string {
 		return "tokens"
 	case "call":
 		return "calls"
+	case "image":
+		return "images"
+	case "second":
+		return "seconds"
 	default:
 		return sanitizeUsageFactNamePart(unit)
 	}
