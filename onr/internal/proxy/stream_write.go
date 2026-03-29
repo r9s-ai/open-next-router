@@ -37,6 +37,7 @@ func streamToDownstream(
 	respDir dslconfig.ResponseDirective,
 	resp *http.Response,
 	usageTail *tailBuffer,
+	metricsTap *sseMetricsTap,
 	dump *streamDumpState,
 ) (int64, time.Time, error) {
 	needSSEOps := len(respDir.JSONOps) > 0 || len(respDir.SSEJSONDelIf) > 0
@@ -68,6 +69,9 @@ func streamToDownstream(
 
 	// Always tee the post-strategy stream into usageTail (pre-response-ops).
 	src = io.TeeReader(src, usageTail)
+	if metricsTap != nil {
+		src = io.TeeReader(src, metricsTap)
+	}
 
 	dst := io.Writer(gc.Writer)
 	if proxyDump != nil {
@@ -90,6 +94,9 @@ func streamToDownstream(
 	if dump != nil && upstreamDump != nil && proxyDump != nil {
 		dump.SetUpstream(upstreamDump.Bytes(), upstreamDump.Truncated())
 		dump.SetProxy(proxyDump.Bytes(), proxyDump.Truncated())
+	}
+	if metricsTap != nil {
+		metricsTap.Finish()
 	}
 
 	return cw.n, cw.firstWriteAt, err

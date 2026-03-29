@@ -55,7 +55,7 @@ Examples:
   tools/request.sh /v1/embeddings --json '{"model":"text-embedding-3-small","input":"hello world"}'
 
   # Images
-  tools/request.sh /v1/images/generations --json '{"model":"gpt-image-1","prompt":"a red fox in snow"}'
+  tools/request.sh /v1/images/generations --json '{"model":"gpt-image-1.5","prompt":"a red fox in snow"}'
 
   # Audio
   tools/request.sh /v1/audio/speech --json '{"model":"gpt-4o-mini-tts","voice":"alloy","input":"hello"}'

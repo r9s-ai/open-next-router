@@ -427,11 +427,20 @@ func (c *Client) handleStreamResponse(
 		tailLimit = c.UsageEst.MaxStreamCollectBytes
 	}
 	usageTail := &tailBuffer{limit: tailLimit}
+	usageCfg, _ := pf.Usage.Select(m)
+	finishCfg, _ := pf.Finish.Select(m)
+	streamAgg := dslconfig.NewStreamMetricsAggregator(m, usageCfg, finishCfg)
+
+	var metricsTap *sseMetricsTap
+	upstreamCT := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Type")))
+	if strings.Contains(upstreamCT, "text/event-stream") {
+		metricsTap = newSSEMetricsTap(streamAgg)
+	}
 
 	dump := newStreamDumpState(gc)
 	defer dump.Append(gc, resp)
 
-	n, firstWriteAt, err := streamToDownstream(gc, m, respDir, resp, usageTail, dump)
+	n, firstWriteAt, err := streamToDownstream(gc, m, respDir, resp, usageTail, metricsTap, dump)
 	ignoredDisconnect := isClientDisconnectErr(err)
 	dump.SetStreamResult(n, err, ignoredDisconnect)
 	if err != nil && !ignoredDisconnect {
@@ -446,11 +455,11 @@ func (c *Client) handleStreamResponse(
 	var upstreamUsage *dslconfig.Usage
 	finishReason := ""
 	if estimateEnabled && usageTail.Len() > 0 {
-		usageCfg, _ := pf.Usage.Select(m)
-		finishCfg, _ := pf.Finish.Select(m)
-		agg := dslconfig.NewStreamMetricsAggregator(m, usageCfg, finishCfg)
-		agg.OnSSETail(usageTail.Bytes())
-		u, _, fr, ok := agg.Result()
+		u, _, fr, ok := streamAgg.Result()
+		if (!ok || u == nil) && strings.Contains(upstreamCT, "text/event-stream") {
+			streamAgg.OnSSETail(usageTail.Bytes())
+			u, _, fr, ok = streamAgg.Result()
+		}
 		if ok && u != nil {
 			upstreamUsage = u
 		}
@@ -593,7 +602,7 @@ func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey
 		return nil, fmt.Errorf("provider not found: %s", provider)
 	}
 
-	bodyBytes, root, model, err := readRequestJSON(gc)
+	bodyBytes, root, model, _, err := readRequestBody(gc, api)
 	if err != nil {
 		return nil, err
 	}
@@ -666,24 +675,26 @@ func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey
 	}, nil
 }
 
-func readRequestJSON(gc *gin.Context) (bodyBytes []byte, root map[string]any, model string, err error) {
+func readRequestBody(gc *gin.Context, api string) (bodyBytes []byte, root map[string]any, model string, contentType string, err error) {
 	bodyBytes, err = io.ReadAll(gc.Request.Body)
 	if err != nil {
-		return nil, nil, "", err
+		return nil, nil, "", "", err
 	}
 	_ = gc.Request.Body.Close()
+	contentType = gc.Request.Header.Get("Content-Type")
 
-	var reqObj any
-	if len(bodyBytes) > 0 {
-		if err := json.Unmarshal(bodyBytes, &reqObj); err != nil {
-			return bodyBytes, nil, "", fmt.Errorf("invalid json: %w", err)
-		}
+	info, err := InspectRequestBody(bodyBytes, contentType, allowNonJSONRequestBodyAPI(api))
+	if err != nil {
+		return bodyBytes, nil, "", contentType, err
 	}
-	root, _ = reqObj.(map[string]any)
+	root = info.Root
+	model = strings.TrimSpace(info.Model)
 
 	if root != nil {
-		if v, ok := root["model"].(string); ok {
-			model = strings.TrimSpace(v)
+		if strings.TrimSpace(model) == "" {
+			if v, ok := root["model"].(string); ok {
+				model = strings.TrimSpace(v)
+			}
 		}
 	}
 	if strings.TrimSpace(model) == "" {
@@ -691,7 +702,16 @@ func readRequestJSON(gc *gin.Context) (bodyBytes []byte, root map[string]any, mo
 			model = strings.TrimSpace(m2)
 		}
 	}
-	return bodyBytes, root, model, nil
+	return bodyBytes, root, model, contentType, nil
+}
+
+func allowNonJSONRequestBodyAPI(api string) bool {
+	switch strings.ToLower(strings.TrimSpace(api)) {
+	case "audio.transcriptions", "audio.translations":
+		return true
+	default:
+		return false
+	}
 }
 
 func applyRequestTransform(pf dslconfig.ProviderFile, meta *dslmeta.Meta, root map[string]any) (dslconfig.RequestTransform, bool, map[string]any, error) {
@@ -792,7 +812,11 @@ func (c *Client) doUpstreamRequest(gc *gin.Context, provider string, pf dslconfi
 			cancel()
 			return nil, func() {}, reqErr
 		}
-		req.Header.Set("Content-Type", "application/json")
+		if ct := strings.TrimSpace(gc.Request.Header.Get("Content-Type")); ct != "" {
+			req.Header.Set("Content-Type", ct)
+		} else {
+			req.Header.Set("Content-Type", "application/json")
+		}
 
 		if oauthErr := c.prepareOAuthForUpstream(reqCtx, provider, pf, m); oauthErr != nil {
 			cancel()

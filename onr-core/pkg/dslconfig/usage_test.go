@@ -38,6 +38,49 @@ func TestExtractUsage_OpenAI_NonStream(t *testing.T) {
 	}
 }
 
+func TestExtractUsage_OpenAI_ImagesGenerations(t *testing.T) {
+	meta := &dslmeta.Meta{API: "images.generations", IsStream: false}
+	cfg := UsageExtractConfig{Mode: "openai"}
+
+	resp := []byte(`{
+	  "created": 1743264000,
+	  "data": [{"b64_json":"abc"}],
+	  "usage": {
+	    "input_tokens": 104,
+	    "input_tokens_details": {
+	      "image_tokens": 0,
+	      "text_tokens": 104
+	    },
+	    "output_tokens": 4096,
+	    "output_tokens_details": {
+	      "image_tokens": 4096,
+	      "text_tokens": 0
+	    },
+	    "total_tokens": 4200
+	  }
+	}`)
+
+	u, cached, err := ExtractUsage(meta, cfg, resp)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if u == nil {
+		t.Fatalf("usage nil")
+	}
+	if u.InputTokens != 104 {
+		t.Fatalf("input_tokens=%d want=104", u.InputTokens)
+	}
+	if u.OutputTokens != 4096 {
+		t.Fatalf("output_tokens=%d want=4096", u.OutputTokens)
+	}
+	if u.TotalTokens != 4200 {
+		t.Fatalf("total_tokens=%d want=4200", u.TotalTokens)
+	}
+	if cached != 0 {
+		t.Fatalf("cached=%d want=0", cached)
+	}
+}
+
 func TestExtractUsage_Anthropic_NonStream_TTLFactsAndProjection(t *testing.T) {
 	meta := &dslmeta.Meta{API: "claude.messages", IsStream: false}
 	cfg := UsageExtractConfig{Mode: "anthropic"}

@@ -2,7 +2,6 @@ package onrserver
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -23,7 +22,7 @@ func makeHandler(cfg *config.Config, st *state, pclient *proxy.Client, api strin
 	requestIDHeaderKey = requestid.ResolveHeaderKey(requestIDHeaderKey)
 	return func(c *gin.Context) {
 		c.Set("onr.api", api)
-		bodyBytes, stream, model, err := peekJSONBody(c)
+		bodyBytes, stream, model, err := inspectRequestBody(c, api)
 		if err != nil {
 			writeOpenAIError(c, requestIDHeaderKey, "invalid_json", err.Error())
 			return
@@ -94,6 +93,31 @@ func makeHandler(cfg *config.Config, st *state, pclient *proxy.Client, api strin
 	}
 }
 
+func inspectRequestBody(c *gin.Context, api string) ([]byte, bool, string, error) {
+	bodyBytes, err := ioReadAllLimit(c.Request.Body, 16<<20) // 16MB
+	if err != nil {
+		return nil, false, "", err
+	}
+	contentType := ""
+	if c != nil && c.Request != nil {
+		contentType = c.Request.Header.Get("Content-Type")
+	}
+	info, err := proxy.InspectRequestBody(bodyBytes, contentType, allowNonJSONRequestBody(api))
+	if err != nil {
+		return bodyBytes, false, "", err
+	}
+	return bodyBytes, info.Stream, strings.TrimSpace(info.Model), nil
+}
+
+func allowNonJSONRequestBody(api string) bool {
+	switch strings.ToLower(strings.TrimSpace(api)) {
+	case "audio.transcriptions", "audio.translations":
+		return true
+	default:
+		return false
+	}
+}
+
 func selectProvider(st *state, tokenProvider string, headerProvider string, model string) (provider string, source string) {
 	if p := strings.ToLower(strings.TrimSpace(tokenProvider)); p != "" {
 		return p, "token"
@@ -116,20 +140,11 @@ func peekJSONBody(c *gin.Context) ([]byte, bool, string, error) {
 	if err != nil {
 		return nil, false, "", err
 	}
-
-	if len(bytes.TrimSpace(b)) == 0 {
-		return b, false, "", nil
-	}
-	var obj map[string]any
-	if err := json.Unmarshal(b, &obj); err != nil {
+	info, err := proxy.InspectRequestBody(b, "application/json", false)
+	if err != nil {
 		return b, false, "", err
 	}
-	model, _ := obj["model"].(string)
-	stream := false
-	if v, ok := obj["stream"].(bool); ok {
-		stream = v
-	}
-	return b, stream, strings.TrimSpace(model), nil
+	return b, info.Stream, strings.TrimSpace(info.Model), nil
 }
 
 func writeOpenAIError(c *gin.Context, requestIDHeaderKey string, code, msg string) {

@@ -1,8 +1,11 @@
 package proxy
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -248,6 +251,131 @@ func TestE2EMock_ChatCompletions_AzureResponses_StreamCompletedEarly(t *testing.
 	assertGolden(t, "golden/azure_responses_stream_completed_early_openai_chat.sse", normalizeForGolden(body))
 }
 
+func TestE2EMock_AudioTranscriptions_OpenAI_Multipart(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var gotModel string
+	var gotFileName string
+	var gotContentType string
+
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotContentType = r.Header.Get("Content-Type")
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/audio/transcriptions" {
+			http.NotFound(w, r)
+			return
+		}
+		reader, err := r.MultipartReader()
+		if err != nil {
+			t.Fatalf("MultipartReader: %v", err)
+		}
+		for {
+			part, err := reader.NextPart()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				t.Fatalf("NextPart: %v", err)
+			}
+			name := strings.TrimSpace(part.FormName())
+			if strings.TrimSpace(part.FileName()) != "" {
+				gotFileName = strings.TrimSpace(part.FileName())
+			}
+			valueBytes, rerr := io.ReadAll(part)
+			_ = part.Close()
+			if rerr != nil {
+				t.Fatalf("ReadAll part: %v", rerr)
+			}
+			if name == "model" {
+				gotModel = strings.TrimSpace(string(valueBytes))
+			}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"text":"hello"}`))
+	}))
+	t.Cleanup(mock.Close)
+
+	c := newMockE2EClient(t, map[string]string{
+		"openai.conf": providerConfOpenAI(mock.URL),
+	})
+	gc, rec := newGinMultipartRequest(t, "/v1/audio/transcriptions", map[string]string{
+		"model": "whisper-1",
+	}, "file", "sample.wav", []byte("fake-audio"))
+
+	res, err := c.ProxyJSON(gc, "openai", ProviderKey{Name: "openai-key", Value: "mock-key"}, "audio.transcriptions", false)
+	if err != nil {
+		t.Fatalf("proxy error: %v", err)
+	}
+	if res == nil || res.Status != http.StatusOK {
+		t.Fatalf("unexpected result: %#v", res)
+	}
+	if gotModel != "whisper-1" {
+		t.Fatalf("unexpected upstream model: %q", gotModel)
+	}
+	if gotFileName != "sample.wav" {
+		t.Fatalf("unexpected upstream filename: %q", gotFileName)
+	}
+	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(gotContentType)), "multipart/form-data;") {
+		t.Fatalf("unexpected upstream content-type: %q", gotContentType)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected downstream status: %d", rec.Code)
+	}
+	if strings.TrimSpace(rec.Body.String()) != `{"text":"hello"}` {
+		t.Fatalf("unexpected downstream body: %s", rec.Body.String())
+	}
+}
+
+func TestE2EMock_ImagesGenerations_OpenAI_StreamUsageFromLargeSSEEvent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	largeB64 := strings.Repeat("A", 400000)
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/images/generations" {
+			http.NotFound(w, r)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w,
+			"event: image_generation.completed\n"+
+				`data: {"type":"image_generation.completed","b64_json":"`+largeB64+`","usage":{"input_tokens":12,"output_tokens":4508,"total_tokens":4520}}`+
+				"\n\n",
+		)
+	}))
+	t.Cleanup(mock.Close)
+
+	c := newMockE2EClient(t, map[string]string{
+		"openai.conf": providerConfOpenAIImageStream(mock.URL),
+	})
+	gc, rec := newGinJSONRequest(t, []byte(`{"model":"gpt-image-1.5","prompt":"otter","stream":true}`))
+
+	res, err := c.ProxyJSON(gc, "openai", ProviderKey{Name: "openai-key", Value: "mock-key"}, "images.generations", true)
+	if err != nil {
+		t.Fatalf("proxy error: %v", err)
+	}
+	if res == nil || res.Status != http.StatusOK {
+		t.Fatalf("unexpected result: %#v", res)
+	}
+	if res.Usage == nil {
+		t.Fatalf("expected usage")
+	}
+	if got, want := asInt(res.Usage["input_tokens"]), 12; got != want {
+		t.Fatalf("input_tokens=%d want=%d", got, want)
+	}
+	if got, want := asInt(res.Usage["output_tokens"]), 4508; got != want {
+		t.Fatalf("output_tokens=%d want=%d", got, want)
+	}
+	if got, want := asInt(res.Usage["total_tokens"]), 4520; got != want {
+		t.Fatalf("total_tokens=%d want=%d", got, want)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected downstream status: %d", rec.Code)
+	}
+}
+
 func newMockE2EClient(t *testing.T, confByFile map[string]string) *Client {
 	t.Helper()
 	reg := dslconfig.NewRegistry()
@@ -386,12 +514,94 @@ provider "azure-response" {
 `, baseURL)
 }
 
+func providerConfOpenAI(baseURL string) string {
+	return fmt.Sprintf(`syntax "next-router/0.1";
+
+provider "openai" {
+  defaults {
+    upstream_config {
+      base_url = %q;
+    }
+    auth {
+      auth_bearer;
+    }
+    response {
+      resp_passthrough;
+    }
+  }
+
+  match api = "audio.transcriptions" {
+    upstream {
+      set_path "/v1/audio/transcriptions";
+    }
+  }
+}
+`, baseURL)
+}
+
+func providerConfOpenAIImageStream(baseURL string) string {
+	return fmt.Sprintf(`syntax "next-router/0.1";
+
+provider "openai" {
+  defaults {
+    upstream_config {
+      base_url = %q;
+    }
+    auth {
+      auth_bearer;
+    }
+    response {
+      resp_passthrough;
+    }
+  }
+
+  match api = "images.generations" stream = true {
+    metrics {
+      usage_extract openai;
+    }
+    upstream {
+      set_path "/v1/images/generations";
+    }
+  }
+}
+`, baseURL)
+}
+
 func newGinJSONRequest(t *testing.T, body []byte) (*gin.Context, *httptest.ResponseRecorder) {
 	t.Helper()
 	rec := httptest.NewRecorder()
 	gc, _ := gin.CreateTestContext(rec)
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(string(body)))
 	req.Header.Set("Content-Type", "application/json")
+	gc.Request = req
+	return gc, rec
+}
+
+func newGinMultipartRequest(t *testing.T, path string, fields map[string]string, fileField string, fileName string, fileBody []byte) (*gin.Context, *httptest.ResponseRecorder) {
+	t.Helper()
+
+	var body bytes.Buffer
+	w := multipart.NewWriter(&body)
+	for k, v := range fields {
+		if err := w.WriteField(k, v); err != nil {
+			t.Fatalf("WriteField %s: %v", k, err)
+		}
+	}
+	fw, err := w.CreateFormFile(fileField, fileName)
+	if err != nil {
+		t.Fatalf("CreateFormFile: %v", err)
+	}
+	if _, err := fw.Write(fileBody); err != nil {
+		t.Fatalf("write multipart file: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close multipart writer: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	gc, _ := gin.CreateTestContext(rec)
+	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", w.FormDataContentType())
 	gc.Request = req
 	return gc, rec
 }
