@@ -79,6 +79,188 @@ func TestExtractUsage_OpenAI_ImagesGenerations(t *testing.T) {
 	if cached != 0 {
 		t.Fatalf("cached=%d want=0", cached)
 	}
+	if got, want := u.FlatFields["image_generate_images"], 1; got != want {
+		t.Fatalf("image_generate_images=%v want=%v", got, want)
+	}
+	found := false
+	for _, fact := range u.DebugFacts {
+		if fact.Dimension == "image.generate" && fact.Unit == "image" && fact.Quantity == 1 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected image.generate image fact, got=%#v", u.DebugFacts)
+	}
+}
+
+func TestExtractUsage_OpenAI_ImagesEditsCanonicalFact(t *testing.T) {
+	meta := &dslmeta.Meta{API: "images.edits", IsStream: false}
+	cfg := UsageExtractConfig{Mode: "openai"}
+
+	resp := []byte(`{
+	  "created": 1743264000,
+	  "data": [{"b64_json":"abc"},{"b64_json":"def"}],
+	  "usage": {
+	    "input_tokens": 50,
+	    "output_tokens": 80,
+	    "total_tokens": 130
+	  }
+	}`)
+
+	u, _, err := ExtractUsage(meta, cfg, resp)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if u == nil {
+		t.Fatalf("usage nil")
+	}
+	if got, want := u.FlatFields["image_edit_images"], 2; got != want {
+		t.Fatalf("image_edit_images=%v want=%v", got, want)
+	}
+	found := false
+	for _, fact := range u.DebugFacts {
+		if fact.Dimension == "image.edit" && fact.Unit == "image" && fact.Quantity == 2 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected image.edit image fact, got=%#v", u.DebugFacts)
+	}
+}
+
+func TestExtractUsage_OpenAI_AudioTranscriptionsCanonicalFact(t *testing.T) {
+	meta := &dslmeta.Meta{API: "audio.transcriptions", IsStream: false}
+	cfg := UsageExtractConfig{Mode: "openai"}
+
+	resp := []byte(`{
+	  "text":"hello",
+	  "usage": {
+	    "type":"duration",
+	    "seconds": 3
+	  }
+	}`)
+
+	u, _, err := ExtractUsage(meta, cfg, resp)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if u == nil {
+		t.Fatalf("usage nil")
+	}
+	if got, want := u.FlatFields["audio_stt_seconds"], 3; got != want {
+		t.Fatalf("audio_stt_seconds=%v want=%v", got, want)
+	}
+	found := false
+	for _, fact := range u.DebugFacts {
+		if fact.Dimension == "audio.stt" && fact.Unit == "second" && fact.Quantity == 3 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected audio.stt second fact, got=%#v", u.DebugFacts)
+	}
+}
+
+func TestExtractUsage_OpenAI_AudioTranslationsCanonicalFact(t *testing.T) {
+	meta := &dslmeta.Meta{API: "audio.translations", IsStream: false}
+	cfg := UsageExtractConfig{Mode: "openai"}
+
+	resp := []byte(`{
+	  "text":"hello translated",
+	  "usage": {
+	    "type":"duration",
+	    "seconds": 4
+	  }
+	}`)
+
+	u, _, err := ExtractUsage(meta, cfg, resp)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if u == nil {
+		t.Fatalf("usage nil")
+	}
+	if got, want := u.FlatFields["audio_translate_seconds"], 4; got != want {
+		t.Fatalf("audio_translate_seconds=%v want=%v", got, want)
+	}
+	found := false
+	for _, fact := range u.DebugFacts {
+		if fact.Dimension == "audio.translate" && fact.Unit == "second" && fact.Quantity == 4 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected audio.translate second fact, got=%#v", u.DebugFacts)
+	}
+}
+
+func TestExtractUsage_OpenAI_AudioSpeechDerivedCanonicalFact(t *testing.T) {
+	meta := &dslmeta.Meta{
+		API:          "audio.speech",
+		IsStream:     false,
+		DerivedUsage: map[string]any{"audio_duration_seconds": 1.5},
+	}
+	cfg := UsageExtractConfig{Mode: "openai"}
+
+	u, _, err := ExtractUsage(meta, cfg, []byte("not-json-audio"))
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if u == nil {
+		t.Fatalf("usage nil")
+	}
+	if got := u.FlatFields["audio_tts_seconds"]; got == nil {
+		t.Fatalf("audio_tts_seconds missing")
+	}
+	found := false
+	for _, fact := range u.DebugFacts {
+		if fact.Dimension == "audio.tts" && fact.Unit == "second" && fact.Source == "derived" && fact.Quantity == 1.5 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected audio.tts derived fact, got=%#v", u.DebugFacts)
+	}
+}
+
+func TestExtractUsage_OpenAI_ResponsesWebSearchCanonicalFact(t *testing.T) {
+	meta := &dslmeta.Meta{API: "responses", IsStream: false}
+	cfg := UsageExtractConfig{Mode: "openai"}
+
+	resp := []byte(`{
+	  "output": [
+	    {"type":"web_search_call","status":"completed"},
+	    {"type":"web_search_call","status":"failed"},
+	    {"type":"message","status":"completed"},
+	    {"type":"web_search_call","status":"completed"}
+	  ]
+	}`)
+
+	u, _, err := ExtractUsage(meta, cfg, resp)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if u == nil {
+		t.Fatalf("usage nil")
+	}
+	if got, want := u.FlatFields["server_tool_web_search_calls"], 2; got != want {
+		t.Fatalf("server_tool_web_search_calls=%v want=%v", got, want)
+	}
+	found := false
+	for _, fact := range u.DebugFacts {
+		if fact.Dimension == "server_tool.web_search" && fact.Unit == "call" && fact.Quantity == 2 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected server_tool.web_search call fact, got=%#v", u.DebugFacts)
+	}
 }
 
 func TestExtractUsage_Anthropic_NonStream_TTLFactsAndProjection(t *testing.T) {

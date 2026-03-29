@@ -83,7 +83,7 @@ func ExtractUsage(meta *dslmeta.Meta, cfg UsageExtractConfig, respBody []byte) (
 	if mode == "" {
 		return nil, 0, nil
 	}
-	respRoot, err := responseRootFromBody(cfg, respBody)
+	respRoot, err := responseRootFromBody(meta, cfg, respBody)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -98,16 +98,16 @@ func ExtractUsage(meta *dslmeta.Meta, cfg UsageExtractConfig, respBody []byte) (
 		}
 		return usage, cachedTokens, nil
 	case usageModeOpenAI, usageModeAnthropic, usageModeGemini:
-		return extractBuiltinUsage(reqRoot, respRoot, derivedRoot, cfg)
+		return extractBuiltinUsage(meta, reqRoot, respRoot, derivedRoot, respBody, cfg)
 	default:
 		return nil, 0, fmt.Errorf("unsupported usage_extract mode %q", cfg.Mode)
 	}
 }
 
-func responseRootFromBody(cfg UsageExtractConfig, respBody []byte) (map[string]any, error) {
+func responseRootFromBody(meta *dslmeta.Meta, cfg UsageExtractConfig, respBody []byte) (map[string]any, error) {
 	var data any
 	if err := json.Unmarshal(respBody, &data); err != nil {
-		if usageConfigAllowsNonJSONResponse(cfg) {
+		if usageConfigAllowsNonJSONResponse(meta, cfg) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("parse response json: %w", err)
@@ -119,12 +119,18 @@ func responseRootFromBody(cfg UsageExtractConfig, respBody []byte) (map[string]a
 	return root, nil
 }
 
-func usageConfigAllowsNonJSONResponse(cfg UsageExtractConfig) bool {
+func usageConfigAllowsNonJSONResponse(meta *dslmeta.Meta, cfg UsageExtractConfig) bool {
 	for _, fact := range cfg.facts {
 		switch strings.ToLower(strings.TrimSpace(fact.Source)) {
 		case "request", "derived":
 			return true
 		}
+	}
+	if meta != nil &&
+		strings.EqualFold(strings.TrimSpace(cfg.Mode), usageModeOpenAI) &&
+		strings.EqualFold(strings.TrimSpace(meta.API), "audio.speech") &&
+		len(meta.DerivedUsage) > 0 {
+		return true
 	}
 	return false
 }

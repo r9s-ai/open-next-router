@@ -7,7 +7,9 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/jsonutil"
+	onropenai "github.com/r9s-ai/open-next-router/onr-core/pkg/providerusage/openai"
 )
 
 type usageFactConfig struct {
@@ -348,7 +350,7 @@ func extractCustomUsage(reqRoot, respRoot, derivedRoot map[string]any, cfg Usage
 	return usage, cachedTokens, nil
 }
 
-func extractBuiltinUsage(reqRoot, respRoot, derivedRoot map[string]any, cfg UsageExtractConfig) (*Usage, int, error) {
+func extractBuiltinUsage(meta *dslmeta.Meta, reqRoot, respRoot, derivedRoot map[string]any, respBody []byte, cfg UsageExtractConfig) (*Usage, int, error) {
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	explicitKeys := map[usageFactKey]struct{}{}
 	for _, fact := range cfg.facts {
@@ -366,6 +368,7 @@ func extractBuiltinUsage(reqRoot, respRoot, derivedRoot map[string]any, cfg Usag
 	facts = append(facts, cfg.facts...)
 
 	evals := evaluateUsageFactConfigs(reqRoot, respRoot, derivedRoot, facts)
+	evals = append(evals, builtinSupplementalUsageFactEvals(meta, derivedRoot, respBody, mode, explicitKeys)...)
 	usage, cachedTokens, err := projectUsageFromFacts(evals)
 	if err != nil {
 		return nil, 0, err
@@ -374,6 +377,105 @@ func extractBuiltinUsage(reqRoot, respRoot, derivedRoot map[string]any, cfg Usag
 		usage.TotalTokens = totalTokens
 	}
 	return usage, cachedTokens, nil
+}
+
+func builtinSupplementalUsageFactEvals(meta *dslmeta.Meta, derivedRoot map[string]any, respBody []byte, mode string, explicitKeys map[usageFactKey]struct{}) []usageFactEval {
+	if strings.ToLower(strings.TrimSpace(mode)) != usageModeOpenAI || meta == nil {
+		return nil
+	}
+	api := strings.ToLower(strings.TrimSpace(meta.API))
+	switch api {
+	case "images.generations":
+		return builtinSupplementalImageUsageFactEvals(respBody, usageFactKey{Dimension: "image.generate", Unit: "image"}, explicitKeys)
+	case "images.edits":
+		return builtinSupplementalImageUsageFactEvals(respBody, usageFactKey{Dimension: "image.edit", Unit: "image"}, explicitKeys)
+	case "audio.transcriptions":
+		return builtinSupplementalAudioSecondsUsageFactEvals(respBody, usageFactKey{Dimension: "audio.stt", Unit: "second"}, explicitKeys)
+	case "audio.translations":
+		return builtinSupplementalAudioSecondsUsageFactEvals(respBody, usageFactKey{Dimension: "audio.translate", Unit: "second"}, explicitKeys)
+	case "audio.speech":
+		key := usageFactKey{Dimension: "audio.tts", Unit: "second"}
+		if _, ok := explicitKeys[key]; ok || len(derivedRoot) == 0 {
+			return nil
+		}
+		quantity, matched := evaluateUsageFact(nil, nil, derivedRoot, usageFactConfig{
+			Dimension: key.Dimension,
+			Unit:      key.Unit,
+			Source:    "derived",
+			Path:      "$.audio_duration_seconds",
+		})
+		if !matched || quantity <= 0 {
+			return nil
+		}
+		return []usageFactEval{{
+			cfg: usageFactConfig{
+				Dimension: key.Dimension,
+				Unit:      key.Unit,
+				Source:    "derived",
+				Path:      "$.audio_duration_seconds",
+			},
+			quantity: quantity,
+			matched:  true,
+		}}
+	case "responses":
+		return builtinSupplementalWebSearchCallUsageFactEvals(respBody, usageFactKey{Dimension: "server_tool.web_search", Unit: "call"}, explicitKeys)
+	default:
+		return nil
+	}
+}
+
+func builtinSupplementalImageUsageFactEvals(respBody []byte, key usageFactKey, explicitKeys map[usageFactKey]struct{}) []usageFactEval {
+	if _, ok := explicitKeys[key]; ok {
+		return nil
+	}
+	quantity, ok, err := onropenai.ImageCountFromResponseBody(respBody)
+	if err != nil || !ok || quantity <= 0 {
+		return nil
+	}
+	return []usageFactEval{{
+		cfg: usageFactConfig{
+			Dimension: key.Dimension,
+			Unit:      key.Unit,
+		},
+		quantity: quantity,
+		matched:  true,
+	}}
+}
+
+func builtinSupplementalAudioSecondsUsageFactEvals(respBody []byte, key usageFactKey, explicitKeys map[usageFactKey]struct{}) []usageFactEval {
+	if _, ok := explicitKeys[key]; ok {
+		return nil
+	}
+	quantity, ok, err := onropenai.AudioUsageSecondsFromResponseBody(respBody)
+	if err != nil || !ok || quantity <= 0 {
+		return nil
+	}
+	return []usageFactEval{{
+		cfg: usageFactConfig{
+			Dimension: key.Dimension,
+			Unit:      key.Unit,
+		},
+		quantity: quantity,
+		matched:  true,
+	}}
+}
+
+func builtinSupplementalWebSearchCallUsageFactEvals(respBody []byte, key usageFactKey, explicitKeys map[usageFactKey]struct{}) []usageFactEval {
+	if _, ok := explicitKeys[key]; ok {
+		return nil
+	}
+	quantity, ok, err := onropenai.CompletedWebSearchCallsFromResponseBody(respBody)
+	if err != nil || !ok || quantity <= 0 {
+		return nil
+	}
+	return []usageFactEval{{
+		cfg: usageFactConfig{
+			Dimension: key.Dimension,
+			Unit:      key.Unit,
+		},
+		quantity: quantity,
+		matched:  true,
+	}}
 }
 
 func builtinUsageFactConfigs(mode string) []usageFactConfig {
