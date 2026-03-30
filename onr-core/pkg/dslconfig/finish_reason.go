@@ -65,19 +65,22 @@ func mergeFinishReasonConfig(base, override FinishReasonExtractConfig) FinishRea
 // ExtractFinishReason extracts finish_reason from a JSON response (best-effort).
 // Returns empty string when it cannot be extracted.
 func ExtractFinishReason(meta *dslmeta.Meta, cfg FinishReasonExtractConfig, respBody []byte) (string, error) {
-	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
-	path := strings.TrimSpace(cfg.FinishReasonPath)
-
-	if mode == "" && path == "" {
-		return "", nil
-	}
-
 	var obj any
 	if err := json.Unmarshal(respBody, &obj); err != nil {
 		return "", fmt.Errorf("invalid json: %w", err)
 	}
 	root, _ := obj.(map[string]any)
 	if root == nil {
+		return "", nil
+	}
+	return extractFinishReasonFromRoot(meta, cfg, root)
+}
+
+func extractFinishReasonFromRoot(meta *dslmeta.Meta, cfg FinishReasonExtractConfig, root map[string]any) (string, error) {
+	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
+	path := strings.TrimSpace(cfg.FinishReasonPath)
+
+	if mode == "" && path == "" {
 		return "", nil
 	}
 

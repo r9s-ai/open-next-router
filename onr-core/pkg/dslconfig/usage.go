@@ -88,9 +88,22 @@ func ExtractUsage(meta *dslmeta.Meta, cfg UsageExtractConfig, respBody []byte) (
 	if err != nil {
 		return nil, 0, err
 	}
+	return extractUsageFromResponseRoot(meta, cfg, respRoot, respBody)
+}
+
+func extractUsageFromResponseRoot(meta *dslmeta.Meta, cfg UsageExtractConfig, respRoot map[string]any, respBody []byte) (*Usage, int, error) {
+	cfg = prepareUsageExtractConfig(cfg)
+	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
+	if mode == "" {
+		return nil, 0, nil
+	}
 	reqRoot := requestRootFromMeta(meta)
 	derivedRoot := derivedRootFromMeta(meta)
+	return extractUsageFromRoots(meta, cfg, reqRoot, respRoot, derivedRoot, respBody)
+}
 
+func extractUsageFromRoots(meta *dslmeta.Meta, cfg UsageExtractConfig, reqRoot, respRoot, derivedRoot map[string]any, respBody []byte) (*Usage, int, error) {
+	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	switch mode {
 	case usageModeCustom:
 		usage, cachedTokens, err := extractCustomUsage(reqRoot, respRoot, derivedRoot, cfg)

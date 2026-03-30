@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/jsonutil"
 )
 
 // StreamMetricsAggregator aggregates best-effort metrics from SSE "data:" JSON payloads.
@@ -24,6 +25,7 @@ type StreamMetricsAggregator struct {
 	meta      *dslmeta.Meta
 	usageCfg  UsageExtractConfig
 	finishCfg FinishReasonExtractConfig
+	extract   streamUsageExtractFunc
 
 	// merged usage snapshot across SSE events
 	lastUsage        *Usage
@@ -33,11 +35,15 @@ type StreamMetricsAggregator struct {
 	finishReason string
 }
 
+type streamUsageExtractFunc func(respRoot map[string]any, respBody []byte) (*Usage, int, error)
+
 func NewStreamMetricsAggregator(meta *dslmeta.Meta, usageCfg UsageExtractConfig, finishCfg FinishReasonExtractConfig) *StreamMetricsAggregator {
+	usageCfg = prepareUsageExtractConfig(usageCfg)
 	return &StreamMetricsAggregator{
 		meta:      meta,
 		usageCfg:  usageCfg,
 		finishCfg: finishCfg,
+		extract:   newStreamUsageExtractFunc(meta, usageCfg),
 	}
 }
 
@@ -50,9 +56,18 @@ func (a *StreamMetricsAggregator) OnSSEDataJSON(payload []byte) error {
 		return nil
 	}
 
+	var obj any
+	if err := json.Unmarshal(payload, &obj); err != nil {
+		return nil
+	}
+	root, _ := obj.(map[string]any)
+	if root == nil {
+		return nil
+	}
+
 	// finish_reason: first non-empty
 	if strings.TrimSpace(a.finishReason) == "" && (strings.TrimSpace(a.finishCfg.Mode) != "" || strings.TrimSpace(a.finishCfg.FinishReasonPath) != "") {
-		if v, err := ExtractFinishReason(a.meta, a.finishCfg, payload); err == nil {
+		if v, err := extractFinishReasonFromRoot(a.meta, a.finishCfg, root); err == nil {
 			if s := strings.TrimSpace(v); s != "" {
 				a.finishReason = s
 			}
@@ -64,12 +79,12 @@ func (a *StreamMetricsAggregator) OnSSEDataJSON(payload []byte) error {
 		return nil
 	}
 
-	extractPayload := payload
+	usageRoot := root
 	if mode == usageModeAnthropic {
-		extractPayload = normalizeAnthropicStreamUsagePayload(payload)
+		usageRoot = normalizeAnthropicStreamUsageRoot(root)
 	}
 
-	u, cachedTokens, err := ExtractUsage(a.meta, a.usageCfg, extractPayload)
+	u, cachedTokens, err := a.extract(usageRoot, payload)
 	if err != nil {
 		// ignore individual event errors
 		return nil
@@ -213,27 +228,226 @@ func shouldRecomputeMergedTotal(mode string, cfg UsageExtractConfig) bool {
 	return mode == usageModeCustom && cfg.TotalTokensExpr == nil
 }
 
-func normalizeAnthropicStreamUsagePayload(payload []byte) []byte {
-	var obj map[string]any
-	if err := json.Unmarshal(payload, &obj); err != nil || obj == nil {
-		return payload
+func newStreamUsageExtractFunc(meta *dslmeta.Meta, cfg UsageExtractConfig) streamUsageExtractFunc {
+	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
+	switch mode {
+	case usageModeOpenAI, usageModeAnthropic, usageModeGemini:
+		if canUseBuiltinStreamUsageFastPath(meta, cfg) {
+			return func(respRoot map[string]any, _ []byte) (*Usage, int, error) {
+				return extractBuiltinStreamUsageFast(mode, respRoot)
+			}
+		}
+	case usageModeCustom:
+		if len(cfg.facts) == 0 {
+			return func(respRoot map[string]any, _ []byte) (*Usage, int, error) {
+				return extractLegacyCustomStreamUsageFast(cfg, respRoot)
+			}
+		}
 	}
-	if _, ok := obj["usage"]; ok {
-		return payload
+	return func(respRoot map[string]any, respBody []byte) (*Usage, int, error) {
+		return extractUsageFromResponseRoot(meta, cfg, respRoot, respBody)
 	}
-	msg, ok := obj["message"].(map[string]any)
+}
+
+func canUseBuiltinStreamUsageFastPath(meta *dslmeta.Meta, cfg UsageExtractConfig) bool {
+	if len(cfg.facts) > 0 || hasLegacyUsageOverrides(cfg) {
+		return false
+	}
+	if meta == nil {
+		return true
+	}
+	if !strings.EqualFold(strings.TrimSpace(cfg.Mode), usageModeOpenAI) {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(meta.API)) {
+	case "images.generations", "images.edits", "audio.transcriptions", "audio.translations", "audio.speech", "responses":
+		return false
+	default:
+		return true
+	}
+}
+
+func hasLegacyUsageOverrides(cfg UsageExtractConfig) bool {
+	return strings.TrimSpace(cfg.InputTokensPath) != "" ||
+		strings.TrimSpace(cfg.OutputTokensPath) != "" ||
+		strings.TrimSpace(cfg.CacheReadTokensPath) != "" ||
+		strings.TrimSpace(cfg.CacheWriteTokensPath) != "" ||
+		cfg.InputTokensExpr != nil ||
+		cfg.OutputTokensExpr != nil ||
+		cfg.CacheReadTokensExpr != nil ||
+		cfg.CacheWriteTokensExpr != nil ||
+		cfg.TotalTokensExpr != nil
+}
+
+func extractBuiltinStreamUsageFast(mode string, root map[string]any) (*Usage, int, error) {
+	evals := builtinStreamUsageFactEvals(mode, root)
+	usage, cachedTokens, err := projectUsageFromFacts(evals)
+	if err != nil {
+		return nil, 0, err
+	}
+	if totalTokens := builtinTotalTokens(root, mode); totalTokens > 0 {
+		usage.TotalTokens = totalTokens
+	}
+	return usage, cachedTokens, nil
+}
+
+func builtinStreamUsageFactEvals(mode string, root map[string]any) []usageFactEval {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case usageModeOpenAI:
+		return openAIStreamUsageFactEvals(root)
+	case usageModeAnthropic:
+		return anthropicStreamUsageFactEvals(root)
+	case usageModeGemini:
+		return geminiStreamUsageFactEvals(root)
+	default:
+		return nil
+	}
+}
+
+func openAIStreamUsageFactEvals(root map[string]any) []usageFactEval {
+	usage, _ := root["usage"].(map[string]any)
+	if usage == nil {
+		return nil
+	}
+	evals := make([]usageFactEval, 0, 3)
+	appendFirstMatchedUsageFactEval(&evals, usage,
+		usageFactConfig{Dimension: "input", Unit: "token", Path: "$.usage.prompt_tokens"},
+		usageFactConfig{Dimension: "input", Unit: "token", Path: "$.usage.input_tokens", Fallback: true},
+		"prompt_tokens", "input_tokens",
+	)
+	appendFirstMatchedUsageFactEval(&evals, usage,
+		usageFactConfig{Dimension: "output", Unit: "token", Path: "$.usage.completion_tokens"},
+		usageFactConfig{Dimension: "output", Unit: "token", Path: "$.usage.output_tokens", Fallback: true},
+		"completion_tokens", "output_tokens",
+	)
+	promptDetails, _ := usage["prompt_tokens_details"].(map[string]any)
+	inputDetails, _ := usage["input_tokens_details"].(map[string]any)
+	appendFirstMatchedNestedUsageFactEval(&evals,
+		usageFactConfig{Dimension: "cache_read", Unit: "token", Path: "$.usage.prompt_tokens_details.cached_tokens"},
+		promptDetails, "cached_tokens",
+		usageFactConfig{Dimension: "cache_read", Unit: "token", Path: "$.usage.input_tokens_details.cached_tokens", Fallback: true},
+		inputDetails, "cached_tokens",
+		usageFactConfig{Dimension: "cache_read", Unit: "token", Path: "$.usage.cached_tokens", Fallback: true},
+		usage, "cached_tokens",
+	)
+	return evals
+}
+
+func anthropicStreamUsageFactEvals(root map[string]any) []usageFactEval {
+	usage, _ := root["usage"].(map[string]any)
+	if usage == nil {
+		return nil
+	}
+	evals := make([]usageFactEval, 0, 5)
+	appendMatchedUsageFactEval(&evals, usageFactConfig{Dimension: "input", Unit: "token", Path: "$.usage.input_tokens"}, usage, "input_tokens")
+	appendMatchedUsageFactEval(&evals, usageFactConfig{Dimension: "output", Unit: "token", Path: "$.usage.output_tokens"}, usage, "output_tokens")
+	appendMatchedUsageFactEval(&evals, usageFactConfig{Dimension: "cache_read", Unit: "token", Path: "$.usage.cache_read_input_tokens"}, usage, "cache_read_input_tokens")
+	cacheCreation, _ := usage["cache_creation"].(map[string]any)
+	var cacheWriteMatched bool
+	cacheWriteMatched = appendMatchedUsageFactEval(&evals, usageFactConfig{Dimension: "cache_write", Unit: "token", Path: "$.usage.cache_creation.ephemeral_5m_input_tokens", Attrs: map[string]string{"ttl": "5m"}}, cacheCreation, "ephemeral_5m_input_tokens") || cacheWriteMatched
+	cacheWriteMatched = appendMatchedUsageFactEval(&evals, usageFactConfig{Dimension: "cache_write", Unit: "token", Path: "$.usage.cache_creation.ephemeral_1h_input_tokens", Attrs: map[string]string{"ttl": "1h"}}, cacheCreation, "ephemeral_1h_input_tokens") || cacheWriteMatched
+	if !cacheWriteMatched {
+		appendMatchedUsageFactEval(&evals, usageFactConfig{Dimension: "cache_write", Unit: "token", Path: "$.usage.cache_creation_input_tokens", Fallback: true}, usage, "cache_creation_input_tokens")
+	}
+	return evals
+}
+
+func geminiStreamUsageFactEvals(root map[string]any) []usageFactEval {
+	evals := make([]usageFactEval, 0, 6)
+	if usageMeta, _ := root["usageMetadata"].(map[string]any); usageMeta != nil {
+		appendMatchedUsageFactEval(&evals, usageFactConfig{Dimension: "input", Unit: "token", Path: "$.usageMetadata.promptTokenCount"}, usageMeta, "promptTokenCount")
+		appendMatchedUsageFactEval(&evals, usageFactConfig{Dimension: "output", Unit: "token", Path: "$.usageMetadata.candidatesTokenCount"}, usageMeta, "candidatesTokenCount")
+		appendMatchedUsageFactEval(&evals, usageFactConfig{Dimension: "output", Unit: "token", Path: "$.usageMetadata.thoughtsTokenCount"}, usageMeta, "thoughtsTokenCount")
+	}
+	if usageMeta, _ := root["usage_metadata"].(map[string]any); usageMeta != nil {
+		appendMatchedUsageFactEval(&evals, usageFactConfig{Dimension: "input", Unit: "token", Path: "$.usage_metadata.prompt_token_count", Fallback: true}, usageMeta, "prompt_token_count")
+		appendMatchedUsageFactEval(&evals, usageFactConfig{Dimension: "output", Unit: "token", Path: "$.usage_metadata.candidates_token_count"}, usageMeta, "candidates_token_count")
+		appendMatchedUsageFactEval(&evals, usageFactConfig{Dimension: "output", Unit: "token", Path: "$.usage_metadata.thoughts_token_count"}, usageMeta, "thoughts_token_count")
+	}
+	return evals
+}
+
+func appendFirstMatchedUsageFactEval(dst *[]usageFactEval, root map[string]any, primary, fallback usageFactConfig, primaryKey, fallbackKey string) {
+	if appendMatchedUsageFactEval(dst, primary, root, primaryKey) {
+		return
+	}
+	appendMatchedUsageFactEval(dst, fallback, root, fallbackKey)
+}
+
+func appendFirstMatchedNestedUsageFactEval(dst *[]usageFactEval, primary usageFactConfig, primaryRoot map[string]any, primaryKey string, fallback usageFactConfig, fallbackRoot map[string]any, fallbackKey string, last usageFactConfig, lastRoot map[string]any, lastKey string) {
+	if appendMatchedUsageFactEval(dst, primary, primaryRoot, primaryKey) {
+		return
+	}
+	if appendMatchedUsageFactEval(dst, fallback, fallbackRoot, fallbackKey) {
+		return
+	}
+	appendMatchedUsageFactEval(dst, last, lastRoot, lastKey)
+}
+
+func appendMatchedUsageFactEval(dst *[]usageFactEval, cfg usageFactConfig, root map[string]any, key string) bool {
+	if root == nil {
+		return false
+	}
+	value, ok := root[key]
+	if !ok {
+		return false
+	}
+	*dst = append(*dst, usageFactEval{
+		cfg:      cfg,
+		quantity: jsonutil.CoerceFloat(value),
+		matched:  true,
+	})
+	return true
+}
+
+func extractLegacyCustomStreamUsageFast(cfg UsageExtractConfig, root map[string]any) (*Usage, int, error) {
+	legacyCandidates := []usageFactKey{
+		{Dimension: "input", Unit: "token"},
+		{Dimension: "output", Unit: "token"},
+		{Dimension: "cache_read", Unit: "token"},
+		{Dimension: "cache_write", Unit: "token"},
+	}
+	evals := make([]usageFactEval, 0, len(legacyCandidates))
+	for _, key := range legacyCandidates {
+		fact, ok := usageFactValueFromLegacy(cfg, key)
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(fact.Path) == "" && fact.Expr == nil {
+			continue
+		}
+		quantity, matched := evaluateUsageFact(nil, root, nil, fact)
+		evals = append(evals, usageFactEval{cfg: fact, quantity: quantity, matched: matched})
+	}
+	usage, cachedTokens, err := projectUsageFromFacts(evals)
+	if err != nil {
+		return nil, 0, err
+	}
+	if cfg.TotalTokensExpr != nil {
+		usage.TotalTokens = cfg.TotalTokensExpr.Eval(root)
+	} else {
+		usage.TotalTokens = usage.InputTokens + usage.OutputTokens
+	}
+	return usage, cachedTokens, nil
+}
+
+func normalizeAnthropicStreamUsageRoot(root map[string]any) map[string]any {
+	if _, ok := root["usage"]; ok {
+		return root
+	}
+	msg, ok := root["message"].(map[string]any)
 	if !ok || msg == nil {
-		return payload
+		return root
 	}
 	usage, ok := msg["usage"]
 	if !ok {
-		return payload
+		return root
 	}
-	obj["usage"] = usage
-	normalized, err := json.Marshal(obj)
-	if err != nil || len(normalized) == 0 {
-		return payload
+	normalized := make(map[string]any, len(root)+1)
+	for k, v := range root {
+		normalized[k] = v
 	}
+	normalized["usage"] = usage
 	return normalized
 }
 
