@@ -5,16 +5,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/r9s-ai/open-next-router/onr/internal/logx"
 	"github.com/r9s-ai/open-next-router/onr/internal/proxy"
 )
-
-var standardUsageKeys = map[string]struct{}{
-	"input_tokens":       {},
-	"output_tokens":      {},
-	"total_tokens":       {},
-	"cache_read_tokens":  {},
-	"cache_write_tokens": {},
-}
 
 func setProxyResultContext(c *gin.Context, res *proxy.Result) {
 	if c == nil || res == nil {
@@ -55,7 +48,7 @@ func setProxyResultContext(c *gin.Context, res *proxy.Result) {
 		c.Set("onr.usage_cache_write_tokens", v)
 	}
 	for k, v := range res.Usage {
-		if _, ok := standardUsageKeys[k]; ok {
+		if logx.IsStandardUsageField(k) {
 			continue
 		}
 		if strings.TrimSpace(k) == "" {

@@ -13,42 +13,6 @@ import (
 
 var enableColor = isatty.IsTerminal(os.Stdout.Fd()) && strings.TrimSpace(os.Getenv("NO_COLOR")) == ""
 
-var trailingTokenFieldOrder = []string{
-	"input_tokens",
-	"output_tokens",
-	"total_tokens",
-	"cache_read_tokens",
-	"cache_write_tokens",
-	"billable_input_tokens",
-	"cost_input",
-	"cost_output",
-	"cost_cache_read",
-	"cost_cache_write",
-	"cost_total",
-}
-
-var tokenFieldKeys = newFieldSet(trailingTokenFieldOrder)
-
-var fixedAccessFieldKeys = map[string]struct{}{
-	"request_id":      {},
-	"appname":         {},
-	"provider":        {},
-	"provider_source": {},
-	"api":             {},
-	"stream":          {},
-	"model":           {},
-	"usage_stage":     {},
-	"latency_ms":      {},
-	"upstream_status": {},
-	"finish_reason":   {},
-	"ttft_ms":         {},
-	"tps":             {},
-	"cost_multiplier": {},
-	"cost_model":      {},
-	"cost_channel":    {},
-	"cost_unit":       {},
-}
-
 func ColorEnabled() bool { return enableColor }
 
 func ColorizeStatus(status int) string {
@@ -198,12 +162,4 @@ func formatFields(fields map[string]any) string {
 		appendIfPresent(k)
 	}
 	return strings.Join(parts, " ")
-}
-
-func newFieldSet(keys []string) map[string]struct{} {
-	out := make(map[string]struct{}, len(keys))
-	for _, key := range keys {
-		out[key] = struct{}{}
-	}
-	return out
 }
