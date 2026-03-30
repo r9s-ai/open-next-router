@@ -13,6 +13,42 @@ import (
 
 var enableColor = isatty.IsTerminal(os.Stdout.Fd()) && strings.TrimSpace(os.Getenv("NO_COLOR")) == ""
 
+var trailingTokenFieldOrder = []string{
+	"input_tokens",
+	"output_tokens",
+	"total_tokens",
+	"cache_read_tokens",
+	"cache_write_tokens",
+	"billable_input_tokens",
+	"cost_input",
+	"cost_output",
+	"cost_cache_read",
+	"cost_cache_write",
+	"cost_total",
+}
+
+var tokenFieldKeys = newFieldSet(trailingTokenFieldOrder)
+
+var fixedAccessFieldKeys = map[string]struct{}{
+	"request_id":      {},
+	"appname":         {},
+	"provider":        {},
+	"provider_source": {},
+	"api":             {},
+	"stream":          {},
+	"model":           {},
+	"usage_stage":     {},
+	"latency_ms":      {},
+	"upstream_status": {},
+	"finish_reason":   {},
+	"ttft_ms":         {},
+	"tps":             {},
+	"cost_multiplier": {},
+	"cost_model":      {},
+	"cost_channel":    {},
+	"cost_unit":       {},
+}
+
 func ColorEnabled() bool { return enableColor }
 
 func ColorizeStatus(status int) string {
@@ -89,28 +125,21 @@ func formatFields(fields map[string]any) string {
 	if len(fields) == 0 {
 		return ""
 	}
-	tokenKeys := map[string]struct{}{
-		"input_tokens":          {},
-		"output_tokens":         {},
-		"total_tokens":          {},
-		"cache_read_tokens":     {},
-		"cache_write_tokens":    {},
-		"billable_input_tokens": {},
-		"cost_total":            {},
-		"cost_input":            {},
-		"cost_output":           {},
-		"cost_cache_read":       {},
-		"cost_cache_write":      {},
-	}
 
 	keys := make([]string, 0, len(fields))
+	extraKeys := make([]string, 0, len(fields))
 	for k := range fields {
-		if _, ok := tokenKeys[k]; ok {
+		if _, ok := tokenFieldKeys[k]; ok {
 			continue
 		}
-		keys = append(keys, k)
+		if _, ok := fixedAccessFieldKeys[k]; ok {
+			keys = append(keys, k)
+			continue
+		}
+		extraKeys = append(extraKeys, k)
 	}
 	sort.Strings(keys)
+	sort.Strings(extraKeys)
 
 	parts := make([]string, 0, len(keys))
 	appendIfPresent := func(k string) {
@@ -118,7 +147,7 @@ func formatFields(fields map[string]any) string {
 		if !ok || v == nil {
 			return
 		}
-		if _, isToken := tokenKeys[k]; isToken {
+		if _, isToken := tokenFieldKeys[k]; isToken {
 			switch t := v.(type) {
 			case int:
 				if t == 0 {
@@ -160,22 +189,21 @@ func formatFields(fields map[string]any) string {
 	for _, k := range keys {
 		appendIfPresent(k)
 	}
+	for _, k := range extraKeys {
+		appendIfPresent(k)
+	}
 
 	// Keep token usage fields at the end for readability.
-	for _, k := range []string{
-		"input_tokens",
-		"output_tokens",
-		"total_tokens",
-		"cache_read_tokens",
-		"cache_write_tokens",
-		"billable_input_tokens",
-		"cost_input",
-		"cost_output",
-		"cost_cache_read",
-		"cost_cache_write",
-		"cost_total",
-	} {
+	for _, k := range trailingTokenFieldOrder {
 		appendIfPresent(k)
 	}
 	return strings.Join(parts, " ")
+}
+
+func newFieldSet(keys []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		out[key] = struct{}{}
+	}
+	return out
 }

@@ -25,3 +25,21 @@ func TestFormatFieldsCostFloatNoScientificNotation(t *testing.T) {
 		t.Fatalf("unexpected cost_total: %q", out)
 	}
 }
+
+func TestFormatFieldsUsageExtraAfterKnownFields(t *testing.T) {
+	out := formatFields(map[string]any{
+		"provider":          "openai",
+		"api":               "audio.speech",
+		"model":             "gpt-4o-mini-tts",
+		"upstream_status":   200,
+		"audio_tts_seconds": 1.608,
+	})
+	audioPos := strings.Index(out, "audio_tts_seconds=1.608")
+	statusPos := strings.Index(out, "upstream_status=200")
+	if audioPos < 0 || statusPos < 0 {
+		t.Fatalf("unexpected output: %q", out)
+	}
+	if audioPos <= statusPos {
+		t.Fatalf("usage extra should be placed after known fields, got: %q", out)
+	}
+}
