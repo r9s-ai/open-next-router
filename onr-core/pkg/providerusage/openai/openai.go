@@ -24,6 +24,9 @@ type responsesOutputItem struct {
 
 type responsesBody struct {
 	Output []responsesOutputItem `json:"output"`
+	Response *struct {
+		Output []responsesOutputItem `json:"output"`
+	} `json:"response,omitempty"`
 }
 
 type AudioTranslationQuantities struct {
@@ -79,7 +82,11 @@ func CompletedWebSearchCallsFromResponseBody(body []byte) (float64, bool, error)
 		return 0, false, err
 	}
 	var total float64
-	for _, item := range resp.Output {
+	items := resp.Output
+	if len(items) == 0 && resp.Response != nil {
+		items = resp.Response.Output
+	}
+	for _, item := range items {
 		if strings.EqualFold(strings.TrimSpace(item.Type), "web_search_call") &&
 			strings.EqualFold(strings.TrimSpace(item.Status), "completed") {
 			total++

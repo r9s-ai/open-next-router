@@ -1,6 +1,7 @@
 package dslconfig
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
@@ -260,6 +261,84 @@ func TestExtractUsage_OpenAI_ResponsesWebSearchCanonicalFact(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected server_tool.web_search call fact, got=%#v", u.DebugFacts)
+	}
+}
+
+func TestExtractUsage_OpenAI_ResponsesWebSearchCanonicalFact_StreamFinalResponse(t *testing.T) {
+	meta := &dslmeta.Meta{API: "responses", IsStream: true}
+	cfg := UsageExtractConfig{Mode: "openai"}
+
+	resp := []byte(`{
+	  "response": {
+	    "output": [
+	      {"type":"web_search_call","status":"completed"},
+	      {"type":"web_search_call","status":"failed"},
+	      {"type":"web_search_call","status":"completed"}
+	    ]
+	  }
+	}`)
+
+	u, _, err := ExtractUsage(meta, cfg, resp)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if u == nil {
+		t.Fatalf("usage nil")
+	}
+	if got, want := u.FlatFields["server_tool_web_search_calls"], 2; got != want {
+		t.Fatalf("server_tool_web_search_calls=%v want=%v", got, want)
+	}
+	found := false
+	for _, fact := range u.DebugFacts {
+		if fact.Dimension == "server_tool.web_search" && fact.Unit == "call" && fact.Quantity == 2 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected server_tool.web_search call fact, got=%#v", u.DebugFacts)
+	}
+}
+
+func TestExtractUsage_OpenAI_ChatCompletionsMultimodalRealResponse(t *testing.T) {
+	meta := &dslmeta.Meta{API: "chat.completions", IsStream: false}
+	cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
+
+	resp := mustReadDSLConfigTestData(t, filepath.Join("openai", "chat_completions_multimodal_real.json"))
+
+	u, cached, err := ExtractUsage(meta, cfg, resp)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if u == nil {
+		t.Fatalf("usage nil")
+	}
+	if u.InputTokens != 36852 || u.OutputTokens != 1 || u.TotalTokens != 36853 {
+		t.Fatalf("unexpected usage: %+v", *u)
+	}
+	if cached != 0 {
+		t.Fatalf("cached=%d want=0", cached)
+	}
+}
+
+func TestExtractUsage_OpenAI_ResponsesMultimodalRealResponse(t *testing.T) {
+	meta := &dslmeta.Meta{API: "responses", IsStream: false}
+	cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
+
+	resp := mustReadDSLConfigTestData(t, filepath.Join("openai", "responses_multimodal_real.json"))
+
+	u, cached, err := ExtractUsage(meta, cfg, resp)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if u == nil {
+		t.Fatalf("usage nil")
+	}
+	if u.InputTokens != 36852 || u.OutputTokens != 2 || u.TotalTokens != 36854 {
+		t.Fatalf("unexpected usage: %+v", *u)
+	}
+	if cached != 0 {
+		t.Fatalf("cached=%d want=0", cached)
 	}
 }
 

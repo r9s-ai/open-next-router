@@ -78,6 +78,27 @@ func TestCompletedWebSearchCallsFromResponseBody_Missing(t *testing.T) {
 	}
 }
 
+func TestCompletedWebSearchCallsFromResponseBody_StreamFinalResponse(t *testing.T) {
+	got, ok, err := CompletedWebSearchCallsFromResponseBody([]byte(`{
+		"response":{
+			"output":[
+				{"type":"web_search_call","status":"completed"},
+				{"type":"web_search_call","status":"failed"},
+				{"type":"web_search_call","status":"completed"}
+			]
+		}
+	}`))
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected ok=true")
+	}
+	if got != 2 {
+		t.Fatalf("got %v want 2", got)
+	}
+}
+
 func TestAudioInputSeconds(t *testing.T) {
 	got, ok := AudioInputSeconds("duration", 0, 3)
 	if !ok {
