@@ -137,16 +137,17 @@ func ExtractModelIDs(cfg ModelsQueryConfig, respBody []byte) ([]string, error) {
 }
 
 func extractStringsByPath(root any, path string) []string {
-	vals, ok := jsonutil.GetValuesByPath(root, path)
-	if !ok || len(vals) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(vals))
-	for _, v := range vals {
+	out := make([]string, 0)
+	if !jsonutil.VisitValuesByPath(root, path, func(v any) {
 		s := strings.TrimSpace(jsonutil.CoerceString(v))
 		if s != "" {
 			out = append(out, s)
 		}
+	}) {
+		return nil
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

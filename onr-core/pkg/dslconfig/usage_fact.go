@@ -52,6 +52,11 @@ type usageFactEval struct {
 	matched  bool
 }
 
+type usageFactSet struct {
+	facts      []usageFactConfig
+	factGroups map[usageFactKey][]usageFactConfig
+}
+
 var defaultUsageDimensionRegistry = NewUsageDimensionRegistry(
 	UsageDimension{Dimension: "input", Unit: "token"},
 	UsageDimension{Dimension: "output", Unit: "token"},
@@ -66,6 +71,12 @@ var defaultUsageDimensionRegistry = NewUsageDimensionRegistry(
 	UsageDimension{Dimension: "audio.stt", Unit: "second"},
 	UsageDimension{Dimension: "audio.translate", Unit: "second"},
 )
+
+var builtinUsageFactSets = map[string]usageFactSet{
+	usageModeOpenAI:    newUsageFactSet([]usageFactConfig{{Dimension: "input", Unit: "token", Path: "$.usage.prompt_tokens"}, {Dimension: "input", Unit: "token", Path: "$.usage.input_tokens", Fallback: true}, {Dimension: "output", Unit: "token", Path: "$.usage.completion_tokens"}, {Dimension: "output", Unit: "token", Path: "$.usage.output_tokens", Fallback: true}, {Dimension: "cache_read", Unit: "token", Path: "$.usage.prompt_tokens_details.cached_tokens"}, {Dimension: "cache_read", Unit: "token", Path: "$.usage.input_tokens_details.cached_tokens", Fallback: true}, {Dimension: "cache_read", Unit: "token", Path: "$.usage.cached_tokens", Fallback: true}}),
+	usageModeAnthropic: newUsageFactSet([]usageFactConfig{{Dimension: "input", Unit: "token", Path: "$.usage.input_tokens"}, {Dimension: "output", Unit: "token", Path: "$.usage.output_tokens"}, {Dimension: "cache_read", Unit: "token", Path: "$.usage.cache_read_input_tokens"}, {Dimension: "cache_write", Unit: "token", Path: "$.usage.cache_creation.ephemeral_5m_input_tokens", Attrs: map[string]string{"ttl": "5m"}}, {Dimension: "cache_write", Unit: "token", Path: "$.usage.cache_creation.ephemeral_1h_input_tokens", Attrs: map[string]string{"ttl": "1h"}}, {Dimension: "cache_write", Unit: "token", Path: "$.usage.cache_creation_input_tokens", Fallback: true}}),
+	usageModeGemini:    newUsageFactSet([]usageFactConfig{{Dimension: "input", Unit: "token", Path: "$.usageMetadata.promptTokenCount"}, {Dimension: "input", Unit: "token", Path: "$.usage_metadata.prompt_token_count", Fallback: true}, {Dimension: "output", Unit: "token", Path: "$.usageMetadata.candidatesTokenCount"}, {Dimension: "output", Unit: "token", Path: "$.usageMetadata.thoughtsTokenCount"}, {Dimension: "output", Unit: "token", Path: "$.usage_metadata.candidates_token_count"}, {Dimension: "output", Unit: "token", Path: "$.usage_metadata.thoughts_token_count"}}),
+}
 
 func NewUsageDimensionRegistry(keys ...UsageDimension) UsageDimensionRegistry {
 	reg := UsageDimensionRegistry{allowed: make(map[usageFactKey]struct{}, len(keys))}
@@ -150,6 +161,13 @@ func usageFactQuantities(reqRoot, respRoot, derivedRoot map[string]any, facts []
 		out[key] = total
 	}
 	return out
+}
+
+func newUsageFactSet(facts []usageFactConfig) usageFactSet {
+	return usageFactSet{
+		facts:      facts,
+		factGroups: groupUsageFactConfigs(facts),
+	}
 }
 
 func evaluateUsageFactConfigs(reqRoot, respRoot, derivedRoot map[string]any, facts []usageFactConfig) []usageFactEval {
@@ -355,17 +373,15 @@ func extractBuiltinUsage(meta *dslmeta.Meta, reqRoot, respRoot, derivedRoot map[
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	explicitKeys := cfg.explicitFactKeys
 
-	baseFacts := builtinUsageFactConfigs(mode)
-	facts := make([]usageFactConfig, 0, len(baseFacts)+len(cfg.facts))
-	for _, fact := range baseFacts {
-		if _, ok := explicitKeys[normalizeUsageFactKey(fact.Dimension, fact.Unit)]; ok {
+	baseSet := builtinUsageFactSet(mode)
+	evals := make([]usageFactEval, 0, len(baseSet.facts)+len(cfg.facts))
+	for key, group := range baseSet.factGroups {
+		if _, ok := explicitKeys[key]; ok {
 			continue
 		}
-		facts = append(facts, fact)
+		evals = append(evals, evaluateUsageFactGroup(reqRoot, respRoot, derivedRoot, group)...)
 	}
-	facts = append(facts, cfg.facts...)
-
-	evals := evaluateUsageFactConfigs(reqRoot, respRoot, derivedRoot, facts)
+	evals = append(evals, evaluateUsageFactConfigGroups(reqRoot, respRoot, derivedRoot, cfg.factGroups, len(cfg.facts))...)
 	evals = append(evals, builtinSupplementalUsageFactEvals(meta, derivedRoot, respBody, mode, explicitKeys)...)
 	usage, cachedTokens, err := projectUsageFromFacts(evals)
 	if err != nil {
@@ -477,38 +493,14 @@ func builtinSupplementalWebSearchCallUsageFactEvals(respBody []byte, key usageFa
 }
 
 func builtinUsageFactConfigs(mode string) []usageFactConfig {
-	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case usageModeOpenAI:
-		return []usageFactConfig{
-			{Dimension: "input", Unit: "token", Path: "$.usage.prompt_tokens"},
-			{Dimension: "input", Unit: "token", Path: "$.usage.input_tokens", Fallback: true},
-			{Dimension: "output", Unit: "token", Path: "$.usage.completion_tokens"},
-			{Dimension: "output", Unit: "token", Path: "$.usage.output_tokens", Fallback: true},
-			{Dimension: "cache_read", Unit: "token", Path: "$.usage.prompt_tokens_details.cached_tokens"},
-			{Dimension: "cache_read", Unit: "token", Path: "$.usage.input_tokens_details.cached_tokens", Fallback: true},
-			{Dimension: "cache_read", Unit: "token", Path: "$.usage.cached_tokens", Fallback: true},
-		}
-	case usageModeAnthropic:
-		return []usageFactConfig{
-			{Dimension: "input", Unit: "token", Path: "$.usage.input_tokens"},
-			{Dimension: "output", Unit: "token", Path: "$.usage.output_tokens"},
-			{Dimension: "cache_read", Unit: "token", Path: "$.usage.cache_read_input_tokens"},
-			{Dimension: "cache_write", Unit: "token", Path: "$.usage.cache_creation.ephemeral_5m_input_tokens", Attrs: map[string]string{"ttl": "5m"}},
-			{Dimension: "cache_write", Unit: "token", Path: "$.usage.cache_creation.ephemeral_1h_input_tokens", Attrs: map[string]string{"ttl": "1h"}},
-			{Dimension: "cache_write", Unit: "token", Path: "$.usage.cache_creation_input_tokens", Fallback: true},
-		}
-	case usageModeGemini:
-		return []usageFactConfig{
-			{Dimension: "input", Unit: "token", Path: "$.usageMetadata.promptTokenCount"},
-			{Dimension: "input", Unit: "token", Path: "$.usage_metadata.prompt_token_count", Fallback: true},
-			{Dimension: "output", Unit: "token", Path: "$.usageMetadata.candidatesTokenCount"},
-			{Dimension: "output", Unit: "token", Path: "$.usageMetadata.thoughtsTokenCount"},
-			{Dimension: "output", Unit: "token", Path: "$.usage_metadata.candidates_token_count"},
-			{Dimension: "output", Unit: "token", Path: "$.usage_metadata.thoughts_token_count"},
-		}
-	default:
-		return nil
+	return builtinUsageFactSet(mode).facts
+}
+
+func builtinUsageFactSet(mode string) usageFactSet {
+	if set, ok := builtinUsageFactSets[strings.ToLower(strings.TrimSpace(mode))]; ok {
+		return set
 	}
+	return usageFactSet{}
 }
 
 func builtinTotalTokens(root map[string]any, mode string) int {
