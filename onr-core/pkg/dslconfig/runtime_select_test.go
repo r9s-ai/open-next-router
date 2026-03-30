@@ -41,6 +41,51 @@ func TestProviderUsageSelect_MergeMatch(t *testing.T) {
 	}
 }
 
+func TestProviderUsageSelect_MergeFactsDoesNotMutateDefaults(t *testing.T) {
+	streamTrue := true
+	p := ProviderUsage{
+		Defaults: UsageExtractConfig{
+			Mode:  usageModeCustom,
+			facts: []usageFactConfig{{Dimension: "input", Unit: "token", Path: "$.usage.input_tokens"}},
+		},
+		Matches: []MatchUsage{
+			{
+				API:    "chat.completions",
+				Stream: &streamTrue,
+				Extract: UsageExtractConfig{
+					facts: []usageFactConfig{{Dimension: "output", Unit: "token", Path: "$.usage.output_tokens"}},
+				},
+			},
+		},
+	}
+
+	cfg, ok := p.Select(&dslmeta.Meta{API: "chat.completions", IsStream: true})
+	if !ok {
+		t.Fatalf("expected usage config selected")
+	}
+	if got, want := len(p.Defaults.facts), 1; got != want {
+		t.Fatalf("defaults facts len got %d, want %d", got, want)
+	}
+	if got, want := len(cfg.facts), 2; got != want {
+		t.Fatalf("merged facts len got %d, want %d", got, want)
+	}
+
+	resp := []byte(`{"usage":{"input_tokens":3,"output_tokens":4}}`)
+	usage, _, err := ExtractUsage(&dslmeta.Meta{API: "chat.completions", IsStream: true}, cfg, resp)
+	if err != nil {
+		t.Fatalf("ExtractUsage: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage")
+	}
+	if got, want := usage.InputTokens, 3; got != want {
+		t.Fatalf("InputTokens got %d, want %d", got, want)
+	}
+	if got, want := usage.OutputTokens, 4; got != want {
+		t.Fatalf("OutputTokens got %d, want %d", got, want)
+	}
+}
+
 func TestProviderFinishReasonSelect_MergeAndEmpty(t *testing.T) {
 	p := ProviderFinishReason{
 		Defaults: FinishReasonExtractConfig{Mode: "openai", FinishReasonPath: "$.a"},

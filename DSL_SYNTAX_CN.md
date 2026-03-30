@@ -20,6 +20,7 @@ Provider 配置文件位于本仓库 `config/providers/*.conf`，在启动时（
   - [5.5 response（响应处理）](#55-response响应处理)
   - [5.6 error（错误归一化）](#56-error错误归一化)
   - [5.7 metrics（用量提取--usage）](#57-metrics用量提取--usage)
+    - [5.7.1 usage_fact（推荐的新写法）](#571-usage_fact推荐的新写法)
 - [6. 可用的 Context（表达式变量）](#6-可用的-context表达式变量)
 - [7. 指令参考（nginx 风格）](#7-指令参考nginx-风格)
   - [7.1 顶层指令](#71-顶层指令)
@@ -31,6 +32,7 @@ Provider 配置文件位于本仓库 `config/providers/*.conf`，在启动时（
   - [7.7 response（响应）](#77-response响应)
   - [7.8 error（错误归一化）](#78-error错误归一化)
   - [7.9 metrics（用量提取--usage）](#79-metrics用量提取--usage)
+    - [7.9.1 usage_fact](#791-usage_fact)
 - [8. 内置变量参考](#8-内置变量参考)
 
 ---
@@ -126,6 +128,7 @@ match api = "<api-name>" { ... }
 - `gemini.generateContent`（Gemini 原生：`POST /v1beta/models/{model}:generateContent`）
 - `gemini.streamGenerateContent`（Gemini 原生：`POST /v1beta/models/{model}:streamGenerateContent?alt=sse`）
 - `images.generations`
+- `images.edits`
 - `audio.speech`
 - `audio.transcriptions`
 - `audio.translations`
@@ -145,6 +148,12 @@ match api = "<api-name>" { ... }
 合并规则（非常重要）：
 
 - `defaults` 先应用，再应用命中的 `match`（因此 match 中的同名设置通常可以覆盖 defaults）
+
+phase 边界规则（非常重要）：
+
+- `request` 负责“上游请求内容的构造”，包括请求体变换、header 操作，以及供后续路由表达式使用的 model 映射。
+- `upstream` 只负责“上游目标的路由”，也就是 path、query、以及与 base_url 相关的目标选择。
+- 不要把 header 或 body 的变更语义放进 `upstream`。
 
 ### 5.1 upstream_config（上游默认配置）
 
@@ -215,7 +224,7 @@ auth {
 
 ### 5.3 request（请求处理）
 
-> v0.1：`request` phase 同时承担“请求头操作”与“请求体（JSON）变换”的能力。
+> v0.1：`request` phase 负责“上游请求内容的构造”，同时承担请求头操作、请求体（JSON）变换，以及供后续路由表达式使用的 model 映射。
 
 #### set_header（可多条）
 
@@ -243,6 +252,48 @@ request {
 
 - 支持多条；按顺序执行
 - `defaults` 的操作在前，`match` 的操作追加在后，因此 match 更容易覆盖 defaults（例如 defaults 先 set，match 再 del）
+
+#### pass_header（可多条）
+
+```conf
+request {
+  pass_header "anthropic-beta";
+}
+```
+
+说明：
+
+- 将原始客户端请求中的某个 header 复制到上游请求。
+- 如果源 header 不存在，则为 no-op。
+- 支持多条；与 `set_header`、`del_header` 一样按声明顺序执行。
+- 如果同一个 header 先 `pass_header`，后续又被 `set_header` 或 `del_header`，则以后出现的指令结果为准。
+
+#### filter_header_values（可多条）
+
+```conf
+request {
+  filter_header_values "anthropic-beta" "context-1m-*" "fast-mode-*";
+  filter_header_values "x-feature-flags" "exp-*" "debug" separator=";";
+}
+```
+
+说明：
+
+- 用于过滤某个上游请求 header 中的“列表型值”。
+- 语法：`filter_header_values <header> <pattern>... [separator="<sep>"];`
+- 推荐风格：pattern 统一写成连续位置参数，不要使用逗号分隔参数的写法。
+- 默认分隔符是 `,`。
+- 运行时行为：
+  - 读取当前上游请求 header 值
+  - 按 `separator` 分割
+  - 对每一项执行 `strings.TrimSpace`
+  - 删除匹配任一 pattern 的项
+  - 如果结果为空，则删除整个 header
+  - 否则将剩余项重新拼接
+- 输出格式会被规范化：
+  - 如果 `separator == ","`，使用 `", "` 连接
+  - 否则使用 `"<sep> "` 连接，例如 `"; "`
+- pattern 使用简单的 `*` 通配语义；不支持正则表达式。
 
 #### model_map（可多条）
 
@@ -308,6 +359,9 @@ v0.1 内置：
 - `openai_chat_to_anthropic_messages`：OpenAI `chat.completions` 请求 JSON → Anthropic `/v1/messages` 请求 JSON
 
 ### 5.4 upstream（路径与 query 操作）
+
+`upstream` phase 只负责上游目标路由。
+它应只承载 path / query / base_url 相关的选择逻辑，不应承载请求头或请求体的变更语义。
 
 #### set_path
 
@@ -484,6 +538,67 @@ metrics {
 多条与覆盖规则：
 
 - 这些字段都是“可选覆盖项”，同字段重复出现时以后者为准
+
+#### usage_fact（推荐的新写法）
+
+```conf
+metrics {
+  usage_extract custom;
+
+  usage_fact input token path="$.usage.input_tokens";
+  usage_fact output token path="$.usage.output_tokens";
+  usage_fact cache_read token path="$.usage.cache_read_input_tokens";
+
+  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
+  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
+  usage_fact cache_write token path="$.usage.cache_creation_input_tokens" fallback=true;
+}
+```
+
+- `usage_fact` 用于把不同来源的用量统一抽成规范化事实
+- 目前仅在 `usage_extract custom;` 下启用
+- 第一批支持 `path` / `count_path` / `sum_path` / `expr`
+- `attr.ttl` 用于区分 Anthropic 的 `5m` / `1h` cache write
+- `fallback=true` 用于在更具体的事实不存在时回退到总量字段
+- `source` 默认是 `response`，当前支持 `response` / `request` / `derived`
+- 当前 registry 允许的 `dimension + unit` 组合是受限的：
+  - token / cache：`input token`、`output token`、`cache_read token`、`cache_write token`
+  - tool：`server_tool.web_search call`、`server_tool.file_search call`
+  - image/audio：`image.generate image`、`image.edit image`、`image.variation image`、`audio.tts second`、`audio.stt second`、`audio.translate second`
+- `usage_extract openai;` 当前除了传统 token 提取外，也会补充这些 canonical facts：
+  - `images.generations -> image.generate image`
+  - `images.edits -> image.edit image`
+  - `audio.transcriptions -> audio.stt second`
+  - `audio.translations -> audio.translate second`
+  - `audio.speech -> audio.tts second`（依赖 derived runtime usage）
+  - `responses -> server_tool.web_search call`
+
+补充示例：
+
+```conf
+metrics {
+  usage_extract openai;
+
+  usage_fact server_tool.web_search call count_path="$.output[*]" type="web_search_call" status="completed";
+}
+```
+
+```conf
+metrics {
+  usage_extract openai;
+
+  usage_fact image.generate image count_path="$.data[*]";
+  usage_fact image.generate image source=request expr="$.n" fallback=true;
+}
+```
+
+```conf
+metrics {
+  usage_extract openai;
+
+  usage_fact audio.tts second source=derived path="$.audio.tts.seconds";
+}
+```
 
 #### finish_reason_extract
 
@@ -733,6 +848,32 @@ Multiple: yes
 - 支持多条；按顺序执行。
 - 合并规则：`defaults` 的操作先执行，`match` 的操作追加在后执行。
 
+#### pass_header
+
+```text
+Syntax:  pass_header <Header-Name>;
+Default: —
+Context: request
+Multiple: yes
+```
+
+- 将原始客户端请求中的某个 header 复制到上游请求。
+- 如果源 header 不存在，则为 no-op。
+
+#### filter_header_values
+
+```text
+Syntax:  filter_header_values <Header-Name> <pattern>... [separator="<sep>"];
+Default: separator=","
+Context: request
+Multiple: yes
+```
+
+- 用于过滤上游请求 header 中的列表型值。
+- 执行过程为：按 `separator` 分割，对每项做 trim，删除匹配项，再重组剩余项。
+- 如果过滤后没有剩余项，则删除整个 header。
+- 输出连接格式会被规范化：`,` 使用 `", "`，其他分隔符使用 `"<sep> "`。
+
 #### model_map
 
 ```text
@@ -906,6 +1047,36 @@ Multiple: no
 ```
 
 - 目前支持：`openai` / `anthropic` / `gemini` / `custom`。
+
+#### usage_fact
+
+```text
+Syntax:  usage_fact <dimension> <unit> path|count_path|sum_path|expr ...;
+Default: —
+Context: metrics
+Multiple: yes
+```
+
+- 仅建议配合 `usage_extract custom;` 使用。
+- 第一批支持固定 registry 维度，不开放任意自定义维度。
+- 支持 `path` / `count_path` / `sum_path` / `expr` 四类原语。
+- `count_path` 可搭配 `type` / `status` 过滤。
+- 支持常量属性，如 `attr.ttl="5m"` / `attr.ttl="1h"`。
+- `fallback=true` 表示在同一 `dimension + unit` 没有更具体事实时再生效。
+- `source` 默认是 `response`，当前支持 `response` / `request` / `derived`。
+- 当前固定 registry 包括：
+  - `input token`
+  - `output token`
+  - `cache_read token`
+  - `cache_write token`
+  - `server_tool.web_search call`
+  - `server_tool.file_search call`
+  - `image.generate image`
+  - `image.edit image`
+  - `image.variation image`
+  - `audio.tts second`
+  - `audio.stt second`
+  - `audio.translate second`
 
 #### finish_reason_extract
 

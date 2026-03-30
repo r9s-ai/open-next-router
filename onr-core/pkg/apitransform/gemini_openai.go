@@ -545,14 +545,8 @@ func MapOpenAIChatCompletionsToGeminiGenerateContentResponseObject(root apitypes
 
 	usageMeta := apitypes.JSONObject{}
 	if u, _ := root["usage"].(map[string]any); u != nil {
-		p := jsonutil.GetIntByPath(u, "$.prompt_tokens")
-		if p == 0 {
-			p = jsonutil.GetIntByPath(u, "$.input_tokens")
-		}
-		c := jsonutil.GetIntByPath(u, "$.completion_tokens")
-		if c == 0 {
-			c = jsonutil.GetIntByPath(u, "$.output_tokens")
-		}
+		p := jsonutil.GetFirstIntByPaths(u, "$.prompt_tokens", "$.input_tokens")
+		c := jsonutil.GetFirstIntByPaths(u, "$.completion_tokens", "$.output_tokens")
 		t := jsonutil.GetIntByPath(u, "$.total_tokens")
 		if t == 0 {
 			t = p + c

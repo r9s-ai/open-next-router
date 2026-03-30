@@ -1,0 +1,13 @@
+{
+  "path": "/v1/responses",
+  "content_type": "application/json",
+  "json_require": {
+    "model": "gpt-4.1",
+    "metadata": {
+      "trace_id": "resp-e2e"
+    }
+  },
+  "json_absent": [
+    "service_tier"
+  ]
+}

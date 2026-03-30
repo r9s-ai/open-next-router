@@ -22,6 +22,10 @@ type UsageExtractConfig struct {
 	CacheReadTokensExpr  *UsageExpr
 	CacheWriteTokensExpr *UsageExpr
 	TotalTokensExpr      *UsageExpr
+
+	facts            []usageFactConfig
+	factGroups       map[usageFactKey][]usageFactConfig
+	explicitFactKeys map[usageFactKey]struct{}
 }
 
 const (
@@ -75,100 +79,103 @@ func (p ProviderUsage) selectMatch(api string, stream bool) (MatchUsage, bool) {
 }
 
 func ExtractUsage(meta *dslmeta.Meta, cfg UsageExtractConfig, respBody []byte) (*Usage, int, error) {
+	cfg = prepareUsageExtractConfig(cfg)
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	if mode == "" {
 		return nil, 0, nil
 	}
-	var data any
-	if err := json.Unmarshal(respBody, &data); err != nil {
-		return nil, 0, fmt.Errorf("parse response json: %w", err)
+	respRoot, err := responseRootFromBody(meta, cfg, respBody)
+	if err != nil {
+		return nil, 0, err
 	}
-	root, ok := data.(map[string]any)
-	if !ok {
+	return extractUsageFromResponseRoot(meta, cfg, respRoot, respBody)
+}
+
+func extractUsageFromResponseRoot(meta *dslmeta.Meta, cfg UsageExtractConfig, respRoot map[string]any, respBody []byte) (*Usage, int, error) {
+	cfg = prepareUsageExtractConfig(cfg)
+	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
+	if mode == "" {
 		return nil, 0, nil
 	}
+	reqRoot := requestRootFromMeta(meta)
+	derivedRoot := derivedRootFromMeta(meta)
+	return extractUsageFromRoots(meta, cfg, reqRoot, respRoot, derivedRoot, respBody)
+}
 
-	var inputTokens, outputTokens, cachedTokens, cacheWriteTokens int
-	var totalTokens *int
+func extractUsageFromRoots(meta *dslmeta.Meta, cfg UsageExtractConfig, reqRoot, respRoot, derivedRoot map[string]any, respBody []byte) (*Usage, int, error) {
+	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	switch mode {
-	case usageModeOpenAI:
-		inputTokens = jsonutil.FirstInt(
-			jsonutil.GetIntByPath(root, "$.usage.prompt_tokens"),
-			jsonutil.GetIntByPath(root, "$.usage.input_tokens"),
-		)
-		outputTokens = jsonutil.FirstInt(
-			jsonutil.GetIntByPath(root, "$.usage.completion_tokens"),
-			jsonutil.GetIntByPath(root, "$.usage.output_tokens"),
-		)
-		cachedTokens = jsonutil.FirstInt(
-			jsonutil.GetIntByPath(root, "$.usage.prompt_tokens_details.cached_tokens"),
-			jsonutil.GetIntByPath(root, "$.usage.input_tokens_details.cached_tokens"),
-			jsonutil.GetIntByPath(root, "$.usage.cached_tokens"),
-		)
-	case usageModeAnthropic:
-		inputTokens = jsonutil.GetIntByPath(root, "$.usage.input_tokens")
-		outputTokens = jsonutil.GetIntByPath(root, "$.usage.output_tokens")
-		cachedTokens = jsonutil.GetIntByPath(root, "$.usage.cache_read_input_tokens")
-		cacheWriteTokens = jsonutil.GetIntByPath(root, "$.usage.cache_creation_input_tokens")
-	case usageModeGemini:
-		// Gemini native usage fields (new-api alignment):
-		// - usageMetadata.promptTokenCount
-		// - usageMetadata.candidatesTokenCount
-		// - usageMetadata.thoughtsTokenCount (reasoning)
-		// - usageMetadata.totalTokenCount
-		//
-		// CompletionTokens = candidatesTokenCount + thoughtsTokenCount
-		// TotalTokens uses totalTokenCount if present.
-		inputTokens = jsonutil.FirstInt(
-			jsonutil.GetIntByPath(root, "$.usageMetadata.promptTokenCount"),
-			jsonutil.GetIntByPath(root, "$.usage_metadata.prompt_token_count"),
-		)
-		candidatesTokens := jsonutil.FirstInt(
-			jsonutil.GetIntByPath(root, "$.usageMetadata.candidatesTokenCount"),
-			jsonutil.GetIntByPath(root, "$.usage_metadata.candidates_token_count"),
-		)
-		thoughtsTokens := jsonutil.FirstInt(
-			jsonutil.GetIntByPath(root, "$.usageMetadata.thoughtsTokenCount"),
-			jsonutil.GetIntByPath(root, "$.usage_metadata.thoughts_token_count"),
-		)
-		outputTokens = candidatesTokens + thoughtsTokens
-		if v := jsonutil.FirstInt(
-			jsonutil.GetIntByPath(root, "$.usageMetadata.totalTokenCount"),
-			jsonutil.GetIntByPath(root, "$.usage_metadata.total_token_count"),
-		); v != 0 {
-			totalTokens = &v
-		}
 	case usageModeCustom:
-		inputTokens = evalUsageField(root, cfg.InputTokensExpr, cfg.InputTokensPath)
-		outputTokens = evalUsageField(root, cfg.OutputTokensExpr, cfg.OutputTokensPath)
-		cachedTokens = evalUsageField(root, cfg.CacheReadTokensExpr, cfg.CacheReadTokensPath)
-		cacheWriteTokens = evalUsageField(root, cfg.CacheWriteTokensExpr, cfg.CacheWriteTokensPath)
-		if cfg.TotalTokensExpr != nil {
-			v := cfg.TotalTokensExpr.Eval(root)
-			totalTokens = &v
+		usage, cachedTokens, err := extractCustomUsage(reqRoot, respRoot, derivedRoot, cfg)
+		if err != nil {
+			return nil, 0, err
 		}
+		return usage, cachedTokens, nil
+	case usageModeOpenAI, usageModeAnthropic, usageModeGemini:
+		return extractBuiltinUsage(meta, reqRoot, respRoot, derivedRoot, respBody, cfg)
 	default:
 		return nil, 0, fmt.Errorf("unsupported usage_extract mode %q", cfg.Mode)
 	}
+}
 
-	tt := inputTokens + outputTokens
-	if totalTokens != nil {
-		tt = *totalTokens
+func responseRootFromBody(meta *dslmeta.Meta, cfg UsageExtractConfig, respBody []byte) (map[string]any, error) {
+	var data any
+	if err := json.Unmarshal(respBody, &data); err != nil {
+		if usageConfigAllowsNonJSONResponse(meta, cfg) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("parse response json: %w", err)
 	}
-	usage := &Usage{
-		PromptTokens:     inputTokens,
-		CompletionTokens: outputTokens,
-		TotalTokens:      tt,
-		InputTokens:      inputTokens,
-		OutputTokens:     outputTokens,
+	root, ok := data.(map[string]any)
+	if !ok {
+		return nil, nil
 	}
-	if cachedTokens > 0 || cacheWriteTokens > 0 {
-		usage.InputTokenDetails = &ResponseTokenDetails{
-			CachedTokens:     cachedTokens,
-			CacheWriteTokens: cacheWriteTokens,
+	return root, nil
+}
+
+func usageConfigAllowsNonJSONResponse(meta *dslmeta.Meta, cfg UsageExtractConfig) bool {
+	for _, fact := range cfg.facts {
+		switch strings.ToLower(strings.TrimSpace(fact.Source)) {
+		case "request", "derived":
+			return true
 		}
 	}
-	return usage, cachedTokens, nil
+	if meta != nil &&
+		strings.EqualFold(strings.TrimSpace(cfg.Mode), usageModeOpenAI) &&
+		strings.EqualFold(strings.TrimSpace(meta.API), "audio.speech") &&
+		len(meta.DerivedUsage) > 0 {
+		return true
+	}
+	return false
+}
+
+func requestRootFromMeta(meta *dslmeta.Meta) map[string]any {
+	if meta == nil {
+		return nil
+	}
+	return meta.RequestRoot()
+}
+
+func prepareUsageExtractConfig(cfg UsageExtractConfig) UsageExtractConfig {
+	if len(cfg.facts) == 0 {
+		cfg.factGroups = nil
+		cfg.explicitFactKeys = nil
+		return cfg
+	}
+	if cfg.factGroups == nil {
+		cfg.factGroups = groupUsageFactConfigs(cfg.facts)
+	}
+	if cfg.explicitFactKeys == nil {
+		cfg.explicitFactKeys = usageFactExplicitKeys(cfg.facts)
+	}
+	return cfg
+}
+
+func derivedRootFromMeta(meta *dslmeta.Meta) map[string]any {
+	if meta == nil || len(meta.DerivedUsage) == 0 {
+		return nil
+	}
+	return meta.DerivedUsage
 }
 
 func evalUsageField(root map[string]any, expr *UsageExpr, fallbackPath string) int {
@@ -180,6 +187,8 @@ func evalUsageField(root map[string]any, expr *UsageExpr, fallbackPath string) i
 
 func mergeUsageConfig(base UsageExtractConfig, override UsageExtractConfig) UsageExtractConfig {
 	out := base
+	out.factGroups = nil
+	out.explicitFactKeys = nil
 	if strings.TrimSpace(override.Mode) != "" {
 		out.Mode = override.Mode
 	}
@@ -210,5 +219,30 @@ func mergeUsageConfig(base UsageExtractConfig, override UsageExtractConfig) Usag
 	if override.TotalTokensExpr != nil {
 		out.TotalTokensExpr = override.TotalTokensExpr
 	}
-	return out
+	if len(override.facts) > 0 {
+		combined := make([]usageFactConfig, 0, len(base.facts)+len(override.facts))
+		combined = append(combined, base.facts...)
+		combined = append(combined, override.facts...)
+		out.facts = combined
+	}
+	return prepareUsageExtractConfig(out)
+}
+
+// UsesDerivedUsagePath reports whether the config explicitly references a
+// derived-source usage_fact at the given JSON path.
+func UsesDerivedUsagePath(cfg UsageExtractConfig, path string) bool {
+	cfg = prepareUsageExtractConfig(cfg)
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return false
+	}
+	for _, fact := range cfg.facts {
+		if !strings.EqualFold(strings.TrimSpace(fact.Source), "derived") {
+			continue
+		}
+		if strings.TrimSpace(fact.Path) == path {
+			return true
+		}
+	}
+	return false
 }

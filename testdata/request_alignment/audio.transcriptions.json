@@ -1,0 +1,15 @@
+{
+  "path": "/v1/audio/transcriptions",
+  "content_type_prefix": "multipart/form-data;",
+  "multipart_values": {
+    "model": [
+      "gpt-4o-mini-transcribe"
+    ],
+    "provider_flag": [
+      "alpha"
+    ]
+  },
+  "multipart_file_keys": [
+    "file"
+  ]
+}

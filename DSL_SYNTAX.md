@@ -127,6 +127,7 @@ Currently supported `api` values (aligned with OpenAI-style endpoints):
 - `claude.messages`
 - `embeddings`
 - `images.generations`
+- `images.edits`
 - `audio.speech`
 - `audio.transcriptions`
 - `audio.translations`
@@ -150,6 +151,12 @@ Available blocks:
 Merge rule (important):
 
 - `defaults` is applied first; the selected `match` is applied afterwards, so match settings can override defaults.
+
+Phase boundary rule (important):
+
+- `request` is responsible for constructing the upstream request content, including request body transforms, header operations, and model mapping.
+- `upstream` is responsible only for routing the upstream target, such as path, query, and base-url-related target selection.
+- Do not place header or body mutation semantics in `upstream`.
 
 ### 5.1 upstream_config
 
@@ -218,7 +225,8 @@ auth {
 
 ### 5.3 request
 
-In v0.1, `request` provides request-header operations and lightweight JSON body transforms.
+In v0.1, `request` is the phase that constructs the upstream request content.
+It owns request-header operations, lightweight JSON body transforms, and model mapping used by downstream routing expressions.
 
 #### set_header (multiple allowed)
 
@@ -242,6 +250,44 @@ request {
 
 - Multiple directives are allowed; executed in order.
 - Defaults are applied before match; match directives are appended after defaults.
+
+#### pass_header (multiple allowed)
+
+```conf
+request {
+  pass_header "anthropic-beta";
+}
+```
+
+- Copies one header from the original client request to the upstream request.
+- If the source header is absent, this is a no-op.
+- Multiple directives are allowed; executed in order with `set_header` and `del_header`.
+- If the same header is passed and later set or deleted, the later directive wins.
+
+#### filter_header_values (multiple allowed)
+
+```conf
+request {
+  filter_header_values "anthropic-beta" "context-1m-*" "fast-mode-*";
+  filter_header_values "x-feature-flags" "exp-*" "debug" separator=";";
+}
+```
+
+- Filters itemized values inside an upstream request header.
+- Syntax: `filter_header_values <header> <pattern>... [separator="<sep>"];`
+- Recommended style: keep the pattern list as plain positional arguments. Do not use comma-delimited argument style.
+- The default separator is `,`.
+- Runtime behavior:
+  - Read the current upstream request header value
+  - Split by `separator`
+  - Apply `strings.TrimSpace` to each item
+  - Remove items matching any pattern
+  - Delete the whole header if no items remain
+  - Otherwise re-join the remaining items
+- Output formatting is normalized:
+  - If `separator == ","`, items are joined with `", "`
+  - Otherwise items are joined with `"<sep> "`, for example `"; "`
+- Pattern matching uses simple `*` wildcards; regex is not supported.
 
 #### model_map (multiple allowed)
 
@@ -301,6 +347,9 @@ v0.1 includes:
 - `openai_chat_to_anthropic_messages`: OpenAI `chat.completions` request JSON → Anthropic `/v1/messages` request JSON
 
 ### 5.4 upstream
+
+`upstream` is limited to upstream target routing.
+It should be used for path/query/base-url-related selection only, not for request-header or request-body mutation.
 
 #### set_path
 
@@ -465,6 +514,68 @@ Supported JSONPath subset:
 Multiple/override rules:
 
 - These fields are optional overrides; if the same field appears multiple times, the last one wins.
+
+#### usage_fact (recommended new form)
+
+```conf
+metrics {
+  usage_extract custom;
+
+  usage_fact input token path="$.usage.input_tokens";
+  usage_fact output token path="$.usage.output_tokens";
+  usage_fact cache_read token path="$.usage.cache_read_input_tokens";
+
+  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
+  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
+  usage_fact cache_write token path="$.usage.cache_creation_input_tokens" fallback=true;
+}
+```
+
+- `usage_fact` normalizes measurable usage into canonical facts.
+- It is most commonly used with `usage_extract custom;`, but builtin modes can also supplement canonical facts.
+- Supported primitives: `path`, `count_path`, `sum_path`, `expr`.
+- `count_path` can be combined with `type` and `status`.
+- `attr.ttl` distinguishes Anthropic cache-write tiers.
+- `fallback=true` applies only when no more specific fact exists for the same `dimension + unit`.
+- `source` defaults to `response` and currently supports `response`, `request`, and `derived`.
+- The current registry is intentionally limited to:
+  - token/cache: `input token`, `output token`, `cache_read token`, `cache_write token`
+  - tool: `server_tool.web_search call`, `server_tool.file_search call`
+  - image/audio: `image.generate image`, `image.edit image`, `image.variation image`, `audio.tts second`, `audio.stt second`, `audio.translate second`
+- `usage_extract openai;` can currently supplement these canonical facts:
+  - `images.generations -> image.generate image`
+  - `images.edits -> image.edit image`
+  - `audio.transcriptions -> audio.stt second`
+  - `audio.translations -> audio.translate second`
+  - `audio.speech -> audio.tts second` when derived runtime usage is available
+  - `responses -> server_tool.web_search call`
+
+Examples:
+
+```conf
+metrics {
+  usage_extract openai;
+
+  usage_fact server_tool.web_search call count_path="$.output[*]" type="web_search_call" status="completed";
+}
+```
+
+```conf
+metrics {
+  usage_extract openai;
+
+  usage_fact image.generate image count_path="$.data[*]";
+  usage_fact image.generate image source=request expr="$.n" fallback=true;
+}
+```
+
+```conf
+metrics {
+  usage_extract openai;
+
+  usage_fact audio.tts second source=derived path="$.audio.tts.seconds";
+}
+```
 
 #### finish_reason_extract
 
@@ -752,6 +863,32 @@ Multiple: yes
 
 - Deletes an upstream request header.
 - Multiple allowed; executed in order.
+
+#### pass_header
+
+```text
+Syntax:  pass_header <Header-Name>;
+Default: —
+Context: request
+Multiple: yes
+```
+
+- Copies one header from the original client request to the upstream request.
+- If the source header is absent, this is a no-op.
+
+#### filter_header_values
+
+```text
+Syntax:  filter_header_values <Header-Name> <pattern>... [separator="<sep>"];
+Default: separator=","
+Context: request
+Multiple: yes
+```
+
+- Filters itemized values from one upstream request header.
+- Split by `separator`, trim each item, remove items matching any pattern, then re-join survivors.
+- If nothing remains after filtering, the whole header is deleted.
+- Join formatting is normalized to `", "` for comma and `"<sep> "` for any other separator.
 
 #### model_map
 
@@ -1051,6 +1188,23 @@ Multiple: yes
 ```
 
 - Shorthand for `cache_write_tokens_expr = <jsonpath>;` (single JSONPath only; no arithmetic).
+
+#### usage_fact
+
+```text
+Syntax:  usage_fact <dimension> <unit> path|count_path|sum_path|expr ...;
+Default: —
+Context: metrics
+Multiple: yes
+```
+
+- Recommended with `usage_extract custom;`, but builtin modes may also supplement canonical facts.
+- The registry is intentionally fixed; arbitrary dimensions are not accepted.
+- Supports `path`, `count_path`, `sum_path`, and `expr`.
+- `count_path` may be combined with `type` / `status`.
+- Constant attributes such as `attr.ttl="5m"` are supported.
+- `fallback=true` means the fact applies only when no more specific fact exists for the same `dimension + unit`.
+- `source` defaults to `response` and currently supports `response`, `request`, and `derived`.
 
 ### 7.10 balance (upstream balance query)
 

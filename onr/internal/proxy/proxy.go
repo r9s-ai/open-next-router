@@ -23,9 +23,13 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/oauthclient"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/pricing"
+	onraudio "github.com/r9s-ai/open-next-router/onr-core/pkg/providerusage/audio"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/requestcanon"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/requesttransform"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/trafficdump"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/usageestimate"
 	"github.com/r9s-ai/open-next-router/onr/internal/auth"
+	"github.com/r9s-ai/open-next-router/onr/internal/logx"
 )
 
 const (
@@ -80,6 +84,8 @@ type Client struct {
 	pricingMu      sync.RWMutex
 	pricing        *pricing.Resolver
 	pricingEnabled bool
+
+	SystemLogger *logx.SystemLogger
 }
 
 type proxyCtx struct {
@@ -169,12 +175,14 @@ func (c *Client) handleNonStreamResponse(
 	// but before response json ops (json_del/json_set/json_rename) so operators can strip fields
 	// from downstream without losing upstream usage/finish_reason signals.
 	metricsBody := respOutBody
+	populateNonStreamDerivedUsage(m, pf, resp, metricsBody)
 	estimateEnabled := shouldEstimateUsage(resp.StatusCode)
 
 	usage := map[string]any(nil)
 	usageStage := ""
+	var upstreamUsage *dslconfig.Usage
 	if estimateEnabled {
-		usage, usageStage = estimateNonStreamUsage(c.UsageEst, pf, m, api, model, reqBody, metricsBody)
+		usage, usageStage, upstreamUsage = estimateNonStreamUsage(c.UsageEst, pf, m, api, model, reqBody, metricsBody)
 	}
 	finishReason := ""
 	if estimateEnabled {
@@ -184,6 +192,7 @@ func (c *Client) handleNonStreamResponse(
 	if estimateEnabled {
 		cost = c.computeCost(m, provider, key.Name, usage)
 	}
+	c.logUsageFactsDebug(gc, provider, api, stream, model, usageStage, upstreamUsage)
 
 	respOutBody, outCT, didTransform, err = applyNonStreamResponseJSONOps(respOutBody, outCT, resp, m, respDir.JSONOps, didTransform)
 	if err != nil {
@@ -291,7 +300,7 @@ func estimateNonStreamUsage(
 	model string,
 	reqBody []byte,
 	metricsBody []byte,
-) (usage map[string]any, usageStage string) {
+) (usage map[string]any, usageStage string, upstreamUsage *dslconfig.Usage) {
 	if cfg, ok := pf.Usage.Select(meta); ok {
 		u, _, err := dslconfig.ExtractUsage(meta, cfg, metricsBody)
 		if err == nil && u != nil {
@@ -300,18 +309,41 @@ func estimateNonStreamUsage(
 				Model:         model,
 				UpstreamUsage: u,
 				RequestBody:   reqBody,
+				RequestRoot:   meta.RequestRoot(),
 				ResponseBody:  metricsBody,
 			})
-			return usageMap(out.Usage), out.Stage
+			return usageMap(out.Usage), out.Stage, u
 		}
 	}
 	out := usageestimate.Estimate(estCfg, usageestimate.Input{
 		API:          api,
 		Model:        model,
 		RequestBody:  reqBody,
+		RequestRoot:  meta.RequestRoot(),
 		ResponseBody: metricsBody,
 	})
-	return usageMap(out.Usage), out.Stage
+	return usageMap(out.Usage), out.Stage, nil
+}
+
+func populateNonStreamDerivedUsage(meta *dslmeta.Meta, pf dslconfig.ProviderFile, resp *http.Response, respBody []byte) {
+	if meta == nil || resp == nil || len(respBody) == 0 {
+		return
+	}
+	if resp.StatusCode != http.StatusOK {
+		return
+	}
+	usageCfg, ok := pf.Usage.Select(meta)
+	if !ok || !dslconfig.UsesDerivedUsagePath(usageCfg, "$.audio_duration_seconds") {
+		return
+	}
+	seconds, err := onraudio.DurationFromBytes(respBody)
+	if err != nil || seconds <= 0 {
+		return
+	}
+	if meta.DerivedUsage == nil {
+		meta.DerivedUsage = map[string]any{}
+	}
+	meta.DerivedUsage["audio_duration_seconds"] = seconds
 }
 
 func extractNonStreamFinishReason(pf dslconfig.ProviderFile, meta *dslmeta.Meta, metricsBody []byte) string {
@@ -422,11 +454,20 @@ func (c *Client) handleStreamResponse(
 		tailLimit = c.UsageEst.MaxStreamCollectBytes
 	}
 	usageTail := &tailBuffer{limit: tailLimit}
+	usageCfg, _ := pf.Usage.Select(m)
+	finishCfg, _ := pf.Finish.Select(m)
+	streamAgg := dslconfig.NewStreamMetricsAggregator(m, usageCfg, finishCfg)
+
+	var metricsTap *sseMetricsTap
+	upstreamCT := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Type")))
+	if strings.Contains(upstreamCT, "text/event-stream") {
+		metricsTap = newSSEMetricsTap(streamAgg)
+	}
 
 	dump := newStreamDumpState(gc)
 	defer dump.Append(gc, resp)
 
-	n, firstWriteAt, err := streamToDownstream(gc, m, respDir, resp, usageTail, dump)
+	n, firstWriteAt, err := streamToDownstream(gc, m, respDir, resp, usageTail, metricsTap, dump)
 	ignoredDisconnect := isClientDisconnectErr(err)
 	dump.SetStreamResult(n, err, ignoredDisconnect)
 	if err != nil && !ignoredDisconnect {
@@ -441,11 +482,11 @@ func (c *Client) handleStreamResponse(
 	var upstreamUsage *dslconfig.Usage
 	finishReason := ""
 	if estimateEnabled && usageTail.Len() > 0 {
-		usageCfg, _ := pf.Usage.Select(m)
-		finishCfg, _ := pf.Finish.Select(m)
-		agg := dslconfig.NewStreamMetricsAggregator(m, usageCfg, finishCfg)
-		agg.OnSSETail(usageTail.Bytes())
-		u, _, fr, ok := agg.Result()
+		u, _, fr, ok := streamAgg.Result()
+		if (!ok || u == nil) && strings.Contains(upstreamCT, "text/event-stream") {
+			streamAgg.OnSSETail(usageTail.Bytes())
+			u, _, fr, ok = streamAgg.Result()
+		}
 		if ok && u != nil {
 			upstreamUsage = u
 		}
@@ -461,12 +502,14 @@ func (c *Client) handleStreamResponse(
 			Model:         model,
 			UpstreamUsage: upstreamUsage,
 			RequestBody:   reqBody,
+			RequestRoot:   m.RequestRoot(),
 			StreamTail:    usageTail.Bytes(),
 		})
 		usage = usageMap(out.Usage)
 		usageStage = out.Stage
 		cost = c.computeCost(m, provider, key.Name, usage)
 	}
+	c.logUsageFactsDebug(gc, provider, api, true, model, usageStage, upstreamUsage)
 	ttftMs, tps := streamPerfMetrics(start, firstWriteAt, usage)
 	return &Result{
 		Provider:       provider,
@@ -484,6 +527,40 @@ func (c *Client) handleStreamResponse(
 		TTFTMs:         ttftMs,
 		TPS:            tps,
 	}, nil
+}
+
+func (c *Client) logUsageFactsDebug(
+	gc *gin.Context,
+	provider string,
+	api string,
+	stream bool,
+	model string,
+	usageStage string,
+	usage *dslconfig.Usage,
+) {
+	if c == nil || c.SystemLogger == nil || usage == nil || len(usage.DebugFacts) == 0 {
+		return
+	}
+	payload, err := json.Marshal(usage.DebugFacts)
+	if err != nil {
+		return
+	}
+	fields := map[string]any{
+		"provider":    strings.TrimSpace(provider),
+		"api":         strings.TrimSpace(api),
+		"stream":      stream,
+		"model":       strings.TrimSpace(model),
+		"usage_stage": strings.TrimSpace(usageStage),
+		"usage_facts": string(payload),
+	}
+	if gc != nil {
+		if rid := strings.TrimSpace(gc.GetString("X-Onr-Request-Id")); rid != "" {
+			fields["request_id"] = rid
+		} else if rid := strings.TrimSpace(gc.GetString("X-Request-Id")); rid != "" {
+			fields["request_id"] = rid
+		}
+	}
+	c.SystemLogger.Debug(logx.SystemCategoryServer, "usage facts extracted", fields)
 }
 
 func streamPerfMetrics(start time.Time, firstWriteAt time.Time, usage map[string]any) (int64, float64) {
@@ -553,7 +630,7 @@ func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey
 		return nil, fmt.Errorf("provider not found: %s", provider)
 	}
 
-	bodyBytes, root, model, err := readRequestJSON(gc)
+	bodyBytes, root, model, _, err := readRequestBody(gc, api)
 	if err != nil {
 		return nil, err
 	}
@@ -572,14 +649,17 @@ func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey
 	}
 
 	m := &dslmeta.Meta{
-		API:             strings.TrimSpace(api),
-		IsStream:        stream,
-		ActualModelName: strings.TrimSpace(model),
-		APIKey:          strings.TrimSpace(key.Value),
-		BaseURL:         strings.TrimSpace(key.BaseURLOverride),
-		RequestURLPath:  gc.Request.URL.RequestURI(),
-		StartTime:       time.Now(),
+		API:                strings.TrimSpace(api),
+		IsStream:           stream,
+		ActualModelName:    strings.TrimSpace(model),
+		APIKey:             strings.TrimSpace(key.Value),
+		BaseURL:            strings.TrimSpace(key.BaseURLOverride),
+		RequestURLPath:     gc.Request.URL.RequestURI(),
+		RequestContentType: gc.Request.Header.Get("Content-Type"),
+		RequestBody:        bodyBytes,
+		StartTime:          time.Now(),
 	}
+	m.SetRequestRoot(root)
 	if mo := strings.TrimSpace(model); mo != "" {
 		if newPath, ok := replaceGeminiModelInPath(m.RequestURLPath, mo); ok {
 			m.RequestURLPath = newPath
@@ -595,20 +675,17 @@ func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey
 
 	respDir, _ := pf.Response.Select(m)
 
-	reqTransform, hasReqTransform, root, err := applyRequestTransform(pf, m, root)
+	reqTransform, hasReqTransform, err := selectRequestTransform(pf, m)
 	if err != nil {
 		return nil, err
 	}
 	applyGeminiModelRewrite(api, m)
 
-	reqBody, err := marshalMaybeJSON(bodyBytes, root)
+	reqResult, err := applyRequestTransform(m, gc.Request.Header.Get("Content-Type"), gc.GetHeader("Content-Encoding"), bodyBytes, root, reqTransform, hasReqTransform)
 	if err != nil {
 		return nil, err
 	}
-	reqBody, err = applyReqMap(gc, reqTransform, hasReqTransform, reqBody)
-	if err != nil {
-		return nil, err
-	}
+	reqBody := reqResult.Body
 
 	return &proxyCtx{
 		start:           start,
@@ -626,24 +703,45 @@ func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey
 	}, nil
 }
 
-func readRequestJSON(gc *gin.Context) (bodyBytes []byte, root map[string]any, model string, err error) {
-	bodyBytes, err = io.ReadAll(gc.Request.Body)
-	if err != nil {
-		return nil, nil, "", err
-	}
-	_ = gc.Request.Body.Close()
-
-	var reqObj any
-	if len(bodyBytes) > 0 {
-		if err := json.Unmarshal(bodyBytes, &reqObj); err != nil {
-			return bodyBytes, nil, "", fmt.Errorf("invalid json: %w", err)
+func readRequestBody(gc *gin.Context, api string) (bodyBytes []byte, root map[string]any, model string, contentType string, err error) {
+	if gc != nil {
+		if cachedBody, ok := gc.Get("onr.request_body"); ok {
+			if bodyBytes, ok = cachedBody.([]byte); ok {
+				if cachedRoot, ok := gc.Get("onr.request_root"); ok {
+					root, _ = cachedRoot.(map[string]any)
+				}
+				if cachedModel, ok := gc.Get("onr.request_model"); ok {
+					model = strings.TrimSpace(fmt.Sprintf("%v", cachedModel))
+				}
+				if cachedContentType, ok := gc.Get("onr.request_content_type"); ok {
+					contentType = strings.TrimSpace(fmt.Sprintf("%v", cachedContentType))
+				}
+				return bodyBytes, root, model, contentType, nil
+			}
 		}
 	}
-	root, _ = reqObj.(map[string]any)
+
+	bodyBytes, err = io.ReadAll(gc.Request.Body)
+	if err != nil {
+		return nil, nil, "", "", err
+	}
+	_ = gc.Request.Body.Close()
+	contentType = gc.Request.Header.Get("Content-Type")
+
+	info, err := requestcanon.Inspect(bodyBytes, contentType, requestcanon.InspectOptions{
+		AllowNonJSON: allowNonJSONRequestBodyAPI(api),
+	})
+	if err != nil {
+		return bodyBytes, nil, "", contentType, err
+	}
+	root = info.Root
+	model = strings.TrimSpace(info.Model)
 
 	if root != nil {
-		if v, ok := root["model"].(string); ok {
-			model = strings.TrimSpace(v)
+		if strings.TrimSpace(model) == "" {
+			if v, ok := root["model"].(string); ok {
+				model = strings.TrimSpace(v)
+			}
 		}
 	}
 	if strings.TrimSpace(model) == "" {
@@ -651,31 +749,26 @@ func readRequestJSON(gc *gin.Context) (bodyBytes []byte, root map[string]any, mo
 			model = strings.TrimSpace(m2)
 		}
 	}
-	return bodyBytes, root, model, nil
+	return bodyBytes, root, model, contentType, nil
 }
 
-func applyRequestTransform(pf dslconfig.ProviderFile, meta *dslmeta.Meta, root map[string]any) (dslconfig.RequestTransform, bool, map[string]any, error) {
+func allowNonJSONRequestBodyAPI(api string) bool {
+	switch strings.ToLower(strings.TrimSpace(api)) {
+	case "images.edits", "audio.transcriptions", "audio.translations":
+		return true
+	default:
+		return false
+	}
+}
+
+func selectRequestTransform(pf dslconfig.ProviderFile, meta *dslmeta.Meta) (dslconfig.RequestTransform, bool, error) {
 	t, ok := pf.Request.Select(meta)
 	if !ok {
-		return dslconfig.RequestTransform{}, false, root, nil
+		return dslconfig.RequestTransform{}, false, nil
 	}
 
 	t.Apply(meta)
-
-	if root != nil && meta.DSLModelMapped != "" {
-		// Only override when the field exists (OpenAI-style). Gemini native requests do not have "model" in body.
-		if _, exists := root["model"]; exists {
-			root["model"] = meta.DSLModelMapped
-		}
-	}
-	if root != nil && len(t.JSONOps) > 0 {
-		out, err := dslconfig.ApplyJSONOps(meta, root, t.JSONOps)
-		if err != nil {
-			return dslconfig.RequestTransform{}, false, root, err
-		}
-		root, _ = out.(map[string]any)
-	}
-	return t, true, root, nil
+	return t, true, nil
 }
 
 func applyGeminiModelRewrite(api string, meta *dslmeta.Meta) {
@@ -693,39 +786,18 @@ func applyGeminiModelRewrite(api string, meta *dslmeta.Meta) {
 	}
 }
 
-func marshalMaybeJSON(bodyBytes []byte, root map[string]any) ([]byte, error) {
-	if root == nil {
-		return bodyBytes, nil
+func applyRequestTransform(meta *dslmeta.Meta, contentType, contentEncoding string, bodyBytes []byte, root map[string]any, t dslconfig.RequestTransform, hasT bool) (requesttransform.Result, error) {
+	if !hasT {
+		return requesttransform.Result{
+			Body:        bodyBytes,
+			Value:       root,
+			Root:        root,
+			ContentType: strings.TrimSpace(contentType),
+		}, nil
 	}
-	b, err := json.Marshal(root)
-	if err != nil {
-		return nil, err
-	}
-	return b, nil
-}
-
-func applyReqMap(gc *gin.Context, t dslconfig.RequestTransform, hasT bool, reqBody []byte) ([]byte, error) {
-	if !hasT || strings.TrimSpace(t.ReqMapMode) == "" {
-		return reqBody, nil
-	}
-	ce := strings.ToLower(strings.TrimSpace(gc.GetHeader("Content-Encoding")))
-	if ce != "" && ce != contentEncodingIdentity {
-		return nil, fmt.Errorf("cannot transform encoded client request (Content-Encoding=%q)", gc.GetHeader("Content-Encoding"))
-	}
-	switch strings.ToLower(strings.TrimSpace(t.ReqMapMode)) {
-	case "openai_chat_to_openai_responses":
-		return apitransform.MapOpenAIChatCompletionsToResponsesRequest(reqBody)
-	case "openai_chat_to_anthropic_messages":
-		return apitransform.MapOpenAIChatCompletionsToClaudeMessagesRequest(reqBody)
-	case "openai_chat_to_gemini_generate_content":
-		return apitransform.MapOpenAIChatCompletionsToGeminiGenerateContentRequest(reqBody)
-	case "anthropic_to_openai_chat":
-		return apitransform.MapClaudeMessagesToOpenAIChatCompletions(reqBody)
-	case "gemini_to_openai_chat":
-		return apitransform.MapGeminiGenerateContentToOpenAIChatCompletions(reqBody)
-	default:
-		return nil, fmt.Errorf("unsupported req_map mode %q", t.ReqMapMode)
-	}
+	return requesttransform.Apply(meta, contentType, bodyBytes, root, t, requesttransform.ApplyOptions{
+		ContentEncoding: contentEncoding,
+	})
 }
 
 func (c *Client) doUpstreamRequest(gc *gin.Context, provider string, pf dslconfig.ProviderFile, m *dslmeta.Meta, reqBody []byte) (*http.Response, context.CancelFunc, error) {
@@ -752,13 +824,17 @@ func (c *Client) doUpstreamRequest(gc *gin.Context, provider string, pf dslconfi
 			cancel()
 			return nil, func() {}, reqErr
 		}
-		req.Header.Set("Content-Type", "application/json")
+		if ct := strings.TrimSpace(gc.Request.Header.Get("Content-Type")); ct != "" {
+			req.Header.Set("Content-Type", ct)
+		} else {
+			req.Header.Set("Content-Type", "application/json")
+		}
 
 		if oauthErr := c.prepareOAuthForUpstream(reqCtx, provider, pf, m); oauthErr != nil {
 			cancel()
 			return nil, func() {}, oauthErr
 		}
-		pf.Headers.Apply(m, req.Header)
+		pf.Headers.Apply(m, gc.Request.Header, req.Header)
 
 		if rec := trafficdump.FromContext(gc); rec != nil && rec.MaxBytes() > 0 {
 			limited, truncated := trafficdump.LimitBytes(reqBody, rec.MaxBytes())
@@ -949,6 +1025,15 @@ func usageMap(u *dslconfig.Usage) map[string]any {
 	if u.InputTokenDetails != nil {
 		m["cache_read_tokens"] = u.InputTokenDetails.CachedTokens
 		m["cache_write_tokens"] = u.InputTokenDetails.CacheWriteTokens
+	}
+	for k, v := range u.FlatFields {
+		if strings.TrimSpace(k) == "" {
+			continue
+		}
+		if _, exists := m[k]; exists {
+			continue
+		}
+		m[k] = v
 	}
 	return m
 }

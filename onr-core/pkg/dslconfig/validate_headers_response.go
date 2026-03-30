@@ -40,12 +40,14 @@ func validatePhaseHeaders(path, providerName, scope string, phase PhaseHeaders) 
 
 func validateHeaderOps(path, providerName, scope string, headers []HeaderOp) error {
 	const (
-		opHeaderSet = "header_set"
-		opHeaderDel = "header_del"
+		opHeaderSet    = "header_set"
+		opHeaderDel    = "header_del"
+		opHeaderPass   = "header_pass"
+		opHeaderFilter = "header_filter_values"
 	)
 	for i, op := range headers {
 		opScope := fmt.Sprintf("%s[%d]", scope, i)
-		if op.Op != opHeaderSet && op.Op != opHeaderDel {
+		if op.Op != opHeaderSet && op.Op != opHeaderDel && op.Op != opHeaderPass && op.Op != opHeaderFilter {
 			return fmt.Errorf("provider %q in %q: %s unsupported header op %q", providerName, path, opScope, op.Op)
 		}
 		if strings.TrimSpace(op.NameExpr) == "" {
@@ -53,6 +55,19 @@ func validateHeaderOps(path, providerName, scope string, headers []HeaderOp) err
 		}
 		if op.Op == opHeaderSet && strings.TrimSpace(op.ValueExpr) == "" {
 			return fmt.Errorf("provider %q in %q: %s value is empty", providerName, path, opScope)
+		}
+		if op.Op == opHeaderFilter {
+			if len(op.Patterns) == 0 {
+				return fmt.Errorf("provider %q in %q: %s requires at least one pattern", providerName, path, opScope)
+			}
+			for j, pattern := range op.Patterns {
+				if strings.TrimSpace(pattern) == "" {
+					return fmt.Errorf("provider %q in %q: %s pattern[%d] is empty", providerName, path, opScope, j)
+				}
+			}
+			if strings.TrimSpace(op.Separator) == "" {
+				return fmt.Errorf("provider %q in %q: %s separator must be non-empty", providerName, path, opScope)
+			}
 		}
 	}
 	return nil

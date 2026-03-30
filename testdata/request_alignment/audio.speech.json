@@ -1,0 +1,13 @@
+{
+  "path": "/v1/audio/speech",
+  "content_type": "application/json",
+  "json_require": {
+    "model": "gpt-4o-mini-tts",
+    "custom_meta": {
+      "trace_id": "tts-e2e"
+    }
+  },
+  "json_absent": [
+    "service_tier"
+  ]
+}

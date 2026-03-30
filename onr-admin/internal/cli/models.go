@@ -152,7 +152,7 @@ func runModelsGetWithOptions(opts modelsGetOptions) error {
 		result, qerr := modelsquery.Query(ctx, modelsquery.Params{
 			Provider: p,
 			File:     pf,
-			Meta:     meta,
+			Meta:     &meta,
 			BaseURL:  baseURL,
 			APIKey:   key,
 			DebugOut: debugOut,

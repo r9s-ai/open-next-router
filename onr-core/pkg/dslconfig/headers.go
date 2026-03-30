@@ -16,12 +16,13 @@ type MatchHeaders struct {
 	API    string
 	Stream *bool
 
-	Headers  PhaseHeaders
-	Upstream UpstreamHeaders
+	Headers PhaseHeaders
 }
 
-type UpstreamHeaders struct {
-	QueryPairs map[string]string
+type HeaderValueFilterRule struct {
+	Name      string
+	Patterns  []string
+	Separator string
 }
 
 type PhaseHeaders struct {
@@ -35,10 +36,12 @@ type HeaderOp struct {
 
 	NameExpr  string
 	ValueExpr string
+	Patterns  []string
+	Separator string
 }
 
-func (p ProviderHeaders) Apply(meta *dslmeta.Meta, hdr http.Header) {
-	if hdr == nil {
+func (p ProviderHeaders) Apply(meta *dslmeta.Meta, srcHdr http.Header, dstHdr http.Header) {
+	if dstHdr == nil {
 		return
 	}
 	phase, ok := p.Effective(meta)
@@ -52,12 +55,30 @@ func (p ProviderHeaders) Apply(meta *dslmeta.Meta, hdr http.Header) {
 			if name == "" {
 				continue
 			}
-			hdr.Set(name, evalStringExpr(op.ValueExpr, meta))
+			dstHdr.Set(name, evalStringExpr(op.ValueExpr, meta))
 		case "header_del":
 			if name == "" {
 				continue
 			}
-			hdr.Del(name)
+			dstHdr.Del(name)
+		case "header_pass":
+			if name == "" || srcHdr == nil {
+				continue
+			}
+			values := srcHdr.Values(name)
+			if len(values) == 0 {
+				continue
+			}
+			dstHdr.Del(name)
+			for _, value := range values {
+				dstHdr.Add(name, value)
+			}
+		case "header_filter_values":
+			applyHeaderValueFilterRule(dstHdr, HeaderValueFilterRule{
+				Name:      name,
+				Patterns:  append([]string(nil), op.Patterns...),
+				Separator: op.Separator,
+			})
 		}
 	}
 }
@@ -96,4 +117,113 @@ func (p ProviderHeaders) selectMatch(api string, stream bool) (MatchHeaders, boo
 		return m, true
 	}
 	return MatchHeaders{}, false
+}
+
+func applyHeaderValueFilterRule(hdr http.Header, rule HeaderValueFilterRule) {
+	name := strings.TrimSpace(rule.Name)
+	if name == "" {
+		return
+	}
+	values := hdr.Values(name)
+	if len(values) == 0 {
+		return
+	}
+	items := splitHeaderValues(values, rule.Separator)
+	if len(items) == 0 {
+		hdr.Del(name)
+		return
+	}
+	kept := items[:0]
+	for _, item := range items {
+		if matchesAnyHeaderValuePattern(item, rule.Patterns) {
+			continue
+		}
+		kept = append(kept, item)
+	}
+	if len(kept) == 0 {
+		hdr.Del(name)
+		return
+	}
+	hdr.Set(name, strings.Join(kept, headerValueJoinSeparator(rule.Separator)))
+}
+
+func splitHeaderValues(values []string, separator string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		out = append(out, splitHeaderValueItems(value, separator)...)
+	}
+	return out
+}
+
+func splitHeaderValueItems(raw, separator string) []string {
+	sep := separator
+	if strings.TrimSpace(sep) == "" {
+		sep = ","
+	}
+	parts := strings.Split(raw, sep)
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		item := strings.TrimSpace(part)
+		if item == "" {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+func headerValueJoinSeparator(separator string) string {
+	sep := separator
+	if strings.TrimSpace(sep) == "" || sep == "," {
+		return ", "
+	}
+	return sep + " "
+}
+
+func matchesAnyHeaderValuePattern(value string, patterns []string) bool {
+	for _, pattern := range patterns {
+		if wildcardMatch(pattern, value) {
+			return true
+		}
+	}
+	return false
+}
+
+func wildcardMatch(pattern, value string) bool {
+	if pattern == "" {
+		return value == ""
+	}
+	if pattern == "*" {
+		return true
+	}
+	parts := strings.Split(pattern, "*")
+	if len(parts) == 1 {
+		return value == pattern
+	}
+	pos := 0
+	if parts[0] != "" {
+		if !strings.HasPrefix(value, parts[0]) {
+			return false
+		}
+		pos = len(parts[0])
+	}
+	for i := 1; i < len(parts)-1; i++ {
+		part := parts[i]
+		if part == "" {
+			continue
+		}
+		idx := strings.Index(value[pos:], part)
+		if idx < 0 {
+			return false
+		}
+		pos += idx + len(part)
+	}
+	last := parts[len(parts)-1]
+	if last == "" {
+		return true
+	}
+	if len(parts) == 2 && parts[0] == "" {
+		return strings.HasSuffix(value, last)
+	}
+	return strings.HasSuffix(value, last) && pos <= len(value)-len(last)
 }

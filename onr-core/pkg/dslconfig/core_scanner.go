@@ -173,7 +173,7 @@ func isIdentPart(r rune) bool {
 		return true
 	}
 	switch r {
-	case '-', ':':
+	case '-', ':', '.':
 		return true
 	}
 	return false

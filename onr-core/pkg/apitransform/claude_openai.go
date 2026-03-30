@@ -535,14 +535,8 @@ func MapOpenAIChatCompletionsToClaudeMessagesResponseObject(root apitypes.JSONOb
 
 	usage := apitypes.JSONObject{}
 	if um, _ := root["usage"].(map[string]any); um != nil {
-		usage["input_tokens"] = jsonutil.GetIntByPath(um, "$.prompt_tokens")
-		if usage["input_tokens"] == 0 {
-			usage["input_tokens"] = jsonutil.GetIntByPath(um, "$.input_tokens")
-		}
-		usage["output_tokens"] = jsonutil.GetIntByPath(um, "$.completion_tokens")
-		if usage["output_tokens"] == 0 {
-			usage["output_tokens"] = jsonutil.GetIntByPath(um, "$.output_tokens")
-		}
+		usage["input_tokens"] = jsonutil.GetFirstIntByPaths(um, "$.prompt_tokens", "$.input_tokens")
+		usage["output_tokens"] = jsonutil.GetFirstIntByPaths(um, "$.completion_tokens", "$.output_tokens")
 	}
 
 	out := apitypes.JSONObject{

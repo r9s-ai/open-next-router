@@ -2,7 +2,6 @@ package logx
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -20,43 +19,6 @@ type AccessLogFormatter struct {
 var accessLogFormatPresets = map[string]string{
 	"onr_combined": "$time_local | $status | $latency | $client_ip | $method $path | request_id=$request_id appname=$appname provider=$provider provider_source=$provider_source api=$api stream=$stream model=$model usage_stage=$usage_stage input_tokens=$input_tokens output_tokens=$output_tokens total_tokens=$total_tokens cache_read_tokens=$cache_read_tokens cache_write_tokens=$cache_write_tokens cost_total=$cost_total cost_input=$cost_input cost_output=$cost_output cost_cache_read=$cost_cache_read cost_cache_write=$cost_cache_write billable_input_tokens=$billable_input_tokens cost_multiplier=$cost_multiplier cost_model=$cost_model cost_channel=$cost_channel cost_unit=$cost_unit upstream_status=$upstream_status finish_reason=$finish_reason ttft_ms=$ttft_ms tps=$tps",
 	"onr_minimal":  "$time_local | $status | $latency | $method $path | request_id=$request_id appname=$appname provider=$provider model=$model total_tokens=$total_tokens cost_total=$cost_total",
-}
-
-var allowedAccessLogVars = map[string]struct{}{
-	"time_local":            {},
-	"status":                {},
-	"latency":               {},
-	"latency_ms":            {},
-	"client_ip":             {},
-	"method":                {},
-	"path":                  {},
-	"request_id":            {},
-	"appname":               {},
-	"provider":              {},
-	"provider_source":       {},
-	"api":                   {},
-	"stream":                {},
-	"model":                 {},
-	"usage_stage":           {},
-	"input_tokens":          {},
-	"output_tokens":         {},
-	"total_tokens":          {},
-	"cache_read_tokens":     {},
-	"cache_write_tokens":    {},
-	"cost_total":            {},
-	"cost_input":            {},
-	"cost_output":           {},
-	"cost_cache_read":       {},
-	"cost_cache_write":      {},
-	"billable_input_tokens": {},
-	"cost_multiplier":       {},
-	"cost_model":            {},
-	"cost_channel":          {},
-	"cost_unit":             {},
-	"upstream_status":       {},
-	"finish_reason":         {},
-	"ttft_ms":               {},
-	"tps":                   {},
 }
 
 func ResolveAccessLogFormat(format string, preset string) (string, error) {
@@ -137,22 +99,6 @@ func (f *AccessLogFormatter) Format(
 	if f == nil || len(f.parts) == 0 {
 		return ""
 	}
-	vars := map[string]string{
-		"time_local": ts.Format("2006/01/02 - 15:04:05"),
-		"status":     ColorizeStatusWith(status, color),
-		"latency":    latency.String(),
-		"latency_ms": fmt.Sprintf("%d", latency.Milliseconds()),
-		"client_ip":  strings.TrimSpace(clientIP),
-		"method":     strings.TrimSpace(method),
-		"path":       path,
-	}
-	for k, v := range fields {
-		s := strings.TrimSpace(fmt.Sprintf("%v", v))
-		if s == "" || s == "<nil>" {
-			continue
-		}
-		vars[k] = s
-	}
 
 	var b strings.Builder
 	for _, p := range f.parts {
@@ -160,7 +106,7 @@ func (f *AccessLogFormatter) Format(
 			b.WriteString(p.literal)
 			continue
 		}
-		v := strings.TrimSpace(vars[p.varName])
+		v := resolveAccessLogVar(p.varName, ts, status, latency, clientIP, method, path, fields, color)
 		if v == "" {
 			b.WriteByte('-')
 			continue
@@ -170,11 +116,47 @@ func (f *AccessLogFormatter) Format(
 	return b.String()
 }
 
-func AccessLogAllowedVars() []string {
-	keys := make([]string, 0, len(allowedAccessLogVars))
-	for k := range allowedAccessLogVars {
-		keys = append(keys, k)
+func resolveAccessLogVar(
+	name string,
+	ts time.Time,
+	status int,
+	latency time.Duration,
+	clientIP string,
+	method string,
+	path string,
+	fields map[string]any,
+	color bool,
+) string {
+	switch name {
+	case "time_local":
+		return ts.Format("2006/01/02 - 15:04:05")
+	case "status":
+		return ColorizeStatusWith(status, color)
+	case "latency":
+		return latency.String()
+	case "latency_ms":
+		return fmt.Sprintf("%d", latency.Milliseconds())
+	case "client_ip":
+		return strings.TrimSpace(clientIP)
+	case "method":
+		return strings.TrimSpace(method)
+	case "path":
+		return path
+	default:
+		if fields == nil {
+			return ""
+		}
+		return stringifyAccessLogField(fields[name])
 	}
-	sort.Strings(keys)
-	return keys
+}
+
+func stringifyAccessLogField(v any) string {
+	if v == nil {
+		return ""
+	}
+	s := strings.TrimSpace(fmt.Sprintf("%v", v))
+	if s == "" || s == "<nil>" {
+		return ""
+	}
+	return s
 }

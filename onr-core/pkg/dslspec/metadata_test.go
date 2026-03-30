@@ -27,12 +27,70 @@ func TestDirectivesByBlock(t *testing.T) {
 	if !found {
 		t.Fatalf("expected oauth_mode in auth block directives")
 	}
+
+	found = false
+	for _, d := range got {
+		if d == "pass_header" {
+			found = true
+			break
+		}
+	}
+	if found {
+		t.Fatalf("pass_header should not appear in auth block directives")
+	}
+
+	metrics := DirectivesByBlock("metrics")
+	found = false
+	for _, d := range metrics {
+		if d == "usage_fact" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected usage_fact in metrics block directives")
+	}
+
+	upstream := DirectivesByBlock("upstream")
+	found = false
+	for _, d := range upstream {
+		if d == "filter_header_values" {
+			found = true
+			break
+		}
+	}
+	if found {
+		t.Fatalf("filter_header_values should not appear in upstream block directives")
+	}
+
+	request := DirectivesByBlock("request")
+	foundPassHeader := false
+	foundFilterHeaderValues := false
+	for _, d := range request {
+		if d == "pass_header" {
+			foundPassHeader = true
+		}
+		if d == "filter_header_values" {
+			foundFilterHeaderValues = true
+		}
+	}
+	if !foundPassHeader {
+		t.Fatalf("expected pass_header in request block directives")
+	}
+	if !foundFilterHeaderValues {
+		t.Fatalf("expected filter_header_values in request block directives")
+	}
 }
 
 func TestDirectiveHover(t *testing.T) {
 	hover, ok := DirectiveHover("response")
 	if !ok || hover == "" {
 		t.Fatalf("expected hover for response")
+	}
+
+	hover, ok = DirectiveHover("include")
+	if !ok || hover == "" {
+		t.Fatalf("expected hover for include")
 	}
 }
 
@@ -49,6 +107,13 @@ func TestDirectiveHoverForExprSuffixDirectives(t *testing.T) {
 		if !ok || hover == "" {
 			t.Fatalf("expected hover for %s", name)
 		}
+	}
+}
+
+func TestDirectiveHoverForUsageFact(t *testing.T) {
+	hover, ok := DirectiveHover("usage_fact")
+	if !ok || hover == "" {
+		t.Fatalf("expected hover for usage_fact")
 	}
 }
 
@@ -137,7 +202,10 @@ func TestModeDirectiveNames(t *testing.T) {
 
 func TestDirectiveAllowedBlocks(t *testing.T) {
 	assertSetEqual(t, "set_header", DirectiveAllowedBlocks("set_header"), []string{"request", "balance", "models"})
+	assertSetEqual(t, "pass_header", DirectiveAllowedBlocks("pass_header"), []string{"request"})
 	assertSetEqual(t, "req_map", DirectiveAllowedBlocks("req_map"), []string{"request"})
+	assertSetEqual(t, "filter_header_values", DirectiveAllowedBlocks("filter_header_values"), []string{"request"})
+	assertSetEqual(t, "include", DirectiveAllowedBlocks("include"), []string{"top"})
 	assertSetEqual(t, "provider", DirectiveAllowedBlocks("provider"), []string{"top"})
 }
 

@@ -1,0 +1,13 @@
+{
+  "path": "/v1/images/generations",
+  "content_type": "application/json",
+  "json_require": {
+    "model": "gpt-image-1",
+    "custom_meta": {
+      "trace_id": "img-e2e"
+    }
+  },
+  "json_absent": [
+    "service_tier"
+  ]
+}

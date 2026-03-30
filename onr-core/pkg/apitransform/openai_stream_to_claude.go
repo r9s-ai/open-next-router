@@ -91,14 +91,8 @@ func MapOpenAIChatCompletionsChunkToClaudeEventsObject(root apitypes.JSONObject)
 				},
 			}
 			if u, _ := root["usage"].(map[string]any); u != nil {
-				inputTokens := jsonutil.GetIntByPath(u, "$.prompt_tokens")
-				if inputTokens == 0 {
-					inputTokens = jsonutil.GetIntByPath(u, "$.input_tokens")
-				}
-				outputTokens := jsonutil.GetIntByPath(u, "$.completion_tokens")
-				if outputTokens == 0 {
-					outputTokens = jsonutil.GetIntByPath(u, "$.output_tokens")
-				}
+				inputTokens := jsonutil.GetFirstIntByPaths(u, "$.prompt_tokens", "$.input_tokens")
+				outputTokens := jsonutil.GetFirstIntByPaths(u, "$.completion_tokens", "$.output_tokens")
 				ev["usage"] = apitypes.JSONObject{
 					"input_tokens":  inputTokens,
 					"output_tokens": outputTokens,

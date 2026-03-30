@@ -86,3 +86,93 @@ func TestLoadResolverMissingPriceFile(t *testing.T) {
 		t.Fatalf("resolver should be nil")
 	}
 }
+
+func TestResolverComputeWithExtraUsageFieldCost(t *testing.T) {
+	dir := t.TempDir()
+	pricePath := filepath.Join(dir, "price.yaml")
+	priceYAML := `
+version: v1
+unit: usd_per_1m_tokens
+entries:
+  - provider: openai
+    model: gpt-4o-mini-tts
+    cost:
+      audio_tts_seconds: 0.015
+`
+	if err := os.WriteFile(pricePath, []byte(priceYAML), 0o600); err != nil {
+		t.Fatalf("write price: %v", err)
+	}
+
+	r, err := LoadResolver(pricePath, "")
+	if err != nil {
+		t.Fatalf("LoadResolver: %v", err)
+	}
+	if r == nil {
+		t.Fatalf("resolver is nil")
+	}
+	c, ok := r.Compute("openai", "key1", "gpt-4o-mini-tts", map[string]any{
+		"audio_tts_seconds": 1.32,
+		"total_tokens":      0,
+	})
+	if !ok {
+		t.Fatalf("Compute failed")
+	}
+	if math.Abs(c.TotalCost-0.0198) > 1e-9 {
+		t.Fatalf("total cost=%v want=0.0198", c.TotalCost)
+	}
+	if c.InputCost != 0 || c.OutputCost != 0 || c.CacheReadCost != 0 || c.CacheWriteCost != 0 {
+		t.Fatalf("unexpected token cost breakdown: %+v", c)
+	}
+}
+
+func TestResolverComputeWithOverrideOnlyModelCost(t *testing.T) {
+	dir := t.TempDir()
+	pricePath := filepath.Join(dir, "price.yaml")
+	overridesPath := filepath.Join(dir, "price_overrides.yaml")
+	priceYAML := `
+version: v1
+unit: usd_per_1m_tokens
+entries:
+  - provider: openai
+    model: gpt-4o-mini
+    cost:
+      input: 0.15
+      output: 0.60
+`
+	overridesYAML := `
+version: v1
+providers:
+  openai:
+    models:
+      gpt-4o-mini-tts:
+        cost:
+          audio_tts_seconds: 0.015
+`
+	if err := os.WriteFile(pricePath, []byte(priceYAML), 0o600); err != nil {
+		t.Fatalf("write price: %v", err)
+	}
+	if err := os.WriteFile(overridesPath, []byte(overridesYAML), 0o600); err != nil {
+		t.Fatalf("write overrides: %v", err)
+	}
+
+	r, err := LoadResolver(pricePath, overridesPath)
+	if err != nil {
+		t.Fatalf("LoadResolver: %v", err)
+	}
+	if r == nil {
+		t.Fatalf("resolver is nil")
+	}
+
+	c, ok := r.Compute("openai", "key1", "gpt-4o-mini-tts", map[string]any{
+		"audio_tts_seconds": 1.608,
+	})
+	if !ok {
+		t.Fatalf("Compute failed")
+	}
+	if math.Abs(c.TotalCost-0.02412) > 1e-9 {
+		t.Fatalf("total cost=%v want=0.02412", c.TotalCost)
+	}
+	if got, want := c.Model, "gpt-4o-mini-tts"; got != want {
+		t.Fatalf("model=%q want=%q", got, want)
+	}
+}

@@ -28,6 +28,7 @@ type DirectiveArg struct {
 
 var directiveMetadata = []DirectiveMetadata{
 	{Name: "syntax", Block: "top", Hover: "`syntax \"next-router/0.1\";`\n\nDeclares DSL syntax version for this file."},
+	{Name: "include", Block: "top", Hover: "`include \"path.conf\";`\n\nIncludes another DSL fragment file before parsing this provider file."},
 	{Name: "provider", Block: "top", Hover: "`provider \"name\" { ... }`\n\nDefines one provider DSL block. File name should match provider name."},
 
 	{Name: "defaults", Block: "provider", Hover: "`defaults { ... }`\n\nDefault phases shared by all `match` rules unless overridden."},
@@ -75,6 +76,8 @@ var directiveMetadata = []DirectiveMetadata{
 	{Name: "oauth_form", Block: "auth", Hover: "`oauth_form <key> <expr>;`\n\nAdds one form field to OAuth token request body."},
 
 	{Name: "set_header", Block: "request", Hover: "`set_header <Header-Name> <expr>;`\n\nSets or overrides one upstream request header."},
+	{Name: "pass_header", Block: "request", Hover: "`pass_header <Header-Name>;`\n\nCopies one header from the original client request to the upstream request."},
+	{Name: "filter_header_values", Block: "request", Hover: "`filter_header_values <header> <pattern>... [separator=\"<sep>\"];`\n\nFilters itemized upstream request header values and removes matching entries."},
 	{Name: "del_header", Block: "request", Hover: "`del_header <Header-Name>;`\n\nDeletes one upstream request header."},
 	{Name: "model_map", Block: "request", Hover: "`model_map <from> <expr>;`\n\nMaps input model name to upstream model expression."},
 	{Name: "model_map_default", Block: "request", Hover: "`model_map_default <expr>;`\n\nFallback mapped model expression when no rule matches."},
@@ -96,6 +99,7 @@ var directiveMetadata = []DirectiveMetadata{
 	{Name: "error_map", Block: "error", Hover: "`error_map <mode>;`\n\nNormalize upstream error payload into target error schema.", Modes: []string{"openai", "common", "passthrough"}},
 
 	{Name: "usage_extract", Block: "metrics", Hover: "`usage_extract <mode>;`\n\nExtract usage token fields from response/SSE payload.", Modes: []string{"openai", "anthropic", "gemini", "custom"}},
+	{Name: "usage_fact", Block: "metrics", Hover: "`usage_fact <dimension> <unit> path=\"$.path\"|count_path=\"$.path\"|sum_path=\"$.path\"|expr=\"<expr>\" ...;`\n\nCustom usage fact extraction rule with optional `attr.*` and `fallback=true`."},
 	{Name: "input_tokens_expr", Block: "metrics", Hover: "`input_tokens_expr = <expr>;`\n\nCustom extraction expression for input/prompt tokens."},
 	{Name: "output_tokens_expr", Block: "metrics", Hover: "`output_tokens_expr = <expr>;`\n\nCustom extraction expression for output/completion tokens."},
 	{Name: "cache_read_tokens_expr", Block: "metrics", Hover: "`cache_read_tokens_expr = <expr>;`\n\nCustom extraction expression for cache read tokens."},

@@ -18,7 +18,7 @@ import (
 type Params struct {
 	Provider string
 	File     dslconfig.ProviderFile
-	Meta     dslmeta.Meta
+	Meta     *dslmeta.Meta
 	BaseURL  string
 	APIKey   string
 
@@ -39,7 +39,7 @@ func Query(ctx context.Context, p Params) (Result, error) {
 		return Result{}, errors.New("provider is empty")
 	}
 
-	meta := p.Meta
+	meta := cloneMetaForQuery(p.Meta)
 	meta.API = strings.TrimSpace(meta.API)
 	if meta.API == "" {
 		meta.API = "chat.completions"
@@ -63,7 +63,7 @@ func Query(ctx context.Context, p Params) (Result, error) {
 	meta.BaseURL = baseURL
 
 	headers := make(http.Header)
-	p.File.Headers.Apply(&meta, headers)
+	p.File.Headers.Apply(&meta, nil, headers)
 	applyHeaderOps(headers, cfg.Headers, &meta)
 
 	client := p.HTTPClient
@@ -94,6 +94,24 @@ func Query(ctx context.Context, p Params) (Result, error) {
 		Provider: provider,
 		IDs:      ids,
 	}, nil
+}
+
+func cloneMetaForQuery(src *dslmeta.Meta) dslmeta.Meta {
+	if src == nil {
+		return dslmeta.Meta{}
+	}
+	return dslmeta.Meta{
+		API:              src.API,
+		IsStream:         src.IsStream,
+		BaseURL:          src.BaseURL,
+		APIKey:           src.APIKey,
+		OAuthAccessToken: src.OAuthAccessToken,
+		OAuthCacheKey:    src.OAuthCacheKey,
+		ActualModelName:  src.ActualModelName,
+		DSLModelMapped:   src.DSLModelMapped,
+		RequestURLPath:   src.RequestURLPath,
+		StartTime:        src.StartTime,
+	}
 }
 
 func getResponseBody(ctx context.Context, client httpclient.HTTPDoer, method, reqURL string, headers http.Header, debugOut io.Writer) ([]byte, error) {

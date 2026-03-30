@@ -38,6 +38,36 @@ func TestEstimate_WhenMissingUsage_EstimateBoth(t *testing.T) {
 	}
 }
 
+func TestEstimate_UsesProvidedRequestRootWithoutParsingBody(t *testing.T) {
+	cfg := &Config{}
+	ApplyDefaults(cfg)
+
+	out := Estimate(cfg, Input{
+		API:         "chat.completions",
+		Model:       "gpt-4o-mini",
+		RequestBody: []byte("{"),
+		RequestRoot: map[string]any{
+			"messages": []any{
+				map[string]any{"role": "user", "content": "hello"},
+			},
+		},
+		ResponseBody: []byte(`{
+			"id":"x",
+			"choices":[{"index":0,"message":{"role":"assistant","content":"world"}}]
+		}`),
+	})
+
+	if out.Stage != StageEstimateBoth {
+		t.Fatalf("stage = %q, want %q", out.Stage, StageEstimateBoth)
+	}
+	if out.Usage == nil {
+		t.Fatalf("usage is nil")
+	}
+	if out.Usage.InputTokens <= 0 {
+		t.Fatalf("input_tokens = %d, want > 0", out.Usage.InputTokens)
+	}
+}
+
 func TestEstimate_WhenUpstreamUsagePresent_Upstream(t *testing.T) {
 	cfg := &Config{}
 	ApplyDefaults(cfg)
@@ -53,6 +83,50 @@ func TestEstimate_WhenUpstreamUsagePresent_Upstream(t *testing.T) {
 	}
 	if out.Usage == nil || out.Usage.TotalTokens != 12 {
 		t.Fatalf("usage total_tokens = %#v, want 12", out.Usage)
+	}
+}
+
+func TestEstimate_WhenUpstreamFactsPresent_PreservesFactLevelFields(t *testing.T) {
+	cfg := &Config{}
+	ApplyDefaults(cfg)
+
+	out := Estimate(cfg, Input{
+		API:   "claude.messages",
+		Model: "claude-haiku-4-5",
+		UpstreamUsage: &dslconfig.Usage{
+			InputTokens:  10,
+			OutputTokens: 2,
+			TotalTokens:  12,
+			FlatFields: map[string]any{
+				"cache_write_ttl_5m_tokens": 6802,
+			},
+			DebugFacts: []dslconfig.UsageFact{
+				{
+					Dimension: "cache_write",
+					Unit:      "token",
+					Quantity:  6802,
+					Attributes: map[string]string{
+						"ttl": "5m",
+					},
+				},
+			},
+		},
+	})
+
+	if out.Stage != StageUpstream {
+		t.Fatalf("stage = %q, want %q", out.Stage, StageUpstream)
+	}
+	if out.Usage == nil {
+		t.Fatalf("usage is nil")
+	}
+	if got, want := out.Usage.FlatFields["cache_write_ttl_5m_tokens"], 6802; got != want {
+		t.Fatalf("flat field = %#v, want %d", got, want)
+	}
+	if len(out.Usage.DebugFacts) != 1 {
+		t.Fatalf("debug facts len = %d, want 1", len(out.Usage.DebugFacts))
+	}
+	if out.Usage.DebugFacts[0].Dimension != "cache_write" {
+		t.Fatalf("debug fact dimension = %q, want cache_write", out.Usage.DebugFacts[0].Dimension)
 	}
 }
 
@@ -124,6 +198,63 @@ func TestEstimate_WhenUpstreamMissingOutputTokens_EstimateCompletion(t *testing.
 	}
 	if out.Usage.TotalTokens != out.Usage.InputTokens+out.Usage.OutputTokens {
 		t.Fatalf("total_tokens=%d want=%d", out.Usage.TotalTokens, out.Usage.InputTokens+out.Usage.OutputTokens)
+	}
+}
+
+func TestEstimate_WhenEstimatingMissingScalarFields_DoesNotSynthesizeFactLevelFields(t *testing.T) {
+	cfg := &Config{}
+	ApplyDefaults(cfg)
+
+	sse := strings.Join([]string{
+		`data: {"type":"content_block_delta","delta":{"text":"hello"}}`,
+		"",
+		"data: [DONE]",
+		"",
+	}, "\n")
+
+	out := Estimate(cfg, Input{
+		API:   "claude.messages",
+		Model: "claude-haiku-4-5",
+		UpstreamUsage: &dslconfig.Usage{
+			InputTokens:  6,
+			OutputTokens: 0,
+			TotalTokens:  6,
+			FlatFields: map[string]any{
+				"cache_write_ttl_5m_tokens": 6802,
+			},
+			DebugFacts: []dslconfig.UsageFact{
+				{
+					Dimension: "cache_write",
+					Unit:      "token",
+					Quantity:  6802,
+					Attributes: map[string]string{
+						"ttl": "5m",
+					},
+				},
+			},
+		},
+		StreamTail: []byte(sse),
+	})
+	if out.Stage != StageEstimateCompletion {
+		t.Fatalf("stage=%q want=%q", out.Stage, StageEstimateCompletion)
+	}
+	if out.Usage == nil {
+		t.Fatalf("usage is nil")
+	}
+	if out.Usage.OutputTokens <= 0 {
+		t.Fatalf("output_tokens=%d want > 0", out.Usage.OutputTokens)
+	}
+	if got, want := out.Usage.FlatFields["cache_write_ttl_5m_tokens"], 6802; got != want {
+		t.Fatalf("flat field = %#v, want %d", got, want)
+	}
+	if len(out.Usage.FlatFields) != 1 {
+		t.Fatalf("flat fields len = %d, want 1", len(out.Usage.FlatFields))
+	}
+	if len(out.Usage.DebugFacts) != 1 {
+		t.Fatalf("debug facts len = %d, want 1", len(out.Usage.DebugFacts))
+	}
+	if out.Usage.DebugFacts[0].Dimension != "cache_write" {
+		t.Fatalf("debug fact dimension = %q, want cache_write", out.Usage.DebugFacts[0].Dimension)
 	}
 }
 

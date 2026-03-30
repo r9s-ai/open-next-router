@@ -52,7 +52,7 @@ func TestQuery_CustomModelsConfig(t *testing.T) {
 	result, err := Query(nil, Params{
 		Provider: "openai",
 		File:     pf,
-		Meta: dslmeta.Meta{
+		Meta: &dslmeta.Meta{
 			API: "chat.completions",
 		},
 		APIKey: "test-key",
@@ -95,7 +95,7 @@ func TestQuery_UsesInjectedHTTPClient(t *testing.T) {
 	result, err := Query(context.Background(), Params{
 		Provider:   "openai",
 		File:       pf,
-		Meta:       dslmeta.Meta{API: "chat.completions"},
+		Meta:       &dslmeta.Meta{API: "chat.completions"},
 		APIKey:     "sk-test",
 		BaseURL:    "https://example.test",
 		HTTPClient: fakeClient,

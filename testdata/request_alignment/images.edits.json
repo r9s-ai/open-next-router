@@ -1,0 +1,18 @@
+{
+  "path": "/v1/images/edits",
+  "content_type_prefix": "multipart/form-data;",
+  "multipart_values": {
+    "model": [
+      "gpt-image-1.5"
+    ],
+    "n": [
+      "2"
+    ],
+    "provider_flag": [
+      "alpha"
+    ]
+  },
+  "multipart_file_keys": [
+    "image"
+  ]
+}

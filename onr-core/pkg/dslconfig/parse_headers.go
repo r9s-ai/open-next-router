@@ -103,6 +103,12 @@ func parseRequestPhaseWithTransform(s *scanner, phase *PhaseHeaders, transform *
 		"set_header": func(s *scanner, phase *PhaseHeaders, _ *RequestTransform) error {
 			return parseSetHeaderStmt(s, phase)
 		},
+		"pass_header": func(s *scanner, phase *PhaseHeaders, _ *RequestTransform) error {
+			return parsePassHeaderStmt(s, phase)
+		},
+		"filter_header_values": func(s *scanner, phase *PhaseHeaders, _ *RequestTransform) error {
+			return parseFilterHeaderValuesStmt(s, phase)
+		},
 		"del_header": func(s *scanner, phase *PhaseHeaders, _ *RequestTransform) error {
 			return parseDelHeaderStmt(s, phase)
 		},
@@ -407,6 +413,98 @@ func parseDelHeaderStmt(s *scanner, phase *PhaseHeaders) error {
 		NameExpr: strconv.Quote(strings.TrimSpace(name)),
 	})
 	return nil
+}
+
+func parsePassHeaderStmt(s *scanner, phase *PhaseHeaders) error {
+	// pass_header <Header-Name>;
+	nameTok := s.nextNonTrivia()
+	switch nameTok.kind {
+	case tokIdent, tokString:
+		// ok
+	default:
+		return s.errAt(nameTok, "pass_header expects header name")
+	}
+	name := nameTok.text
+	if nameTok.kind == tokString {
+		name = unquoteString(nameTok.text)
+	}
+	if err := consumeSemicolon(s, "pass_header"); err != nil {
+		return err
+	}
+	phase.Request = append(phase.Request, HeaderOp{
+		Op:       "header_pass",
+		NameExpr: strconv.Quote(strings.TrimSpace(name)),
+	})
+	return nil
+}
+
+func parseFilterHeaderValuesStmt(s *scanner, phase *PhaseHeaders) error {
+	headerTok := s.nextNonTrivia()
+	switch headerTok.kind {
+	case tokIdent, tokString:
+		// ok
+	default:
+		return s.errAt(headerTok, "filter_header_values expects header name")
+	}
+	headerName := headerTok.text
+	if headerTok.kind == tokString {
+		headerName = unquoteString(headerTok.text)
+	}
+
+	args := make([]token, 0, 8)
+	for {
+		tok := s.nextNonTrivia()
+		switch tok.kind {
+		case tokEOF:
+			return s.errAt(tok, "unexpected EOF in filter_header_values")
+		case tokSemicolon:
+			op, err := buildFilterHeaderValuesOp(s, headerTok, headerName, args)
+			if err != nil {
+				return err
+			}
+			phase.Request = append(phase.Request, op)
+			return nil
+		default:
+			args = append(args, tok)
+		}
+	}
+}
+
+func buildFilterHeaderValuesOp(s *scanner, headerTok token, headerName string, args []token) (HeaderOp, error) {
+	op := HeaderOp{
+		Op:        "header_filter_values",
+		NameExpr:  strconv.Quote(strings.TrimSpace(headerName)),
+		Separator: ",",
+	}
+	if len(args) == 0 {
+		return HeaderOp{}, s.errAt(headerTok, "filter_header_values requires at least one pattern")
+	}
+	patternTokens := args
+	if len(args) >= 3 && args[len(args)-3].kind == tokIdent && args[len(args)-3].text == "separator" {
+		if args[len(args)-2].kind != tokOther || args[len(args)-2].text != "=" {
+			return HeaderOp{}, s.errAt(args[len(args)-2], "filter_header_values separator must use '='")
+		}
+		valueTok := args[len(args)-1]
+		if valueTok.kind != tokString {
+			return HeaderOp{}, s.errAt(valueTok, `filter_header_values separator expects string literal, use: separator="<sep>"`)
+		}
+		op.Separator = unquoteString(valueTok.text)
+		patternTokens = args[:len(args)-3]
+	}
+	if len(patternTokens) == 0 {
+		return HeaderOp{}, s.errAt(headerTok, "filter_header_values requires at least one pattern")
+	}
+	for _, tok := range patternTokens {
+		switch tok.kind {
+		case tokIdent:
+			op.Patterns = append(op.Patterns, strings.TrimSpace(tok.text))
+		case tokString:
+			op.Patterns = append(op.Patterns, strings.TrimSpace(unquoteString(tok.text)))
+		default:
+			return HeaderOp{}, s.errAt(tok, "filter_header_values expects patterns followed by optional separator=\"<sep>\"")
+		}
+	}
+	return op, nil
 }
 
 func parseOAuthExprStmt(s *scanner, _ string, out *string) error {

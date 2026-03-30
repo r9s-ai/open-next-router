@@ -28,6 +28,7 @@ type Input struct {
 
 	// Upstream request/response bodies (JSON for non-stream, SSE for stream).
 	RequestBody  []byte
+	RequestRoot  map[string]any
 	ResponseBody []byte
 	StreamTail   []byte
 }
@@ -35,6 +36,13 @@ type Input struct {
 type Output struct {
 	Usage *dslconfig.Usage
 	Stage string
+}
+
+type parsedRequestBody struct {
+	raw  []byte
+	obj  any
+	root map[string]any
+	err  error
 }
 
 func Estimate(cfg *Config, in Input) Output {
@@ -64,7 +72,8 @@ func Estimate(cfg *Config, in Input) Output {
 		return Output{Usage: nil, Stage: ""}
 	}
 
-	reqText := extractRequestText(in.API, in.RequestBody, cfg.MaxRequestBytes)
+	reqParsed := parseRequestBody(in.RequestBody, in.RequestRoot, cfg.MaxRequestBytes)
+	reqText := extractRequestTextFromParsed(in.API, reqParsed)
 	respText := ""
 	if len(in.StreamTail) > 0 {
 		respText = extractStreamText(in.API, in.StreamTail, cfg.MaxStreamCollectBytes)
@@ -80,7 +89,7 @@ func Estimate(cfg *Config, in Input) Output {
 
 	// Best-effort overhead for OpenAI-style chat messages.
 	if strings.ToLower(strings.TrimSpace(in.API)) == apiChatCompletions {
-		msgCount := countMessages(in.RequestBody, cfg.MaxRequestBytes)
+		msgCount := countMessagesFromParsed(reqParsed)
 		if msgCount > 0 {
 			est.InputTokens += msgCount*3 + 3
 			est.TotalTokens = est.InputTokens + est.OutputTokens
@@ -100,9 +109,10 @@ func estimateMissingFields(cfg *Config, in Input, u *dslconfig.Usage) (*dslconfi
 		return u, StageUpstream
 	}
 
+	reqParsed := parseRequestBody(in.RequestBody, in.RequestRoot, cfg.MaxRequestBytes)
 	reqText := ""
 	if needPrompt {
-		reqText = extractRequestText(in.API, in.RequestBody, cfg.MaxRequestBytes)
+		reqText = extractRequestTextFromParsed(in.API, reqParsed)
 		if strings.TrimSpace(reqText) == "" {
 			needPrompt = false
 		}
@@ -135,7 +145,7 @@ func estimateMissingFields(cfg *Config, in Input, u *dslconfig.Usage) (*dslconfi
 
 	// Best-effort overhead for OpenAI-style chat messages only when prompt is estimated.
 	if needPrompt && strings.ToLower(strings.TrimSpace(in.API)) == apiChatCompletions {
-		msgCount := countMessages(in.RequestBody, cfg.MaxRequestBytes)
+		msgCount := countMessagesFromParsed(reqParsed)
 		if msgCount > 0 {
 			out.InputTokens += msgCount*3 + 3
 			out.TotalTokens = out.InputTokens + out.OutputTokens
@@ -187,15 +197,33 @@ func isAllZero(u *dslconfig.Usage) bool {
 }
 
 func extractRequestText(api string, body []byte, limit int) string {
+	return extractRequestTextFromParsed(api, parseRequestBody(body, nil, limit))
+}
+
+func parseRequestBody(body []byte, root map[string]any, limit int) parsedRequestBody {
 	body = clampBytes(body, limit)
+	if root != nil {
+		return parsedRequestBody{raw: body, obj: root, root: root}
+	}
 	if len(bytes.TrimSpace(body)) == 0 {
-		return ""
+		return parsedRequestBody{raw: body}
 	}
 	var obj any
 	if err := json.Unmarshal(body, &obj); err != nil {
-		return string(bytes.TrimSpace(body))
+		return parsedRequestBody{raw: body, err: err}
 	}
 	m, _ := obj.(map[string]any)
+	return parsedRequestBody{raw: body, obj: obj, root: m}
+}
+
+func extractRequestTextFromParsed(api string, parsed parsedRequestBody) string {
+	if len(bytes.TrimSpace(parsed.raw)) == 0 {
+		return ""
+	}
+	if parsed.err != nil {
+		return string(bytes.TrimSpace(parsed.raw))
+	}
+	m := parsed.root
 	if m == nil {
 		return ""
 	}
@@ -498,15 +526,14 @@ func clampBytes(b []byte, limit int) []byte {
 }
 
 func countMessages(reqBody []byte, limit int) int {
-	reqBody = clampBytes(reqBody, limit)
-	if len(bytes.TrimSpace(reqBody)) == 0 {
+	return countMessagesFromParsed(parseRequestBody(reqBody, nil, limit))
+}
+
+func countMessagesFromParsed(parsed parsedRequestBody) int {
+	if parsed.root == nil {
 		return 0
 	}
-	var obj map[string]any
-	if err := json.Unmarshal(reqBody, &obj); err != nil {
-		return 0
-	}
-	v, ok := obj["messages"].([]any)
+	v, ok := parsed.root["messages"].([]any)
 	if !ok {
 		return 0
 	}

@@ -4,7 +4,26 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"sync"
 )
+
+type compiledPath struct {
+	parts []compiledPathPart
+}
+
+type compiledPathPart struct {
+	name   string
+	idx    int
+	hasIdx bool
+	isStar bool
+}
+
+type compiledPathCacheEntry struct {
+	path *compiledPath
+	ok   bool
+}
+
+var compiledPathCache sync.Map
 
 // CoerceString converts a value to string when it is already a string.
 func CoerceString(v any) string {
@@ -53,6 +72,16 @@ func FirstInt(vals ...int) int {
 	return 0
 }
 
+// GetFirstIntByPaths returns the first non-zero integer resolved from the given paths.
+func GetFirstIntByPaths(root map[string]any, paths ...string) int {
+	for _, path := range paths {
+		if v := GetIntByPath(root, path); v != 0 {
+			return v
+		}
+	}
+	return 0
+}
+
 // CoerceFloat converts common numeric-like values to float64.
 func CoerceFloat(v any) float64 {
 	switch t := v.(type) {
@@ -87,58 +116,77 @@ func CoerceFloat(v any) float64 {
 // - $.items[0].x
 // - $.items[*].x (sum over matched items)
 func GetIntByPath(root map[string]any, path string) int {
-	vals, ok := GetValuesByPath(root, path)
-	if !ok {
-		return 0
-	}
 	sum := 0
-	for _, v := range vals {
+	if !VisitValuesByPath(root, path, func(v any) {
 		sum += CoerceInt(v)
+	}) {
+		return 0
 	}
 	return sum
 }
 
 // GetFloatByPath reads float values from a restricted JSONPath subset and sums matched values.
 func GetFloatByPath(root map[string]any, path string) float64 {
-	vals, ok := GetValuesByPath(root, path)
-	if !ok {
-		return 0
-	}
-	sum := 0.0
-	for _, v := range vals {
-		sum += CoerceFloat(v)
-	}
+	sum, _ := GetFloatByPathWithMatch(root, path)
 	return sum
+}
+
+// GetFloatByPathWithMatch reads float values from a restricted JSONPath subset,
+// sums matched values, and reports whether the path matched.
+func GetFloatByPathWithMatch(root map[string]any, path string) (float64, bool) {
+	sum := 0.0
+	if !VisitValuesByPath(root, path, func(v any) {
+		sum += CoerceFloat(v)
+	}) {
+		return 0, false
+	}
+	return sum, true
 }
 
 // GetStringByPath reads a string from a restricted JSONPath subset.
 // When wildcard is used, returns the first non-empty string.
 func GetStringByPath(root map[string]any, path string) string {
-	p := strings.TrimSpace(path)
-	if p == "" || !strings.HasPrefix(p, "$.") {
+	compiled, ok := lookupCompiledPath(path)
+	if !ok {
 		return ""
 	}
-	parts := strings.Split(strings.TrimPrefix(p, "$."), ".")
-	return getStringByParts(root, parts)
+	return getStringByParts(root, compiled.parts)
+}
+
+// GetFirstStringByPaths returns the first non-empty string resolved from the given paths.
+func GetFirstStringByPaths(root map[string]any, paths ...string) string {
+	for _, path := range paths {
+		if v := strings.TrimSpace(GetStringByPath(root, path)); v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // GetValuesByPath reads all matched terminal values from a restricted JSONPath subset.
 func GetValuesByPath(root any, path string) ([]any, bool) {
-	p := strings.TrimSpace(path)
-	if p == "" || !strings.HasPrefix(p, "$.") {
+	vals := make([]any, 0)
+	if !VisitValuesByPath(root, path, func(v any) {
+		vals = append(vals, v)
+	}) {
 		return nil, false
 	}
-	parts := strings.Split(strings.TrimPrefix(p, "$."), ".")
-	return collectPathValues(root, parts)
+	return vals, true
 }
 
-func getStringByParts(cur any, parts []string) string {
+// VisitValuesByPath walks all matched terminal values from a restricted JSONPath subset.
+// It returns whether the path matched, even when the final wildcard expansion is empty.
+func VisitValuesByPath(root any, path string, visit func(any)) bool {
+	compiled, ok := lookupCompiledPath(path)
+	if !ok {
+		return false
+	}
+	return visitPathValues(root, compiled.parts, visit)
+}
+
+func getStringByParts(cur any, parts []compiledPathPart) string {
 	for i, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			return ""
-		}
-		name, idx, hasIdx, isStar := splitIndex(part)
+		name, idx, hasIdx, isStar := part.name, part.idx, part.hasIdx, part.isStar
 		if name != "" {
 			m, ok := cur.(map[string]any)
 			if !ok {
@@ -185,53 +233,83 @@ func getStringByParts(cur any, parts []string) string {
 	return v
 }
 
-func collectPathValues(cur any, parts []string) ([]any, bool) {
+func visitPathValues(cur any, parts []compiledPathPart, visit func(any)) bool {
 	if len(parts) == 0 {
-		return []any{cur}, true
+		visit(cur)
+		return true
 	}
-	part := strings.TrimSpace(parts[0])
-	if part == "" {
-		return nil, false
-	}
-	name, idx, hasIdx, isStar := splitIndex(part)
+	part := parts[0]
+	name, idx, hasIdx, isStar := part.name, part.idx, part.hasIdx, part.isStar
 	if name != "" {
 		m, ok := cur.(map[string]any)
 		if !ok {
-			return nil, false
+			return false
 		}
 		next, ok := m[name]
 		if !ok {
-			return nil, false
+			return false
 		}
 		cur = next
 	}
 	rest := parts[1:]
 	if !hasIdx {
-		return collectPathValues(cur, rest)
+		return visitPathValues(cur, rest, visit)
 	}
 	arr, ok := cur.([]any)
 	if !ok {
-		return nil, false
+		return false
 	}
 	if isStar {
-		out := make([]any, 0, len(arr))
 		if len(rest) == 0 {
-			out = append(out, arr...)
-			return out, true
+			for _, item := range arr {
+				visit(item)
+			}
+			return true
 		}
 		for _, item := range arr {
-			vals, ok := collectPathValues(item, rest)
-			if !ok {
-				continue
-			}
-			out = append(out, vals...)
+			visitPathValues(item, rest, visit)
 		}
-		return out, true
+		return true
 	}
 	if idx < 0 || idx >= len(arr) {
+		return false
+	}
+	return visitPathValues(arr[idx], rest, visit)
+}
+
+func lookupCompiledPath(path string) (*compiledPath, bool) {
+	if cached, ok := compiledPathCache.Load(path); ok {
+		entry := cached.(compiledPathCacheEntry)
+		return entry.path, entry.ok
+	}
+	compiled, ok := compilePath(path)
+	entry := compiledPathCacheEntry{path: compiled, ok: ok}
+	actual, _ := compiledPathCache.LoadOrStore(path, entry)
+	resolved := actual.(compiledPathCacheEntry)
+	return resolved.path, resolved.ok
+}
+
+func compilePath(path string) (*compiledPath, bool) {
+	p := strings.TrimSpace(path)
+	if p == "" || !strings.HasPrefix(p, "$.") {
 		return nil, false
 	}
-	return collectPathValues(arr[idx], rest)
+	rawParts := strings.Split(strings.TrimPrefix(p, "$."), ".")
+	parts := make([]compiledPathPart, 0, len(rawParts))
+	for _, raw := range rawParts {
+		part := strings.TrimSpace(raw)
+		if part == "" {
+			return nil, false
+		}
+		name, idx, hasIdx, isStar := splitIndex(part)
+		parts = append(parts, compiledPathPart{
+			name:   name,
+			idx:    idx,
+			hasIdx: hasIdx,
+			isStar: isStar,
+		})
+	}
+	return &compiledPath{parts: parts}, true
 }
 
 func splitIndex(s string) (name string, idx int, hasIdx bool, isStar bool) {

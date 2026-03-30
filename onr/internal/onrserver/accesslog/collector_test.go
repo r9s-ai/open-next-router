@@ -73,3 +73,21 @@ func TestCollector_CollectAppnameInference(t *testing.T) {
 		}
 	})
 }
+
+func TestCollector_CollectUsageExtraFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest("GET", "/v1/chat/completions", nil)
+	ctx.Set("onr.usage_extra.cache_write_ttl_5m_tokens", 6802)
+	ctx.Set("onr.usage_extra.cache_write_ttl_1h_tokens", 0)
+
+	got := NewCollector("X-Onr-Request-Id", false, "").Collect(ctx, time.Second)
+	if got["cache_write_ttl_5m_tokens"] != 6802 {
+		t.Fatalf("unexpected cache_write_ttl_5m_tokens: %#v", got["cache_write_ttl_5m_tokens"])
+	}
+	if got["cache_write_ttl_1h_tokens"] != 0 {
+		t.Fatalf("unexpected cache_write_ttl_1h_tokens: %#v", got["cache_write_ttl_1h_tokens"])
+	}
+}

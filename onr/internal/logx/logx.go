@@ -89,36 +89,32 @@ func formatFields(fields map[string]any) string {
 	if len(fields) == 0 {
 		return ""
 	}
-	tokenKeys := map[string]struct{}{
-		"input_tokens":          {},
-		"output_tokens":         {},
-		"total_tokens":          {},
-		"cache_read_tokens":     {},
-		"cache_write_tokens":    {},
-		"billable_input_tokens": {},
-		"cost_total":            {},
-		"cost_input":            {},
-		"cost_output":           {},
-		"cost_cache_read":       {},
-		"cost_cache_write":      {},
-	}
 
 	keys := make([]string, 0, len(fields))
+	extraKeys := make([]string, 0, len(fields))
 	for k := range fields {
-		if _, ok := tokenKeys[k]; ok {
+		if _, ok := tokenFieldKeys[k]; ok {
 			continue
 		}
-		keys = append(keys, k)
+		if _, ok := leadingAccessFieldKeys[k]; ok {
+			continue
+		}
+		if _, ok := fixedAccessFieldKeys[k]; ok {
+			keys = append(keys, k)
+			continue
+		}
+		extraKeys = append(extraKeys, k)
 	}
 	sort.Strings(keys)
+	sort.Strings(extraKeys)
 
-	parts := make([]string, 0, len(keys))
+	parts := make([]string, 0, len(fields))
 	appendIfPresent := func(k string) {
 		v, ok := fields[k]
 		if !ok || v == nil {
 			return
 		}
-		if _, isToken := tokenKeys[k]; isToken {
+		if _, isToken := tokenFieldKeys[k]; isToken {
 			switch t := v.(type) {
 			case int:
 				if t == 0 {
@@ -157,24 +153,18 @@ func formatFields(fields map[string]any) string {
 		}
 	}
 
+	for _, k := range leadingAccessFieldOrder {
+		appendIfPresent(k)
+	}
 	for _, k := range keys {
+		appendIfPresent(k)
+	}
+	for _, k := range extraKeys {
 		appendIfPresent(k)
 	}
 
 	// Keep token usage fields at the end for readability.
-	for _, k := range []string{
-		"input_tokens",
-		"output_tokens",
-		"total_tokens",
-		"cache_read_tokens",
-		"cache_write_tokens",
-		"billable_input_tokens",
-		"cost_input",
-		"cost_output",
-		"cost_cache_read",
-		"cost_cache_write",
-		"cost_total",
-	} {
+	for _, k := range trailingTokenFieldOrder {
 		appendIfPresent(k)
 	}
 	return strings.Join(parts, " ")

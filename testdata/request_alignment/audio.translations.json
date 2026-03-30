@@ -1,0 +1,15 @@
+{
+  "path": "/v1/audio/translations",
+  "content_type_prefix": "multipart/form-data;",
+  "multipart_values": {
+    "model": [
+      "whisper-1"
+    ],
+    "provider_flag": [
+      "beta"
+    ]
+  },
+  "multipart_file_keys": [
+    "file"
+  ]
+}
