@@ -88,3 +88,22 @@ func TestGetFloatByPathWithMatch(t *testing.T) {
 		t.Fatalf("missing path got (%v, %v), want (0, false)", got, matched)
 	}
 }
+
+func TestVisitValuesByPath_EmptyWildcardStillMatches(t *testing.T) {
+	root := map[string]any{
+		"usage": map[string]any{
+			"items": []any{},
+		},
+	}
+
+	visited := 0
+	matched := VisitValuesByPath(root, "$.usage.items[*].tokens", func(v any) {
+		visited++
+	})
+	if !matched {
+		t.Fatalf("expected empty wildcard path to match")
+	}
+	if visited != 0 {
+		t.Fatalf("visited got %d, want 0", visited)
+	}
+}

@@ -905,6 +905,20 @@ provider "invalid-request-source" {
 	}
 }
 
+func TestEvaluateUsageFactCountPath_EmptyWildcardStillMatches(t *testing.T) {
+	root := map[string]any{
+		"tool_results": []any{},
+	}
+
+	got, matched := evaluateUsageFactCountPath(root, "$.tool_results[*]", "web_search_call", "completed")
+	if !matched {
+		t.Fatalf("expected empty wildcard count_path to match")
+	}
+	if got != 0 {
+		t.Fatalf("count got %v, want 0", got)
+	}
+}
+
 func mustParseUsageExpr(t *testing.T, s string) *UsageExpr {
 	t.Helper()
 	expr, err := ParseUsageExpr(s)

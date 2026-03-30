@@ -25,7 +25,9 @@ type UsageExtractConfig struct {
 	CacheWriteTokensExpr *UsageExpr
 	TotalTokensExpr      *UsageExpr
 
-	facts []usageFactConfig
+	facts            []usageFactConfig
+	factGroups       map[usageFactKey][]usageFactConfig
+	explicitFactKeys map[usageFactKey]struct{}
 }
 
 const (
@@ -79,6 +81,7 @@ func (p ProviderUsage) selectMatch(api string, stream bool) (MatchUsage, bool) {
 }
 
 func ExtractUsage(meta *dslmeta.Meta, cfg UsageExtractConfig, respBody []byte) (*Usage, int, error) {
+	cfg = prepareUsageExtractConfig(cfg)
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	if mode == "" {
 		return nil, 0, nil
@@ -151,6 +154,21 @@ func requestRootFromMeta(meta *dslmeta.Meta) map[string]any {
 	return root
 }
 
+func prepareUsageExtractConfig(cfg UsageExtractConfig) UsageExtractConfig {
+	if len(cfg.facts) == 0 {
+		cfg.factGroups = nil
+		cfg.explicitFactKeys = nil
+		return cfg
+	}
+	if cfg.factGroups == nil {
+		cfg.factGroups = groupUsageFactConfigs(cfg.facts)
+	}
+	if cfg.explicitFactKeys == nil {
+		cfg.explicitFactKeys = usageFactExplicitKeys(cfg.facts)
+	}
+	return cfg
+}
+
 func derivedRootFromMeta(meta *dslmeta.Meta) map[string]any {
 	if meta == nil || len(meta.DerivedUsage) == 0 {
 		return nil
@@ -204,6 +222,8 @@ func evalUsageField(root map[string]any, expr *UsageExpr, fallbackPath string) i
 
 func mergeUsageConfig(base UsageExtractConfig, override UsageExtractConfig) UsageExtractConfig {
 	out := base
+	out.factGroups = nil
+	out.explicitFactKeys = nil
 	if strings.TrimSpace(override.Mode) != "" {
 		out.Mode = override.Mode
 	}
@@ -235,7 +255,10 @@ func mergeUsageConfig(base UsageExtractConfig, override UsageExtractConfig) Usag
 		out.TotalTokensExpr = override.TotalTokensExpr
 	}
 	if len(override.facts) > 0 {
-		out.facts = append(out.facts, override.facts...)
+		combined := make([]usageFactConfig, 0, len(base.facts)+len(override.facts))
+		combined = append(combined, base.facts...)
+		combined = append(combined, override.facts...)
+		out.facts = combined
 	}
-	return out
+	return prepareUsageExtractConfig(out)
 }

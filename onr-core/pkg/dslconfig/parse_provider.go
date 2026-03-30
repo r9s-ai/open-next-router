@@ -528,6 +528,9 @@ func parseUsageFactStmt(s *scanner, cfg *UsageExtractConfig) error {
 				return s.errAt(tok, "usage_fact dimension/unit not allowed: "+usageFactKeyString(normalizeUsageFactKey(fact.Dimension, fact.Unit)))
 			}
 			cfg.facts = append(cfg.facts, fact)
+			cfg.factGroups = nil
+			cfg.explicitFactKeys = nil
+			*cfg = prepareUsageExtractConfig(*cfg)
 			return nil
 		case tokIdent:
 			key := tok.text
