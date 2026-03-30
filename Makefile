@@ -1,4 +1,4 @@
-.PHONY: run build build-all test version release-dry release-snapshot clean help hooks bench-dsl bench-dslconfig bench-dsl-pprof
+.PHONY: run build build-all test version release-dry release-snapshot clean help bench-dsl bench-dslconfig bench-dsl-pprof prek prek-install
 
 # Get version from root release tags only (ignore submodule tags like onr-core/v*)
 VERSION ?= $(shell git describe --tags --match 'v*' --always --dirty 2>/dev/null || echo "dev")
@@ -90,7 +90,11 @@ fmt: ## Format code
 lint: ## Run linter (requires golangci-lint)
 	golangci-lint run
 
-hooks: ## Run prek hooks on all files
+prek-install: ## 安装/更新 prek
+	python3 -m pip install --upgrade prek
+	prek install -t pre-commit -t commit-msg
+
+prek: ## 执行 prek 全量检查
 	prek run --all-files
 
 .PHONY: install-tools
