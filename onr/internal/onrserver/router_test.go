@@ -18,6 +18,7 @@ func TestNewRouter_RegistersImageAndAudioRoutes(t *testing.T) {
 
 	cases := []string{
 		"/v1/images/generations",
+		"/v1/images/edits",
 		"/v1/audio/speech",
 		"/v1/audio/transcriptions",
 		"/v1/audio/translations",

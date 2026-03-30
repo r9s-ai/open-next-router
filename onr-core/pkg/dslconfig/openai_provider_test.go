@@ -18,6 +18,7 @@ func TestValidateProviderFile_OpenAIIncludesImageAndAudioRoutes(t *testing.T) {
 
 	cases := map[string]string{
 		"images.generations":   "/v1/images/generations",
+		"images.edits":         "/v1/images/edits",
 		"audio.speech":         "/v1/audio/speech",
 		"audio.transcriptions": "/v1/audio/transcriptions",
 		"audio.translations":   "/v1/audio/translations",
@@ -39,6 +40,14 @@ func TestValidateProviderFile_OpenAIIncludesImageAndAudioRoutes(t *testing.T) {
 	}
 	if usageCfg.Mode != "openai" {
 		t.Fatalf("images.generations usage mode=%q want=openai", usageCfg.Mode)
+	}
+
+	usageCfg, ok = pf.Usage.Select(&dslmeta.Meta{API: "images.edits", IsStream: false})
+	if !ok {
+		t.Fatalf("expected usage config for images.edits")
+	}
+	if usageCfg.Mode != "openai" {
+		t.Fatalf("images.edits usage mode=%q want=openai", usageCfg.Mode)
 	}
 
 	for _, api := range []string{"audio.speech", "audio.transcriptions", "audio.translations"} {

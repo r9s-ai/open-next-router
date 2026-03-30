@@ -78,6 +78,7 @@ func NewRouter(
 	v1.POST("/responses", makeHandler(cfg, st, pclient, "responses", resolvedRequestIDHeaderKey))
 	v1.POST("/embeddings", makeHandler(cfg, st, pclient, "embeddings", resolvedRequestIDHeaderKey))
 	v1.POST("/images/generations", makeHandler(cfg, st, pclient, "images.generations", resolvedRequestIDHeaderKey))
+	v1.POST("/images/edits", makeHandler(cfg, st, pclient, "images.edits", resolvedRequestIDHeaderKey))
 	v1.POST("/audio/speech", makeHandler(cfg, st, pclient, "audio.speech", resolvedRequestIDHeaderKey))
 	v1.POST("/audio/transcriptions", makeHandler(cfg, st, pclient, "audio.transcriptions", resolvedRequestIDHeaderKey))
 	v1.POST("/audio/translations", makeHandler(cfg, st, pclient, "audio.translations", resolvedRequestIDHeaderKey))

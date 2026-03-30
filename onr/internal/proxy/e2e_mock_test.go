@@ -1051,6 +1051,15 @@ provider "openai" {
       set_path "/v1/images/generations";
     }
   }
+
+  match api = "images.edits" {
+    metrics {
+      usage_extract openai;
+    }
+    upstream {
+      set_path "/v1/images/edits";
+    }
+  }
 }
 `, baseURL)
 }

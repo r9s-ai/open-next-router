@@ -753,7 +753,7 @@ func readRequestBody(gc *gin.Context, api string) (bodyBytes []byte, root map[st
 
 func allowNonJSONRequestBodyAPI(api string) bool {
 	switch strings.ToLower(strings.TrimSpace(api)) {
-	case "audio.transcriptions", "audio.translations":
+	case "images.edits", "audio.transcriptions", "audio.translations":
 		return true
 	default:
 		return false
