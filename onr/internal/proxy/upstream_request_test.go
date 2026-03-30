@@ -117,6 +117,67 @@ func TestDoUpstreamRequest_AppliesFilterHeaderValuesAfterSetHeader(t *testing.T)
 	}
 }
 
+func TestDoUpstreamRequest_AppliesFilterHeaderValuesAcrossRepeatedHeaderLines(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	streamTrue := true
+
+	gotHeaderValues := make(chan []string, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeaderValues <- append([]string(nil), r.Header.Values("X-Feature-Flags")...)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	t.Cleanup(srv.Close)
+
+	w := httptest.NewRecorder()
+	gc, _ := gin.CreateTestContext(w)
+	gc.Request = httptest.NewRequest(http.MethodPost, "/v1/test", strings.NewReader(`{"x":1}`))
+	gc.Request.Header.Add("X-Feature-Flags", "exp-a; keep")
+	gc.Request.Header.Add("X-Feature-Flags", "debug; stay")
+
+	c := &Client{WriteTimeout: 10 * time.Second}
+	pf := dslconfig.ProviderFile{
+		Headers: dslconfig.ProviderHeaders{
+			Matches: []dslconfig.MatchHeaders{
+				{
+					API:    "chat.completions",
+					Stream: &streamTrue,
+					Headers: dslconfig.PhaseHeaders{
+						Request: []dslconfig.HeaderOp{
+							{Op: "header_pass", NameExpr: `"X-Feature-Flags"`},
+							{Op: "header_filter_values", NameExpr: `"X-Feature-Flags"`, Patterns: []string{"exp-*", "debug"}, Separator: ";"},
+						},
+					},
+				},
+			},
+		},
+	}
+	meta := &dslmeta.Meta{
+		API:            "chat.completions",
+		IsStream:       true,
+		BaseURL:        srv.URL,
+		RequestURLPath: "/",
+	}
+
+	resp, cancel, err := c.doUpstreamRequest(gc, "openai", pf, meta, []byte(`{"x":1}`))
+	if err != nil {
+		t.Fatalf("doUpstreamRequest error: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = resp.Body.Close()
+		cancel()
+	})
+
+	select {
+	case got := <-gotHeaderValues:
+		if len(got) != 1 || got[0] != "keep; stay" {
+			t.Fatalf("X-Feature-Flags=%#v want=%#v", got, []string{"keep; stay"})
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for upstream request")
+	}
+}
+
 func TestDoUpstreamRequest_PassesHeaderFromOriginRequest(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	streamTrue := true

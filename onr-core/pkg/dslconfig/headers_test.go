@@ -137,6 +137,35 @@ func TestProviderHeadersApply_FilterHeaderValuesCustomSeparatorAndDelete(t *test
 	}
 }
 
+func TestProviderHeadersApply_FilterHeaderValuesCustomSeparatorAcrossRepeatedHeaderLines(t *testing.T) {
+	t.Parallel()
+
+	boolPtr := func(v bool) *bool { return &v }
+
+	cfg := ProviderHeaders{
+		Matches: []MatchHeaders{
+			{
+				API:    "chat.completions",
+				Stream: boolPtr(false),
+				Headers: PhaseHeaders{
+					Request: []HeaderOp{
+						{Op: "header_filter_values", NameExpr: `"x-feature-flags"`, Patterns: []string{"exp-*", "debug"}, Separator: ";"},
+					},
+				},
+			},
+		},
+	}
+
+	h := http.Header{}
+	h.Add("x-feature-flags", "exp-a; keep")
+	h.Add("x-feature-flags", "debug; stay")
+	cfg.Apply(&dslmeta.Meta{API: "chat.completions", IsStream: false}, nil, h)
+
+	if got := h.Values("x-feature-flags"); len(got) != 1 || got[0] != "keep; stay" {
+		t.Fatalf("x-feature-flags=%#v want=%#v", got, []string{"keep; stay"})
+	}
+}
+
 func TestProviderHeadersApply_FilterHeaderValuesRunsAfterSetHeader(t *testing.T) {
 	t.Parallel()
 

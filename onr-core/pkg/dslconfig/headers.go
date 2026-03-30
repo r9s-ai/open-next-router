@@ -128,8 +128,7 @@ func applyHeaderValueFilterRule(hdr http.Header, rule HeaderValueFilterRule) {
 	if len(values) == 0 {
 		return
 	}
-	raw := strings.Join(values, ",")
-	items := splitHeaderValueItems(raw, rule.Separator)
+	items := splitHeaderValues(values, rule.Separator)
 	if len(items) == 0 {
 		hdr.Del(name)
 		return
@@ -146,6 +145,14 @@ func applyHeaderValueFilterRule(hdr http.Header, rule HeaderValueFilterRule) {
 		return
 	}
 	hdr.Set(name, strings.Join(kept, headerValueJoinSeparator(rule.Separator)))
+}
+
+func splitHeaderValues(values []string, separator string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		out = append(out, splitHeaderValueItems(value, separator)...)
+	}
+	return out
 }
 
 func splitHeaderValueItems(raw, separator string) []string {
