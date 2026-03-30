@@ -1,0 +1,13 @@
+{
+  "path": "/v1/embeddings",
+  "content_type": "application/json",
+  "json_require": {
+    "model": "text-embedding-3-small",
+    "custom_meta": {
+      "trace_id": "embed-e2e"
+    }
+  },
+  "json_absent": [
+    "service_tier"
+  ]
+}

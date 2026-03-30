@@ -1,0 +1,13 @@
+{
+  "path": "/v1/chat/completions",
+  "content_type": "application/json",
+  "json_require": {
+    "model": "gpt-4o",
+    "custom_meta": {
+      "trace_id": "chat-e2e"
+    }
+  },
+  "json_absent": [
+    "service_tier"
+  ]
+}

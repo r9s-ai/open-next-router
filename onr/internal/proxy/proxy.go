@@ -25,6 +25,7 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/pricing"
 	onraudio "github.com/r9s-ai/open-next-router/onr-core/pkg/providerusage/audio"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/requestcanon"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/requesttransform"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/trafficdump"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/usageestimate"
 	"github.com/r9s-ai/open-next-router/onr/internal/auth"
@@ -674,20 +675,17 @@ func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey
 
 	respDir, _ := pf.Response.Select(m)
 
-	reqTransform, hasReqTransform, root, err := applyRequestTransform(pf, m, root)
+	reqTransform, hasReqTransform, err := selectRequestTransform(pf, m)
 	if err != nil {
 		return nil, err
 	}
 	applyGeminiModelRewrite(api, m)
 
-	reqBody, err := marshalMaybeJSON(bodyBytes, root, gc.Request.Header.Get("Content-Type"))
+	reqResult, err := applyRequestTransform(m, gc.Request.Header.Get("Content-Type"), gc.GetHeader("Content-Encoding"), bodyBytes, root, reqTransform, hasReqTransform)
 	if err != nil {
 		return nil, err
 	}
-	reqBody, err = applyReqMap(gc, reqTransform, hasReqTransform, reqBody)
-	if err != nil {
-		return nil, err
-	}
+	reqBody := reqResult.Body
 
 	return &proxyCtx{
 		start:           start,
@@ -763,28 +761,14 @@ func allowNonJSONRequestBodyAPI(api string) bool {
 	}
 }
 
-func applyRequestTransform(pf dslconfig.ProviderFile, meta *dslmeta.Meta, root map[string]any) (dslconfig.RequestTransform, bool, map[string]any, error) {
+func selectRequestTransform(pf dslconfig.ProviderFile, meta *dslmeta.Meta) (dslconfig.RequestTransform, bool, error) {
 	t, ok := pf.Request.Select(meta)
 	if !ok {
-		return dslconfig.RequestTransform{}, false, root, nil
+		return dslconfig.RequestTransform{}, false, nil
 	}
 
 	t.Apply(meta)
-
-	if root != nil && meta.DSLModelMapped != "" {
-		// Only override when the field exists (OpenAI-style). Gemini native requests do not have "model" in body.
-		if _, exists := root["model"]; exists {
-			root["model"] = meta.DSLModelMapped
-		}
-	}
-	if root != nil && len(t.JSONOps) > 0 {
-		out, err := dslconfig.ApplyJSONOps(meta, root, t.JSONOps)
-		if err != nil {
-			return dslconfig.RequestTransform{}, false, root, err
-		}
-		root, _ = out.(map[string]any)
-	}
-	return t, true, root, nil
+	return t, true, nil
 }
 
 func applyGeminiModelRewrite(api string, meta *dslmeta.Meta) {
@@ -802,42 +786,18 @@ func applyGeminiModelRewrite(api string, meta *dslmeta.Meta) {
 	}
 }
 
-func marshalMaybeJSON(bodyBytes []byte, root map[string]any, contentType string) ([]byte, error) {
-	if root == nil {
-		return bodyBytes, nil
+func applyRequestTransform(meta *dslmeta.Meta, contentType, contentEncoding string, bodyBytes []byte, root map[string]any, t dslconfig.RequestTransform, hasT bool) (requesttransform.Result, error) {
+	if !hasT {
+		return requesttransform.Result{
+			Body:        bodyBytes,
+			Value:       root,
+			Root:        root,
+			ContentType: strings.TrimSpace(contentType),
+		}, nil
 	}
-	if requestcanon.IsMultipartFormData(contentType) {
-		return bodyBytes, nil
-	}
-	b, err := json.Marshal(root)
-	if err != nil {
-		return nil, err
-	}
-	return b, nil
-}
-
-func applyReqMap(gc *gin.Context, t dslconfig.RequestTransform, hasT bool, reqBody []byte) ([]byte, error) {
-	if !hasT || strings.TrimSpace(t.ReqMapMode) == "" {
-		return reqBody, nil
-	}
-	ce := strings.ToLower(strings.TrimSpace(gc.GetHeader("Content-Encoding")))
-	if ce != "" && ce != contentEncodingIdentity {
-		return nil, fmt.Errorf("cannot transform encoded client request (Content-Encoding=%q)", gc.GetHeader("Content-Encoding"))
-	}
-	switch strings.ToLower(strings.TrimSpace(t.ReqMapMode)) {
-	case "openai_chat_to_openai_responses":
-		return apitransform.MapOpenAIChatCompletionsToResponsesRequest(reqBody)
-	case "openai_chat_to_anthropic_messages":
-		return apitransform.MapOpenAIChatCompletionsToClaudeMessagesRequest(reqBody)
-	case "openai_chat_to_gemini_generate_content":
-		return apitransform.MapOpenAIChatCompletionsToGeminiGenerateContentRequest(reqBody)
-	case "anthropic_to_openai_chat":
-		return apitransform.MapClaudeMessagesToOpenAIChatCompletions(reqBody)
-	case "gemini_to_openai_chat":
-		return apitransform.MapGeminiGenerateContentToOpenAIChatCompletions(reqBody)
-	default:
-		return nil, fmt.Errorf("unsupported req_map mode %q", t.ReqMapMode)
-	}
+	return requesttransform.Apply(meta, contentType, bodyBytes, root, t, requesttransform.ApplyOptions{
+		ContentEncoding: contentEncoding,
+	})
 }
 
 func (c *Client) doUpstreamRequest(gc *gin.Context, provider string, pf dslconfig.ProviderFile, m *dslmeta.Meta, reqBody []byte) (*http.Response, context.CancelFunc, error) {
