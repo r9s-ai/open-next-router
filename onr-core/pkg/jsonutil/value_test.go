@@ -66,3 +66,25 @@ func TestGetFloatByPath_StringAndNumber(t *testing.T) {
 		t.Fatalf("string float got %v, want 2.5", got)
 	}
 }
+
+func TestGetFloatByPathWithMatch(t *testing.T) {
+	root := map[string]any{
+		"usage": map[string]any{
+			"items": []any{
+				map[string]any{"tokens": 1.5},
+				map[string]any{"tokens": "2.5"},
+			},
+			"empty": []any{},
+		},
+	}
+
+	if got, matched := GetFloatByPathWithMatch(root, "$.usage.items[*].tokens"); !matched || got != 4 {
+		t.Fatalf("wildcard float got (%v, %v), want (4, true)", got, matched)
+	}
+	if got, matched := GetFloatByPathWithMatch(root, "$.usage.empty[*].tokens"); !matched || got != 0 {
+		t.Fatalf("empty wildcard got (%v, %v), want (0, true)", got, matched)
+	}
+	if got, matched := GetFloatByPathWithMatch(root, "$.usage.missing"); matched || got != 0 {
+		t.Fatalf("missing path got (%v, %v), want (0, false)", got, matched)
+	}
+}

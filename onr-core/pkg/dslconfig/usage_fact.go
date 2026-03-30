@@ -210,11 +210,9 @@ func evaluateUsageFact(reqRoot, respRoot, derivedRoot map[string]any, fact usage
 	case fact.CountPath != "":
 		return evaluateUsageFactCountPath(root, fact.CountPath, fact.Type, fact.Status)
 	case fact.SumPath != "":
-		_, matched = jsonutil.GetValuesByPath(root, fact.SumPath)
-		return jsonutil.GetFloatByPath(root, fact.SumPath), matched
+		return jsonutil.GetFloatByPathWithMatch(root, fact.SumPath)
 	case fact.Path != "":
-		_, matched = jsonutil.GetValuesByPath(root, fact.Path)
-		return jsonutil.GetFloatByPath(root, fact.Path), matched
+		return jsonutil.GetFloatByPathWithMatch(root, fact.Path)
 	default:
 		return 0, false
 	}

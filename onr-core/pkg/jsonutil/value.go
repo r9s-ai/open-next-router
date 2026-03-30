@@ -100,15 +100,22 @@ func GetIntByPath(root map[string]any, path string) int {
 
 // GetFloatByPath reads float values from a restricted JSONPath subset and sums matched values.
 func GetFloatByPath(root map[string]any, path string) float64 {
+	sum, _ := GetFloatByPathWithMatch(root, path)
+	return sum
+}
+
+// GetFloatByPathWithMatch reads float values from a restricted JSONPath subset,
+// sums matched values, and reports whether the path matched.
+func GetFloatByPathWithMatch(root map[string]any, path string) (float64, bool) {
 	vals, ok := GetValuesByPath(root, path)
 	if !ok {
-		return 0
+		return 0, false
 	}
 	sum := 0.0
 	for _, v := range vals {
 		sum += CoerceFloat(v)
 	}
-	return sum
+	return sum, true
 }
 
 // GetStringByPath reads a string from a restricted JSONPath subset.
