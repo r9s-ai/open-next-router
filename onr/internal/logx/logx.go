@@ -96,6 +96,9 @@ func formatFields(fields map[string]any) string {
 		if _, ok := tokenFieldKeys[k]; ok {
 			continue
 		}
+		if _, ok := leadingAccessFieldKeys[k]; ok {
+			continue
+		}
 		if _, ok := fixedAccessFieldKeys[k]; ok {
 			keys = append(keys, k)
 			continue
@@ -105,7 +108,7 @@ func formatFields(fields map[string]any) string {
 	sort.Strings(keys)
 	sort.Strings(extraKeys)
 
-	parts := make([]string, 0, len(keys))
+	parts := make([]string, 0, len(fields))
 	appendIfPresent := func(k string) {
 		v, ok := fields[k]
 		if !ok || v == nil {
@@ -150,6 +153,9 @@ func formatFields(fields map[string]any) string {
 		}
 	}
 
+	for _, k := range leadingAccessFieldOrder {
+		appendIfPresent(k)
+	}
 	for _, k := range keys {
 		appendIfPresent(k)
 	}

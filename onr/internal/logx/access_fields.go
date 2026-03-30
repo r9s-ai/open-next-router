@@ -42,6 +42,26 @@ var trailingTokenFieldOrder = []string{
 	"cost_total",
 }
 
+var leadingAccessFieldOrder = []string{
+	"api",
+	"stream",
+	"model",
+	"request_id",
+	"appname",
+	"latency_ms",
+	"provider",
+	"provider_source",
+	"usage_stage",
+	"cost_channel",
+	"cost_model",
+	"cost_multiplier",
+	"cost_unit",
+	"upstream_status",
+	"finish_reason",
+	"ttft_ms",
+	"tps",
+}
+
 var standardUsageFieldOrder = logKeysOfSpecs(standardUsageContextFieldSpecs)
 
 var baseAccessLogContextFieldSpecs = []AccessLogContextFieldSpec{
@@ -64,6 +84,7 @@ var accessLogContextFieldSpecs = combineAccessLogContextFieldSpecs(
 )
 
 var tokenFieldKeys = newFieldSet(trailingTokenFieldOrder)
+var leadingAccessFieldKeys = newFieldSet(leadingAccessFieldOrder)
 var standardUsageFieldKeys = newFieldSet(standardUsageFieldOrder)
 var standardUsageContextKeys = newContextKeySet(standardUsageContextFieldSpecs)
 var costContextKeys = newContextKeySet(costContextFieldSpecs)
