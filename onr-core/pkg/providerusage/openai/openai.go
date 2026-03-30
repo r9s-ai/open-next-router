@@ -23,7 +23,7 @@ type responsesOutputItem struct {
 }
 
 type responsesBody struct {
-	Output []responsesOutputItem `json:"output"`
+	Output   []responsesOutputItem `json:"output"`
 	Response *struct {
 		Output []responsesOutputItem `json:"output"`
 	} `json:"response,omitempty"`

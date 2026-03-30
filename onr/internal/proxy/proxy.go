@@ -656,7 +656,7 @@ func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey
 	}
 	applyGeminiModelRewrite(api, m)
 
-	reqBody, err := marshalMaybeJSON(bodyBytes, root)
+	reqBody, err := marshalMaybeJSON(bodyBytes, root, gc.Request.Header.Get("Content-Type"))
 	if err != nil {
 		return nil, err
 	}
@@ -776,8 +776,11 @@ func applyGeminiModelRewrite(api string, meta *dslmeta.Meta) {
 	}
 }
 
-func marshalMaybeJSON(bodyBytes []byte, root map[string]any) ([]byte, error) {
+func marshalMaybeJSON(bodyBytes []byte, root map[string]any, contentType string) ([]byte, error) {
 	if root == nil {
+		return bodyBytes, nil
+	}
+	if isMultipartFormData(contentType) {
 		return bodyBytes, nil
 	}
 	b, err := json.Marshal(root)
