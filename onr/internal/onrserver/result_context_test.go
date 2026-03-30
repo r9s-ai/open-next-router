@@ -101,3 +101,46 @@ func TestSetProxyResultContext_UsageExtraFields(t *testing.T) {
 		t.Fatalf("expected cache_write_ttl_1h_tokens=0, got ok=%v value=%v", ok, v)
 	}
 }
+
+func TestSetProxyResultContext_CostFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	setProxyResultContext(c, &proxy.Result{
+		Status: http.StatusOK,
+		Cost: map[string]any{
+			"cost_total":            0.12,
+			"cost_input":            0.03,
+			"cost_output":           0.04,
+			"cost_cache_read":       0.01,
+			"cost_cache_write":      0.02,
+			"billable_input_tokens": 123,
+			"cost_multiplier":       1.5,
+			"cost_model":            "gpt-4o-mini",
+			"cost_channel":          "openai/key1",
+			"cost_unit":             "usd",
+		},
+	})
+
+	for _, tc := range []struct {
+		ctxKey string
+		want   any
+	}{
+		{ctxKey: "onr.cost_total", want: 0.12},
+		{ctxKey: "onr.cost_input", want: 0.03},
+		{ctxKey: "onr.cost_output", want: 0.04},
+		{ctxKey: "onr.cost_cache_read", want: 0.01},
+		{ctxKey: "onr.cost_cache_write", want: 0.02},
+		{ctxKey: "onr.billable_input_tokens", want: 123},
+		{ctxKey: "onr.cost_multiplier", want: 1.5},
+		{ctxKey: "onr.cost_model", want: "gpt-4o-mini"},
+		{ctxKey: "onr.cost_channel", want: "openai/key1"},
+		{ctxKey: "onr.cost_unit", want: "usd"},
+	} {
+		if v, ok := c.Get(tc.ctxKey); !ok || v != tc.want {
+			t.Fatalf("expected %s=%v, got ok=%v value=%v", tc.ctxKey, tc.want, ok, v)
+		}
+	}
+}

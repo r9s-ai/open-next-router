@@ -16,13 +16,15 @@ const (
 	rateCacheWrite = "cache_write"
 )
 
-var standardUsageCostKeys = map[string]struct{}{
-	"input_tokens":       {},
-	"output_tokens":      {},
-	"total_tokens":       {},
-	"cache_read_tokens":  {},
-	"cache_write_tokens": {},
+var standardUsageCostKeyOrder = []string{
+	"input_tokens",
+	"output_tokens",
+	"total_tokens",
+	"cache_read_tokens",
+	"cache_write_tokens",
 }
+
+var standardUsageCostKeys = newStringSet(standardUsageCostKeyOrder)
 
 type OverridesFile struct {
 	Version   string                   `yaml:"version"`
@@ -396,4 +398,12 @@ func floatFromAny(v any) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func newStringSet(keys []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		out[key] = struct{}{}
+	}
+	return out
 }

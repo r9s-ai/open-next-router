@@ -32,23 +32,9 @@ func setProxyResultContext(c *gin.Context, res *proxy.Result) {
 	if res.Usage == nil {
 		goto setCost
 	}
-	if v, ok := res.Usage["input_tokens"]; ok {
-		c.Set("onr.usage_input_tokens", v)
-	}
-	if v, ok := res.Usage["output_tokens"]; ok {
-		c.Set("onr.usage_output_tokens", v)
-	}
-	if v, ok := res.Usage["total_tokens"]; ok {
-		c.Set("onr.usage_total_tokens", v)
-	}
-	if v, ok := res.Usage["cache_read_tokens"]; ok {
-		c.Set("onr.usage_cache_read_tokens", v)
-	}
-	if v, ok := res.Usage["cache_write_tokens"]; ok {
-		c.Set("onr.usage_cache_write_tokens", v)
-	}
 	for k, v := range res.Usage {
-		if logx.IsStandardUsageField(k) {
+		if ctxKey, ok := logx.StandardUsageContextKey(k); ok {
+			c.Set(ctxKey, v)
 			continue
 		}
 		if strings.TrimSpace(k) == "" {
@@ -61,34 +47,9 @@ setCost:
 	if res.Cost == nil {
 		return
 	}
-	if v, ok := res.Cost["cost_total"]; ok {
-		c.Set("onr.cost_total", v)
-	}
-	if v, ok := res.Cost["cost_input"]; ok {
-		c.Set("onr.cost_input", v)
-	}
-	if v, ok := res.Cost["cost_output"]; ok {
-		c.Set("onr.cost_output", v)
-	}
-	if v, ok := res.Cost["cost_cache_read"]; ok {
-		c.Set("onr.cost_cache_read", v)
-	}
-	if v, ok := res.Cost["cost_cache_write"]; ok {
-		c.Set("onr.cost_cache_write", v)
-	}
-	if v, ok := res.Cost["billable_input_tokens"]; ok {
-		c.Set("onr.billable_input_tokens", v)
-	}
-	if v, ok := res.Cost["cost_multiplier"]; ok {
-		c.Set("onr.cost_multiplier", v)
-	}
-	if v, ok := res.Cost["cost_model"]; ok {
-		c.Set("onr.cost_model", v)
-	}
-	if v, ok := res.Cost["cost_channel"]; ok {
-		c.Set("onr.cost_channel", v)
-	}
-	if v, ok := res.Cost["cost_unit"]; ok {
-		c.Set("onr.cost_unit", v)
+	for k, v := range res.Cost {
+		if ctxKey, ok := logx.CostContextKey(k); ok {
+			c.Set(ctxKey, v)
+		}
 	}
 }
