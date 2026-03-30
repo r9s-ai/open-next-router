@@ -305,6 +305,7 @@ func estimateNonStreamUsage(
 				Model:         model,
 				UpstreamUsage: u,
 				RequestBody:   reqBody,
+				RequestRoot:   meta.RequestRoot(),
 				ResponseBody:  metricsBody,
 			})
 			return usageMap(out.Usage), out.Stage, u
@@ -314,6 +315,7 @@ func estimateNonStreamUsage(
 		API:          api,
 		Model:        model,
 		RequestBody:  reqBody,
+		RequestRoot:  meta.RequestRoot(),
 		ResponseBody: metricsBody,
 	})
 	return usageMap(out.Usage), out.Stage, nil
@@ -475,6 +477,7 @@ func (c *Client) handleStreamResponse(
 			Model:         model,
 			UpstreamUsage: upstreamUsage,
 			RequestBody:   reqBody,
+			RequestRoot:   m.RequestRoot(),
 			StreamTail:    usageTail.Bytes(),
 		})
 		usage = usageMap(out.Usage)
@@ -621,14 +624,17 @@ func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey
 	}
 
 	m := &dslmeta.Meta{
-		API:             strings.TrimSpace(api),
-		IsStream:        stream,
-		ActualModelName: strings.TrimSpace(model),
-		APIKey:          strings.TrimSpace(key.Value),
-		BaseURL:         strings.TrimSpace(key.BaseURLOverride),
-		RequestURLPath:  gc.Request.URL.RequestURI(),
-		StartTime:       time.Now(),
+		API:                strings.TrimSpace(api),
+		IsStream:           stream,
+		ActualModelName:    strings.TrimSpace(model),
+		APIKey:             strings.TrimSpace(key.Value),
+		BaseURL:            strings.TrimSpace(key.BaseURLOverride),
+		RequestURLPath:     gc.Request.URL.RequestURI(),
+		RequestContentType: gc.Request.Header.Get("Content-Type"),
+		RequestBody:        bodyBytes,
+		StartTime:          time.Now(),
 	}
+	m.SetRequestRoot(root)
 	if mo := strings.TrimSpace(model); mo != "" {
 		if newPath, ok := replaceGeminiModelInPath(m.RequestURLPath, mo); ok {
 			m.RequestURLPath = newPath
@@ -676,6 +682,23 @@ func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey
 }
 
 func readRequestBody(gc *gin.Context, api string) (bodyBytes []byte, root map[string]any, model string, contentType string, err error) {
+	if gc != nil {
+		if cachedBody, ok := gc.Get("onr.request_body"); ok {
+			if bodyBytes, ok = cachedBody.([]byte); ok {
+				if cachedRoot, ok := gc.Get("onr.request_root"); ok {
+					root, _ = cachedRoot.(map[string]any)
+				}
+				if cachedModel, ok := gc.Get("onr.request_model"); ok {
+					model = strings.TrimSpace(fmt.Sprintf("%v", cachedModel))
+				}
+				if cachedContentType, ok := gc.Get("onr.request_content_type"); ok {
+					contentType = strings.TrimSpace(fmt.Sprintf("%v", cachedContentType))
+				}
+				return bodyBytes, root, model, contentType, nil
+			}
+		}
+	}
+
 	bodyBytes, err = io.ReadAll(gc.Request.Body)
 	if err != nil {
 		return nil, nil, "", "", err

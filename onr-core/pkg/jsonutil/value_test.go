@@ -32,6 +32,22 @@ func TestCoerceInt_StringAndArray(t *testing.T) {
 	}
 }
 
+func TestGetFirstIntByPaths(t *testing.T) {
+	root := map[string]any{
+		"usage": map[string]any{
+			"prompt_tokens": 5,
+			"input_tokens":  9,
+		},
+	}
+
+	if got := GetFirstIntByPaths(root, "$.usage.prompt_tokens", "$.usage.input_tokens"); got != 5 {
+		t.Fatalf("first int got %d, want 5", got)
+	}
+	if got := GetFirstIntByPaths(root, "$.usage.missing", "$.usage.input_tokens"); got != 9 {
+		t.Fatalf("fallback int got %d, want 9", got)
+	}
+}
+
 func TestGetStringByPath_SupportsWildcardAndIndex(t *testing.T) {
 	root := map[string]any{
 		"items": []any{
@@ -48,6 +64,21 @@ func TestGetStringByPath_SupportsWildcardAndIndex(t *testing.T) {
 	}
 	if got := GetStringByPath(root, "$.one[0].name"); got != "first" {
 		t.Fatalf("index string got %q, want first", got)
+	}
+}
+
+func TestGetFirstStringByPaths(t *testing.T) {
+	root := map[string]any{
+		"delta": map[string]any{
+			"stop_reason": "",
+		},
+		"message": map[string]any{
+			"stop_reason": "end_turn",
+		},
+	}
+
+	if got := GetFirstStringByPaths(root, "$.delta.stop_reason", "$.message.stop_reason"); got != "end_turn" {
+		t.Fatalf("first string got %q, want end_turn", got)
 	}
 }
 

@@ -206,18 +206,9 @@ func mapResponsesUsageToChat(root map[string]any) map[string]any {
 	if u == nil {
 		return nil
 	}
-	inputTokens := jsonutil.FirstInt(
-		jsonutil.GetIntByPath(u, "$.prompt_tokens"),
-		jsonutil.GetIntByPath(u, "$.input_tokens"),
-	)
-	outputTokens := jsonutil.FirstInt(
-		jsonutil.GetIntByPath(u, "$.completion_tokens"),
-		jsonutil.GetIntByPath(u, "$.output_tokens"),
-	)
-	totalTokens := jsonutil.FirstInt(
-		jsonutil.GetIntByPath(u, "$.total_tokens"),
-		inputTokens+outputTokens,
-	)
+	inputTokens := jsonutil.GetFirstIntByPaths(u, "$.prompt_tokens", "$.input_tokens")
+	outputTokens := jsonutil.GetFirstIntByPaths(u, "$.completion_tokens", "$.output_tokens")
+	totalTokens := jsonutil.FirstInt(jsonutil.GetIntByPath(u, "$.total_tokens"), inputTokens+outputTokens)
 
 	// Provide both the legacy (prompt/completion) and the newer (input/output) fields for compatibility.
 	out := map[string]any{
@@ -228,11 +219,7 @@ func mapResponsesUsageToChat(root map[string]any) map[string]any {
 		"output_tokens":     outputTokens,
 	}
 	// Pass through cached tokens when present.
-	if v := jsonutil.FirstInt(
-		jsonutil.GetIntByPath(u, "$.prompt_tokens_details.cached_tokens"),
-		jsonutil.GetIntByPath(u, "$.input_tokens_details.cached_tokens"),
-		jsonutil.GetIntByPath(u, "$.cached_tokens"),
-	); v > 0 {
+	if v := jsonutil.GetFirstIntByPaths(u, "$.prompt_tokens_details.cached_tokens", "$.input_tokens_details.cached_tokens", "$.cached_tokens"); v > 0 {
 		out["prompt_tokens_details"] = map[string]any{"cached_tokens": v}
 		out["input_tokens_details"] = map[string]any{"cached_tokens": v}
 	}

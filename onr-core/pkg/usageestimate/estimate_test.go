@@ -38,6 +38,36 @@ func TestEstimate_WhenMissingUsage_EstimateBoth(t *testing.T) {
 	}
 }
 
+func TestEstimate_UsesProvidedRequestRootWithoutParsingBody(t *testing.T) {
+	cfg := &Config{}
+	ApplyDefaults(cfg)
+
+	out := Estimate(cfg, Input{
+		API:         "chat.completions",
+		Model:       "gpt-4o-mini",
+		RequestBody: []byte("{"),
+		RequestRoot: map[string]any{
+			"messages": []any{
+				map[string]any{"role": "user", "content": "hello"},
+			},
+		},
+		ResponseBody: []byte(`{
+			"id":"x",
+			"choices":[{"index":0,"message":{"role":"assistant","content":"world"}}]
+		}`),
+	})
+
+	if out.Stage != StageEstimateBoth {
+		t.Fatalf("stage = %q, want %q", out.Stage, StageEstimateBoth)
+	}
+	if out.Usage == nil {
+		t.Fatalf("usage is nil")
+	}
+	if out.Usage.InputTokens <= 0 {
+		t.Fatalf("input_tokens = %d, want > 0", out.Usage.InputTokens)
+	}
+}
+
 func TestEstimate_WhenUpstreamUsagePresent_Upstream(t *testing.T) {
 	cfg := &Config{}
 	ApplyDefaults(cfg)

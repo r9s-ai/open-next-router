@@ -506,10 +506,7 @@ func builtinUsageFactSet(mode string) usageFactSet {
 func builtinTotalTokens(root map[string]any, mode string) int {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case usageModeGemini:
-		return jsonutil.FirstInt(
-			jsonutil.GetIntByPath(root, "$.usageMetadata.totalTokenCount"),
-			jsonutil.GetIntByPath(root, "$.usage_metadata.total_token_count"),
-		)
+		return jsonutil.GetFirstIntByPaths(root, "$.usageMetadata.totalTokenCount", "$.usage_metadata.total_token_count")
 	default:
 		return 0
 	}

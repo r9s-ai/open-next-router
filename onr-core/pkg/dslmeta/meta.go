@@ -1,6 +1,14 @@
 package dslmeta
 
-import "time"
+import (
+	"bytes"
+	"encoding/json"
+	"mime"
+	"mime/multipart"
+	"strings"
+	"sync"
+	"time"
+)
 
 // Meta is the minimal context required by the DSL engine.
 // It is intentionally small to keep open-next-router decoupled from other projects.
@@ -46,4 +54,81 @@ type Meta struct {
 	DerivedUsage map[string]any
 
 	StartTime time.Time
+
+	requestRootOnce sync.Once
+	requestRoot     map[string]any
+}
+
+// RequestRoot lazily parses and caches the request body as a request-side root object.
+// It supports JSON objects and multipart form values.
+func (m *Meta) RequestRoot() map[string]any {
+	if m == nil {
+		return nil
+	}
+	m.requestRootOnce.Do(func() {
+		m.requestRoot = parseRequestRoot(m.RequestBody, m.RequestContentType)
+	})
+	return m.requestRoot
+}
+
+// SetRequestRoot preloads the cached request-side root when it has already been
+// parsed by an upstream caller.
+func (m *Meta) SetRequestRoot(root map[string]any) {
+	if m == nil {
+		return
+	}
+	m.requestRoot = root
+	m.requestRootOnce.Do(func() {})
+}
+
+func parseRequestRoot(body []byte, contentType string) map[string]any {
+	if len(body) == 0 {
+		return nil
+	}
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(contentType)), "multipart/form-data") {
+		return parseMultipartRequestRoot(body, contentType)
+	}
+	var data any
+	if err := json.Unmarshal(body, &data); err != nil {
+		return nil
+	}
+	root, _ := data.(map[string]any)
+	return root
+}
+
+func parseMultipartRequestRoot(body []byte, contentType string) map[string]any {
+	_, params, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return nil
+	}
+	boundary := strings.TrimSpace(params["boundary"])
+	if boundary == "" {
+		return nil
+	}
+	reader := multipart.NewReader(bytes.NewReader(body), boundary)
+	form, err := reader.ReadForm(32 << 20)
+	if err != nil {
+		return nil
+	}
+	defer form.RemoveAll()
+
+	root := make(map[string]any)
+	for k, vals := range form.Value {
+		switch len(vals) {
+		case 0:
+			continue
+		case 1:
+			root[k] = vals[0]
+		default:
+			items := make([]any, 0, len(vals))
+			for _, v := range vals {
+				items = append(items, v)
+			}
+			root[k] = items
+		}
+	}
+	if len(root) == 0 {
+		return nil
+	}
+	return root
 }

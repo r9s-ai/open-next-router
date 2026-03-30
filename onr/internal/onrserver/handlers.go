@@ -18,6 +18,13 @@ import (
 
 const openAIInvalidRequestType = "invalid_request_error"
 
+const (
+	ctxKeyRequestBody        = "onr.request_body"
+	ctxKeyRequestRoot        = "onr.request_root"
+	ctxKeyRequestModel       = "onr.request_model"
+	ctxKeyRequestContentType = "onr.request_content_type"
+)
+
 func makeHandler(cfg *config.Config, st *state, pclient *proxy.Client, api string, requestIDHeaderKey string) gin.HandlerFunc {
 	requestIDHeaderKey = requestid.ResolveHeaderKey(requestIDHeaderKey)
 	return func(c *gin.Context) {
@@ -106,6 +113,7 @@ func inspectRequestBody(c *gin.Context, api string) ([]byte, bool, string, error
 	if err != nil {
 		return bodyBytes, false, "", err
 	}
+	cacheRequestInspection(c, bodyBytes, info.Root, strings.TrimSpace(info.Model), contentType)
 	return bodyBytes, info.Stream, strings.TrimSpace(info.Model), nil
 }
 
@@ -144,7 +152,18 @@ func peekJSONBody(c *gin.Context) ([]byte, bool, string, error) {
 	if err != nil {
 		return b, false, "", err
 	}
+	cacheRequestInspection(c, b, info.Root, strings.TrimSpace(info.Model), "application/json")
 	return b, info.Stream, strings.TrimSpace(info.Model), nil
+}
+
+func cacheRequestInspection(c *gin.Context, body []byte, root map[string]any, model, contentType string) {
+	if c == nil {
+		return
+	}
+	c.Set(ctxKeyRequestBody, body)
+	c.Set(ctxKeyRequestRoot, root)
+	c.Set(ctxKeyRequestModel, model)
+	c.Set(ctxKeyRequestContentType, contentType)
 }
 
 func writeOpenAIError(c *gin.Context, requestIDHeaderKey string, code, msg string) {

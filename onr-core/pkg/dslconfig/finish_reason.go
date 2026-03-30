@@ -103,11 +103,10 @@ func ExtractFinishReason(meta *dslmeta.Meta, cfg FinishReasonExtractConfig, resp
 		// Anthropic stream events:
 		// - message_start: {"message":{"stop_reason":null,...}}
 		// - message_delta: {"delta":{"stop_reason":"end_turn",...}, "usage":{...}}
-		return strings.TrimSpace(firstNonEmptyString(
-			jsonutil.CoerceString(root["stop_reason"]),
-			jsonutil.GetStringByPath(root, "$.delta.stop_reason"),
-			jsonutil.GetStringByPath(root, "$.message.stop_reason"),
-		)), nil
+		if v := strings.TrimSpace(jsonutil.CoerceString(root["stop_reason"])); v != "" {
+			return v, nil
+		}
+		return jsonutil.GetFirstStringByPaths(root, "$.delta.stop_reason", "$.message.stop_reason"), nil
 	case "gemini":
 		return extractGeminiFinishReason(root), nil
 	default:
@@ -150,15 +149,6 @@ func extractGeminiFinishReason(root map[string]any) string {
 		}
 		// snake_case fallback
 		if v := strings.TrimSpace(jsonutil.CoerceString(m["finish_reason"])); v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
-func firstNonEmptyString(vals ...string) string {
-	for _, v := range vals {
-		if strings.TrimSpace(v) != "" {
 			return v
 		}
 	}

@@ -72,6 +72,16 @@ func FirstInt(vals ...int) int {
 	return 0
 }
 
+// GetFirstIntByPaths returns the first non-zero integer resolved from the given paths.
+func GetFirstIntByPaths(root map[string]any, paths ...string) int {
+	for _, path := range paths {
+		if v := GetIntByPath(root, path); v != 0 {
+			return v
+		}
+	}
+	return 0
+}
+
 // CoerceFloat converts common numeric-like values to float64.
 func CoerceFloat(v any) float64 {
 	switch t := v.(type) {
@@ -141,6 +151,16 @@ func GetStringByPath(root map[string]any, path string) string {
 		return ""
 	}
 	return getStringByParts(root, compiled.parts)
+}
+
+// GetFirstStringByPaths returns the first non-empty string resolved from the given paths.
+func GetFirstStringByPaths(root map[string]any, paths ...string) string {
+	for _, path := range paths {
+		if v := strings.TrimSpace(GetStringByPath(root, path)); v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // GetValuesByPath reads all matched terminal values from a restricted JSONPath subset.
