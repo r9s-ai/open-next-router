@@ -3,9 +3,14 @@ providers:
   openai:
     multiplier: 1.02
     models:
+      # Override rates for a model already present in price.yaml.
       gpt-4o-mini:
         cost:
           output: 0.62
+      # Supplement a model/cost key missing from the synced price.yaml.
+      gpt-4o-mini-tts:
+        cost:
+          audio_tts_seconds: 0.015
 
 channels:
   "openai/key1":

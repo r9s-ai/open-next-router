@@ -579,6 +579,80 @@ entries:
 	}
 }
 
+func TestE2EMock_AudioSpeech_OpenAI_RealDerivedUsageWithOverrideOnlyPricing(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockResp := mustReadSharedProxyTestData(t, filepath.Join("openai", "audio_speech_gpt_4o_mini_tts_real.mp3"))
+	fixtureReq := mustReadTestData(t, "fixtures/audio_speech_request.json")
+
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/audio/speech" {
+			http.NotFound(w, r)
+			return
+		}
+
+		w.Header().Set("Content-Type", "audio/mpeg")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(mockResp)
+	}))
+	t.Cleanup(mock.Close)
+
+	c := newMockE2EClient(t, map[string]string{
+		"openai.conf": providerConfOpenAIAudioSpeech(mock.URL),
+	})
+	pricePath := filepath.Join(t.TempDir(), "price.yaml")
+	priceYAML := `
+version: v1
+unit: usd_per_1m_tokens
+entries:
+  - provider: openai
+    model: gpt-4o-mini
+    cost:
+      input: 0.15
+      output: 0.60
+`
+	if err := os.WriteFile(pricePath, []byte(priceYAML), 0o600); err != nil {
+		t.Fatalf("write price: %v", err)
+	}
+	overridesPath := filepath.Join(t.TempDir(), "price_overrides.yaml")
+	overridesYAML := `
+version: v1
+providers:
+  openai:
+    models:
+      gpt-4o-mini-tts:
+        cost:
+          audio_tts_seconds: 0.015
+`
+	if err := os.WriteFile(overridesPath, []byte(overridesYAML), 0o600); err != nil {
+		t.Fatalf("write overrides: %v", err)
+	}
+	resolver, err := pricing.LoadResolver(pricePath, overridesPath)
+	if err != nil {
+		t.Fatalf("LoadResolver: %v", err)
+	}
+	c.SetPricingResolver(resolver)
+	c.SetPricingEnabled(true)
+
+	gc, _ := newGinJSONRequestPath(t, "/v1/audio/speech", fixtureReq)
+	res, err := c.ProxyJSON(gc, "openai", ProviderKey{Name: "openai-key", Value: "mock-key"}, "audio.speech", false)
+	if err != nil {
+		t.Fatalf("proxy error: %v", err)
+	}
+	if res == nil || res.Status != http.StatusOK {
+		t.Fatalf("unexpected result: %#v", res)
+	}
+	if res.Cost == nil {
+		t.Fatalf("expected cost")
+	}
+	if got, want := asFloat(res.Cost["cost_total"]), 0.03528; math.Abs(got-want) > 1e-9 {
+		t.Fatalf("cost_total=%v want=%v", got, want)
+	}
+	if got, want := asString(res.Cost["cost_model"]), "gpt-4o-mini-tts"; got != want {
+		t.Fatalf("cost_model=%q want=%q", got, want)
+	}
+}
+
 func TestE2EMock_ChatCompletions_OpenAI_MultimodalNonStreamRealUsage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

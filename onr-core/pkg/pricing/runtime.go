@@ -145,16 +145,14 @@ func (r *Resolver) Compute(provider, key, model string, usage map[string]any) (C
 	if provider == "" || model == "" {
 		return CostResult{}, false
 	}
-	models, ok := r.base[provider]
-	if !ok {
-		return CostResult{}, false
-	}
-	baseRates, ok := models[model]
-	if !ok {
-		return CostResult{}, false
-	}
-	effectiveRates := cloneFloatMap(baseRates)
+	effectiveRates := map[string]float64{}
 	multiplier := 1.0
+
+	if models, ok := r.base[provider]; ok {
+		if baseRates, ok := models[model]; ok {
+			effectiveRates = cloneFloatMap(baseRates)
+		}
+	}
 
 	if ov, ok := r.providerOverrides[provider]; ok {
 		applyModelOverride(effectiveRates, model, ov)
@@ -172,6 +170,9 @@ func (r *Resolver) Compute(provider, key, model string, usage map[string]any) (C
 	}
 	for k, v := range effectiveRates {
 		effectiveRates[k] = v * multiplier
+	}
+	if len(effectiveRates) == 0 {
+		return CostResult{}, false
 	}
 
 	inputRate := effectiveRates[rateInput]

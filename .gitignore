@@ -5,6 +5,7 @@ keys.yaml
 keys.yaml.*
 price.yaml
 price.yaml.*
+price_overrides.yaml
 .env
 .env.oauth
 run/
