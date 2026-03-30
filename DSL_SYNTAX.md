@@ -152,6 +152,12 @@ Merge rule (important):
 
 - `defaults` is applied first; the selected `match` is applied afterwards, so match settings can override defaults.
 
+Phase boundary rule (important):
+
+- `request` is responsible for constructing the upstream request content, including request body transforms, header operations, and model mapping.
+- `upstream` is responsible only for routing the upstream target, such as path, query, and base-url-related target selection.
+- Do not place header or body mutation semantics in `upstream`.
+
 ### 5.1 upstream_config
 
 ```conf
@@ -219,7 +225,8 @@ auth {
 
 ### 5.3 request
 
-In v0.1, `request` provides request-header operations and lightweight JSON body transforms.
+In v0.1, `request` is the phase that constructs the upstream request content.
+It owns request-header operations, lightweight JSON body transforms, and model mapping used by downstream routing expressions.
 
 #### set_header (multiple allowed)
 
@@ -243,6 +250,44 @@ request {
 
 - Multiple directives are allowed; executed in order.
 - Defaults are applied before match; match directives are appended after defaults.
+
+#### pass_header (multiple allowed)
+
+```conf
+request {
+  pass_header "anthropic-beta";
+}
+```
+
+- Copies one header from the original client request to the upstream request.
+- If the source header is absent, this is a no-op.
+- Multiple directives are allowed; executed in order with `set_header` and `del_header`.
+- If the same header is passed and later set or deleted, the later directive wins.
+
+#### filter_header_values (multiple allowed)
+
+```conf
+request {
+  filter_header_values "anthropic-beta" "context-1m-*" "fast-mode-*";
+  filter_header_values "x-feature-flags" "exp-*" "debug" separator=";";
+}
+```
+
+- Filters itemized values inside an upstream request header.
+- Syntax: `filter_header_values <header> <pattern>... [separator="<sep>"];`
+- Recommended style: keep the pattern list as plain positional arguments. Do not use comma-delimited argument style.
+- The default separator is `,`.
+- Runtime behavior:
+  - Read the current upstream request header value
+  - Split by `separator`
+  - Apply `strings.TrimSpace` to each item
+  - Remove items matching any pattern
+  - Delete the whole header if no items remain
+  - Otherwise re-join the remaining items
+- Output formatting is normalized:
+  - If `separator == ","`, items are joined with `", "`
+  - Otherwise items are joined with `"<sep> "`, for example `"; "`
+- Pattern matching uses simple `*` wildcards; regex is not supported.
 
 #### model_map (multiple allowed)
 
@@ -302,6 +347,9 @@ v0.1 includes:
 - `openai_chat_to_anthropic_messages`: OpenAI `chat.completions` request JSON → Anthropic `/v1/messages` request JSON
 
 ### 5.4 upstream
+
+`upstream` is limited to upstream target routing.
+It should be used for path/query/base-url-related selection only, not for request-header or request-body mutation.
 
 #### set_path
 
@@ -815,6 +863,32 @@ Multiple: yes
 
 - Deletes an upstream request header.
 - Multiple allowed; executed in order.
+
+#### pass_header
+
+```text
+Syntax:  pass_header <Header-Name>;
+Default: —
+Context: request
+Multiple: yes
+```
+
+- Copies one header from the original client request to the upstream request.
+- If the source header is absent, this is a no-op.
+
+#### filter_header_values
+
+```text
+Syntax:  filter_header_values <Header-Name> <pattern>... [separator="<sep>"];
+Default: separator=","
+Context: request
+Multiple: yes
+```
+
+- Filters itemized values from one upstream request header.
+- Split by `separator`, trim each item, remove items matching any pattern, then re-join survivors.
+- If nothing remains after filtering, the whole header is deleted.
+- Join formatting is normalized to `", "` for comma and `"<sep> "` for any other separator.
 
 #### model_map
 

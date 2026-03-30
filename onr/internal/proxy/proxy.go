@@ -871,7 +871,7 @@ func (c *Client) doUpstreamRequest(gc *gin.Context, provider string, pf dslconfi
 			cancel()
 			return nil, func() {}, oauthErr
 		}
-		pf.Headers.Apply(m, req.Header)
+		pf.Headers.Apply(m, gc.Request.Header, req.Header)
 
 		if rec := trafficdump.FromContext(gc); rec != nil && rec.MaxBytes() > 0 {
 			limited, truncated := trafficdump.LimitBytes(reqBody, rec.MaxBytes())

@@ -223,7 +223,6 @@ func parseMatchBlock(s *scanner) (RoutingMatch, MatchHeaders, MatchRequestTransf
 }
 
 func parseMatchBody(s *scanner, m *RoutingMatch, h *MatchHeaders, req *MatchRequestTransform, r *MatchResponse, e *MatchError, u *MatchUsage, fr *MatchFinishReason) error {
-	h.Upstream.QueryPairs = map[string]string{}
 	return parsePhaseBlock(s, "match block", phaseHandlers{
 		upstream:  func() error { return parseUpstreamPhase(s, m) },
 		auth:      func() error { return parseAuthPhase(s, &h.Headers) },

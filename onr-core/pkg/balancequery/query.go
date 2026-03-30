@@ -78,7 +78,7 @@ func Query(ctx context.Context, p Params) (Result, error) {
 	meta.BaseURL = baseURL
 
 	headers := make(http.Header)
-	p.File.Headers.Apply(&meta, headers)
+	p.File.Headers.Apply(&meta, nil, headers)
 	applyHeaderOps(headers, cfgBalance.Headers, &meta)
 
 	client := p.HTTPClient
