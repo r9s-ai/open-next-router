@@ -3,6 +3,7 @@ package proxy
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -270,7 +271,7 @@ func TestE2EMock_AudioTranscriptions_OpenAI_Multipart(t *testing.T) {
 		}
 		for {
 			part, err := reader.NextPart()
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			if err != nil {
@@ -373,6 +374,214 @@ func TestE2EMock_ImagesGenerations_OpenAI_StreamUsageFromLargeSSEEvent(t *testin
 	}
 	if rec.Code != http.StatusOK {
 		t.Fatalf("unexpected downstream status: %d", rec.Code)
+	}
+}
+
+func TestE2EMock_ChatCompletions_OpenAI_MultimodalNonStreamRealUsage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockResp := mustReadSharedProxyTestData(t, filepath.Join("openai", "chat_completions_multimodal_real.json"))
+	fixtureReq := mustReadTestData(t, "fixtures/chat_multimodal_request.json")
+
+	var gotModel string
+	var gotContentItems int
+
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		var req map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode upstream request: %v", err)
+		}
+		gotModel = asString(req["model"])
+		msgs, _ := req["messages"].([]any)
+		if len(msgs) > 0 {
+			msg0, _ := msgs[0].(map[string]any)
+			content, _ := msg0["content"].([]any)
+			gotContentItems = len(content)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(mockResp)
+	}))
+	t.Cleanup(mock.Close)
+
+	c := newMockE2EClient(t, map[string]string{
+		"openai.conf": providerConfOpenAIMultimodal(mock.URL),
+	})
+	gc, rec := newGinJSONRequestPath(t, "/v1/chat/completions", fixtureReq)
+	res, err := c.ProxyJSON(gc, "openai", ProviderKey{Name: "openai-key", Value: "mock-key"}, "chat.completions", false)
+	if err != nil {
+		t.Fatalf("proxy error: %v", err)
+	}
+	if res == nil || res.Status != http.StatusOK {
+		t.Fatalf("unexpected result: %#v", res)
+	}
+	if gotModel != "gpt-4o-mini" {
+		t.Fatalf("unexpected upstream model: %q", gotModel)
+	}
+	if gotContentItems != 2 {
+		t.Fatalf("unexpected multimodal content item count: %d", gotContentItems)
+	}
+	if res.Usage == nil {
+		t.Fatalf("expected usage")
+	}
+	if got, want := asInt(res.Usage["input_tokens"]), 36852; got != want {
+		t.Fatalf("input_tokens=%d want=%d", got, want)
+	}
+	if got, want := asInt(res.Usage["output_tokens"]), 1; got != want {
+		t.Fatalf("output_tokens=%d want=%d", got, want)
+	}
+	if got, want := asInt(res.Usage["total_tokens"]), 36853; got != want {
+		t.Fatalf("total_tokens=%d want=%d", got, want)
+	}
+	if res.UsageStage != "upstream" {
+		t.Fatalf("usage_stage=%q want=upstream", res.UsageStage)
+	}
+	if res.FinishReason != "stop" {
+		t.Fatalf("finish_reason=%q want=stop", res.FinishReason)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode downstream body: %v", err)
+	}
+	usage, _ := out["usage"].(map[string]any)
+	if asInt(usage["prompt_tokens"]) != 36852 || asInt(usage["completion_tokens"]) != 1 || asInt(usage["total_tokens"]) != 36853 {
+		t.Fatalf("unexpected downstream usage: %#v", usage)
+	}
+}
+
+func TestE2EMock_ChatCompletions_OpenAI_MultimodalStreamRealUsage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockResp := mustReadSharedProxyTestData(t, filepath.Join("openai", "chat_completions_multimodal_real.sse"))
+	fixtureReq := mustReadTestData(t, "fixtures/chat_multimodal_request.json")
+
+	var includeUsage bool
+
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		var req map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode upstream request: %v", err)
+		}
+		streamOptions, _ := req["stream_options"].(map[string]any)
+		if v, ok := streamOptions["include_usage"].(bool); ok {
+			includeUsage = v
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(mockResp)
+	}))
+	t.Cleanup(mock.Close)
+
+	c := newMockE2EClient(t, map[string]string{
+		"openai.conf": providerConfOpenAIMultimodal(mock.URL),
+	})
+	gc, rec := newGinJSONRequestPath(t, "/v1/chat/completions", fixtureReq)
+	res, err := c.ProxyJSON(gc, "openai", ProviderKey{Name: "openai-key", Value: "mock-key"}, "chat.completions", true)
+	if err != nil {
+		t.Fatalf("proxy error: %v", err)
+	}
+	if res == nil || res.Status != http.StatusOK {
+		t.Fatalf("unexpected result: %#v", res)
+	}
+	if !includeUsage {
+		t.Fatalf("expected stream_options.include_usage=true")
+	}
+	if res.Usage == nil {
+		t.Fatalf("expected usage")
+	}
+	if got, want := asInt(res.Usage["input_tokens"]), 36852; got != want {
+		t.Fatalf("input_tokens=%d want=%d", got, want)
+	}
+	if got, want := asInt(res.Usage["output_tokens"]), 1; got != want {
+		t.Fatalf("output_tokens=%d want=%d", got, want)
+	}
+	if got, want := asInt(res.Usage["total_tokens"]), 36853; got != want {
+		t.Fatalf("total_tokens=%d want=%d", got, want)
+	}
+	if res.UsageStage != "upstream" {
+		t.Fatalf("usage_stage=%q want=upstream", res.UsageStage)
+	}
+	if res.FinishReason != "stop" {
+		t.Fatalf("finish_reason=%q want=stop", res.FinishReason)
+	}
+	body := rec.Body.String()
+	if !containsAll(body, `"content":"OK"`, `"total_tokens":36853`, "data: [DONE]") {
+		t.Fatalf("unexpected stream body:\n%s", body)
+	}
+}
+
+func TestE2EMock_Responses_OpenAI_MultimodalNonStreamRealUsage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockResp := mustReadSharedProxyTestData(t, filepath.Join("openai", "responses_multimodal_real.json"))
+	fixtureReq := mustReadTestData(t, "fixtures/responses_multimodal_request.json")
+
+	var gotInputItems int
+
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/responses" {
+			http.NotFound(w, r)
+			return
+		}
+		var req map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode upstream request: %v", err)
+		}
+		input, _ := req["input"].([]any)
+		gotInputItems = len(input)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(mockResp)
+	}))
+	t.Cleanup(mock.Close)
+
+	c := newMockE2EClient(t, map[string]string{
+		"openai.conf": providerConfOpenAIMultimodal(mock.URL),
+	})
+	gc, rec := newGinJSONRequestPath(t, "/v1/responses", fixtureReq)
+	res, err := c.ProxyJSON(gc, "openai", ProviderKey{Name: "openai-key", Value: "mock-key"}, "responses", false)
+	if err != nil {
+		t.Fatalf("proxy error: %v", err)
+	}
+	if res == nil || res.Status != http.StatusOK {
+		t.Fatalf("unexpected result: %#v", res)
+	}
+	if gotInputItems != 1 {
+		t.Fatalf("unexpected input item count: %d", gotInputItems)
+	}
+	if res.Usage == nil {
+		t.Fatalf("expected usage")
+	}
+	if got, want := asInt(res.Usage["input_tokens"]), 36852; got != want {
+		t.Fatalf("input_tokens=%d want=%d", got, want)
+	}
+	if got, want := asInt(res.Usage["output_tokens"]), 2; got != want {
+		t.Fatalf("output_tokens=%d want=%d", got, want)
+	}
+	if got, want := asInt(res.Usage["total_tokens"]), 36854; got != want {
+		t.Fatalf("total_tokens=%d want=%d", got, want)
+	}
+	if res.UsageStage != "upstream" {
+		t.Fatalf("usage_stage=%q want=upstream", res.UsageStage)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode downstream body: %v", err)
+	}
+	usage, _ := out["usage"].(map[string]any)
+	if asInt(usage["input_tokens"]) != 36852 || asInt(usage["output_tokens"]) != 2 || asInt(usage["total_tokens"]) != 36854 {
+		t.Fatalf("unexpected downstream usage: %#v", usage)
 	}
 }
 
@@ -539,6 +748,67 @@ provider "openai" {
 `, baseURL)
 }
 
+func providerConfOpenAIMultimodal(baseURL string) string {
+	return fmt.Sprintf(`syntax "next-router/0.1";
+
+provider "openai" {
+  defaults {
+    upstream_config {
+      base_url = %q;
+    }
+    auth {
+      auth_bearer;
+    }
+    response {
+      resp_passthrough;
+    }
+  }
+
+  match api = "chat.completions" stream = false {
+    metrics {
+      usage_extract custom;
+      finish_reason_extract openai;
+      usage_fact input token path="$.usage.prompt_tokens";
+      usage_fact output token path="$.usage.completion_tokens";
+      usage_fact cache_read token path="$.usage.prompt_tokens_details.cached_tokens";
+    }
+    upstream {
+      set_path "/v1/chat/completions";
+    }
+  }
+
+  match api = "chat.completions" stream = true {
+    metrics {
+      usage_extract custom;
+      finish_reason_extract openai;
+      usage_fact input token path="$.usage.prompt_tokens";
+      usage_fact output token path="$.usage.completion_tokens";
+      usage_fact cache_read token path="$.usage.prompt_tokens_details.cached_tokens";
+    }
+    request {
+      json_set "$.stream_options.include_usage" true;
+    }
+    upstream {
+      set_path "/v1/chat/completions";
+    }
+  }
+
+  match api = "responses" {
+    metrics {
+      usage_extract custom;
+      finish_reason_extract openai;
+      usage_fact input token path="$.usage.input_tokens";
+      usage_fact output token path="$.usage.output_tokens";
+      usage_fact cache_read token path="$.usage.input_tokens_details.cached_tokens";
+    }
+    upstream {
+      set_path "/v1/responses";
+    }
+  }
+}
+`, baseURL)
+}
+
 func providerConfOpenAIImageStream(baseURL string) string {
 	return fmt.Sprintf(`syntax "next-router/0.1";
 
@@ -568,10 +838,14 @@ provider "openai" {
 }
 
 func newGinJSONRequest(t *testing.T, body []byte) (*gin.Context, *httptest.ResponseRecorder) {
+	return newGinJSONRequestPath(t, "/v1/chat/completions", body)
+}
+
+func newGinJSONRequestPath(t *testing.T, path string, body []byte) (*gin.Context, *httptest.ResponseRecorder) {
 	t.Helper()
 	rec := httptest.NewRecorder()
 	gc, _ := gin.CreateTestContext(rec)
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(string(body)))
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(string(body)))
 	req.Header.Set("Content-Type", "application/json")
 	gc.Request = req
 	return gc, rec
@@ -613,6 +887,16 @@ func mustReadTestData(t *testing.T, rel string) []byte {
 	b, err := os.ReadFile(p)
 	if err != nil {
 		t.Fatalf("read testdata %s: %v", p, err)
+	}
+	return b
+}
+
+func mustReadSharedProxyTestData(t *testing.T, rel string) []byte {
+	t.Helper()
+	p := filepath.Join("..", "..", "..", "testdata", "real_upstream", rel)
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("read shared testdata %s: %v", p, err)
 	}
 	return b
 }

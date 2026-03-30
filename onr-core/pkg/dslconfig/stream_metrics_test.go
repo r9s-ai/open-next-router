@@ -1,6 +1,7 @@
 package dslconfig
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
@@ -211,5 +212,27 @@ func TestStreamMetricsAggregator_CustomUsageFactMerge_CacheFirstOutputLater(t *t
 	}
 	if got, want := u.FlatFields["cache_write_ttl_1h_tokens"], 0; got != want {
 		t.Fatalf("cache_write_ttl_1h_tokens got %v, want %v", got, want)
+	}
+}
+
+func TestStreamMetricsAggregator_OpenAIChatCompletionsMultimodalRealStream(t *testing.T) {
+	meta := &dslmeta.Meta{API: "chat.completions", IsStream: true}
+	usageCfg, finishCfg := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
+	agg := NewStreamMetricsAggregator(meta, usageCfg, finishCfg)
+
+	agg.OnSSETail(mustReadSharedTestData(t, filepath.Join("openai", "chat_completions_multimodal_real.sse")))
+
+	u, cached, fr, ok := agg.Result()
+	if !ok || u == nil {
+		t.Fatalf("expected usage ok")
+	}
+	if u.InputTokens != 36852 || u.OutputTokens != 1 || u.TotalTokens != 36853 {
+		t.Fatalf("unexpected usage: %+v", *u)
+	}
+	if cached != 0 {
+		t.Fatalf("cached=%d want=0", cached)
+	}
+	if fr != "stop" {
+		t.Fatalf("unexpected finish_reason: %q", fr)
 	}
 }

@@ -304,7 +304,7 @@ func TestExtractUsage_OpenAI_ChatCompletionsMultimodalRealResponse(t *testing.T)
 	meta := &dslmeta.Meta{API: "chat.completions", IsStream: false}
 	cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
 
-	resp := mustReadDSLConfigTestData(t, filepath.Join("openai", "chat_completions_multimodal_real.json"))
+	resp := mustReadSharedTestData(t, filepath.Join("openai", "chat_completions_multimodal_real.json"))
 
 	u, cached, err := ExtractUsage(meta, cfg, resp)
 	if err != nil {
@@ -325,7 +325,7 @@ func TestExtractUsage_OpenAI_ResponsesMultimodalRealResponse(t *testing.T) {
 	meta := &dslmeta.Meta{API: "responses", IsStream: false}
 	cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
 
-	resp := mustReadDSLConfigTestData(t, filepath.Join("openai", "responses_multimodal_real.json"))
+	resp := mustReadSharedTestData(t, filepath.Join("openai", "responses_multimodal_real.json"))
 
 	u, cached, err := ExtractUsage(meta, cfg, resp)
 	if err != nil {

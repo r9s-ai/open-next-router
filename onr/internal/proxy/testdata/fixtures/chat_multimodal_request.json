@@ -1,0 +1,21 @@
+{
+  "model": "gpt-4o-mini",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "Ignore the image and reply with exactly OK."
+        },
+        {
+          "type": "image_url",
+          "image_url": {
+            "url": "https://example.com/mock-image.png"
+          }
+        }
+      ]
+    }
+  ],
+  "max_tokens": 8
+}
