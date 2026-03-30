@@ -9,6 +9,8 @@ import (
 	"github.com/r9s-ai/open-next-router/onr/internal/logx"
 )
 
+var accessLogFieldSpecs = logx.AccessLogContextFieldSpecs()
+
 type Collector struct {
 	requestIDHeaderKey string
 	appNameInfer       struct {
@@ -28,8 +30,7 @@ func (c *Collector) Collect(ctx *gin.Context, latency time.Duration) map[string]
 	if ctx == nil {
 		return map[string]any{}
 	}
-	specs := logx.AccessLogContextFieldSpecs()
-	out := make(map[string]any, len(specs)+3)
+	out := make(map[string]any, len(accessLogFieldSpecs)+3)
 	if v := strings.TrimSpace(ctx.GetString(c.requestIDHeaderKey)); v != "" {
 		out["request_id"] = v
 	}
@@ -47,7 +48,7 @@ func (c *Collector) Collect(ctx *gin.Context, latency time.Duration) map[string]
 			out["latency_ms"] = v
 		}
 	}
-	copyContextFieldsBySpec(ctx, out, specs)
+	copyContextFieldsBySpec(ctx, out, accessLogFieldSpecs)
 	copyUsageExtraFields(ctx, out)
 	return out
 }

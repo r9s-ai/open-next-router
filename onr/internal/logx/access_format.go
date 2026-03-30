@@ -99,22 +99,6 @@ func (f *AccessLogFormatter) Format(
 	if f == nil || len(f.parts) == 0 {
 		return ""
 	}
-	vars := map[string]string{
-		"time_local": ts.Format("2006/01/02 - 15:04:05"),
-		"status":     ColorizeStatusWith(status, color),
-		"latency":    latency.String(),
-		"latency_ms": fmt.Sprintf("%d", latency.Milliseconds()),
-		"client_ip":  strings.TrimSpace(clientIP),
-		"method":     strings.TrimSpace(method),
-		"path":       path,
-	}
-	for k, v := range fields {
-		s := strings.TrimSpace(fmt.Sprintf("%v", v))
-		if s == "" || s == "<nil>" {
-			continue
-		}
-		vars[k] = s
-	}
 
 	var b strings.Builder
 	for _, p := range f.parts {
@@ -122,7 +106,7 @@ func (f *AccessLogFormatter) Format(
 			b.WriteString(p.literal)
 			continue
 		}
-		v := strings.TrimSpace(vars[p.varName])
+		v := resolveAccessLogVar(p.varName, ts, status, latency, clientIP, method, path, fields, color)
 		if v == "" {
 			b.WriteByte('-')
 			continue
@@ -130,4 +114,49 @@ func (f *AccessLogFormatter) Format(
 		b.WriteString(v)
 	}
 	return b.String()
+}
+
+func resolveAccessLogVar(
+	name string,
+	ts time.Time,
+	status int,
+	latency time.Duration,
+	clientIP string,
+	method string,
+	path string,
+	fields map[string]any,
+	color bool,
+) string {
+	switch name {
+	case "time_local":
+		return ts.Format("2006/01/02 - 15:04:05")
+	case "status":
+		return ColorizeStatusWith(status, color)
+	case "latency":
+		return latency.String()
+	case "latency_ms":
+		return fmt.Sprintf("%d", latency.Milliseconds())
+	case "client_ip":
+		return strings.TrimSpace(clientIP)
+	case "method":
+		return strings.TrimSpace(method)
+	case "path":
+		return path
+	default:
+		if fields == nil {
+			return ""
+		}
+		return stringifyAccessLogField(fields[name])
+	}
+}
+
+func stringifyAccessLogField(v any) string {
+	if v == nil {
+		return ""
+	}
+	s := strings.TrimSpace(fmt.Sprintf("%v", v))
+	if s == "" || s == "<nil>" {
+		return ""
+	}
+	return s
 }
