@@ -227,3 +227,22 @@ func mergeUsageConfig(base UsageExtractConfig, override UsageExtractConfig) Usag
 	}
 	return prepareUsageExtractConfig(out)
 }
+
+// UsesDerivedUsagePath reports whether the config explicitly references a
+// derived-source usage_fact at the given JSON path.
+func UsesDerivedUsagePath(cfg UsageExtractConfig, path string) bool {
+	cfg = prepareUsageExtractConfig(cfg)
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return false
+	}
+	for _, fact := range cfg.facts {
+		if !strings.EqualFold(strings.TrimSpace(fact.Source), "derived") {
+			continue
+		}
+		if strings.TrimSpace(fact.Path) == path {
+			return true
+		}
+	}
+	return false
+}

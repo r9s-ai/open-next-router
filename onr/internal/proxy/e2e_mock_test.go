@@ -377,6 +377,146 @@ func TestE2EMock_ImagesGenerations_OpenAI_StreamUsageFromLargeSSEEvent(t *testin
 	}
 }
 
+func TestE2EMock_ImagesGenerations_OpenAI_MiniRealUsage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockResp := mustReadSharedProxyTestData(t, filepath.Join("openai", "images_generations_gpt_image_1_mini_real.json"))
+	fixtureReq := mustReadTestData(t, "fixtures/image_generation_request.json")
+
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/images/generations" {
+			http.NotFound(w, r)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(mockResp)
+	}))
+	t.Cleanup(mock.Close)
+
+	c := newMockE2EClient(t, map[string]string{
+		"openai.conf": providerConfOpenAIImages(mock.URL),
+	})
+	gc, rec := newGinJSONRequestPath(t, "/v1/images/generations", fixtureReq)
+	res, err := c.ProxyJSON(gc, "openai", ProviderKey{Name: "openai-key", Value: "mock-key"}, "images.generations", false)
+	if err != nil {
+		t.Fatalf("proxy error: %v", err)
+	}
+	if res == nil || res.Status != http.StatusOK {
+		t.Fatalf("unexpected result: %#v", res)
+	}
+	if got, want := asInt(res.Usage["input_tokens"]), 13; got != want {
+		t.Fatalf("input_tokens=%d want=%d", got, want)
+	}
+	if got, want := asInt(res.Usage["output_tokens"]), 1056; got != want {
+		t.Fatalf("output_tokens=%d want=%d", got, want)
+	}
+	if got, want := asInt(res.Usage["total_tokens"]), 1069; got != want {
+		t.Fatalf("total_tokens=%d want=%d", got, want)
+	}
+	if got, want := asInt(res.Usage["image_generate_images"]), 1; got != want {
+		t.Fatalf("image_generate_images=%d want=%d", got, want)
+	}
+	if res.UsageStage != "upstream" {
+		t.Fatalf("usage_stage=%q want=upstream", res.UsageStage)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected downstream status: %d", rec.Code)
+	}
+}
+
+func TestE2EMock_AudioTranscriptions_OpenAI_RealUsage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockResp := mustReadSharedProxyTestData(t, filepath.Join("openai", "audio_transcriptions_gpt_4o_mini_transcribe_real.json"))
+	fileBody := mustReadSharedProxyTestData(t, filepath.Join("openai", "audio_speech_gpt_4o_mini_tts_real.mp3"))
+
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/audio/transcriptions" {
+			http.NotFound(w, r)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(mockResp)
+	}))
+	t.Cleanup(mock.Close)
+
+	c := newMockE2EClient(t, map[string]string{
+		"openai.conf": providerConfOpenAI(mock.URL),
+	})
+	gc, rec := newGinMultipartRequest(t, "/v1/audio/transcriptions", map[string]string{
+		"model": "gpt-4o-mini-transcribe",
+	}, "file", "speech.mp3", fileBody)
+	res, err := c.ProxyJSON(gc, "openai", ProviderKey{Name: "openai-key", Value: "mock-key"}, "audio.transcriptions", false)
+	if err != nil {
+		t.Fatalf("proxy error: %v", err)
+	}
+	if res == nil || res.Status != http.StatusOK {
+		t.Fatalf("unexpected result: %#v", res)
+	}
+	if got, want := asInt(res.Usage["input_tokens"]), 10; got != want {
+		t.Fatalf("input_tokens=%d want=%d", got, want)
+	}
+	if got, want := asInt(res.Usage["output_tokens"]), 2; got != want {
+		t.Fatalf("output_tokens=%d want=%d", got, want)
+	}
+	if got, want := asInt(res.Usage["total_tokens"]), 12; got != want {
+		t.Fatalf("total_tokens=%d want=%d", got, want)
+	}
+	if res.UsageStage != "upstream" {
+		t.Fatalf("usage_stage=%q want=upstream", res.UsageStage)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected downstream status: %d", rec.Code)
+	}
+}
+
+func TestE2EMock_AudioSpeech_OpenAI_RealDerivedUsage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockResp := mustReadSharedProxyTestData(t, filepath.Join("openai", "audio_speech_gpt_4o_mini_tts_real.mp3"))
+	fixtureReq := mustReadTestData(t, "fixtures/audio_speech_request.json")
+
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/audio/speech" {
+			http.NotFound(w, r)
+			return
+		}
+
+		w.Header().Set("Content-Type", "audio/mpeg")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(mockResp)
+	}))
+	t.Cleanup(mock.Close)
+
+	c := newMockE2EClient(t, map[string]string{
+		"openai.conf": providerConfOpenAIAudioSpeech(mock.URL),
+	})
+	gc, rec := newGinJSONRequestPath(t, "/v1/audio/speech", fixtureReq)
+	res, err := c.ProxyJSON(gc, "openai", ProviderKey{Name: "openai-key", Value: "mock-key"}, "audio.speech", false)
+	if err != nil {
+		t.Fatalf("proxy error: %v", err)
+	}
+	if res == nil || res.Status != http.StatusOK {
+		t.Fatalf("unexpected result: %#v", res)
+	}
+	if got, want := asFloat(res.Usage["audio_tts_seconds"]), 2.352; got != want {
+		t.Fatalf("audio_tts_seconds=%v want=%v", got, want)
+	}
+	if got := asInt(res.Usage["total_tokens"]); got != 0 {
+		t.Fatalf("total_tokens=%d want=0", got)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected downstream status: %d", rec.Code)
+	}
+	if rec.Body.Len() != len(mockResp) {
+		t.Fatalf("downstream body len=%d want=%d", rec.Body.Len(), len(mockResp))
+	}
+}
+
 func TestE2EMock_ChatCompletions_OpenAI_MultimodalNonStreamRealUsage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -740,8 +880,68 @@ provider "openai" {
   }
 
   match api = "audio.transcriptions" {
+    metrics {
+      usage_extract openai;
+    }
     upstream {
       set_path "/v1/audio/transcriptions";
+    }
+  }
+}
+`, baseURL)
+}
+
+func providerConfOpenAIImages(baseURL string) string {
+	return fmt.Sprintf(`syntax "next-router/0.1";
+
+provider "openai" {
+  defaults {
+    upstream_config {
+      base_url = %q;
+    }
+    auth {
+      auth_bearer;
+    }
+    response {
+      resp_passthrough;
+    }
+  }
+
+  match api = "images.generations" {
+    metrics {
+      usage_extract openai;
+    }
+    upstream {
+      set_path "/v1/images/generations";
+    }
+  }
+}
+`, baseURL)
+}
+
+func providerConfOpenAIAudioSpeech(baseURL string) string {
+	return fmt.Sprintf(`syntax "next-router/0.1";
+
+provider "openai" {
+  defaults {
+    upstream_config {
+      base_url = %q;
+    }
+    auth {
+      auth_bearer;
+    }
+    response {
+      resp_passthrough;
+    }
+  }
+
+  match api = "audio.speech" {
+    metrics {
+      usage_extract openai;
+      usage_fact audio.tts second source=derived path="$.audio_duration_seconds";
+    }
+    upstream {
+      set_path "/v1/audio/speech";
     }
   }
 }
@@ -946,6 +1146,23 @@ func asInt(v any) int {
 		return int(n)
 	case float64:
 		return int(n)
+	default:
+		return 0
+	}
+}
+
+func asFloat(v any) float64 {
+	switch n := v.(type) {
+	case float32:
+		return float64(n)
+	case float64:
+		return n
+	case int:
+		return float64(n)
+	case int32:
+		return float64(n)
+	case int64:
+		return float64(n)
 	default:
 		return 0
 	}

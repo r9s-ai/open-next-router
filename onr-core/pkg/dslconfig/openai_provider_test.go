@@ -40,4 +40,14 @@ func TestValidateProviderFile_OpenAIIncludesImageAndAudioRoutes(t *testing.T) {
 	if usageCfg.Mode != "openai" {
 		t.Fatalf("images.generations usage mode=%q want=openai", usageCfg.Mode)
 	}
+
+	for _, api := range []string{"audio.speech", "audio.transcriptions", "audio.translations"} {
+		usageCfg, ok := pf.Usage.Select(&dslmeta.Meta{API: api, IsStream: false})
+		if !ok {
+			t.Fatalf("expected usage config for %s", api)
+		}
+		if usageCfg.Mode != "openai" {
+			t.Fatalf("%s usage mode=%q want=openai", api, usageCfg.Mode)
+		}
+	}
 }

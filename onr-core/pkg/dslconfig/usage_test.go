@@ -229,6 +229,76 @@ func TestExtractUsage_OpenAI_AudioSpeechDerivedCanonicalFact(t *testing.T) {
 	}
 }
 
+func TestExtractUsage_OpenAI_ImagesGenerationsMiniRealResponse(t *testing.T) {
+	meta := &dslmeta.Meta{API: "images.generations", IsStream: false}
+	cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", "images.generations", false)
+	resp := mustReadSharedTestData(t, filepath.Join("openai", "images_generations_gpt_image_1_mini_real.json"))
+
+	u, cached, err := ExtractUsage(meta, cfg, resp)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if u == nil {
+		t.Fatalf("usage nil")
+	}
+	if u.InputTokens != 13 || u.OutputTokens != 1056 || u.TotalTokens != 1069 {
+		t.Fatalf("unexpected usage: %+v", *u)
+	}
+	if cached != 0 {
+		t.Fatalf("cached=%d want=0", cached)
+	}
+	if got, want := u.FlatFields["image_generate_images"], 1; got != want {
+		t.Fatalf("image_generate_images=%v want=%v", got, want)
+	}
+}
+
+func TestExtractUsage_OpenAI_AudioTranscriptionsMiniRealResponse(t *testing.T) {
+	meta := &dslmeta.Meta{API: "audio.transcriptions", IsStream: false}
+	cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", "audio.transcriptions", false)
+	resp := mustReadSharedTestData(t, filepath.Join("openai", "audio_transcriptions_gpt_4o_mini_transcribe_real.json"))
+
+	u, cached, err := ExtractUsage(meta, cfg, resp)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if u == nil {
+		t.Fatalf("usage nil")
+	}
+	if u.InputTokens != 10 || u.OutputTokens != 2 || u.TotalTokens != 12 {
+		t.Fatalf("unexpected usage: %+v", *u)
+	}
+	if cached != 0 {
+		t.Fatalf("cached=%d want=0", cached)
+	}
+}
+
+func TestExtractUsage_OpenAI_AudioSpeechMiniRealResponse(t *testing.T) {
+	meta := &dslmeta.Meta{
+		API:          "audio.speech",
+		IsStream:     false,
+		DerivedUsage: map[string]any{"audio_duration_seconds": 2.352},
+	}
+	cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", "audio.speech", false)
+	resp := mustReadSharedTestData(t, filepath.Join("openai", "audio_speech_gpt_4o_mini_tts_real.mp3"))
+
+	u, cached, err := ExtractUsage(meta, cfg, resp)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if u == nil {
+		t.Fatalf("usage nil")
+	}
+	if u.InputTokens != 0 || u.OutputTokens != 0 || u.TotalTokens != 0 {
+		t.Fatalf("expected zero token usage, got %+v", *u)
+	}
+	if cached != 0 {
+		t.Fatalf("cached=%d want=0", cached)
+	}
+	if got, want := u.FlatFields["audio_tts_seconds"], 2.352; got != want {
+		t.Fatalf("audio_tts_seconds=%v want=%v", got, want)
+	}
+}
+
 func TestExtractUsage_OpenAI_ResponsesWebSearchCanonicalFact(t *testing.T) {
 	meta := &dslmeta.Meta{API: "responses", IsStream: false}
 	cfg := UsageExtractConfig{Mode: "openai"}

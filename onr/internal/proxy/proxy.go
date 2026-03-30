@@ -23,6 +23,7 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/oauthclient"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/pricing"
+	onraudio "github.com/r9s-ai/open-next-router/onr-core/pkg/providerusage/audio"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/trafficdump"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/usageestimate"
 	"github.com/r9s-ai/open-next-router/onr/internal/auth"
@@ -172,6 +173,7 @@ func (c *Client) handleNonStreamResponse(
 	// but before response json ops (json_del/json_set/json_rename) so operators can strip fields
 	// from downstream without losing upstream usage/finish_reason signals.
 	metricsBody := respOutBody
+	populateNonStreamDerivedUsage(m, pf, resp, metricsBody)
 	estimateEnabled := shouldEstimateUsage(resp.StatusCode)
 
 	usage := map[string]any(nil)
@@ -319,6 +321,27 @@ func estimateNonStreamUsage(
 		ResponseBody: metricsBody,
 	})
 	return usageMap(out.Usage), out.Stage, nil
+}
+
+func populateNonStreamDerivedUsage(meta *dslmeta.Meta, pf dslconfig.ProviderFile, resp *http.Response, respBody []byte) {
+	if meta == nil || resp == nil || len(respBody) == 0 {
+		return
+	}
+	if resp.StatusCode != http.StatusOK {
+		return
+	}
+	usageCfg, ok := pf.Usage.Select(meta)
+	if !ok || !dslconfig.UsesDerivedUsagePath(usageCfg, "$.audio_duration_seconds") {
+		return
+	}
+	seconds, err := onraudio.DurationFromBytes(respBody)
+	if err != nil || seconds <= 0 {
+		return
+	}
+	if meta.DerivedUsage == nil {
+		meta.DerivedUsage = map[string]any{}
+	}
+	meta.DerivedUsage["audio_duration_seconds"] = seconds
 }
 
 func extractNonStreamFinishReason(pf dslconfig.ProviderFile, meta *dslmeta.Meta, metricsBody []byte) string {
