@@ -16,6 +16,14 @@ const (
 	rateCacheWrite = "cache_write"
 )
 
+var standardUsageCostKeys = map[string]struct{}{
+	"input_tokens":       {},
+	"output_tokens":      {},
+	"total_tokens":       {},
+	"cache_read_tokens":  {},
+	"cache_write_tokens": {},
+}
+
 type OverridesFile struct {
 	Version   string                   `yaml:"version"`
 	Providers map[string]ScopeOverride `yaml:"providers"`
@@ -174,7 +182,8 @@ func (r *Resolver) Compute(provider, key, model string, usage map[string]any) (C
 	if cacheWriteRate == 0 {
 		cacheWriteRate = inputRate
 	}
-	if inputRate == 0 && outputRate == 0 && cacheReadRate == 0 && cacheWriteRate == 0 {
+	extraCostTotal, hasExtraRate := computeExtraUsageCost(usage, effectiveRates)
+	if inputRate == 0 && outputRate == 0 && cacheReadRate == 0 && cacheWriteRate == 0 && !hasExtraRate {
 		return CostResult{}, false
 	}
 
@@ -191,7 +200,7 @@ func (r *Resolver) Compute(provider, key, model string, usage map[string]any) (C
 	outputCost := usdByRatePerMillion(outputTokens, outputRate)
 	cacheReadCost := usdByRatePerMillion(cacheReadTokens, cacheReadRate)
 	cacheWriteCost := usdByRatePerMillion(cacheWriteTokens, cacheWriteRate)
-	total := inputCost + outputCost + cacheReadCost + cacheWriteCost
+	total := inputCost + outputCost + cacheReadCost + cacheWriteCost + extraCostTotal
 
 	channel := provider
 	if key != "" {
@@ -225,6 +234,34 @@ func (r *Resolver) Compute(provider, key, model string, usage map[string]any) (C
 		CacheWriteCost: cacheWriteCost,
 		TotalCost:      total,
 	}, true
+}
+
+func computeExtraUsageCost(usage map[string]any, rates map[string]float64) (float64, bool) {
+	if len(usage) == 0 || len(rates) == 0 {
+		return 0, false
+	}
+	total := 0.0
+	var matched bool
+	for key, value := range usage {
+		name := strings.TrimSpace(key)
+		if name == "" {
+			continue
+		}
+		if _, ok := standardUsageCostKeys[name]; ok {
+			continue
+		}
+		rate, ok := rates[name]
+		if !ok || rate == 0 {
+			continue
+		}
+		quantity, ok := floatFromAny(value)
+		if !ok || quantity <= 0 {
+			continue
+		}
+		total += quantity * rate
+		matched = true
+	}
+	return total, matched
 }
 
 func loadPriceFile(path string) (*PriceFile, error) {
@@ -341,5 +378,22 @@ func intFromAny(v any) int {
 		return int(t)
 	default:
 		return 0
+	}
+}
+
+func floatFromAny(v any) (float64, bool) {
+	switch t := v.(type) {
+	case int:
+		return float64(t), true
+	case int64:
+		return float64(t), true
+	case int32:
+		return float64(t), true
+	case float64:
+		return t, true
+	case float32:
+		return float64(t), true
+	default:
+		return 0, false
 	}
 }

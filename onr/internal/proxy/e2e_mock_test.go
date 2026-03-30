@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +20,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/pricing"
 )
 
 func TestE2EMock_ChatCompletions_AnthropicMessages_NonStream(t *testing.T) {
@@ -514,6 +516,66 @@ func TestE2EMock_AudioSpeech_OpenAI_RealDerivedUsage(t *testing.T) {
 	}
 	if rec.Body.Len() != len(mockResp) {
 		t.Fatalf("downstream body len=%d want=%d", rec.Body.Len(), len(mockResp))
+	}
+}
+
+func TestE2EMock_AudioSpeech_OpenAI_RealDerivedUsageWithPricing(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockResp := mustReadSharedProxyTestData(t, filepath.Join("openai", "audio_speech_gpt_4o_mini_tts_real.mp3"))
+	fixtureReq := mustReadTestData(t, "fixtures/audio_speech_request.json")
+
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/audio/speech" {
+			http.NotFound(w, r)
+			return
+		}
+
+		w.Header().Set("Content-Type", "audio/mpeg")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(mockResp)
+	}))
+	t.Cleanup(mock.Close)
+
+	c := newMockE2EClient(t, map[string]string{
+		"openai.conf": providerConfOpenAIAudioSpeech(mock.URL),
+	})
+	pricePath := filepath.Join(t.TempDir(), "price.yaml")
+	priceYAML := `
+version: v1
+unit: usd_per_1m_tokens
+entries:
+  - provider: openai
+    model: gpt-4o-mini-tts
+    cost:
+      audio_tts_seconds: 0.015
+`
+	if err := os.WriteFile(pricePath, []byte(priceYAML), 0o600); err != nil {
+		t.Fatalf("write price: %v", err)
+	}
+	resolver, err := pricing.LoadResolver(pricePath, "")
+	if err != nil {
+		t.Fatalf("LoadResolver: %v", err)
+	}
+	c.SetPricingResolver(resolver)
+	c.SetPricingEnabled(true)
+
+	gc, _ := newGinJSONRequestPath(t, "/v1/audio/speech", fixtureReq)
+	res, err := c.ProxyJSON(gc, "openai", ProviderKey{Name: "openai-key", Value: "mock-key"}, "audio.speech", false)
+	if err != nil {
+		t.Fatalf("proxy error: %v", err)
+	}
+	if res == nil || res.Status != http.StatusOK {
+		t.Fatalf("unexpected result: %#v", res)
+	}
+	if res.Cost == nil {
+		t.Fatalf("expected cost")
+	}
+	if got, want := asFloat(res.Cost["cost_total"]), 0.03528; math.Abs(got-want) > 1e-9 {
+		t.Fatalf("cost_total=%v want=%v", got, want)
+	}
+	if got, want := asString(res.Cost["cost_model"]), "gpt-4o-mini-tts"; got != want {
+		t.Fatalf("cost_model=%q want=%q", got, want)
 	}
 }
 
