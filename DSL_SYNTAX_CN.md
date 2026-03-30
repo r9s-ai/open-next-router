@@ -128,6 +128,7 @@ match api = "<api-name>" { ... }
 - `gemini.generateContent`（Gemini 原生：`POST /v1beta/models/{model}:generateContent`）
 - `gemini.streamGenerateContent`（Gemini 原生：`POST /v1beta/models/{model}:streamGenerateContent?alt=sse`）
 - `images.generations`
+- `images.edits`
 - `audio.speech`
 - `audio.transcriptions`
 - `audio.translations`
@@ -508,7 +509,45 @@ metrics {
 - 第一批支持 `path` / `count_path` / `sum_path` / `expr`
 - `attr.ttl` 用于区分 Anthropic 的 `5m` / `1h` cache write
 - `fallback=true` 用于在更具体的事实不存在时回退到总量字段
-- 目前不支持 `source=...`
+- `source` 默认是 `response`，当前支持 `response` / `request` / `derived`
+- 当前 registry 允许的 `dimension + unit` 组合是受限的：
+  - token / cache：`input token`、`output token`、`cache_read token`、`cache_write token`
+  - tool：`server_tool.web_search call`、`server_tool.file_search call`
+  - image/audio：`image.generate image`、`image.edit image`、`image.variation image`、`audio.tts second`、`audio.stt second`、`audio.translate second`
+- `usage_extract openai;` 当前除了传统 token 提取外，也会补充这些 canonical facts：
+  - `images.generations -> image.generate image`
+  - `images.edits -> image.edit image`
+  - `audio.transcriptions -> audio.stt second`
+  - `audio.translations -> audio.translate second`
+  - `audio.speech -> audio.tts second`（依赖 derived runtime usage）
+  - `responses -> server_tool.web_search call`
+
+补充示例：
+
+```conf
+metrics {
+  usage_extract openai;
+
+  usage_fact server_tool.web_search call count_path="$.output[*]" type="web_search_call" status="completed";
+}
+```
+
+```conf
+metrics {
+  usage_extract openai;
+
+  usage_fact image.generate image count_path="$.data[*]";
+  usage_fact image.generate image source=request expr="$.n" fallback=true;
+}
+```
+
+```conf
+metrics {
+  usage_extract openai;
+
+  usage_fact audio.tts second source=derived path="$.audio.tts.seconds";
+}
+```
 
 #### finish_reason_extract
 
@@ -947,7 +986,20 @@ Multiple: yes
 - `count_path` 可搭配 `type` / `status` 过滤。
 - 支持常量属性，如 `attr.ttl="5m"` / `attr.ttl="1h"`。
 - `fallback=true` 表示在同一 `dimension + unit` 没有更具体事实时再生效。
-- 暂不支持 `source=...`。
+- `source` 默认是 `response`，当前支持 `response` / `request` / `derived`。
+- 当前固定 registry 包括：
+  - `input token`
+  - `output token`
+  - `cache_read token`
+  - `cache_write token`
+  - `server_tool.web_search call`
+  - `server_tool.file_search call`
+  - `image.generate image`
+  - `image.edit image`
+  - `image.variation image`
+  - `audio.tts second`
+  - `audio.stt second`
+  - `audio.translate second`
 
 #### finish_reason_extract
 

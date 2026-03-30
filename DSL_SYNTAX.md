@@ -127,6 +127,7 @@ Currently supported `api` values (aligned with OpenAI-style endpoints):
 - `claude.messages`
 - `embeddings`
 - `images.generations`
+- `images.edits`
 - `audio.speech`
 - `audio.transcriptions`
 - `audio.translations`
@@ -465,6 +466,68 @@ Supported JSONPath subset:
 Multiple/override rules:
 
 - These fields are optional overrides; if the same field appears multiple times, the last one wins.
+
+#### usage_fact (recommended new form)
+
+```conf
+metrics {
+  usage_extract custom;
+
+  usage_fact input token path="$.usage.input_tokens";
+  usage_fact output token path="$.usage.output_tokens";
+  usage_fact cache_read token path="$.usage.cache_read_input_tokens";
+
+  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
+  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
+  usage_fact cache_write token path="$.usage.cache_creation_input_tokens" fallback=true;
+}
+```
+
+- `usage_fact` normalizes measurable usage into canonical facts.
+- It is most commonly used with `usage_extract custom;`, but builtin modes can also supplement canonical facts.
+- Supported primitives: `path`, `count_path`, `sum_path`, `expr`.
+- `count_path` can be combined with `type` and `status`.
+- `attr.ttl` distinguishes Anthropic cache-write tiers.
+- `fallback=true` applies only when no more specific fact exists for the same `dimension + unit`.
+- `source` defaults to `response` and currently supports `response`, `request`, and `derived`.
+- The current registry is intentionally limited to:
+  - token/cache: `input token`, `output token`, `cache_read token`, `cache_write token`
+  - tool: `server_tool.web_search call`, `server_tool.file_search call`
+  - image/audio: `image.generate image`, `image.edit image`, `image.variation image`, `audio.tts second`, `audio.stt second`, `audio.translate second`
+- `usage_extract openai;` can currently supplement these canonical facts:
+  - `images.generations -> image.generate image`
+  - `images.edits -> image.edit image`
+  - `audio.transcriptions -> audio.stt second`
+  - `audio.translations -> audio.translate second`
+  - `audio.speech -> audio.tts second` when derived runtime usage is available
+  - `responses -> server_tool.web_search call`
+
+Examples:
+
+```conf
+metrics {
+  usage_extract openai;
+
+  usage_fact server_tool.web_search call count_path="$.output[*]" type="web_search_call" status="completed";
+}
+```
+
+```conf
+metrics {
+  usage_extract openai;
+
+  usage_fact image.generate image count_path="$.data[*]";
+  usage_fact image.generate image source=request expr="$.n" fallback=true;
+}
+```
+
+```conf
+metrics {
+  usage_extract openai;
+
+  usage_fact audio.tts second source=derived path="$.audio.tts.seconds";
+}
+```
 
 #### finish_reason_extract
 
@@ -1051,6 +1114,23 @@ Multiple: yes
 ```
 
 - Shorthand for `cache_write_tokens_expr = <jsonpath>;` (single JSONPath only; no arithmetic).
+
+#### usage_fact
+
+```text
+Syntax:  usage_fact <dimension> <unit> path|count_path|sum_path|expr ...;
+Default: —
+Context: metrics
+Multiple: yes
+```
+
+- Recommended with `usage_extract custom;`, but builtin modes may also supplement canonical facts.
+- The registry is intentionally fixed; arbitrary dimensions are not accepted.
+- Supports `path`, `count_path`, `sum_path`, and `expr`.
+- `count_path` may be combined with `type` / `status`.
+- Constant attributes such as `attr.ttl="5m"` are supported.
+- `fallback=true` means the fact applies only when no more specific fact exists for the same `dimension + unit`.
+- `source` defaults to `response` and currently supports `response`, `request`, and `derived`.
 
 ### 7.10 balance (upstream balance query)
 
