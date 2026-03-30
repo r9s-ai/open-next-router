@@ -1,10 +1,18 @@
-.PHONY: run build build-all test version release-dry release-snapshot clean help hooks
+.PHONY: run build build-all test version release-dry release-snapshot clean help hooks bench-dsl bench-dslconfig bench-dsl-pprof
 
 # Get version from root release tags only (ignore submodule tags like onr-core/v*)
 VERSION ?= $(shell git describe --tags --match 'v*' --always --dirty 2>/dev/null || echo "dev")
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 ENV_FILE ?= ./.env
+GO_BUILD_CACHE ?= /tmp/go-build-cache
+BENCH_COUNT ?= 1
+BENCHTIME ?=
+BENCHMEM ?= -benchmem
+DSL_BENCH_PKGS := ./onr-core/pkg/jsonutil ./onr-core/pkg/dslmeta ./onr-core/pkg/usageestimate ./onr-core/pkg/dslconfig
+DSL_BENCH_PATTERN ?= Benchmark(GetFloatByPathWithMatch|GetFirstIntByPaths|MetaRequestRoot|EstimateChatCompletions|ExtractUsage_|ExtractFinishReason_|ProviderUsageSelect_|ProviderFinishReasonSelect_|StreamMetricsAggregator_)
+DSL_PPROF_BENCH ?= BenchmarkExtractUsage_CustomFacts_Exported
+DSL_PPROF_OUT ?= /tmp/dslconfig.cpu.out
 
 # Build flags
 LDFLAGS := -s -w \
@@ -47,6 +55,16 @@ build-all: ## Build for all platforms using GoReleaser
 test: ## Run tests
 	go test -v ./...
 	cd onr-core && go test -v ./...
+
+bench-dsl: ## Run grouped DSL/perf benchmarks with benchmem
+	env GOCACHE=$(GO_BUILD_CACHE) go test $(DSL_BENCH_PKGS) -run '^$$' -bench '$(DSL_BENCH_PATTERN)' $(BENCHMEM) -count=$(BENCH_COUNT) $(if $(BENCHTIME),-benchtime=$(BENCHTIME),)
+
+bench-dslconfig: ## Run dslconfig-only benchmarks with benchmem
+	env GOCACHE=$(GO_BUILD_CACHE) go test ./onr-core/pkg/dslconfig -run '^$$' -bench 'Benchmark(ExtractUsage_|ExtractFinishReason_|ProviderUsageSelect_|ProviderFinishReasonSelect_|StreamMetricsAggregator_)' $(BENCHMEM) -count=$(BENCH_COUNT) $(if $(BENCHTIME),-benchtime=$(BENCHTIME),)
+
+bench-dsl-pprof: ## Capture a CPU profile for a DSL benchmark and print pprof top
+	env GOCACHE=$(GO_BUILD_CACHE) go test ./onr-core/pkg/dslconfig -run '^$$' -bench '$(DSL_PPROF_BENCH)' -count=1 $(if $(BENCHTIME),-benchtime=$(BENCHTIME),) -cpuprofile $(DSL_PPROF_OUT)
+	$$(go env GOPATH)/bin/pprof -top $(DSL_PPROF_OUT)
 
 version: ## Show version information
 	@echo "Version:    $(VERSION)"
