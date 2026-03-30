@@ -1,13 +1,10 @@
 package dslmeta
 
 import (
-	"bytes"
-	"encoding/json"
-	"mime"
-	"mime/multipart"
-	"strings"
 	"sync"
 	"time"
+
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/requestcanon"
 )
 
 // Meta is the minimal context required by the DSL engine.
@@ -82,53 +79,5 @@ func (m *Meta) SetRequestRoot(root map[string]any) {
 }
 
 func parseRequestRoot(body []byte, contentType string) map[string]any {
-	if len(body) == 0 {
-		return nil
-	}
-	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(contentType)), "multipart/form-data") {
-		return parseMultipartRequestRoot(body, contentType)
-	}
-	var data any
-	if err := json.Unmarshal(body, &data); err != nil {
-		return nil
-	}
-	root, _ := data.(map[string]any)
-	return root
-}
-
-func parseMultipartRequestRoot(body []byte, contentType string) map[string]any {
-	_, params, err := mime.ParseMediaType(contentType)
-	if err != nil {
-		return nil
-	}
-	boundary := strings.TrimSpace(params["boundary"])
-	if boundary == "" {
-		return nil
-	}
-	reader := multipart.NewReader(bytes.NewReader(body), boundary)
-	form, err := reader.ReadForm(32 << 20)
-	if err != nil {
-		return nil
-	}
-	defer form.RemoveAll()
-
-	root := make(map[string]any)
-	for k, vals := range form.Value {
-		switch len(vals) {
-		case 0:
-			continue
-		case 1:
-			root[k] = vals[0]
-		default:
-			items := make([]any, 0, len(vals))
-			for _, v := range vals {
-				items = append(items, v)
-			}
-			root[k] = items
-		}
-	}
-	if len(root) == 0 {
-		return nil
-	}
-	return root
+	return requestcanon.ParseRoot(body, contentType)
 }

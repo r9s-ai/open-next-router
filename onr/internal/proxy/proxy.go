@@ -24,6 +24,7 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/oauthclient"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/pricing"
 	onraudio "github.com/r9s-ai/open-next-router/onr-core/pkg/providerusage/audio"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/requestcanon"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/trafficdump"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/usageestimate"
 	"github.com/r9s-ai/open-next-router/onr/internal/auth"
@@ -729,7 +730,9 @@ func readRequestBody(gc *gin.Context, api string) (bodyBytes []byte, root map[st
 	_ = gc.Request.Body.Close()
 	contentType = gc.Request.Header.Get("Content-Type")
 
-	info, err := InspectRequestBody(bodyBytes, contentType, allowNonJSONRequestBodyAPI(api))
+	info, err := requestcanon.Inspect(bodyBytes, contentType, requestcanon.InspectOptions{
+		AllowNonJSON: allowNonJSONRequestBodyAPI(api),
+	})
 	if err != nil {
 		return bodyBytes, nil, "", contentType, err
 	}
@@ -803,7 +806,7 @@ func marshalMaybeJSON(bodyBytes []byte, root map[string]any, contentType string)
 	if root == nil {
 		return bodyBytes, nil
 	}
-	if isMultipartFormData(contentType) {
+	if requestcanon.IsMultipartFormData(contentType) {
 		return bodyBytes, nil
 	}
 	b, err := json.Marshal(root)

@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/requestcanon"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/requestid"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/trafficdump"
 	"github.com/r9s-ai/open-next-router/onr/internal/auth"
@@ -109,7 +110,9 @@ func inspectRequestBody(c *gin.Context, api string) ([]byte, bool, string, error
 	if c != nil && c.Request != nil {
 		contentType = c.Request.Header.Get("Content-Type")
 	}
-	info, err := proxy.InspectRequestBody(bodyBytes, contentType, allowNonJSONRequestBody(api))
+	info, err := requestcanon.Inspect(bodyBytes, contentType, requestcanon.InspectOptions{
+		AllowNonJSON: allowNonJSONRequestBody(api),
+	})
 	if err != nil {
 		return bodyBytes, false, "", err
 	}
@@ -148,7 +151,7 @@ func peekJSONBody(c *gin.Context) ([]byte, bool, string, error) {
 	if err != nil {
 		return nil, false, "", err
 	}
-	info, err := proxy.InspectRequestBody(b, "application/json", false)
+	info, err := requestcanon.Inspect(b, "application/json", requestcanon.InspectOptions{})
 	if err != nil {
 		return b, false, "", err
 	}
