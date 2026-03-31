@@ -591,6 +591,92 @@ metrics { finish_reason_extract custom; finish_reason_path "$.choices[0].finish_
 - `gemini`: Gemini native finish reason (`candidates[*].finishReason`)
 - `custom`: extract from response JSON via `finish_reason_path` (restricted JSONPath subset, see above)
 
+Builtin extraction rules:
+
+- `openai`
+  - `chat.completions` / `completions`: checks `$.choices[*].finish_reason` and returns the first non-empty value
+  - `responses` non-stream: checks `$.incomplete_details.reason`
+  - `responses` stream SSE envelope: checks `$.response.incomplete_details.reason`
+- `anthropic`
+  - checks `$.stop_reason`
+  - then falls back to `$.delta.stop_reason`
+  - then falls back to `$.message.stop_reason`
+- `gemini`
+  - checks `$.candidates[*].finishReason`
+  - then falls back to `$.candidates[*].finish_reason`
+
+Equivalent `custom` examples:
+
+- OpenAI Chat/Completions equivalent:
+
+```conf
+metrics {
+  finish_reason_extract custom;
+  finish_reason_path "$.choices[0].finish_reason";
+}
+```
+
+- OpenAI Responses raw reason extraction:
+
+```conf
+metrics {
+  finish_reason_extract custom;
+  finish_reason_path "$.incomplete_details.reason";
+}
+```
+
+  This is equivalent to builtin `openai` for non-stream `responses` payloads.
+
+- OpenAI Responses SSE envelope equivalent:
+
+```conf
+metrics {
+  finish_reason_extract custom;
+  finish_reason_path "$.incomplete_details.reason";
+  finish_reason_path "$.response.incomplete_details.reason" fallback=true;
+}
+```
+
+  This reproduces the current builtin `openai` coverage across non-stream and streamed `response.incomplete` payloads.
+
+- Anthropic non-stream equivalent:
+
+```conf
+metrics {
+  finish_reason_extract custom;
+  finish_reason_path "$.stop_reason";
+}
+```
+
+- Anthropic stream delta equivalent:
+
+```conf
+metrics {
+  finish_reason_extract custom;
+  finish_reason_path "$.delta.stop_reason";
+}
+```
+
+- Anthropic stream message fallback equivalent:
+
+```conf
+metrics {
+  finish_reason_extract custom;
+  finish_reason_path "$.message.stop_reason";
+}
+```
+
+- Gemini equivalent:
+
+```conf
+metrics {
+  finish_reason_extract custom;
+  finish_reason_path "$.candidates[0].finishReason";
+}
+```
+
+  If a provider emits snake_case instead, use `$.candidates[0].finish_reason`.
+
 #### finish_reason_path (optional override)
 
 ```conf
@@ -601,6 +687,18 @@ metrics {
 ```
 
 - Optional escape hatch for providers that expose finish reason in a custom location.
+- Multiple `finish_reason_path` directives are allowed.
+- `fallback=true` means this path is only attempted when no earlier non-fallback path produced a non-empty finish reason.
+
+Example:
+
+```conf
+metrics {
+  finish_reason_extract custom;
+  finish_reason_path "$.delta.stop_reason";
+  finish_reason_path "$.message.stop_reason" fallback=true;
+}
+```
 
 Runtime cost calculation switch is controlled globally by `onr.yaml`:
 `pricing.enabled: true|false`.
@@ -1068,6 +1166,14 @@ Multiple: no
 ```
 
 - Supported: `openai` / `anthropic` / `gemini` / `custom`.
+- Builtin semantics:
+  - `openai`:
+    - `chat.completions` / `completions`: `choices[*].finish_reason`
+    - `responses` non-stream: `incomplete_details.reason`
+    - `responses` stream: `response.incomplete_details.reason`
+  - `anthropic`: `stop_reason` -> `delta.stop_reason` -> `message.stop_reason`
+  - `gemini`: `candidates[*].finishReason` -> `candidates[*].finish_reason`
+- `custom` supports ordered fallback via multiple `finish_reason_path` directives and can fully replicate the builtin extraction order when the provider only needs path-based lookup.
 
 #### finish_reason_path
 
@@ -1079,6 +1185,7 @@ Multiple: yes
 ```
 
 - Optional override / required for `finish_reason_extract custom;`.
+- Supports optional `fallback=true|false` metadata after the path.
 - JSONPath subset: `$.a.b.c` / `$.items[0].x` / `$.items[*].x` (returns first non-empty string with `[*]`).
 
 #### input_tokens_expr

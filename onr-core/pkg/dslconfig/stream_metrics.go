@@ -66,7 +66,7 @@ func (a *StreamMetricsAggregator) OnSSEDataJSON(payload []byte) error {
 	}
 
 	// finish_reason: first non-empty
-	if strings.TrimSpace(a.finishReason) == "" && (strings.TrimSpace(a.finishCfg.Mode) != "" || strings.TrimSpace(a.finishCfg.FinishReasonPath) != "") {
+	if strings.TrimSpace(a.finishReason) == "" && (strings.TrimSpace(a.finishCfg.Mode) != "" || a.finishCfg.hasFinishReasonPath()) {
 		if v, err := extractFinishReasonFromRoot(a.meta, a.finishCfg, root); err == nil {
 			if s := strings.TrimSpace(v); s != "" {
 				a.finishReason = s

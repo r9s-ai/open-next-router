@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat >&2 <<'EOF'
 Usage:
-  tools/request.sh [-X METHOD] [--provider NAME] [--no-auth] [--json JSON | --json-file FILE] [--stream] <path-or-url> [-- curl_args...]
+  tools/request.sh [METHOD] <path-or-url> [json_body] [options]
 
 Env (auto source repo .env if exists):
   ONR_BASE_URL    Default: derived from ONR_LISTEN or http://127.0.0.1:3300
@@ -19,27 +19,27 @@ Examples:
   tools/request.sh 'http://127.0.0.1:3300/v1/models' -- -i
 
   # Text generation / chat
-  tools/request.sh /v1/responses --json '{"model":"gpt-5.1-codex-mini","input":"hello"}'
-  tools/request.sh /v1/responses --json '{"model":"gpt-5.1-codex-mini","input":"hello"}' --stream
-  tools/request.sh /v1/responses --json '{"model":"gpt-5.1-codex-mini", "stream":true, "instructions":"You are helpful.","input":[{"role":"user","content":[{"type":"input_text","text":"reply with exactly OK"}]}]}' --provider codex
-  tools/request.sh /v1/chat/completions --json '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}' --provider openai
-  tools/request.sh /v1/chat/completions --json '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}' --stream
-  tools/request.sh /v1/chat/completions --json '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"timeout test"}]}' -- --max-time 15
-  tools/request.sh /v1/messages --json '{"model":"claude-haiku-4-5","max_tokens":128,"messages":[{"role":"user","content":"hi"}]}' --provider anthropic
-  tools/request.sh /v1/messages --json '{"model":"claude-haiku-4-5","max_tokens":128,"messages":[{"role":"user","content":"hi"}]}' --stream --provider anthropic
+  tools/request.sh /v1/responses '{"model":"gpt-5.1-codex-mini","input":"hello"}'
+  tools/request.sh /v1/responses '{"model":"gpt-5.1-codex-mini","input":"hello"}' --stream
+  tools/request.sh /v1/responses '{"model":"gpt-5.1-codex-mini", "stream":true, "instructions":"You are helpful.","input":[{"role":"user","content":[{"type":"input_text","text":"reply with exactly OK"}]}]}' --provider codex
+  tools/request.sh /v1/chat/completions '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}' --provider openai
+  tools/request.sh /v1/chat/completions '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}' --stream
+  tools/request.sh /v1/chat/completions '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"timeout test"}]}' -- --max-time 15
+  tools/request.sh /v1/messages '{"model":"claude-haiku-4-5","max_tokens":128,"messages":[{"role":"user","content":"hi"}]}' --provider anthropic
+  tools/request.sh /v1/messages '{"model":"claude-haiku-4-5","max_tokens":128,"messages":[{"role":"user","content":"hi"}]}' --stream --provider anthropic
 
   # Embeddings
-  tools/request.sh /v1/embeddings --json '{"model":"text-embedding-3-small","input":"hello world"}'
+  tools/request.sh /v1/embeddings '{"model":"text-embedding-3-small","input":"hello world"}'
 
   # Images
-  tools/request.sh /v1/images/generations --json '{"model":"gpt-image-1-mini","prompt":"a red fox in snow"}'
+  tools/request.sh /v1/images/generations '{"model":"gpt-image-1-mini","prompt":"a red fox in snow"}'
 
   # Audio
-  tools/request.sh /v1/audio/speech --json '{"model":"gpt-4o-mini-tts","voice":"alloy","input":"hello"}'
+  tools/request.sh /v1/audio/speech '{"model":"gpt-4o-mini-tts","voice":"alloy","input":"hello"}'
 
   # Gemini native
-  tools/request.sh '/v1beta/models/gemini-2.5-flash:generateContent' --json '{"contents":[{"role":"user","parts":[{"text":"hello"}]}]}'
-  tools/request.sh '/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse' --stream --json '{"contents":[{"role":"user","parts":[{"text":"hello"}]}]}'
+  tools/request.sh '/v1beta/models/gemini-2.5-flash:generateContent' '{"contents":[{"role":"user","parts":[{"text":"hello"}]}]}'
+  tools/request.sh '/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse' '{"contents":[{"role":"user","parts":[{"text":"hello"}]}]}'
 
 EOF
   exit 2
@@ -206,6 +206,7 @@ init_defaults() {
   provider=""
   no_auth="false"
   json=""
+  positional_json=""
   json_file=""
   stream="false"
   target=""
@@ -247,12 +248,6 @@ parse_args() {
         no_auth="true"
         shift
         ;;
-      --json)
-        shift
-        [[ $# -gt 0 ]] || die "missing value for $0 --json"
-        json="$1"
-        shift
-        ;;
       --json-file)
         shift
         [[ $# -gt 0 ]] || die "missing value for $0 --json-file"
@@ -278,6 +273,8 @@ parse_args() {
       *)
         if [[ -z "${target}" ]]; then
           target="$1"
+        elif [[ -z "${positional_json}" && -z "${json_file}" ]]; then
+          positional_json="$1"
         else
           extra_curl_args+=("$1")
         fi
@@ -290,8 +287,12 @@ parse_args() {
 validate_inputs() {
   [[ -n "${target}" ]] || usage
 
-  if [[ -n "${json}" && -n "${json_file}" ]]; then
-    die "use only one of --json or --json-file"
+  if [[ -n "${positional_json}" && -n "${json_file}" ]]; then
+    die "use only one of positional json_body or --json-file"
+  fi
+
+  if [[ -n "${positional_json}" ]]; then
+    json="${positional_json}"
   fi
 }
 

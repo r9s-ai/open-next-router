@@ -618,6 +618,90 @@ metrics { finish_reason_extract custom; finish_reason_path "$.choices[0].finish_
 - `gemini`：从 `$.candidates[*].finishReason`（或 `finish_reason` 兜底）提取（取第一个非空）
 - `custom`：必须提供 `finish_reason_path`（JSONPath 子集），从该路径提取 finish_reason
 
+内置提取规则：
+
+- `openai`
+  - `chat.completions` / `completions`：读取 `$.choices[*].finish_reason`（取第一个非空）
+  - `responses` 非流式：读取 `$.incomplete_details.reason`
+  - `responses` 流式 SSE 包装层：读取 `$.response.incomplete_details.reason`
+- `anthropic`
+  - 依次读取 `$.stop_reason`、`$.delta.stop_reason`、`$.message.stop_reason`
+- `gemini`
+  - 优先读取 `$.candidates[*].finishReason`
+  - 若为空则回退到 `$.candidates[*].finish_reason`
+
+等效 `custom` 配置示例：
+
+- OpenAI Chat/Completions：
+
+```conf
+metrics {
+  finish_reason_extract custom;
+  finish_reason_path "$.choices[0].finish_reason";
+}
+```
+
+- OpenAI Responses 原始 reason：
+
+```conf
+metrics {
+  finish_reason_extract custom;
+  finish_reason_path "$.incomplete_details.reason";
+}
+```
+
+  这和当前内置 `openai` 在非流式 `responses` 下是等价的。
+
+- OpenAI Responses SSE 包装层：
+
+```conf
+metrics {
+  finish_reason_extract custom;
+  finish_reason_path "$.incomplete_details.reason";
+  finish_reason_path "$.response.incomplete_details.reason" fallback=true;
+}
+```
+
+  这可以复刻当前内置 `openai` 对非流式和 `response.incomplete` 流式事件的覆盖范围。
+
+- Anthropic 非流式：
+
+```conf
+metrics {
+  finish_reason_extract custom;
+  finish_reason_path "$.stop_reason";
+}
+```
+
+- Anthropic 流式 `message_delta`：
+
+```conf
+metrics {
+  finish_reason_extract custom;
+  finish_reason_path "$.delta.stop_reason";
+}
+```
+
+- Anthropic 流式 `message_start` 兜底：
+
+```conf
+metrics {
+  finish_reason_extract custom;
+  finish_reason_path "$.message.stop_reason";
+}
+```
+
+- Gemini：
+
+```conf
+metrics {
+  finish_reason_extract custom;
+  finish_reason_path "$.candidates[0].finishReason";
+}
+```
+
+  如果上游返回的是 snake_case，可改为 `$.candidates[0].finish_reason`。
+
 多条与覆盖规则：
 
 - `finish_reason_extract` 在同一个 `metrics` block 内只能出现一次
@@ -633,6 +717,18 @@ metrics {
 ```
 
 - 作为兜底：当某些 provider 把 finish_reason 暴露在自定义位置时，可用该字段覆盖提取路径。
+- 允许声明多条 `finish_reason_path`。
+- `fallback=true` 表示只有在前面的非 fallback 路径都没有提取到非空值时，这条路径才会生效。
+
+示例：
+
+```conf
+metrics {
+  finish_reason_extract custom;
+  finish_reason_path "$.delta.stop_reason";
+  finish_reason_path "$.message.stop_reason" fallback=true;
+}
+```
 
 ## 6. 可用的 Context（表达式变量）
 
@@ -1088,6 +1184,14 @@ Multiple: no
 ```
 
 - 目前支持：`openai` / `anthropic` / `gemini` / `custom`。
+- 内置语义：
+  - `openai`：
+    - `chat.completions` / `completions`：`choices[*].finish_reason`
+    - `responses` 非流式：`incomplete_details.reason`
+    - `responses` 流式：`response.incomplete_details.reason`
+  - `anthropic`：按 `stop_reason -> delta.stop_reason -> message.stop_reason`
+  - `gemini`：按 `candidates[*].finishReason -> candidates[*].finish_reason`
+- `custom` 现在可以通过多条 `finish_reason_path` 复刻有序 fallback；只要是纯路径查找类场景，就可以完整替代内置模式。
 
 #### finish_reason_path
 
@@ -1099,6 +1203,7 @@ Multiple: yes
 ```
 
 - 可选覆盖项；当使用 `finish_reason_extract custom;` 时为必填。
+- 支持在路径后追加 `fallback=true|false` 元数据。
 - JSONPath 子集：`$.a.b.c` / `$.items[0].x` / `$.items[*].x`（`[*]` 时取第一个非空字符串）。
 
 #### input_tokens

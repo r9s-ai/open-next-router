@@ -133,6 +133,25 @@ func TestStreamMetricsAggregator_GeminiUsage(t *testing.T) {
 	}
 }
 
+func TestStreamMetricsAggregator_OpenAIResponsesStreamEnvelopeFinishReason(t *testing.T) {
+	meta := &dslmeta.Meta{API: "responses", IsStream: true}
+	agg := NewStreamMetricsAggregator(meta,
+		UsageExtractConfig{Mode: "openai"},
+		FinishReasonExtractConfig{Mode: "openai"},
+	)
+
+	_ = agg.OnSSEDataJSON([]byte(`{"type":"response.created","response":{"status":"in_progress"}}`))
+	_ = agg.OnSSEDataJSON([]byte(`{"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}}}`))
+
+	_, _, fr, ok := agg.Result()
+	if ok {
+		t.Fatalf("did not expect usage ok for finish_reason-only events")
+	}
+	if fr != "max_output_tokens" {
+		t.Fatalf("unexpected finish_reason: %q", fr)
+	}
+}
+
 func TestStreamMetricsAggregator_CustomMerge_DoesNotOverrideWithZero(t *testing.T) {
 	meta := &dslmeta.Meta{API: "claude.messages", IsStream: true}
 

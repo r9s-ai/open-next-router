@@ -115,6 +115,41 @@ func TestProviderFinishReasonSelect_MergeAndEmpty(t *testing.T) {
 	}
 }
 
+func TestProviderFinishReasonSelect_PathRulesOverrideDefaults(t *testing.T) {
+	streamTrue := true
+	defaults := FinishReasonExtractConfig{Mode: "custom"}
+	defaults.addFinishReasonPath("$.defaults.stop_reason", false)
+
+	override := FinishReasonExtractConfig{}
+	override.addFinishReasonPath("$.delta.stop_reason", false)
+	override.addFinishReasonPath("$.message.stop_reason", true)
+
+	p := ProviderFinishReason{
+		Defaults: defaults,
+		Matches: []MatchFinishReason{
+			{
+				API:     "claude.messages",
+				Stream:  &streamTrue,
+				Extract: override,
+			},
+		},
+	}
+
+	cfg, ok := p.Select(&dslmeta.Meta{API: "claude.messages", IsStream: true})
+	if !ok {
+		t.Fatalf("expected finish_reason config selected")
+	}
+	if got, want := len(cfg.finishReasonPathConfigs()), 2; got != want {
+		t.Fatalf("path rules len=%d want=%d", got, want)
+	}
+	if got := cfg.finishReasonPathConfigs()[0]; got.Path != "$.delta.stop_reason" || got.Fallback {
+		t.Fatalf("unexpected primary path rule: %+v", got)
+	}
+	if got := cfg.finishReasonPathConfigs()[1]; got.Path != "$.message.stop_reason" || !got.Fallback {
+		t.Fatalf("unexpected fallback path rule: %+v", got)
+	}
+}
+
 func TestProviderResponseSelect_MergeDirective(t *testing.T) {
 	streamFalse := false
 	p := ProviderResponse{

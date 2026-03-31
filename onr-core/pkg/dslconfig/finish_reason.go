@@ -12,6 +12,12 @@ import (
 type FinishReasonExtractConfig struct {
 	Mode             string
 	FinishReasonPath string
+	paths            []finishReasonPathConfig
+}
+
+type finishReasonPathConfig struct {
+	Path     string
+	Fallback bool
 }
 
 type ProviderFinishReason struct {
@@ -39,13 +45,13 @@ func (p ProviderFinishReason) Select(meta *dslmeta.Meta) (FinishReasonExtractCon
 			continue
 		}
 		cfg := mergeFinishReasonConfig(p.Defaults, m.Extract)
-		if strings.TrimSpace(cfg.Mode) == "" && strings.TrimSpace(cfg.FinishReasonPath) == "" {
+		if strings.TrimSpace(cfg.Mode) == "" && !cfg.hasFinishReasonPath() {
 			return FinishReasonExtractConfig{}, false
 		}
 		return cfg, true
 	}
 	// defaults
-	if strings.TrimSpace(p.Defaults.Mode) == "" && strings.TrimSpace(p.Defaults.FinishReasonPath) == "" {
+	if strings.TrimSpace(p.Defaults.Mode) == "" && !p.Defaults.hasFinishReasonPath() {
 		return FinishReasonExtractConfig{}, false
 	}
 	return p.Defaults, true
@@ -53,13 +59,46 @@ func (p ProviderFinishReason) Select(meta *dslmeta.Meta) (FinishReasonExtractCon
 
 func mergeFinishReasonConfig(base, override FinishReasonExtractConfig) FinishReasonExtractConfig {
 	out := base
+	if len(base.paths) > 0 {
+		out.paths = append([]finishReasonPathConfig(nil), base.paths...)
+	}
 	if strings.TrimSpace(override.Mode) != "" {
 		out.Mode = override.Mode
 	}
-	if strings.TrimSpace(override.FinishReasonPath) != "" {
+	if len(override.paths) > 0 {
+		out.paths = append([]finishReasonPathConfig(nil), override.paths...)
+		out.FinishReasonPath = override.paths[len(override.paths)-1].Path
+	} else if strings.TrimSpace(override.FinishReasonPath) != "" {
+		out.paths = nil
 		out.FinishReasonPath = override.FinishReasonPath
 	}
 	return out
+}
+
+func (cfg *FinishReasonExtractConfig) addFinishReasonPath(path string, fallback bool) {
+	if cfg == nil {
+		return
+	}
+	cfg.FinishReasonPath = path
+	cfg.paths = append(cfg.paths, finishReasonPathConfig{
+		Path:     path,
+		Fallback: fallback,
+	})
+}
+
+func (cfg FinishReasonExtractConfig) hasFinishReasonPath() bool {
+	return len(cfg.finishReasonPathConfigs()) > 0
+}
+
+func (cfg FinishReasonExtractConfig) finishReasonPathConfigs() []finishReasonPathConfig {
+	if len(cfg.paths) > 0 {
+		return append([]finishReasonPathConfig(nil), cfg.paths...)
+	}
+	path := strings.TrimSpace(cfg.FinishReasonPath)
+	if path == "" {
+		return nil
+	}
+	return []finishReasonPathConfig{{Path: path}}
 }
 
 // ExtractFinishReason extracts finish_reason from a JSON response (best-effort).
@@ -78,22 +117,22 @@ func ExtractFinishReason(meta *dslmeta.Meta, cfg FinishReasonExtractConfig, resp
 
 func extractFinishReasonFromRoot(meta *dslmeta.Meta, cfg FinishReasonExtractConfig, root map[string]any) (string, error) {
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
-	path := strings.TrimSpace(cfg.FinishReasonPath)
+	hasPaths := cfg.hasFinishReasonPath()
 
-	if mode == "" && path == "" {
+	if mode == "" && !hasPaths {
 		return "", nil
 	}
 
 	if mode == "custom" {
-		if strings.TrimSpace(path) == "" {
+		if !hasPaths {
 			return "", nil
 		}
-		return jsonutil.GetStringByPath(root, path), nil
+		return extractFinishReasonByConfiguredPaths(root, cfg), nil
 	}
 
 	// Path override works for any non-custom mode as an escape hatch.
-	if strings.TrimSpace(path) != "" {
-		if v := jsonutil.GetStringByPath(root, path); strings.TrimSpace(v) != "" {
+	if hasPaths {
+		if v := extractFinishReasonByConfiguredPaths(root, cfg); strings.TrimSpace(v) != "" {
 			return strings.TrimSpace(v), nil
 		}
 	}
@@ -118,6 +157,29 @@ func extractFinishReasonFromRoot(meta *dslmeta.Meta, cfg FinishReasonExtractConf
 	}
 }
 
+func extractFinishReasonByConfiguredPaths(root map[string]any, cfg FinishReasonExtractConfig) string {
+	paths := cfg.finishReasonPathConfigs()
+	if len(paths) == 0 {
+		return ""
+	}
+	var fallback []finishReasonPathConfig
+	for _, rule := range paths {
+		if rule.Fallback {
+			fallback = append(fallback, rule)
+			continue
+		}
+		if v := strings.TrimSpace(jsonutil.GetStringByPath(root, rule.Path)); v != "" {
+			return v
+		}
+	}
+	for _, rule := range fallback {
+		if v := strings.TrimSpace(jsonutil.GetStringByPath(root, rule.Path)); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 func extractOpenAIFinishReason(root map[string]any) string {
 	// OpenAI-style: choices[*].finish_reason
 	choices, ok := root["choices"].([]any)
@@ -133,22 +195,18 @@ func extractOpenAIFinishReason(root map[string]any) string {
 		}
 	}
 
-	// OpenAI Responses-style: status + incomplete_details.reason
-	status := strings.ToLower(strings.TrimSpace(jsonutil.CoerceString(root["status"])))
+	// OpenAI Responses-style: incomplete_details.reason only.
 	if inc, ok := root["incomplete_details"].(map[string]any); ok && inc != nil {
-		reason := strings.ToLower(strings.TrimSpace(jsonutil.CoerceString(inc["reason"])))
-		switch reason {
-		case "max_output_tokens", "length":
-			return "length"
-		case "content_filter":
-			return "content_filter"
+		if reason := strings.TrimSpace(jsonutil.CoerceString(inc["reason"])); reason != "" {
+			return reason
 		}
 	}
-	switch status {
-	case "completed", "":
-		return "stop"
-	case "incomplete":
-		return "length"
+	if response, ok := root["response"].(map[string]any); ok && response != nil {
+		if inc, ok := response["incomplete_details"].(map[string]any); ok && inc != nil {
+			if reason := strings.TrimSpace(jsonutil.CoerceString(inc["reason"])); reason != "" {
+				return reason
+			}
+		}
 	}
 	return ""
 }

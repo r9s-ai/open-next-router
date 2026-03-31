@@ -70,16 +70,16 @@ func validateProviderFinishReason(path, providerName string, finish ProviderFini
 }
 func validateFinishReasonExtractConfig(path, providerName, scope string, cfg FinishReasonExtractConfig) error {
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
-	p := strings.TrimSpace(cfg.FinishReasonPath)
+	paths := cfg.finishReasonPathConfigs()
 
-	if mode == "" && p == "" {
+	if mode == "" && len(paths) == 0 {
 		return nil
 	}
 	switch mode {
 	case "", "openai", "anthropic", "gemini":
 		// ok
 	case usageModeCustom:
-		if p == "" {
+		if len(paths) == 0 {
 			return fmt.Errorf("provider %q in %q: %s finish_reason_extract custom requires finish_reason_path", providerName, path, scope)
 		}
 	default:
@@ -89,8 +89,14 @@ func validateFinishReasonExtractConfig(path, providerName, scope string, cfg Fin
 			"finish_reason_extract",
 		)
 	}
-	if p != "" && !strings.HasPrefix(p, "$.") {
-		return fmt.Errorf("provider %q in %q: %s finish_reason_path must start with $. ", providerName, path, scope)
+	for i, pathRule := range paths {
+		p := strings.TrimSpace(pathRule.Path)
+		if p == "" {
+			return fmt.Errorf("provider %q in %q: %s finish_reason_path[%d] is empty", providerName, path, scope, i)
+		}
+		if !strings.HasPrefix(p, "$.") {
+			return fmt.Errorf("provider %q in %q: %s finish_reason_path[%d] must start with $. ", providerName, path, scope, i)
+		}
 	}
 	return nil
 }
