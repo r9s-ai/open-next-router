@@ -18,6 +18,18 @@ func TestExtractFinishReason_OpenAI(t *testing.T) {
 	}
 }
 
+func TestExtractFinishReason_OpenAIResponsesIncompleteMaxOutputTokens(t *testing.T) {
+	meta := &dslmeta.Meta{API: "responses"}
+	body := []byte(`{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[]}`)
+	v, err := ExtractFinishReason(meta, FinishReasonExtractConfig{Mode: "openai"}, body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if v != "length" {
+		t.Fatalf("unexpected finish_reason: %q", v)
+	}
+}
+
 func TestExtractFinishReason_Anthropic(t *testing.T) {
 	const finishReasonEndTurn = "end_turn"
 	meta := &dslmeta.Meta{API: "claude.messages"}

@@ -121,17 +121,34 @@ func extractFinishReasonFromRoot(meta *dslmeta.Meta, cfg FinishReasonExtractConf
 func extractOpenAIFinishReason(root map[string]any) string {
 	// OpenAI-style: choices[*].finish_reason
 	choices, ok := root["choices"].([]any)
-	if !ok || len(choices) == 0 {
-		return ""
+	if ok && len(choices) > 0 {
+		for _, c := range choices {
+			m, ok := c.(map[string]any)
+			if !ok {
+				continue
+			}
+			if v := strings.TrimSpace(jsonutil.CoerceString(m["finish_reason"])); v != "" {
+				return v
+			}
+		}
 	}
-	for _, c := range choices {
-		m, ok := c.(map[string]any)
-		if !ok {
-			continue
+
+	// OpenAI Responses-style: status + incomplete_details.reason
+	status := strings.ToLower(strings.TrimSpace(jsonutil.CoerceString(root["status"])))
+	if inc, ok := root["incomplete_details"].(map[string]any); ok && inc != nil {
+		reason := strings.ToLower(strings.TrimSpace(jsonutil.CoerceString(inc["reason"])))
+		switch reason {
+		case "max_output_tokens", "length":
+			return "length"
+		case "content_filter":
+			return "content_filter"
 		}
-		if v := strings.TrimSpace(jsonutil.CoerceString(m["finish_reason"])); v != "" {
-			return v
-		}
+	}
+	switch status {
+	case "completed", "":
+		return "stop"
+	case "incomplete":
+		return "length"
 	}
 	return ""
 }
