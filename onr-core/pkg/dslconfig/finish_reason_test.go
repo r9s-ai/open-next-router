@@ -30,6 +30,18 @@ func TestExtractFinishReason_OpenAIResponsesIncompleteMaxOutputTokens(t *testing
 	}
 }
 
+func TestExtractFinishReason_OpenAIResponsesContentFilter(t *testing.T) {
+	meta := &dslmeta.Meta{API: "responses"}
+	body := []byte(`{"status":"incomplete","incomplete_details":{"reason":"content_filter"},"output":[]}`)
+	v, err := ExtractFinishReason(meta, FinishReasonExtractConfig{Mode: "openai"}, body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if v != "content_filter" {
+		t.Fatalf("unexpected finish_reason: %q", v)
+	}
+}
+
 func TestExtractFinishReason_Anthropic(t *testing.T) {
 	const finishReasonEndTurn = "end_turn"
 	meta := &dslmeta.Meta{API: "claude.messages"}
