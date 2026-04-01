@@ -1356,7 +1356,6 @@ Multiple: yes
 - `<expr>` 为受限表达式：只允许 `+/-`、JSONPath、整数常量；不支持括号/乘除/函数。
 - JSONPath 子集与 `*_tokens_path` 相同：`$.a.b.c` / `$.items[0].x` / `$.items[*].x`（`[*]` 对数组求和）。
 - 取不到/非数值按 `0` 处理。
-- 旧别名：`input_tokens = <expr>;`（deprecated）。
 
 #### output_tokens_expr
 
@@ -1368,7 +1367,6 @@ Multiple: yes
 ```
 
 - 规则同 `input_tokens_expr`。
-- 旧别名：`output_tokens = <expr>;`（deprecated）。
 
 #### cache_read_tokens_expr
 
@@ -1380,7 +1378,6 @@ Multiple: yes
 ```
 
 - 规则同 `input_tokens_expr`。
-- 旧别名：`cache_read_tokens = <expr>;`（deprecated）。
 
 #### cache_write_tokens_expr
 
@@ -1392,7 +1389,6 @@ Multiple: yes
 ```
 
 - 规则同 `input_tokens_expr`。
-- 旧别名：`cache_write_tokens = <expr>;`（deprecated）。
 
 #### total_tokens_expr
 
@@ -1406,7 +1402,6 @@ Multiple: yes
 - 规则同 `input_tokens_expr`。
 - 若未显式声明，则默认按 `input_tokens_expr + output_tokens_expr` 计算。
 - 不推荐：显式配置 `total_tokens_expr` 会额外引入一个独立的 total 事实源，容易与由 `input/output` 聚合出的 total 产生口径分歧。
-- 旧别名：`total_tokens = <expr>;`（deprecated）。
 
 #### input_tokens_path
 
@@ -1490,11 +1485,11 @@ Multiple: yes
 - `balance_mode custom` 时必填。
 - 支持绝对 URL 或相对 provider `base_url` 的路径。
 
-#### balance_expr / used
+#### balance_expr / used_expr
 
 ```text
 Syntax:  balance_expr = <expr>;
-Syntax:  used = <expr>;
+Syntax:  used_expr = <expr>;
 Default: —
 Context: balance
 Multiple: yes

@@ -40,7 +40,7 @@ func validateBalanceQueryConfig(path, providerName, scope string, cfg BalanceQue
 	if err := validateBalanceExpr(path, providerName, scope, "balance_expr", cfg.BalanceExpr); err != nil {
 		return err
 	}
-	if err := validateBalanceExpr(path, providerName, scope, "used", cfg.UsedExpr); err != nil {
+	if err := validateBalanceExpr(path, providerName, scope, "used_expr", cfg.UsedExpr); err != nil {
 		return err
 	}
 	if err := validateCustomBalanceConfig(path, providerName, scope, mode, cfg); err != nil {

@@ -209,8 +209,8 @@ def render_balance(balance_cfg: Dict[str, Any]) -> List[str]:
         lines.append(f"balance_expr = {format_expr(balance_cfg['balance_expr'])};")
     if "balance_path" in balance_cfg:
         lines.append(f"balance_path {format_expr(balance_cfg['balance_path'])};")
-    if "used" in balance_cfg:
-        lines.append(f"used = {format_expr(balance_cfg['used'])};")
+    if "used_expr" in balance_cfg:
+        lines.append(f"used_expr = {format_expr(balance_cfg['used_expr'])};")
     if "used_path" in balance_cfg:
         lines.append(f"used_path {format_expr(balance_cfg['used_path'])};")
     if "balance_unit" in balance_cfg:

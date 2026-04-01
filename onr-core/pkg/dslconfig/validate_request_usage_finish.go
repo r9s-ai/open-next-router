@@ -121,10 +121,10 @@ func validateUsageExtractConfig(path, providerName, scope string, cfg UsageExtra
 	}
 	if mode == usageModeCustom {
 		if cfg.InputTokensExpr == nil && strings.TrimSpace(cfg.InputTokensPath) == "" && !hasUsageFactForKey(cfg, "input", "token") {
-			return fmt.Errorf("provider %q in %q: %s requires input_tokens (expr/path) or usage_fact input token", providerName, path, scope)
+			return fmt.Errorf("provider %q in %q: %s requires input_tokens_expr/input_tokens_path or usage_fact input token", providerName, path, scope)
 		}
 		if cfg.OutputTokensExpr == nil && strings.TrimSpace(cfg.OutputTokensPath) == "" && !hasUsageFactForKey(cfg, "output", "token") {
-			return fmt.Errorf("provider %q in %q: %s requires output_tokens (expr/path) or usage_fact output token", providerName, path, scope)
+			return fmt.Errorf("provider %q in %q: %s requires output_tokens_expr/output_tokens_path or usage_fact output token", providerName, path, scope)
 		}
 	}
 

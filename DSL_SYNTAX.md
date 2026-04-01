@@ -1323,7 +1323,6 @@ Multiple: yes
 - `<expr>` is a restricted expression: `+/-`, JSONPath, integer constants; no parentheses, no `*/`, no functions.
 - JSONPath subset: `$.a.b.c` / `$.items[0].x` / `$.items[*].x` (sum with `[*]`).
 - Missing/non-numeric values are treated as `0`.
-- Legacy alias: `input_tokens = <expr>;`.
 
 #### output_tokens_expr
 
@@ -1335,7 +1334,6 @@ Multiple: yes
 ```
 
 - Same rules as `input_tokens_expr`.
-- Legacy alias: `output_tokens = <expr>;`.
 
 #### cache_read_tokens_expr
 
@@ -1347,7 +1345,6 @@ Multiple: yes
 ```
 
 - Same rules as `input_tokens_expr`.
-- Legacy alias: `cache_read_tokens = <expr>;`.
 
 #### cache_write_tokens_expr
 
@@ -1359,7 +1356,6 @@ Multiple: yes
 ```
 
 - Same rules as `input_tokens_expr`.
-- Legacy alias: `cache_write_tokens = <expr>;`.
 
 #### total_tokens_expr
 
@@ -1373,7 +1369,6 @@ Multiple: yes
 - Same rules as `input_tokens_expr`.
 - If not explicitly set, defaults to `input_tokens_expr + output_tokens_expr`.
 - Not recommended: setting `total_tokens_expr` introduces an independent total fact source that can diverge from the total derived from `input/output`.
-- Legacy alias: `total_tokens = <expr>;`.
 
 #### input_tokens_path
 
@@ -1509,7 +1504,6 @@ Multiple: yes
 ```
 
 - Restricted expression: JSONPath / number with `+` `-` only.
-- Legacy alias: `used = <expr>;`.
 
 #### balance_path / used_path
 

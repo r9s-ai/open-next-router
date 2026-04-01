@@ -88,6 +88,35 @@ provider "demo" {
 	}
 }
 
+func TestValidateProviderFile_RejectsLegacyUsedAlias(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.conf")
+	// #nosec G306 -- test data file.
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "demo" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    balance {
+      balance_mode custom;
+      path "/v1/credits";
+      balance_expr = $.data.total_credits - $.data.total_usage;
+      used = $.data.total_usage;
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if _, err := ValidateProviderFile(path); err == nil {
+		t.Fatalf("expected legacy used alias validation error")
+	}
+}
+
 func TestValidateProviderFile_BalanceUnitInvalid(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "demo.conf")

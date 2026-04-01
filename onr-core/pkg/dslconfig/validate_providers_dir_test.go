@@ -19,7 +19,7 @@ func TestValidateProvidersDir_ConfigProviders(t *testing.T) {
 	t.Fatalf("validate providers dir failed for all candidates: %v", candidates)
 }
 
-func TestValidateProvidersDir_DeprecatedDirectiveWarnings(t *testing.T) {
+func TestValidateProvidersDir_RejectsLegacyUsageDirectiveAliases(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "demo.conf")
 	// #nosec G306 -- test data file.
@@ -36,6 +36,29 @@ provider "demo" {
       input_tokens = $.usage.input_tokens;
       output_tokens = $.usage.output_tokens;
     }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if _, err := ValidateProvidersDir(dir); err == nil {
+		t.Fatalf("expected legacy usage alias validation error")
+	}
+}
+
+func TestValidateProvidersDir_RejectsLegacyBalanceDirectiveAlias(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.conf")
+	// #nosec G306 -- test data file.
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "demo" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
     balance {
       balance_mode custom;
       path "/v1/credits";
@@ -48,12 +71,8 @@ provider "demo" {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	res, err := ValidateProvidersDir(dir)
-	if err != nil {
-		t.Fatalf("ValidateProvidersDir: %v", err)
-	}
-	if len(res.Warnings) < 2 {
-		t.Fatalf("expected deprecated warnings, got %d", len(res.Warnings))
+	if _, err := ValidateProvidersDir(dir); err == nil {
+		t.Fatalf("expected legacy balance alias validation error")
 	}
 }
 

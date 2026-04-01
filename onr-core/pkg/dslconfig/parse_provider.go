@@ -332,11 +332,12 @@ func parseMetricsPhase(s *scanner, usage *UsageExtractConfig, finish *FinishReas
 				if err := parseUsageFactStmt(s, usage); err != nil {
 					return err
 				}
-			case "input_tokens_expr", "output_tokens_expr", "cache_read_tokens_expr", "cache_write_tokens_expr", "total_tokens_expr",
-				"input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "total_tokens":
+			case "input_tokens_expr", "output_tokens_expr", "cache_read_tokens_expr", "cache_write_tokens_expr", "total_tokens_expr":
 				if err := parseUsageExtractAssignStmt(s, usage, tok.text); err != nil {
 					return err
 				}
+			case "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "total_tokens":
+				return s.errAt(tok, fmt.Sprintf("%s has been removed; use %s", tok.text, legacyUsageExprReplacement(tok.text)))
 			case "input_tokens_path", "output_tokens_path", "cache_read_tokens_path", "cache_write_tokens_path":
 				// allow statement-style overrides inside metrics block (mainly for mode=custom).
 				if err := parseUsageExtractFieldStmt(s, usage, tok.text); err != nil {
@@ -498,18 +499,25 @@ func parseUsageExtractAssignStmt(s *scanner, cfg *UsageExtractConfig, key string
 		cfg.CacheWriteTokensExpr = expr
 	case "total_tokens_expr":
 		cfg.TotalTokensExpr = expr
-	case "input_tokens":
-		cfg.InputTokensExpr = expr
-	case "output_tokens":
-		cfg.OutputTokensExpr = expr
-	case "cache_read_tokens":
-		cfg.CacheReadTokensExpr = expr
-	case "cache_write_tokens":
-		cfg.CacheWriteTokensExpr = expr
-	case "total_tokens":
-		cfg.TotalTokensExpr = expr
 	}
 	return nil
+}
+
+func legacyUsageExprReplacement(key string) string {
+	switch key {
+	case "input_tokens":
+		return "input_tokens_expr = <expr>;"
+	case "output_tokens":
+		return "output_tokens_expr = <expr>;"
+	case "cache_read_tokens":
+		return "cache_read_tokens_expr = <expr>;"
+	case "cache_write_tokens":
+		return "cache_write_tokens_expr = <expr>;"
+	case "total_tokens":
+		return "total_tokens_expr = <expr>;"
+	default:
+		return "<directive>_expr = <expr>;"
+	}
 }
 
 func parseUsageFactStmt(s *scanner, cfg *UsageExtractConfig) error {

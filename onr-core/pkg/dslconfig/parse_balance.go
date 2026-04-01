@@ -52,7 +52,7 @@ func parseBalancePhase(s *scanner, cfg *BalanceQueryConfig) error {
 				case "usage_path":
 					cfg.UsagePath = v
 				}
-			case balanceExprKey, usedExprKey, usedExprLegacyKey:
+			case balanceExprKey, usedExprKey:
 				if err := consumeEquals(s); err != nil {
 					return err
 				}
@@ -66,6 +66,8 @@ func parseBalancePhase(s *scanner, cfg *BalanceQueryConfig) error {
 				} else {
 					cfg.UsedExpr = expr
 				}
+			case usedExprLegacyKey:
+				return s.errAt(tok, usedExprLegacyKey+" has been removed; use "+legacyBalanceExprReplacement(usedExprLegacyKey))
 			case "set_header":
 				if err := parseSetHeaderStmt(s, &hdr); err != nil {
 					return err
@@ -82,6 +84,15 @@ func parseBalancePhase(s *scanner, cfg *BalanceQueryConfig) error {
 		default:
 			// ignore
 		}
+	}
+}
+
+func legacyBalanceExprReplacement(key string) string {
+	switch key {
+	case usedExprLegacyKey:
+		return "used_expr = <expr>;"
+	default:
+		return "<directive>_expr = <expr>;"
 	}
 }
 

@@ -28,7 +28,7 @@ func TestParseUsageExprInvalid(t *testing.T) {
 	}
 }
 
-func TestValidateProviderFile_UsageAssign(t *testing.T) {
+func TestValidateProviderFile_RejectsLegacyUsageAssignAliases(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "demo.conf")
 	// #nosec G306 -- test data file.
@@ -52,15 +52,8 @@ provider "demo" {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	pf, err := ValidateProviderFile(path)
-	if err != nil {
-		t.Fatalf("ValidateProviderFile: %v", err)
-	}
-	if pf.Usage.Defaults.InputTokensExpr == nil {
-		t.Fatalf("expected InputTokensExpr to be set")
-	}
-	if pf.Usage.Defaults.TotalTokensExpr == nil {
-		t.Fatalf("expected TotalTokensExpr to be set")
+	if _, err := ValidateProviderFile(path); err == nil {
+		t.Fatalf("expected legacy usage alias validation error")
 	}
 }
 

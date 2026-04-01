@@ -27,14 +27,7 @@ func (w ValidationWarning) String() string {
 	return fmt.Sprintf("%s: %s", file, strings.TrimSpace(w.Message))
 }
 
-var deprecatedDirectiveAliasMap = map[string]string{
-	"input_tokens":       "input_tokens_expr",
-	"output_tokens":      "output_tokens_expr",
-	"cache_read_tokens":  "cache_read_tokens_expr",
-	"cache_write_tokens": "cache_write_tokens_expr",
-	"total_tokens":       "total_tokens_expr",
-	"used":               "used_expr",
-}
+var deprecatedDirectiveAliasMap = map[string]string{}
 
 func collectDeprecatedDirectiveWarnings(path, content string) []ValidationWarning {
 	s := newScanner(path, content)

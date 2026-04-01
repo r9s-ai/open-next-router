@@ -122,7 +122,6 @@ var directiveMetadata = []DirectiveMetadata{
 	{Name: "usage_path", Block: "balance", Hover: "`usage_path <path>;`\n\nOptional path to query usage endpoint."},
 	{Name: "balance_expr", Block: "balance", Hover: "`balance_expr = <expr>;`\n\nCustom expression for balance value extraction."},
 	{Name: "used_expr", Block: "balance", Hover: "`used_expr = <expr>;`\n\nCustom expression for used value extraction."},
-	{Name: "used", Block: "balance", Hover: "`used = <expr>;`\n\nLegacy alias of `used_expr`."},
 	{Name: "set_header", Block: "balance", Hover: "`set_header <Header-Name> <expr>;`\n\nSets header for balance query request."},
 	{Name: "del_header", Block: "balance", Hover: "`del_header <Header-Name>;`\n\nDeletes header for balance query request."},
 
