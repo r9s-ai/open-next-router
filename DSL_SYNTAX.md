@@ -150,7 +150,16 @@ Available blocks:
 
 Merge rule (important):
 
-- `defaults` is applied first; the selected `match` is applied afterwards, so match settings can override defaults.
+- `defaults` is applied first and the selected `match` is applied afterwards, but **merge behavior is phase-specific rather than whole-block replacement**.
+- In `metrics`, `request`, and `balance`, most **scalar fields** use field-level inheritance plus explicit override:
+  - a field set in `match` overrides the same field from `defaults`
+  - a field omitted in `match` keeps the value from `defaults`
+  - example: if `defaults.metrics` sets `finish_reason_extract openai;` and a matched `metrics` block only sets `usage_extract custom;`, the effective config still keeps `finish_reason_extract openai;`
+- Header operations in `auth` / `request`, plus list-like directives such as `json_*` and `sse_json_del_if` in `response` / `error`, are usually merged by **appending match directives after defaults**; when later directives conflict on the same target, the later directive typically wins
+- Scalar response/error directives such as the main `op` / `mode` can still be overridden by `match`
+- `upstream` does not follow a general whole-block merge rule: `defaults.upstream_config` mainly provides the default `base_url`, while concrete routing actions such as `set_path` and query rewrites come from the selected `match.upstream`
+- `models` is **defaults only** in v0.1, so there is no match-level override there
+- In short: do not treat `defaults` / `match` as full block replacement; use the merge behavior of each phase
 
 Phase boundary rule (important):
 
@@ -493,6 +502,120 @@ metrics { usage_extract custom; }
 - `gemini`: Gemini native usage fields (`usageMetadata.*`)
 - `custom`: extract from response JSON via a restricted JSONPath subset and optional arithmetic (see below)
 
+Approximate `usage_extract custom` equivalents for the builtin modes:
+
+- `openai`:
+
+```conf
+metrics {
+  usage_extract custom;
+
+  usage_fact input token path="$.usage.prompt_tokens";
+  usage_fact input token path="$.usage.input_tokens" fallback=true;
+
+  usage_fact output token path="$.usage.completion_tokens";
+  usage_fact output token path="$.usage.output_tokens" fallback=true;
+
+  usage_fact cache_read token path="$.usage.prompt_tokens_details.cached_tokens";
+  usage_fact cache_read token path="$.usage.input_tokens_details.cached_tokens" fallback=true;
+  usage_fact cache_read token path="$.usage.cached_tokens" fallback=true;
+}
+```
+
+- `anthropic`:
+
+```conf
+metrics {
+  usage_extract custom;
+
+  usage_fact input token path="$.usage.input_tokens";
+  usage_fact output token path="$.usage.output_tokens";
+  usage_fact cache_read token path="$.usage.cache_read_input_tokens";
+
+  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
+  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
+  usage_fact cache_write token path="$.usage.cache_creation_input_tokens" fallback=true;
+}
+```
+
+- `gemini`:
+
+```conf
+metrics {
+  usage_extract custom;
+
+  usage_fact input token path="$.usageMetadata.promptTokenCount";
+
+  usage_fact output token path="$.usageMetadata.candidatesTokenCount";
+  usage_fact output token path="$.usageMetadata.thoughtsTokenCount";
+}
+```
+
+Notes:
+
+- `gemini`: the current builtin behavior can now be fully replaced by `custom` configuration.
+- `anthropic`: the example above covers the core token/cache extraction; `custom` can also replace the streaming case, but you usually need to account for both `message.usage` and top-level `usage` event shapes yourself.
+- `openai`: the example above only covers core token/cache extraction. Builtin image/audio/tool supplemental facts still need extra explicit `usage_fact` rules in a custom-first setup.
+- Gemini output tokens intentionally include both `candidatesTokenCount` and `thoughtsTokenCount`; you can express that either by multiple same-dimension `usage_fact` rules that sum together, or more explicitly with `output_tokens_expr = $.usageMetadata.candidatesTokenCount + $.usageMetadata.thoughtsTokenCount;`.
+- `total_tokens` is derived from `input + output` by default; in most cases you should avoid setting `total_tokens_expr` explicitly, because that introduces a second total fact source.
+- Gemini native usage fields are handled in camelCase: `usageMetadata.promptTokenCount`, `candidatesTokenCount`, `thoughtsTokenCount`, and `totalTokenCount`.
+
+Anthropic streaming `custom` sketch:
+
+```conf
+metrics {
+  usage_extract custom;
+
+  usage_fact input token path="$.usage.input_tokens";
+  usage_fact input token path="$.message.usage.input_tokens";
+
+  usage_fact output token path="$.usage.output_tokens";
+  usage_fact output token path="$.message.usage.output_tokens";
+
+  usage_fact cache_read token path="$.usage.cache_read_input_tokens";
+  usage_fact cache_read token path="$.message.usage.cache_read_input_tokens";
+
+  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
+  usage_fact cache_write token path="$.message.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
+  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
+  usage_fact cache_write token path="$.message.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
+  usage_fact cache_write token path="$.usage.cache_creation_input_tokens" fallback=true;
+  usage_fact cache_write token path="$.message.usage.cache_creation_input_tokens" fallback=true;
+}
+```
+
+- This covers the main Anthropic stream usage event shapes.
+- Compared with builtin `usage_extract anthropic;`, the main difference is ergonomics: the custom form is longer and easier to misconfigure.
+
+OpenAI supplemental facts `custom` sketches:
+
+```conf
+# responses: web search tool calls
+metrics {
+  usage_extract custom;
+  usage_fact input token path="$.usage.input_tokens";
+  usage_fact output token path="$.usage.output_tokens";
+  usage_fact server_tool.web_search call count_path="$.output[*]" type="web_search_call" status="completed";
+}
+
+# images.generations
+metrics {
+  usage_extract custom;
+  usage_fact input token path="$.usage.input_tokens";
+  usage_fact output token path="$.usage.output_tokens";
+  usage_fact image.generate image count_path="$.data[*]";
+}
+
+# audio.speech
+metrics {
+  usage_extract custom;
+  usage_fact audio.tts second source=derived path="$.audio_duration_seconds";
+}
+```
+
+- The extra behavior behind `usage_extract openai;` can still be recreated with explicit `usage_fact` rules.
+- The difference is scope: these supplemental facts are API-specific, so there is no single short custom snippet that fully replaces the builtin mode across every OpenAI-compatible endpoint.
+
 #### Custom extraction fields (recommended with `custom`)
 
 ```conf
@@ -536,12 +659,11 @@ metrics {
 - Supported primitives: `path`, `count_path`, `sum_path`, `expr`.
 - `count_path` can be combined with `type` and `status`.
 - `attr.ttl` distinguishes Anthropic cache-write tiers.
+- Multiple `usage_fact` rules may share the same `dimension + unit`; all matched non-fallback rules are summed in declaration order.
 - `fallback=true` applies only when no more specific fact exists for the same `dimension + unit`.
 - `source` defaults to `response` and currently supports `response`, `request`, and `derived`.
-- The current registry is intentionally limited to:
-  - token/cache: `input token`, `output token`, `cache_read token`, `cache_write token`
-  - tool: `server_tool.web_search call`, `server_tool.file_search call`
-  - image/audio: `image.generate image`, `image.edit image`, `image.variation image`, `audio.tts second`, `audio.stt second`, `audio.translate second`
+- `dimension` is a flat registry key; `.` is part of the name and does not imply nested structure.
+- Supported `dimension` values and `dimension + unit` pairs are fixed by registry; see the later [`usage_fact`](#usage_fact) directive reference for the complete list.
 - `usage_extract openai;` can currently supplement these canonical facts:
   - `images.generations -> image.generate image`
   - `images.edits -> image.edit image`
@@ -1250,6 +1372,7 @@ Multiple: yes
 
 - Same rules as `input_tokens_expr`.
 - If not explicitly set, defaults to `input_tokens_expr + output_tokens_expr`.
+- Not recommended: setting `total_tokens_expr` introduces an independent total fact source that can diverge from the total derived from `input/output`.
 - Legacy alias: `total_tokens = <expr>;`.
 
 #### input_tokens_path
@@ -1310,8 +1433,36 @@ Multiple: yes
 - Supports `path`, `count_path`, `sum_path`, and `expr`.
 - `count_path` may be combined with `type` / `status`.
 - Constant attributes such as `attr.ttl="5m"` are supported.
+- Multiple rules may share the same `dimension + unit`; all matched non-fallback rules are summed.
 - `fallback=true` means the fact applies only when no more specific fact exists for the same `dimension + unit`.
 - `source` defaults to `response` and currently supports `response`, `request`, and `derived`.
+- `dimension` is a flat string key; `.` is part of the name and does not imply nesting.
+- Supported `dimension` values:
+  - `input`
+  - `output`
+  - `cache_read`
+  - `cache_write`
+  - `server_tool.web_search`
+  - `server_tool.file_search`
+  - `image.generate`
+  - `image.edit`
+  - `image.variation`
+  - `audio.tts`
+  - `audio.stt`
+  - `audio.translate`
+- Supported `dimension + unit` pairs are:
+  - `input token`
+  - `output token`
+  - `cache_read token`
+  - `cache_write token`
+  - `server_tool.web_search call`
+  - `server_tool.file_search call`
+  - `image.generate image`
+  - `image.edit image`
+  - `image.variation image`
+  - `audio.tts second`
+  - `audio.stt second`
+  - `audio.translate second`
 
 ### 7.10 balance (upstream balance query)
 

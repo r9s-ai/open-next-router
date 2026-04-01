@@ -549,6 +549,31 @@ func TestExtractUsage_Gemini_NonStream(t *testing.T) {
 	}
 }
 
+func TestExtractUsage_Gemini_NonStream_SnakeCaseUsageIgnored(t *testing.T) {
+	meta := &dslmeta.Meta{API: "gemini.generateContent", IsStream: false}
+	cfg := UsageExtractConfig{Mode: "gemini"}
+
+	resp := []byte(`{
+	  "usage_metadata":{
+	    "prompt_token_count": 11,
+	    "candidates_token_count": 9,
+	    "thoughts_token_count": 3,
+	    "total_token_count": 23
+	  }
+	}`)
+
+	u, _, err := ExtractUsage(meta, cfg, resp)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if u == nil {
+		t.Fatalf("usage nil")
+	}
+	if u.InputTokens != 0 || u.OutputTokens != 0 || u.TotalTokens != 0 {
+		t.Fatalf("unexpected usage from snake_case gemini payload: %+v", *u)
+	}
+}
+
 func TestUsageDimensionRegistry_AllowsKnownPairs(t *testing.T) {
 	reg := NewUsageDimensionRegistry(
 		UsageDimension{Dimension: "input", Unit: "token"},

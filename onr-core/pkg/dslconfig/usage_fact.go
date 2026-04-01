@@ -75,7 +75,7 @@ var defaultUsageDimensionRegistry = NewUsageDimensionRegistry(
 var builtinUsageFactSets = map[string]usageFactSet{
 	usageModeOpenAI:    newUsageFactSet([]usageFactConfig{{Dimension: "input", Unit: "token", Path: "$.usage.prompt_tokens"}, {Dimension: "input", Unit: "token", Path: "$.usage.input_tokens", Fallback: true}, {Dimension: "output", Unit: "token", Path: "$.usage.completion_tokens"}, {Dimension: "output", Unit: "token", Path: "$.usage.output_tokens", Fallback: true}, {Dimension: "cache_read", Unit: "token", Path: "$.usage.prompt_tokens_details.cached_tokens"}, {Dimension: "cache_read", Unit: "token", Path: "$.usage.input_tokens_details.cached_tokens", Fallback: true}, {Dimension: "cache_read", Unit: "token", Path: "$.usage.cached_tokens", Fallback: true}}),
 	usageModeAnthropic: newUsageFactSet([]usageFactConfig{{Dimension: "input", Unit: "token", Path: "$.usage.input_tokens"}, {Dimension: "output", Unit: "token", Path: "$.usage.output_tokens"}, {Dimension: "cache_read", Unit: "token", Path: "$.usage.cache_read_input_tokens"}, {Dimension: "cache_write", Unit: "token", Path: "$.usage.cache_creation.ephemeral_5m_input_tokens", Attrs: map[string]string{"ttl": "5m"}}, {Dimension: "cache_write", Unit: "token", Path: "$.usage.cache_creation.ephemeral_1h_input_tokens", Attrs: map[string]string{"ttl": "1h"}}, {Dimension: "cache_write", Unit: "token", Path: "$.usage.cache_creation_input_tokens", Fallback: true}}),
-	usageModeGemini:    newUsageFactSet([]usageFactConfig{{Dimension: "input", Unit: "token", Path: "$.usageMetadata.promptTokenCount"}, {Dimension: "input", Unit: "token", Path: "$.usage_metadata.prompt_token_count", Fallback: true}, {Dimension: "output", Unit: "token", Path: "$.usageMetadata.candidatesTokenCount"}, {Dimension: "output", Unit: "token", Path: "$.usageMetadata.thoughtsTokenCount"}, {Dimension: "output", Unit: "token", Path: "$.usage_metadata.candidates_token_count"}, {Dimension: "output", Unit: "token", Path: "$.usage_metadata.thoughts_token_count"}}),
+	usageModeGemini:    newUsageFactSet([]usageFactConfig{{Dimension: "input", Unit: "token", Path: "$.usageMetadata.promptTokenCount"}, {Dimension: "output", Unit: "token", Path: "$.usageMetadata.candidatesTokenCount"}, {Dimension: "output", Unit: "token", Path: "$.usageMetadata.thoughtsTokenCount"}}),
 }
 
 func NewUsageDimensionRegistry(keys ...UsageDimension) UsageDimensionRegistry {
@@ -506,7 +506,7 @@ func builtinUsageFactSet(mode string) usageFactSet {
 func builtinTotalTokens(root map[string]any, mode string) int {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case usageModeGemini:
-		return jsonutil.GetFirstIntByPaths(root, "$.usageMetadata.totalTokenCount", "$.usage_metadata.total_token_count")
+		return jsonutil.GetIntByPath(root, "$.usageMetadata.totalTokenCount")
 	default:
 		return 0
 	}

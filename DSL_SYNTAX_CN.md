@@ -147,7 +147,16 @@ match api = "<api-name>" { ... }
 
 合并规则（非常重要）：
 
-- `defaults` 先应用，再应用命中的 `match`（因此 match 中的同名设置通常可以覆盖 defaults）
+- `defaults` 先应用，再应用命中的 `match`，但**不是所有 phase 都按同一种方式合并**
+- `metrics`、`request`、`balance` 中的大多数**单值字段**按“字段级继承 + 显式覆盖”处理：
+  - `match` 里写了的字段覆盖 `defaults`
+  - `match` 里没写的字段继续继承 `defaults`
+  - 例如：`defaults.metrics` 写了 `finish_reason_extract openai;`，某个 `match.metrics` 只写 `usage_extract custom;`，则最终同时生效 `usage_extract custom;` 与 `finish_reason_extract openai;`
+- `auth` / `request` 里的 header 操作，以及 `response` / `error` 里的 `json_*`、`sse_json_del_if` 等**列表型指令**，通常按“defaults 在前，match 追加在后”处理；若存在同一对象上的后续冲突，通常以后出现的指令结果为准
+- `response` / `error` 里的单值指令（如主 `op` / `mode`）仍可被 `match` 覆盖
+- `upstream` 不按通用“整块 merge”处理：`defaults.upstream_config` 主要提供 `base_url` 默认值；具体路由动作（如 `set_path`、query 改写）来自命中的 `match.upstream`
+- `models` 在 v0.1 只有 `defaults`，没有 `match` 级覆盖
+- 总结：不要把 `defaults` / `match` 理解成“整个 block 替换”，应以各 phase 的实际合并行为为准
 
 phase 边界规则（非常重要）：
 
@@ -517,6 +526,120 @@ metrics { usage_extract custom; }
 - `gemini`：兼容 Gemini 原生 usage 字段（`usageMetadata.*`）
 - `custom`：使用受限 JSONPath 子集从响应 JSON 中提取（可选加减表达式，见下）
 
+内置 mode 对应的 `usage_extract custom` 近似写法：
+
+- `openai` 等价思路：
+
+```conf
+metrics {
+  usage_extract custom;
+
+  usage_fact input token path="$.usage.prompt_tokens";
+  usage_fact input token path="$.usage.input_tokens" fallback=true;
+
+  usage_fact output token path="$.usage.completion_tokens";
+  usage_fact output token path="$.usage.output_tokens" fallback=true;
+
+  usage_fact cache_read token path="$.usage.prompt_tokens_details.cached_tokens";
+  usage_fact cache_read token path="$.usage.input_tokens_details.cached_tokens" fallback=true;
+  usage_fact cache_read token path="$.usage.cached_tokens" fallback=true;
+}
+```
+
+- `anthropic` 等价思路：
+
+```conf
+metrics {
+  usage_extract custom;
+
+  usage_fact input token path="$.usage.input_tokens";
+  usage_fact output token path="$.usage.output_tokens";
+  usage_fact cache_read token path="$.usage.cache_read_input_tokens";
+
+  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
+  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
+  usage_fact cache_write token path="$.usage.cache_creation_input_tokens" fallback=true;
+}
+```
+
+- `gemini` 等价思路：
+
+```conf
+metrics {
+  usage_extract custom;
+
+  usage_fact input token path="$.usageMetadata.promptTokenCount";
+
+  usage_fact output token path="$.usageMetadata.candidatesTokenCount";
+  usage_fact output token path="$.usageMetadata.thoughtsTokenCount";
+}
+```
+
+注意：
+
+- `gemini`：当前内置行为已经可以用 `custom` 配置完整平替
+- `anthropic`：上述配置已覆盖核心 token / cache 提取；对流式场景，`custom` 也能平替，但通常要自己显式处理 `message.usage` 与顶层 `usage` 两种事件形态
+- `openai`：上述配置只覆盖核心 token / cache 提取；图片、音频、tool usage 等 API-specific supplemental facts 仍需额外显式写 `usage_fact`
+- `gemini` 的输出 token 会把 `candidatesTokenCount` 与 `thoughtsTokenCount` 一并计入 `output`；这里既可以像示例一样写多条同维度 `usage_fact` 让系统自动求和，也可以直接写成 `output_tokens_expr = $.usageMetadata.candidatesTokenCount + $.usageMetadata.thoughtsTokenCount;`
+- `total_tokens` 默认会由 `input + output` 自动聚合；通常不建议再显式配置 `total_tokens_expr`，避免引入多个事实源
+- 当前 Gemini 原生 usage 字段按驼峰命名处理：`usageMetadata.promptTokenCount` / `candidatesTokenCount` / `thoughtsTokenCount` / `totalTokenCount`
+
+Anthropic 流式场景的 `custom` 写法示意：
+
+```conf
+metrics {
+  usage_extract custom;
+
+  usage_fact input token path="$.usage.input_tokens";
+  usage_fact input token path="$.message.usage.input_tokens";
+
+  usage_fact output token path="$.usage.output_tokens";
+  usage_fact output token path="$.message.usage.output_tokens";
+
+  usage_fact cache_read token path="$.usage.cache_read_input_tokens";
+  usage_fact cache_read token path="$.message.usage.cache_read_input_tokens";
+
+  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
+  usage_fact cache_write token path="$.message.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
+  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
+  usage_fact cache_write token path="$.message.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
+  usage_fact cache_write token path="$.usage.cache_creation_input_tokens" fallback=true;
+  usage_fact cache_write token path="$.message.usage.cache_creation_input_tokens" fallback=true;
+}
+```
+
+- 这类配置可以覆盖 Anthropic stream 的主要 usage 事件
+- 相比内置 `usage_extract anthropic;`，主要差异在于配置更长、更容易漏掉某一种事件路径
+
+OpenAI supplemental facts 的 `custom` 补充示意：
+
+```conf
+# responses: web search tool calls
+metrics {
+  usage_extract custom;
+  usage_fact input token path="$.usage.input_tokens";
+  usage_fact output token path="$.usage.output_tokens";
+  usage_fact server_tool.web_search call count_path="$.output[*]" type="web_search_call" status="completed";
+}
+
+# images.generations
+metrics {
+  usage_extract custom;
+  usage_fact input token path="$.usage.input_tokens";
+  usage_fact output token path="$.usage.output_tokens";
+  usage_fact image.generate image count_path="$.data[*]";
+}
+
+# audio.speech
+metrics {
+  usage_extract custom;
+  usage_fact audio.tts second source=derived path="$.audio_duration_seconds";
+}
+```
+
+- `usage_extract openai;` 的额外能力本质上仍然可以用 `usage_fact` 补齐
+- 但这些规则与具体 API 强相关，所以不像 Gemini/Anthropic 核心 token 提取那样能用一小段通用配置统一覆盖
+
 #### 自定义 JSONPath 字段（仅建议配合 custom）
 
 ```conf
@@ -559,12 +682,11 @@ metrics {
 - 目前仅在 `usage_extract custom;` 下启用
 - 第一批支持 `path` / `count_path` / `sum_path` / `expr`
 - `attr.ttl` 用于区分 Anthropic 的 `5m` / `1h` cache write
+- 同一 `dimension + unit` 可声明多条 `usage_fact`；所有命中的非 fallback 规则会按声明顺序累计求和
 - `fallback=true` 用于在更具体的事实不存在时回退到总量字段
 - `source` 默认是 `response`，当前支持 `response` / `request` / `derived`
-- 当前 registry 允许的 `dimension + unit` 组合是受限的：
-  - token / cache：`input token`、`output token`、`cache_read token`、`cache_write token`
-  - tool：`server_tool.web_search call`、`server_tool.file_search call`
-  - image/audio：`image.generate image`、`image.edit image`、`image.variation image`、`audio.tts second`、`audio.stt second`、`audio.translate second`
+- `dimension` 是 registry 中的扁平命名空间字符串，`.` 只是名称的一部分，不表示嵌套结构
+- 当前支持的 `dimension` 与 `dimension + unit` 固定 registry，完整列表见后文 [`usage_fact`](#usage_fact) 指令说明
 - `usage_extract openai;` 当前除了传统 token 提取外，也会补充这些 canonical facts：
   - `images.generations -> image.generate image`
   - `images.edits -> image.edit image`
@@ -1158,8 +1280,23 @@ Multiple: yes
 - 支持 `path` / `count_path` / `sum_path` / `expr` 四类原语。
 - `count_path` 可搭配 `type` / `status` 过滤。
 - 支持常量属性，如 `attr.ttl="5m"` / `attr.ttl="1h"`。
+- 同一 `dimension + unit` 可以出现多条规则；所有命中的非 fallback 规则会累计求和。
 - `fallback=true` 表示在同一 `dimension + unit` 没有更具体事实时再生效。
 - `source` 默认是 `response`，当前支持 `response` / `request` / `derived`。
+- `dimension` 是扁平字符串键，`.` 只是名称的一部分，不表示嵌套。
+- 当前支持的 `dimension`：
+  - `input`
+  - `output`
+  - `cache_read`
+  - `cache_write`
+  - `server_tool.web_search`
+  - `server_tool.file_search`
+  - `image.generate`
+  - `image.edit`
+  - `image.variation`
+  - `audio.tts`
+  - `audio.stt`
+  - `audio.translate`
 - 当前固定 registry 包括：
   - `input token`
   - `output token`
@@ -1206,10 +1343,10 @@ Multiple: yes
 - 支持在路径后追加 `fallback=true|false` 元数据。
 - JSONPath 子集：`$.a.b.c` / `$.items[0].x` / `$.items[*].x`（`[*]` 时取第一个非空字符串）。
 
-#### input_tokens
+#### input_tokens_expr
 
 ```text
-Syntax:  input_tokens = <expr>;
+Syntax:  input_tokens_expr = <expr>;
 Default: —
 Context: metrics
 Multiple: yes
@@ -1219,54 +1356,57 @@ Multiple: yes
 - `<expr>` 为受限表达式：只允许 `+/-`、JSONPath、整数常量；不支持括号/乘除/函数。
 - JSONPath 子集与 `*_tokens_path` 相同：`$.a.b.c` / `$.items[0].x` / `$.items[*].x`（`[*]` 对数组求和）。
 - 取不到/非数值按 `0` 处理。
+- 旧别名：`input_tokens = <expr>;`（deprecated）。
 
-#### output_tokens
+#### output_tokens_expr
 
 ```text
-Syntax:  output_tokens = <expr>;
+Syntax:  output_tokens_expr = <expr>;
 Default: —
 Context: metrics
 Multiple: yes
 ```
 
-- 建议仅配合 `usage_extract custom;` 使用；同字段多次出现时后者覆盖前者。
-- `<expr>` 规则同 `input_tokens`。
+- 规则同 `input_tokens_expr`。
+- 旧别名：`output_tokens = <expr>;`（deprecated）。
 
-#### cache_read_tokens
+#### cache_read_tokens_expr
 
 ```text
-Syntax:  cache_read_tokens = <expr>;
+Syntax:  cache_read_tokens_expr = <expr>;
 Default: —
 Context: metrics
 Multiple: yes
 ```
 
-- 建议仅配合 `usage_extract custom;` 使用；同字段多次出现时后者覆盖前者。
-- `<expr>` 规则同 `input_tokens`。
+- 规则同 `input_tokens_expr`。
+- 旧别名：`cache_read_tokens = <expr>;`（deprecated）。
 
-#### cache_write_tokens
+#### cache_write_tokens_expr
 
 ```text
-Syntax:  cache_write_tokens = <expr>;
+Syntax:  cache_write_tokens_expr = <expr>;
 Default: —
 Context: metrics
 Multiple: yes
 ```
 
-- 建议仅配合 `usage_extract custom;` 使用；同字段多次出现时后者覆盖前者。
-- `<expr>` 规则同 `input_tokens`。
+- 规则同 `input_tokens_expr`。
+- 旧别名：`cache_write_tokens = <expr>;`（deprecated）。
 
-#### total_tokens
+#### total_tokens_expr
 
 ```text
-Syntax:  total_tokens = <expr>;
-Default: input_tokens + output_tokens
+Syntax:  total_tokens_expr = <expr>;
+Default: input_tokens_expr + output_tokens_expr
 Context: metrics
 Multiple: yes
 ```
 
-- 建议仅配合 `usage_extract custom;` 使用；同字段多次出现时后者覆盖前者。
-- 若未显式声明，则默认按 `input_tokens + output_tokens` 计算。
+- 规则同 `input_tokens_expr`。
+- 若未显式声明，则默认按 `input_tokens_expr + output_tokens_expr` 计算。
+- 不推荐：显式配置 `total_tokens_expr` 会额外引入一个独立的 total 事实源，容易与由 `input/output` 聚合出的 total 产生口径分歧。
+- 旧别名：`total_tokens = <expr>;`（deprecated）。
 
 #### input_tokens_path
 
@@ -1278,7 +1418,7 @@ Multiple: yes
 ```
 
 - 建议仅配合 `usage_extract custom;` 使用；同字段多次出现时后者覆盖前者。
-- 等价于 `input_tokens = <jsonpath>;` 的简写（仅能写单个 JSONPath，不支持加减）。
+- 等价于 `input_tokens_expr = <jsonpath>;` 的简写（仅能写单个 JSONPath，不支持加减）。
 
 #### output_tokens_path
 
@@ -1290,7 +1430,7 @@ Multiple: yes
 ```
 
 - 建议仅配合 `usage_extract custom;` 使用；同字段多次出现时后者覆盖前者。
-- 等价于 `output_tokens = <jsonpath>;` 的简写（仅能写单个 JSONPath，不支持加减）。
+- 等价于 `output_tokens_expr = <jsonpath>;` 的简写（仅能写单个 JSONPath，不支持加减）。
 
 #### cache_read_tokens_path
 
@@ -1302,7 +1442,7 @@ Multiple: yes
 ```
 
 - 建议仅配合 `usage_extract custom;` 使用；同字段多次出现时后者覆盖前者。
-- 等价于 `cache_read_tokens = <jsonpath>;` 的简写（仅能写单个 JSONPath，不支持加减）。
+- 等价于 `cache_read_tokens_expr = <jsonpath>;` 的简写（仅能写单个 JSONPath，不支持加减）。
 
 #### cache_write_tokens_path
 
@@ -1314,7 +1454,7 @@ Multiple: yes
 ```
 
 - 建议仅配合 `usage_extract custom;` 使用；同字段多次出现时后者覆盖前者。
-- 等价于 `cache_write_tokens = <jsonpath>;` 的简写（仅能写单个 JSONPath，不支持加减）。
+- 等价于 `cache_write_tokens_expr = <jsonpath>;` 的简写（仅能写单个 JSONPath，不支持加减）。
 
 ### 7.10 balance（上游余额查询）
 

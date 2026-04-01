@@ -353,16 +353,11 @@ func anthropicStreamUsageFactEvals(root map[string]any) []usageFactEval {
 }
 
 func geminiStreamUsageFactEvals(root map[string]any) []usageFactEval {
-	evals := make([]usageFactEval, 0, 6)
+	evals := make([]usageFactEval, 0, 3)
 	if usageMeta, _ := root["usageMetadata"].(map[string]any); usageMeta != nil {
 		appendMatchedUsageFactEval(&evals, usageFactConfig{Dimension: "input", Unit: "token", Path: "$.usageMetadata.promptTokenCount"}, usageMeta, "promptTokenCount")
 		appendMatchedUsageFactEval(&evals, usageFactConfig{Dimension: "output", Unit: "token", Path: "$.usageMetadata.candidatesTokenCount"}, usageMeta, "candidatesTokenCount")
 		appendMatchedUsageFactEval(&evals, usageFactConfig{Dimension: "output", Unit: "token", Path: "$.usageMetadata.thoughtsTokenCount"}, usageMeta, "thoughtsTokenCount")
-	}
-	if usageMeta, _ := root["usage_metadata"].(map[string]any); usageMeta != nil {
-		appendMatchedUsageFactEval(&evals, usageFactConfig{Dimension: "input", Unit: "token", Path: "$.usage_metadata.prompt_token_count", Fallback: true}, usageMeta, "prompt_token_count")
-		appendMatchedUsageFactEval(&evals, usageFactConfig{Dimension: "output", Unit: "token", Path: "$.usage_metadata.candidates_token_count"}, usageMeta, "candidates_token_count")
-		appendMatchedUsageFactEval(&evals, usageFactConfig{Dimension: "output", Unit: "token", Path: "$.usage_metadata.thoughts_token_count"}, usageMeta, "thoughts_token_count")
 	}
 	return evals
 }

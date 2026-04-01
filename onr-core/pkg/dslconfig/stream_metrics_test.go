@@ -133,6 +133,19 @@ func TestStreamMetricsAggregator_GeminiUsage(t *testing.T) {
 	}
 }
 
+func TestStreamMetricsAggregator_GeminiSnakeCaseUsageIgnored(t *testing.T) {
+	meta := &dslmeta.Meta{API: "gemini.streamGenerateContent", IsStream: true}
+	agg := NewStreamMetricsAggregator(meta,
+		UsageExtractConfig{Mode: "gemini"},
+		FinishReasonExtractConfig{Mode: "gemini"},
+	)
+	_ = agg.OnSSEDataJSON([]byte(`{"usage_metadata":{"prompt_token_count":1,"candidates_token_count":2,"thoughts_token_count":3,"total_token_count":6}}`))
+	u, _, _, ok := agg.Result()
+	if ok || u != nil {
+		t.Fatalf("did not expect snake_case gemini stream usage to be extracted: ok=%v usage=%#v", ok, u)
+	}
+}
+
 func TestStreamMetricsAggregator_OpenAIResponsesStreamEnvelopeFinishReason(t *testing.T) {
 	meta := &dslmeta.Meta{API: "responses", IsStream: true}
 	agg := NewStreamMetricsAggregator(meta,
