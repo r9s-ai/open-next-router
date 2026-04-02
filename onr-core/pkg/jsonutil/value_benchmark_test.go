@@ -107,14 +107,20 @@ func benchmarkLegacyParsePath(path string) ([]compiledPathPart, bool) {
 	if p == "" || !strings.HasPrefix(p, "$.") {
 		return nil, false
 	}
-	rawParts := strings.Split(strings.TrimPrefix(p, "$."), ".")
+	rawParts, ok := splitPathParts(strings.TrimPrefix(p, "$."))
+	if !ok {
+		return nil, false
+	}
 	parts := make([]compiledPathPart, 0, len(rawParts))
 	for _, raw := range rawParts {
 		part := strings.TrimSpace(raw)
 		if part == "" {
 			return nil, false
 		}
-		name, idx, hasIdx, isStar := splitIndex(part)
+		name, idx, hasIdx, isStar, _, _, _, ok := splitIndex(part)
+		if !ok {
+			return nil, false
+		}
 		parts = append(parts, compiledPathPart{
 			name:   name,
 			idx:    idx,

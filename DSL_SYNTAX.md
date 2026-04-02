@@ -544,7 +544,11 @@ metrics {
 metrics {
   usage_extract custom;
 
-  usage_fact input token path="$.usageMetadata.promptTokenCount";
+  usage_fact input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="TEXT")].tokenCount';
+  usage_fact input token path="$.usageMetadata.promptTokenCount" fallback=true;
+  usage_fact image.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="IMAGE")].tokenCount';
+  usage_fact video.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="VIDEO")].tokenCount';
+  usage_fact audio.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount';
 
   usage_fact output token path="$.usageMetadata.candidatesTokenCount";
   usage_fact output token path="$.usageMetadata.thoughtsTokenCount";
@@ -553,7 +557,7 @@ metrics {
 
 Notes:
 
-- `gemini`: the current builtin behavior can now be fully replaced by `custom` configuration.
+- `gemini`: the current builtin behavior can now be fully replaced by `custom` configuration; builtin `input token` now prefers the `TEXT` modality and falls back to `promptTokenCount`, and builtin also emits `image.input/audio.input/video.input token` facts when available.
 - `anthropic`: the example above covers the core token/cache extraction; `custom` can also replace the streaming case, but you usually need to account for both `message.usage` and top-level `usage` event shapes yourself.
 - `openai`: the example above only covers core token/cache extraction. Builtin image/audio/tool supplemental facts still need extra explicit `usage_fact` rules in a custom-first setup.
 - Gemini output tokens intentionally include both `candidatesTokenCount` and `thoughtsTokenCount`; you can express that either by multiple same-dimension `usage_fact` rules that sum together, or more explicitly with `output_tokens_expr = $.usageMetadata.candidatesTokenCount + $.usageMetadata.thoughtsTokenCount;`.
@@ -664,6 +668,8 @@ metrics {
 - `source` defaults to `response` and currently supports `response`, `request`, and `derived`.
 - `dimension` is a flat registry key; `.` is part of the name and does not imply nested structure.
 - Supported `dimension` values and `dimension + unit` pairs are fixed by registry; see the later [`usage_fact`](#usage_fact) directive reference for the complete list.
+- `path`, `count_path`, `sum_path`, and `expr` may use either double-quoted or single-quoted strings.
+- For filter JSONPath, single-quoted DSL strings are usually easier to read because inner double quotes do not need escaping.
 - `usage_extract openai;` can currently supplement these canonical facts:
   - `images.generations -> image.generate image`
   - `images.edits -> image.edit image`
@@ -696,6 +702,14 @@ metrics {
   usage_extract openai;
 
   usage_fact audio.tts second source=derived path="$.audio.tts.seconds";
+}
+```
+
+```conf
+metrics {
+  usage_extract custom;
+
+  usage_fact audio.tts second path='$.usage.details[?(@.modality=="AUDIO")].seconds';
 }
 ```
 

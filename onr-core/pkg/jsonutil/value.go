@@ -12,10 +12,13 @@ type compiledPath struct {
 }
 
 type compiledPathPart struct {
-	name   string
-	idx    int
-	hasIdx bool
-	isStar bool
+	name        string
+	idx         int
+	hasIdx      bool
+	isStar      bool
+	hasFilter   bool
+	filterField string
+	filterValue string
 }
 
 type compiledPathCacheEntry struct {
@@ -115,6 +118,7 @@ func CoerceFloat(v any) float64 {
 // - $.a.b.c
 // - $.items[0].x
 // - $.items[*].x (sum over matched items)
+// - $.items[?(@.field=="VALUE")].x
 func GetIntByPath(root map[string]any, path string) int {
 	sum := 0
 	if !VisitValuesByPath(root, path, func(v any) {
@@ -203,6 +207,24 @@ func getStringByParts(cur any, parts []compiledPathPart) string {
 			if !ok {
 				return ""
 			}
+			if part.hasFilter {
+				rest := parts[i+1:]
+				for _, item := range arr {
+					if !matchesFilter(item, part.filterField, part.filterValue) {
+						continue
+					}
+					if len(rest) == 0 {
+						if v, ok := item.(string); ok && strings.TrimSpace(v) != "" {
+							return v
+						}
+						continue
+					}
+					if v := getStringByParts(item, rest); strings.TrimSpace(v) != "" {
+						return v
+					}
+				}
+				return ""
+			}
 			if isStar {
 				rest := parts[i+1:]
 				if len(rest) == 0 {
@@ -259,6 +281,16 @@ func visitPathValues(cur any, parts []compiledPathPart, visit func(any)) bool {
 	if !ok {
 		return false
 	}
+	if part.hasFilter {
+		matched := true
+		for _, item := range arr {
+			if !matchesFilter(item, part.filterField, part.filterValue) {
+				continue
+			}
+			visitPathValues(item, rest, visit)
+		}
+		return matched
+	}
 	if isStar {
 		if len(rest) == 0 {
 			for _, item := range arr {
@@ -294,41 +326,149 @@ func compilePath(path string) (*compiledPath, bool) {
 	if p == "" || !strings.HasPrefix(p, "$.") {
 		return nil, false
 	}
-	rawParts := strings.Split(strings.TrimPrefix(p, "$."), ".")
+	rawParts, ok := splitPathParts(strings.TrimPrefix(p, "$."))
+	if !ok {
+		return nil, false
+	}
 	parts := make([]compiledPathPart, 0, len(rawParts))
 	for _, raw := range rawParts {
 		part := strings.TrimSpace(raw)
 		if part == "" {
 			return nil, false
 		}
-		name, idx, hasIdx, isStar := splitIndex(part)
+		name, idx, hasIdx, isStar, hasFilter, filterField, filterValue, ok := splitIndex(part)
+		if !ok {
+			return nil, false
+		}
 		parts = append(parts, compiledPathPart{
-			name:   name,
-			idx:    idx,
-			hasIdx: hasIdx,
-			isStar: isStar,
+			name:        name,
+			idx:         idx,
+			hasIdx:      hasIdx,
+			isStar:      isStar,
+			hasFilter:   hasFilter,
+			filterField: filterField,
+			filterValue: filterValue,
 		})
 	}
 	return &compiledPath{parts: parts}, true
 }
 
-func splitIndex(s string) (name string, idx int, hasIdx bool, isStar bool) {
+func splitPathParts(path string) ([]string, bool) {
+	parts := make([]string, 0, 4)
+	start := 0
+	bracketDepth := 0
+	var quote byte
+	for i := 0; i < len(path); i++ {
+		ch := path[i]
+		if quote != 0 {
+			if ch == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch ch {
+		case '"', '\'':
+			quote = ch
+		case '[':
+			bracketDepth++
+		case ']':
+			bracketDepth--
+			if bracketDepth < 0 {
+				return nil, false
+			}
+		case '.':
+			if bracketDepth == 0 {
+				parts = append(parts, path[start:i])
+				start = i + 1
+			}
+		}
+	}
+	if quote != 0 || bracketDepth != 0 {
+		return nil, false
+	}
+	parts = append(parts, path[start:])
+	return parts, true
+}
+
+func splitIndex(s string) (name string, idx int, hasIdx bool, isStar bool, hasFilter bool, filterField string, filterValue string, ok bool) {
 	open := strings.IndexByte(s, '[')
 	if open < 0 {
-		return s, 0, false, false
+		return s, 0, false, false, false, "", "", true
 	}
-	close := strings.IndexByte(s, ']')
-	if close < 0 || close < open {
-		return s, 0, false, false
+	close := strings.LastIndexByte(s, ']')
+	if close < 0 || close < open || close != len(s)-1 {
+		return s, 0, false, false, false, "", "", false
 	}
 	name = s[:open]
 	inner := strings.TrimSpace(s[open+1 : close])
 	if inner == "*" {
-		return name, 0, true, true
+		return name, 0, true, true, false, "", "", true
+	}
+	if field, value, ok := parseFilter(inner); ok {
+		return name, 0, true, false, true, field, value, true
 	}
 	n, err := strconv.Atoi(inner)
 	if err != nil {
-		return name, 0, false, false
+		return name, 0, false, false, false, "", "", false
 	}
-	return name, n, true, false
+	return name, n, true, false, false, "", "", true
+}
+
+func parseFilter(inner string) (field string, value string, ok bool) {
+	trimmed := strings.TrimSpace(inner)
+	if !strings.HasPrefix(trimmed, "?(") || !strings.HasSuffix(trimmed, ")") {
+		return "", "", false
+	}
+	body := strings.TrimSpace(trimmed[2 : len(trimmed)-1])
+	if !strings.HasPrefix(body, "@.") {
+		return "", "", false
+	}
+	body = strings.TrimPrefix(body, "@.")
+	parts := strings.SplitN(body, "==", 2)
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	field = strings.TrimSpace(parts[0])
+	rawValue := strings.TrimSpace(parts[1])
+	if field == "" || rawValue == "" {
+		return "", "", false
+	}
+	if len(rawValue) < 2 {
+		return "", "", false
+	}
+	quote := rawValue[0]
+	if (quote != '"' && quote != '\'') || rawValue[len(rawValue)-1] != quote {
+		return "", "", false
+	}
+	value = rawValue[1 : len(rawValue)-1]
+	return field, value, true
+}
+
+func matchesFilter(v any, field, want string) bool {
+	got, ok := getNestedStringField(v, field)
+	if !ok {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(got), strings.TrimSpace(want))
+}
+
+func getNestedStringField(v any, field string) (string, bool) {
+	current := v
+	for _, part := range strings.Split(strings.TrimSpace(field), ".") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			return "", false
+		}
+		obj, ok := current.(map[string]any)
+		if !ok {
+			return "", false
+		}
+		next, ok := obj[part]
+		if !ok {
+			return "", false
+		}
+		current = next
+	}
+	s, ok := current.(string)
+	return s, ok
 }

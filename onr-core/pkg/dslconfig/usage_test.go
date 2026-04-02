@@ -549,6 +549,52 @@ func TestExtractUsage_Gemini_NonStream(t *testing.T) {
 	}
 }
 
+func TestExtractUsage_Gemini_NonStream_MultimodalBuiltin(t *testing.T) {
+	meta := &dslmeta.Meta{API: "gemini.generateContent", IsStream: false}
+	cfg := UsageExtractConfig{Mode: "gemini"}
+
+	resp := []byte(`{
+	  "usageMetadata":{
+	    "promptTokenCount": 81,
+	    "candidatesTokenCount": 40,
+	    "thoughtsTokenCount": 553,
+	    "totalTokenCount": 674,
+	    "promptTokensDetails": [
+	      {"modality": "TEXT", "tokenCount": 5},
+	      {"modality": "IMAGE", "tokenCount": 12},
+	      {"modality": "VIDEO", "tokenCount": 34},
+	      {"modality": "AUDIO", "tokenCount": 76}
+	    ]
+	  }
+	}`)
+
+	u, _, err := ExtractUsage(meta, cfg, resp)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if u == nil {
+		t.Fatalf("usage nil")
+	}
+	if u.InputTokens != 5 {
+		t.Fatalf("input_tokens=%d want=5", u.InputTokens)
+	}
+	if u.OutputTokens != 593 {
+		t.Fatalf("output_tokens=%d want=593", u.OutputTokens)
+	}
+	if u.TotalTokens != 674 {
+		t.Fatalf("total_tokens=%d want=674", u.TotalTokens)
+	}
+	if got, want := u.FlatFields["image_input_tokens"], 12; got != want {
+		t.Fatalf("image_input_tokens=%v want=%v", got, want)
+	}
+	if got, want := u.FlatFields["video_input_tokens"], 34; got != want {
+		t.Fatalf("video_input_tokens=%v want=%v", got, want)
+	}
+	if got, want := u.FlatFields["audio_input_tokens"], 76; got != want {
+		t.Fatalf("audio_input_tokens=%v want=%v", got, want)
+	}
+}
+
 func TestExtractUsage_Gemini_NonStream_SnakeCaseUsageIgnored(t *testing.T) {
 	meta := &dslmeta.Meta{API: "gemini.generateContent", IsStream: false}
 	cfg := UsageExtractConfig{Mode: "gemini"}
@@ -577,6 +623,9 @@ func TestExtractUsage_Gemini_NonStream_SnakeCaseUsageIgnored(t *testing.T) {
 func TestUsageDimensionRegistry_AllowsKnownPairs(t *testing.T) {
 	reg := NewUsageDimensionRegistry(
 		UsageDimension{Dimension: "input", Unit: "token"},
+		UsageDimension{Dimension: "image.input", Unit: "token"},
+		UsageDimension{Dimension: "video.input", Unit: "token"},
+		UsageDimension{Dimension: "audio.input", Unit: "token"},
 		UsageDimension{Dimension: "server_tool.web_search", Unit: "call"},
 		UsageDimension{Dimension: "image.generate", Unit: "image"},
 		UsageDimension{Dimension: "audio.tts", Unit: "second"},
@@ -584,6 +633,15 @@ func TestUsageDimensionRegistry_AllowsKnownPairs(t *testing.T) {
 
 	if !reg.Allows("input", "token") {
 		t.Fatalf("expected input token allowed")
+	}
+	if !reg.Allows("IMAGE.INPUT", "TOKEN") {
+		t.Fatalf("expected image.input token allowed")
+	}
+	if !reg.Allows("video.input", "token") {
+		t.Fatalf("expected video.input token allowed")
+	}
+	if !reg.Allows("audio.input", "token") {
+		t.Fatalf("expected audio.input token allowed")
 	}
 	if !reg.Allows("SERVER_TOOL.WEB_SEARCH", "CALL") {
 		t.Fatalf("expected server_tool.web_search call allowed")

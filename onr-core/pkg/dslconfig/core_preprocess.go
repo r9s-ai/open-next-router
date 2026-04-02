@@ -81,12 +81,17 @@ func unquoteString(raw string) string {
 	if len(raw) < 2 {
 		return raw
 	}
-	if raw[0] != '"' || raw[len(raw)-1] != '"' {
+	quote := raw[0]
+	if (quote != '"' && quote != '\'') || raw[len(raw)-1] != quote {
 		return raw
 	}
 	inner := raw[1 : len(raw)-1]
 	inner = strings.ReplaceAll(inner, `\\`, `\`)
-	inner = strings.ReplaceAll(inner, `\"`, `"`)
+	if quote == '"' {
+		inner = strings.ReplaceAll(inner, `\"`, `"`)
+	} else {
+		inner = strings.ReplaceAll(inner, `\'`, `'`)
+	}
 	inner = strings.ReplaceAll(inner, `\n`, "\n")
 	inner = strings.ReplaceAll(inner, `\t`, "\t")
 	return inner

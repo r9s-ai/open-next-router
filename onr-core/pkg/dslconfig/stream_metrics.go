@@ -353,13 +353,11 @@ func anthropicStreamUsageFactEvals(root map[string]any) []usageFactEval {
 }
 
 func geminiStreamUsageFactEvals(root map[string]any) []usageFactEval {
-	evals := make([]usageFactEval, 0, 3)
-	if usageMeta, _ := root["usageMetadata"].(map[string]any); usageMeta != nil {
-		appendMatchedUsageFactEval(&evals, usageFactConfig{Dimension: "input", Unit: "token", Path: "$.usageMetadata.promptTokenCount"}, usageMeta, "promptTokenCount")
-		appendMatchedUsageFactEval(&evals, usageFactConfig{Dimension: "output", Unit: "token", Path: "$.usageMetadata.candidatesTokenCount"}, usageMeta, "candidatesTokenCount")
-		appendMatchedUsageFactEval(&evals, usageFactConfig{Dimension: "output", Unit: "token", Path: "$.usageMetadata.thoughtsTokenCount"}, usageMeta, "thoughtsTokenCount")
+	if _, ok := root["usageMetadata"].(map[string]any); !ok {
+		return nil
 	}
-	return evals
+	set := builtinUsageFactSet(usageModeGemini)
+	return evaluateUsageFactConfigGroups(nil, root, nil, set.factGroups, len(set.facts))
 }
 
 func appendFirstMatchedUsageFactEval(dst *[]usageFactEval, root map[string]any, primary, fallback usageFactConfig, primaryKey, fallbackKey string) {

@@ -568,7 +568,11 @@ metrics {
 metrics {
   usage_extract custom;
 
-  usage_fact input token path="$.usageMetadata.promptTokenCount";
+  usage_fact input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="TEXT")].tokenCount';
+  usage_fact input token path="$.usageMetadata.promptTokenCount" fallback=true;
+  usage_fact image.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="IMAGE")].tokenCount';
+  usage_fact video.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="VIDEO")].tokenCount';
+  usage_fact audio.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount';
 
   usage_fact output token path="$.usageMetadata.candidatesTokenCount";
   usage_fact output token path="$.usageMetadata.thoughtsTokenCount";
@@ -577,7 +581,7 @@ metrics {
 
 注意：
 
-- `gemini`：当前内置行为已经可以用 `custom` 配置完整平替
+- `gemini`：当前内置行为已经可以用 `custom` 配置完整平替；内置口径为 `input token` 优先取 `TEXT` 模态，再 fallback 到 `promptTokenCount`
 - `anthropic`：上述配置已覆盖核心 token / cache 提取；对流式场景，`custom` 也能平替，但通常要自己显式处理 `message.usage` 与顶层 `usage` 两种事件形态
 - `openai`：上述配置只覆盖核心 token / cache 提取；图片、音频、tool usage 等 API-specific supplemental facts 仍需额外显式写 `usage_fact`
 - `gemini` 的输出 token 会把 `candidatesTokenCount` 与 `thoughtsTokenCount` 一并计入 `output`；这里既可以像示例一样写多条同维度 `usage_fact` 让系统自动求和，也可以直接写成 `output_tokens_expr = $.usageMetadata.candidatesTokenCount + $.usageMetadata.thoughtsTokenCount;`
@@ -657,6 +661,20 @@ metrics {
 - `$.a.b.c`
 - `$.items[0].x`
 - `$.items[*].x`（对数组中的数值求和）
+- `$.items[?(@.field=="VALUE")].x`（对过滤后命中的数值求和）
+
+说明：
+
+- 当前 filter 仅支持数组过滤
+- 当前仅支持单条件等值匹配：`==`
+- 当前仅支持字符串字面量比较
+- 例如：
+  - `$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount`
+- 当路径写在 DSL 双引号字符串里时，filter 里的内部双引号需要转义，例如：
+
+```conf
+usage_fact audio.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount';
+```
 
 多条与覆盖规则：
 
@@ -685,6 +703,8 @@ metrics {
 - 同一 `dimension + unit` 可声明多条 `usage_fact`；所有命中的非 fallback 规则会按声明顺序累计求和
 - `fallback=true` 用于在更具体的事实不存在时回退到总量字段
 - `source` 默认是 `response`，当前支持 `response` / `request` / `derived`
+- `source=response` 表示从当前响应 JSON 提取；`source=request` 表示从当前请求 JSON 提取；`source=derived` 表示从 ONR 运行时派生出的聚合结果提取
+- 当前不支持除 `response` / `request` / `derived` 之外的其他 `source`
 - `dimension` 是 registry 中的扁平命名空间字符串，`.` 只是名称的一部分，不表示嵌套结构
 - 当前支持的 `dimension` 与 `dimension + unit` 固定 registry，完整列表见后文 [`usage_fact`](#usage_fact) 指令说明
 - `usage_extract openai;` 当前除了传统 token 提取外，也会补充这些 canonical facts：
@@ -721,6 +741,50 @@ metrics {
   usage_fact audio.tts second source=derived path="$.audio.tts.seconds";
 }
 ```
+
+```conf
+metrics {
+  usage_extract custom;
+
+  usage_fact audio.tts second path='$.usage.details[?(@.modality=="AUDIO")].seconds';
+}
+```
+
+#### 生成类 Gemini 多模态 token facts
+
+这部分已拆到根仓文档，便于把 Gemini 方案细节与 DSL 语法说明分开维护。
+
+详见：[ONR 生成类 Gemini 多模态 Token Facts](../../docs/specs/ONR_GEMINI_MULTIMODAL_TOKEN_FACTS.md)
+
+这里保留一条最常用的最小示例：
+
+```conf
+metrics {
+  usage_extract custom;
+
+  usage_fact input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="TEXT")].tokenCount';
+  usage_fact input token path="$.usageMetadata.promptTokenCount" fallback=true;
+  usage_fact image.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="IMAGE")].tokenCount';
+  usage_fact video.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="VIDEO")].tokenCount';
+  usage_fact audio.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount';
+
+  usage_fact output token path="$.usageMetadata.candidatesTokenCount";
+  usage_fact output token path="$.usageMetadata.thoughtsTokenCount";
+}
+```
+
+- 范围：仅适用于 `gemini.generateContent` / `gemini.streamGenerateContent`
+- 口径：`input token` 优先取 `TEXT` 模态，再 fallback 到 `promptTokenCount`
+- 这类场景是 token 型 usage，不涉及 Live / realtime 的 `second` 型 fact
+
+- 现在可以直接用 filter JSONPath 从 `promptTokensDetails` 按 `modality` 取值
+- ONR builtin 与显式 `usage_fact` 现在都支持这套 Gemini 多模态 token 语义
+
+后续范围说明：
+
+- Gemini Live / Realtime 的 `audio.input second`、`audio.output second`、`vision.input second`
+- 其他厂商 realtime 接口的通用 meter-based facts
+- 需要 `source=derived` 的 runtime 聚合场景
 
 #### finish_reason_extract
 
@@ -1279,14 +1343,25 @@ Multiple: yes
 - 第一批支持固定 registry 维度，不开放任意自定义维度。
 - 支持 `path` / `count_path` / `sum_path` / `expr` 四类原语。
 - `count_path` 可搭配 `type` / `status` 过滤。
+- `path` / `sum_path` / `expr` 中的 JSONPath 现在支持受限 filter 子集：
+  - `$.items[?(@.field=="VALUE")].x`
 - 支持常量属性，如 `attr.ttl="5m"` / `attr.ttl="1h"`。
 - 同一 `dimension + unit` 可以出现多条规则；所有命中的非 fallback 规则会累计求和。
 - `fallback=true` 表示在同一 `dimension + unit` 没有更具体事实时再生效。
 - `source` 默认是 `response`，当前支持 `response` / `request` / `derived`。
+- `response` / `request` / `derived` 之外的其他 `source` 会在校验阶段直接报错。
 - `dimension` 是扁平字符串键，`.` 只是名称的一部分，不表示嵌套。
+- 实时多模态的 meter-based facts（例如 `audio.input second`）属于计划中的目标能力；若文档其他位置出现相关示例，应视为预览写法，不代表当前 registry 已开放。
+- `path` / `count_path` / `sum_path` / `expr` 既可以用双引号，也可以用单引号包裹。
+- 当使用双引号字符串时，filter 内部的双引号需要写成 `\"`。
+- 当使用单引号字符串时，可以直接写：
+  - `path='$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount'`
 - 当前支持的 `dimension`：
   - `input`
   - `output`
+  - `image.input`
+  - `video.input`
+  - `audio.input`
   - `cache_read`
   - `cache_write`
   - `server_tool.web_search`
@@ -1300,6 +1375,9 @@ Multiple: yes
 - 当前固定 registry 包括：
   - `input token`
   - `output token`
+  - `image.input token`
+  - `video.input token`
+  - `audio.input token`
   - `cache_read token`
   - `cache_write token`
   - `server_tool.web_search call`
@@ -1341,7 +1419,7 @@ Multiple: yes
 
 - 可选覆盖项；当使用 `finish_reason_extract custom;` 时为必填。
 - 支持在路径后追加 `fallback=true|false` 元数据。
-- JSONPath 子集：`$.a.b.c` / `$.items[0].x` / `$.items[*].x`（`[*]` 时取第一个非空字符串）。
+- JSONPath 子集：`$.a.b.c` / `$.items[0].x` / `$.items[*].x` / `$.items[?(@.field=="VALUE")].x`（`[*]` 或 filter 命中多项时取第一个非空字符串）。
 
 #### input_tokens_expr
 
@@ -1354,7 +1432,7 @@ Multiple: yes
 
 - 建议仅配合 `usage_extract custom;` 使用；同字段多次出现时后者覆盖前者。
 - `<expr>` 为受限表达式：只允许 `+/-`、JSONPath、整数常量；不支持括号/乘除/函数。
-- JSONPath 子集与 `*_tokens_path` 相同：`$.a.b.c` / `$.items[0].x` / `$.items[*].x`（`[*]` 对数组求和）。
+- JSONPath 子集与 `*_tokens_path` 相同：`$.a.b.c` / `$.items[0].x` / `$.items[*].x` / `$.items[?(@.field=="VALUE")].x`（`[*]` 或 filter 命中多项时对数组求和）。
 - 取不到/非数值按 `0` 处理。
 
 #### output_tokens_expr

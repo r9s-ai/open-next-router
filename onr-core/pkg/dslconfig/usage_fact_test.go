@@ -150,6 +150,187 @@ provider "demo" {
 	}
 }
 
+func TestExtractUsage_UsageFactFilterPath(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "demo" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_extract custom;
+      usage_fact input token path="$.usageMetadata.promptTokensDetails[?(@.modality==\"TEXT\")].tokenCount";
+      usage_fact output token path="$.usageMetadata.candidatesTokenCount";
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+
+	body := []byte(`{
+	  "usageMetadata": {
+	    "promptTokenCount": 81,
+	    "promptTokensDetails": [
+	      {"modality": "TEXT", "tokenCount": 5},
+	      {"modality": "AUDIO", "tokenCount": 76}
+	    ],
+	    "candidatesTokenCount": 7
+	  }
+	}`)
+
+	usage, _, err := ExtractUsage(nil, pf.Usage.Defaults, body)
+	if err != nil {
+		t.Fatalf("ExtractUsage: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage")
+	}
+	if got, want := usage.InputTokens, 5; got != want {
+		t.Fatalf("InputTokens got %d, want %d", got, want)
+	}
+	if got, want := usage.OutputTokens, 7; got != want {
+		t.Fatalf("OutputTokens got %d, want %d", got, want)
+	}
+}
+
+func TestExtractUsage_UsageFactGeminiMultimodalInputTokens(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "demo" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_extract custom;
+      usage_fact input token path="$.usageMetadata.promptTokensDetails[?(@.modality==\"TEXT\")].tokenCount";
+      usage_fact image.input token path="$.usageMetadata.promptTokensDetails[?(@.modality==\"IMAGE\")].tokenCount";
+      usage_fact video.input token path="$.usageMetadata.promptTokensDetails[?(@.modality==\"VIDEO\")].tokenCount";
+      usage_fact audio.input token path="$.usageMetadata.promptTokensDetails[?(@.modality==\"AUDIO\")].tokenCount";
+      usage_fact output token path="$.usageMetadata.candidatesTokenCount";
+      usage_fact output token path="$.usageMetadata.thoughtsTokenCount";
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+
+	body := []byte(`{
+	  "usageMetadata": {
+	    "promptTokensDetails": [
+	      {"modality": "TEXT", "tokenCount": 5},
+	      {"modality": "IMAGE", "tokenCount": 12},
+	      {"modality": "VIDEO", "tokenCount": 34},
+	      {"modality": "AUDIO", "tokenCount": 76}
+	    ],
+	    "candidatesTokenCount": 40,
+	    "thoughtsTokenCount": 553
+	  }
+	}`)
+
+	usage, _, err := ExtractUsage(nil, pf.Usage.Defaults, body)
+	if err != nil {
+		t.Fatalf("ExtractUsage: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage")
+	}
+	if got, want := usage.InputTokens, 5; got != want {
+		t.Fatalf("InputTokens got %d, want %d", got, want)
+	}
+	if got, want := usage.OutputTokens, 593; got != want {
+		t.Fatalf("OutputTokens got %d, want %d", got, want)
+	}
+	if usage.FlatFields == nil {
+		t.Fatalf("expected flat fields")
+	}
+	if got, want := usage.FlatFields["image_input_tokens"], 12; got != want {
+		t.Fatalf("image_input_tokens got %v, want %v", got, want)
+	}
+	if got, want := usage.FlatFields["video_input_tokens"], 34; got != want {
+		t.Fatalf("video_input_tokens got %v, want %v", got, want)
+	}
+	if got, want := usage.FlatFields["audio_input_tokens"], 76; got != want {
+		t.Fatalf("audio_input_tokens got %v, want %v", got, want)
+	}
+}
+
+func TestExtractUsage_UsageFactFilterPathSingleQuotedString(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "demo" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_extract custom;
+      usage_fact input token path='$.usageMetadata.promptTokenCount';
+      usage_fact audio.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount';
+      usage_fact output token path='$.usageMetadata.candidatesTokenCount';
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+
+	body := []byte(`{
+	  "usageMetadata": {
+	    "promptTokenCount": 81,
+	    "promptTokensDetails": [
+	      {"modality": "TEXT", "tokenCount": 5},
+	      {"modality": "AUDIO", "tokenCount": 76}
+	    ],
+	    "candidatesTokenCount": 7
+	  }
+	}`)
+
+	usage, _, err := ExtractUsage(nil, pf.Usage.Defaults, body)
+	if err != nil {
+		t.Fatalf("ExtractUsage: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage")
+	}
+	if got, want := usage.InputTokens, 81; got != want {
+		t.Fatalf("InputTokens got %d, want %d", got, want)
+	}
+	if got, want := usage.FlatFields["audio_input_tokens"], 76; got != want {
+		t.Fatalf("audio_input_tokens got %v, want %v", got, want)
+	}
+	if got, want := usage.OutputTokens, 7; got != want {
+		t.Fatalf("OutputTokens got %d, want %d", got, want)
+	}
+}
+
 func TestValidateProviderFile_UsageFactBuiltinModeAllowed(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "demo.conf")

@@ -176,7 +176,7 @@ func isAllowedJSONPathChar(b byte) bool {
 		return true
 	}
 	switch b {
-	case '$', '.', '_', '-', '[', ']', '*':
+	case '$', '.', '_', '-', '[', ']', '*', '?', '@', '(', ')', '=', '"', '\'':
 		return true
 	default:
 		return false

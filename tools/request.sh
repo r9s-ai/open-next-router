@@ -12,6 +12,13 @@ Env (auto source repo .env if exists):
   ONR_ACCESS_KEY_DEFAULT  preferred auth key (Authorization: Bearer <key>)
   ONR_API_KEY             legacy fallback auth key
 
+Gemini shortcut options:
+  --gemini-text <text>    Add a Gemini text part. Repeatable.
+  --gemini-image <path>   Add a Gemini image part via inlineData. Repeatable.
+  --gemini-audio <path>   Add a Gemini audio part via inlineData. Repeatable.
+  --gemini-system <text>  Set Gemini systemInstruction text.
+  --gemini-role <role>    Set Gemini content role. Default: user.
+
 Examples:
   # Basic
   tools/request.sh /healthz --no-auth
@@ -40,6 +47,8 @@ Examples:
   # Gemini native
   tools/request.sh '/v1beta/models/gemini-2.5-flash:generateContent' '{"contents":[{"role":"user","parts":[{"text":"hello"}]}]}'
   tools/request.sh '/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse' '{"contents":[{"role":"user","parts":[{"text":"hello"}]}]}'
+  tools/request.sh '/v1beta/models/gemini-2.5-flash:generateContent' --gemini-text 'Describe this audio.' --gemini-audio ./path/to/sample.mp3
+  tools/request.sh '/v1beta/models/gemini-2.5-flash:generateContent' --gemini-text 'Compare the image and audio.' --gemini-image ./path/to/cat.png --gemini-audio ./path/to/sample.mp3
 
 EOF
   exit 2
@@ -47,6 +56,7 @@ EOF
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GET_REQUEST_DUMP_BY_ID="${ROOT}/tools/get_request_dump_by_id.sh"
+BUILD_GEMINI_MULTIMODAL_BODY="${ROOT}/tools/build_gemini_multimodal_body.sh"
 
 if [[ -f "${ROOT}/.env" ]]; then
   set -a
@@ -217,6 +227,11 @@ init_defaults() {
   data_args=()
   curl_args=()
   extra_curl_args=()
+  gemini_texts=()
+  gemini_images=()
+  gemini_audios=()
+  gemini_system=""
+  gemini_role="user"
   tmp_headers=""
   tmp_body=""
   curl_exit=0
@@ -258,6 +273,36 @@ parse_args() {
         stream="true"
         shift
         ;;
+      --gemini-text)
+        shift
+        [[ $# -gt 0 ]] || die "missing value for $0 --gemini-text"
+        gemini_texts+=("$1")
+        shift
+        ;;
+      --gemini-image)
+        shift
+        [[ $# -gt 0 ]] || die "missing value for $0 --gemini-image"
+        gemini_images+=("$1")
+        shift
+        ;;
+      --gemini-audio)
+        shift
+        [[ $# -gt 0 ]] || die "missing value for $0 --gemini-audio"
+        gemini_audios+=("$1")
+        shift
+        ;;
+      --gemini-system)
+        shift
+        [[ $# -gt 0 ]] || die "missing value for $0 --gemini-system"
+        gemini_system="$1"
+        shift
+        ;;
+      --gemini-role)
+        shift
+        [[ $# -gt 0 ]] || die "missing value for $0 --gemini-role"
+        gemini_role="$1"
+        shift
+        ;;
       --)
         shift
         while [[ $# -gt 0 ]]; do
@@ -287,8 +332,19 @@ parse_args() {
 validate_inputs() {
   [[ -n "${target}" ]] || usage
 
+  local gemini_part_count=0
+  gemini_part_count=$((${#gemini_texts[@]} + ${#gemini_images[@]} + ${#gemini_audios[@]}))
+
   if [[ -n "${positional_json}" && -n "${json_file}" ]]; then
     die "use only one of positional json_body or --json-file"
+  fi
+
+  if [[ "${gemini_part_count}" -gt 0 ]] && [[ -n "${positional_json}" || -n "${json_file}" ]]; then
+    die "use either JSON input or --gemini-* shortcut options, not both"
+  fi
+
+  if [[ "${gemini_part_count}" -eq 0 ]] && [[ -n "${gemini_system}" || "${gemini_role}" != "user" ]]; then
+    die "--gemini-system/--gemini-role requires at least one --gemini-text, --gemini-image, or --gemini-audio"
   fi
 
   if [[ -n "${positional_json}" ]]; then
@@ -330,9 +386,35 @@ prepare_provider_header() {
   fi
 }
 
+build_gemini_shortcut_payload() {
+  local cmd=("bash" "${BUILD_GEMINI_MULTIMODAL_BODY}" "--role" "${gemini_role}")
+  local item
+
+  [[ -f "${BUILD_GEMINI_MULTIMODAL_BODY}" ]] || die "helper not found: ${BUILD_GEMINI_MULTIMODAL_BODY}"
+
+  if [[ -n "${gemini_system}" ]]; then
+    cmd+=("--system" "${gemini_system}")
+  fi
+  for item in "${gemini_texts[@]}"; do
+    cmd+=("--text" "${item}")
+  done
+  for item in "${gemini_images[@]}"; do
+    cmd+=("--image" "${item}")
+  done
+  for item in "${gemini_audios[@]}"; do
+    cmd+=("--audio" "${item}")
+  done
+
+  "${cmd[@]}"
+}
+
 prepare_payload() {
   headers=()
   data_args=()
+
+  if [[ $((${#gemini_texts[@]} + ${#gemini_images[@]} + ${#gemini_audios[@]})) -gt 0 ]]; then
+    json="$(build_gemini_shortcut_payload)"
+  fi
 
   if [[ "${stream}" == "true" ]]; then
     if [[ -n "${json}" ]]; then

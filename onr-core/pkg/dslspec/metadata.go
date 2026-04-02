@@ -99,7 +99,7 @@ var directiveMetadata = []DirectiveMetadata{
 	{Name: "error_map", Block: "error", Hover: "`error_map <mode>;`\n\nNormalize upstream error payload into target error schema.", Modes: []string{"openai", "common", "passthrough"}},
 
 	{Name: "usage_extract", Block: "metrics", Hover: "`usage_extract <mode>;`\n\nExtract usage token fields from response/SSE payload.", Modes: []string{"openai", "anthropic", "gemini", "custom"}},
-	{Name: "usage_fact", Block: "metrics", Hover: "`usage_fact <dimension> <unit> path=\"$.path\"|count_path=\"$.path\"|sum_path=\"$.path\"|expr=\"<expr>\" ...;`\n\nCustom usage fact extraction rule with optional `attr.*` and `fallback=true`."},
+	{Name: "usage_fact", Block: "metrics", Hover: "`usage_fact <dimension> <unit> path=\"$.path\"|count_path=\"$.path\"|sum_path=\"$.path\"|expr=\"<expr>\" ...;`\n\nCustom usage fact extraction rule with optional `attr.*` and `fallback=true`.\n\nCurrent `source` values: `response`, `request`, `derived`.\nRestricted filter JSONPath is supported, for example `$.usageMetadata.promptTokensDetails[?(@.modality==\\\"AUDIO\\\")].tokenCount`."},
 	{Name: "input_tokens_expr", Block: "metrics", Hover: "`input_tokens_expr = <expr>;`\n\nCustom extraction expression for input/prompt tokens."},
 	{Name: "output_tokens_expr", Block: "metrics", Hover: "`output_tokens_expr = <expr>;`\n\nCustom extraction expression for output/completion tokens."},
 	{Name: "cache_read_tokens_expr", Block: "metrics", Hover: "`cache_read_tokens_expr = <expr>;`\n\nCustom extraction expression for cache read tokens."},

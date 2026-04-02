@@ -28,6 +28,24 @@ func TestParseUsageExprInvalid(t *testing.T) {
 	}
 }
 
+func TestParseUsageExprAndEval_FilterPath(t *testing.T) {
+	expr, err := ParseUsageExpr(`$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount + 1`)
+	if err != nil {
+		t.Fatalf("ParseUsageExpr: %v", err)
+	}
+	root := map[string]any{
+		"usageMetadata": map[string]any{
+			"promptTokensDetails": []any{
+				map[string]any{"modality": "TEXT", "tokenCount": 5},
+				map[string]any{"modality": "AUDIO", "tokenCount": 76},
+			},
+		},
+	}
+	if got := expr.Eval(root); got != 77 {
+		t.Fatalf("Eval got %d, want %d", got, 77)
+	}
+}
+
 func TestValidateProviderFile_RejectsLegacyUsageAssignAliases(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "demo.conf")

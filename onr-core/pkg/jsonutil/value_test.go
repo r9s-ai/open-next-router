@@ -138,3 +138,49 @@ func TestVisitValuesByPath_EmptyWildcardStillMatches(t *testing.T) {
 		t.Fatalf("visited got %d, want 0", visited)
 	}
 }
+
+func TestGetIntByPath_SupportsFilter(t *testing.T) {
+	root := map[string]any{
+		"usageMetadata": map[string]any{
+			"promptTokensDetails": []any{
+				map[string]any{"modality": "TEXT", "tokenCount": 5},
+				map[string]any{"modality": "AUDIO", "tokenCount": 76},
+				map[string]any{"modality": "AUDIO", "tokenCount": 4},
+			},
+		},
+	}
+
+	path := `$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount`
+	if got := GetIntByPath(root, path); got != 80 {
+		t.Fatalf("filtered int got %d, want 80", got)
+	}
+}
+
+func TestGetFloatByPathWithMatch_FilterNoMatchesStillMatches(t *testing.T) {
+	root := map[string]any{
+		"usageMetadata": map[string]any{
+			"promptTokensDetails": []any{
+				map[string]any{"modality": "TEXT", "tokenCount": 5},
+			},
+		},
+	}
+
+	path := `$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount`
+	if got, matched := GetFloatByPathWithMatch(root, path); !matched || got != 0 {
+		t.Fatalf("filtered float got (%v, %v), want (0, true)", got, matched)
+	}
+}
+
+func TestGetStringByPath_SupportsFilter(t *testing.T) {
+	root := map[string]any{
+		"items": []any{
+			map[string]any{"type": "image", "name": "img"},
+			map[string]any{"type": "audio", "name": "wav"},
+		},
+	}
+
+	path := `$.items[?(@.type=="audio")].name`
+	if got := GetStringByPath(root, path); got != "wav" {
+		t.Fatalf("filtered string got %q, want wav", got)
+	}
+}

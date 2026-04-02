@@ -133,6 +133,48 @@ func TestStreamMetricsAggregator_GeminiUsage(t *testing.T) {
 	}
 }
 
+func TestStreamMetricsAggregator_GeminiUsageMultimodalBuiltin(t *testing.T) {
+	meta := &dslmeta.Meta{API: "gemini.streamGenerateContent", IsStream: true}
+	agg := NewStreamMetricsAggregator(meta,
+		UsageExtractConfig{Mode: "gemini"},
+		FinishReasonExtractConfig{Mode: "gemini"},
+	)
+	_ = agg.OnSSEDataJSON([]byte(`{"candidates":[{"finishReason":"STOP"}]}`))
+	_ = agg.OnSSEDataJSON([]byte(`{
+	  "usageMetadata":{
+	    "promptTokenCount":81,
+	    "candidatesTokenCount":40,
+	    "thoughtsTokenCount":553,
+	    "totalTokenCount":674,
+	    "promptTokensDetails":[
+	      {"modality":"TEXT","tokenCount":5},
+	      {"modality":"IMAGE","tokenCount":12},
+	      {"modality":"VIDEO","tokenCount":34},
+	      {"modality":"AUDIO","tokenCount":76}
+	    ]
+	  }
+	}`))
+	u, _, fr, ok := agg.Result()
+	if !ok || u == nil {
+		t.Fatalf("expected usage ok")
+	}
+	if u.InputTokens != 5 || u.OutputTokens != 593 || u.TotalTokens != 674 {
+		t.Fatalf("unexpected usage: %+v", *u)
+	}
+	if got, want := u.FlatFields["image_input_tokens"], 12; got != want {
+		t.Fatalf("image_input_tokens=%v want=%v", got, want)
+	}
+	if got, want := u.FlatFields["video_input_tokens"], 34; got != want {
+		t.Fatalf("video_input_tokens=%v want=%v", got, want)
+	}
+	if got, want := u.FlatFields["audio_input_tokens"], 76; got != want {
+		t.Fatalf("audio_input_tokens=%v want=%v", got, want)
+	}
+	if fr != "STOP" {
+		t.Fatalf("unexpected finish_reason: %q", fr)
+	}
+}
+
 func TestStreamMetricsAggregator_GeminiSnakeCaseUsageIgnored(t *testing.T) {
 	meta := &dslmeta.Meta{API: "gemini.streamGenerateContent", IsStream: true}
 	agg := NewStreamMetricsAggregator(meta,

@@ -52,33 +52,51 @@ func (s *scanner) next() token {
 	if s.i >= len(s.input) {
 		return token{kind: tokEOF, text: "", pos: s.i}
 	}
-	ch := s.input[s.i]
-
-	if isSpace(ch) {
-		start := s.i
-		for s.i < len(s.input) && isSpace(s.input[s.i]) {
-			s.i++
-		}
-		return token{kind: tokWhitespace, text: s.input[start:s.i], pos: start}
+	if tok, ok := s.scanWhitespace(); ok {
+		return tok
 	}
+	if tok, ok := s.scanComment(); ok {
+		return tok
+	}
+	if tok, ok := s.scanString(); ok {
+		return tok
+	}
+	if tok, ok := s.scanSingleChar(); ok {
+		return tok
+	}
+	if tok, ok := s.scanIdent(); ok {
+		return tok
+	}
+	return s.scanOther()
+}
 
-	// comments
-	if ch == '#' {
+func (s *scanner) scanWhitespace() (token, bool) {
+	if !isSpace(s.input[s.i]) {
+		return token{}, false
+	}
+	start := s.i
+	for s.i < len(s.input) && isSpace(s.input[s.i]) {
+		s.i++
+	}
+	return token{kind: tokWhitespace, text: s.input[start:s.i], pos: start}, true
+}
+
+func (s *scanner) scanComment() (token, bool) {
+	switch {
+	case s.input[s.i] == '#':
 		start := s.i
 		for s.i < len(s.input) && s.input[s.i] != '\n' {
 			s.i++
 		}
-		return token{kind: tokComment, text: s.input[start:s.i], pos: start}
-	}
-	if ch == '/' && s.i+1 < len(s.input) && s.input[s.i+1] == '/' {
+		return token{kind: tokComment, text: s.input[start:s.i], pos: start}, true
+	case s.hasPrefix("//"):
 		start := s.i
 		s.i += 2
 		for s.i < len(s.input) && s.input[s.i] != '\n' {
 			s.i++
 		}
-		return token{kind: tokComment, text: s.input[start:s.i], pos: start}
-	}
-	if ch == '/' && s.i+1 < len(s.input) && s.input[s.i+1] == '*' {
+		return token{kind: tokComment, text: s.input[start:s.i], pos: start}, true
+	case s.hasPrefix("/*"):
 		start := s.i
 		s.i += 2
 		for s.i+1 < len(s.input) && (s.input[s.i] != '*' || s.input[s.i+1] != '/') {
@@ -87,50 +105,69 @@ func (s *scanner) next() token {
 		if s.i+1 < len(s.input) {
 			s.i += 2
 		}
-		return token{kind: tokComment, text: s.input[start:s.i], pos: start}
+		return token{kind: tokComment, text: s.input[start:s.i], pos: start}, true
+	default:
+		return token{}, false
 	}
+}
 
-	// strings
-	if ch == '"' {
-		start := s.i
-		s.i++
-		for s.i < len(s.input) {
-			c := s.input[s.i]
-			if c == '\\' {
-				s.i += 2
-				continue
-			}
-			s.i++
-			if c == '"' {
-				break
-			}
+func (s *scanner) scanString() (token, bool) {
+	quote := s.input[s.i]
+	if quote != '"' && quote != '\'' {
+		return token{}, false
+	}
+	start := s.i
+	s.i++
+	for s.i < len(s.input) {
+		c := s.input[s.i]
+		if c == '\\' {
+			s.i += 2
+			continue
 		}
-		return token{kind: tokString, text: s.input[start:s.i], pos: start}
+		s.i++
+		if c == quote {
+			break
+		}
 	}
+	return token{kind: tokString, text: s.input[start:s.i], pos: start}, true
+}
 
-	switch ch {
+func (s *scanner) scanSingleChar() (token, bool) {
+	start := s.i
+	switch s.input[s.i] {
 	case '{':
 		s.i++
-		return token{kind: tokLBrace, text: "{", pos: s.i - 1}
+		return token{kind: tokLBrace, text: "{", pos: start}, true
 	case '}':
 		s.i++
-		return token{kind: tokRBrace, text: "}", pos: s.i - 1}
+		return token{kind: tokRBrace, text: "}", pos: start}, true
 	case ';':
 		s.i++
-		return token{kind: tokSemicolon, text: ";", pos: s.i - 1}
+		return token{kind: tokSemicolon, text: ";", pos: start}, true
+	default:
+		return token{}, false
 	}
+}
 
-	if isIdentStart(rune(ch)) {
-		start := s.i
+func (s *scanner) scanIdent() (token, bool) {
+	if !isIdentStart(rune(s.input[s.i])) {
+		return token{}, false
+	}
+	start := s.i
+	s.i++
+	for s.i < len(s.input) && isIdentPart(rune(s.input[s.i])) {
 		s.i++
-		for s.i < len(s.input) && isIdentPart(rune(s.input[s.i])) {
-			s.i++
-		}
-		return token{kind: tokIdent, text: s.input[start:s.i], pos: start}
 	}
+	return token{kind: tokIdent, text: s.input[start:s.i], pos: start}, true
+}
 
+func (s *scanner) scanOther() token {
 	s.i++
 	return token{kind: tokOther, text: s.input[s.i-1 : s.i], pos: s.i - 1}
+}
+
+func (s *scanner) hasPrefix(prefix string) bool {
+	return strings.HasPrefix(s.input[s.i:], prefix)
 }
 
 func (s *scanner) errAt(tok token, msg string) error {
