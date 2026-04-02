@@ -33,3 +33,21 @@ func TestUsageExtractConfigDeclaredFacts(t *testing.T) {
 		t.Fatalf("unexpected fact[1]: %#v", facts[1])
 	}
 }
+
+func TestUsageExtractConfigBuiltinFacts(t *testing.T) {
+	cfg := UsageExtractConfig{Mode: "gemini"}
+
+	facts := cfg.BuiltinFacts()
+	if len(facts) != 7 {
+		t.Fatalf("expected 7 builtin facts, got %d", len(facts))
+	}
+	if facts[0].Dimension != "input" || facts[0].Unit != "token" {
+		t.Fatalf("unexpected fact[0]: %#v", facts[0])
+	}
+	if facts[2].Dimension != "image.input" || facts[2].Unit != "token" {
+		t.Fatalf("unexpected fact[2]: %#v", facts[2])
+	}
+	if facts[4].Dimension != "audio.input" || facts[4].Unit != "token" {
+		t.Fatalf("unexpected fact[4]: %#v", facts[4])
+	}
+}

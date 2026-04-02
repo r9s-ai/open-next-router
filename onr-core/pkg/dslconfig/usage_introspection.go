@@ -1,13 +1,31 @@
 package dslconfig
 
+import "strings"
+
 func (cfg UsageExtractConfig) DeclaredFacts() []UsageFact {
 	cfg = prepareUsageExtractConfig(cfg)
-	if len(cfg.facts) == 0 {
+	return cloneUsageFactsForIntrospection(cfg.facts)
+}
+
+func (cfg UsageExtractConfig) BuiltinFacts() []UsageFact {
+	cfg = prepareUsageExtractConfig(cfg)
+	mode := normalizeUsageMode(cfg.Mode)
+	if mode == "" {
 		return nil
 	}
+	set, ok := builtinUsageFactSets[mode]
+	if !ok || len(set.facts) == 0 {
+		return nil
+	}
+	return cloneUsageFactsForIntrospection(set.facts)
+}
 
-	out := make([]UsageFact, 0, len(cfg.facts))
-	for _, fact := range cfg.facts {
+func cloneUsageFactsForIntrospection(facts []usageFactConfig) []UsageFact {
+	if len(facts) == 0 {
+		return nil
+	}
+	out := make([]UsageFact, 0, len(facts))
+	for _, fact := range facts {
 		item := UsageFact{
 			Dimension: fact.Dimension,
 			Unit:      fact.Unit,
@@ -28,4 +46,8 @@ func (cfg UsageExtractConfig) DeclaredFacts() []UsageFact {
 		out = append(out, item)
 	}
 	return out
+}
+
+func normalizeUsageMode(mode string) string {
+	return strings.ToLower(strings.TrimSpace(mode))
 }
