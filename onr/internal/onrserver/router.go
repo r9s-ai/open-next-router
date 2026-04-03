@@ -74,6 +74,7 @@ func NewRouter(
 	})
 
 	v1 := secured.Group("/v1")
+	v1.POST("/completions", makeHandler(cfg, st, pclient, "completions", resolvedRequestIDHeaderKey))
 	v1.POST("/chat/completions", makeHandler(cfg, st, pclient, "chat.completions", resolvedRequestIDHeaderKey))
 	v1.POST("/responses", makeHandler(cfg, st, pclient, "responses", resolvedRequestIDHeaderKey))
 	v1.POST("/embeddings", makeHandler(cfg, st, pclient, "embeddings", resolvedRequestIDHeaderKey))

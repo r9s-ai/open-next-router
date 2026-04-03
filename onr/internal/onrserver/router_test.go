@@ -10,13 +10,14 @@ import (
 	"github.com/r9s-ai/open-next-router/pkg/config"
 )
 
-func TestNewRouter_RegistersImageAndAudioRoutes(t *testing.T) {
+func TestNewRouter_RegistersOpenAIImageAndAudioRoutes(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
 
 	r := NewRouter(&config.Config{}, &state{}, nil, nil, nil, false, "X-Onr-Request-Id", nil)
 
 	cases := []string{
+		"/v1/completions",
 		"/v1/images/generations",
 		"/v1/images/edits",
 		"/v1/audio/speech",

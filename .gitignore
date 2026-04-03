@@ -41,3 +41,4 @@ config/providers/*-test.conf
 
 .env
 .env.*
+.codex

@@ -114,6 +114,7 @@ match api = "<api-name>" { ... }
 ```
 
 - v0.1 only matches on `api` and optional `stream`.
+- `match api` must be one of the supported API values below; unknown APIs are rejected at validation/load time.
 - **First match wins** (top-to-bottom order in the file).
   - Put more specific rules first, more general rules later.
 - If a provider is selected (DSL enabled) but **no match** is found, the request is rejected with **HTTP 400**.

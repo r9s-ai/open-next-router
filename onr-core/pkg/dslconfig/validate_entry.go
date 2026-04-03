@@ -71,6 +71,9 @@ func ValidateProviderFile(path string) (ProviderFile, error) {
 	if err := validateProviderBaseURL(p, providerName, routing); err != nil {
 		return ProviderFile{}, err
 	}
+	if err := validateProviderMatchAPIs(p, providerName, routing); err != nil {
+		return ProviderFile{}, err
+	}
 	if err := validateProviderRequestTransform(p, providerName, req); err != nil {
 		return ProviderFile{}, err
 	}

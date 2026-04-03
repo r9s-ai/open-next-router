@@ -145,6 +145,10 @@ func (r *Registry) ReloadFromDir(providersDir string) (LoadResult, error) {
 			skipped = append(skipped, entry.Name())
 			continue
 		}
+		if err := validateProviderMatchAPIs(path, providerName, routing); err != nil {
+			skipped = append(skipped, entry.Name())
+			continue
+		}
 		if err := validateProviderHeaders(path, providerName, headers); err != nil {
 			skipped = append(skipped, entry.Name())
 			continue

@@ -17,6 +17,7 @@ func TestValidateProviderFile_OpenAIIncludesImageAndAudioRoutes(t *testing.T) {
 	}
 
 	cases := map[string]string{
+		"completions":          "/v1/completions",
 		"images.generations":   "/v1/images/generations",
 		"images.edits":         "/v1/images/edits",
 		"audio.speech":         "/v1/audio/speech",
