@@ -39,7 +39,7 @@ func (r *Registry) ReloadFromFile(path string) (LoadResult, error) {
 	r.providers = next
 	r.mu.Unlock()
 
-	return LoadResult{LoadedProviders: loaded, SkippedFiles: nil}, nil
+	return LoadResult{LoadedProviders: loaded, SkippedFiles: nil, SkippedReasons: nil}, nil
 }
 
 // ValidateProvidersFile validates a merged providers config file (providers.conf).
@@ -62,7 +62,7 @@ func ValidateProvidersFile(path string) (LoadResult, error) {
 	if err != nil {
 		return LoadResult{}, err
 	}
-	return LoadResult{LoadedProviders: loaded, SkippedFiles: nil}, nil
+	return LoadResult{LoadedProviders: loaded, SkippedFiles: nil, SkippedReasons: nil}, nil
 }
 
 func parseProvidersFromMergedFile(path string, content string) (map[string]ProviderFile, []string, error) {

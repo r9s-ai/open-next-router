@@ -64,7 +64,7 @@ func Run(cfgPath string) error {
 	if err != nil {
 		return fmt.Errorf("load providers dir %q: %w", cfg.Providers.Dir, err)
 	}
-	logSkippedProviders(sysLogger, cfg.Providers.Dir, loadRes.SkippedFiles, false)
+	logSkippedProviders(sysLogger, cfg.Providers.Dir, loadRes.SkippedFiles, loadRes.SkippedReasons, false)
 
 	keys, err := keystore.Load(cfg.Keys.File)
 	if err != nil {
@@ -238,7 +238,7 @@ func reloadProvidersRuntime(cfg *config.Config, reg *dslconfig.Registry, logger 
 	if err != nil {
 		return providersReloadResult{}, fmt.Errorf("reload providers dir %q: %w", cfg.Providers.Dir, err)
 	}
-	logSkippedProviders(logger, cfg.Providers.Dir, loadRes.SkippedFiles, true)
+	logSkippedProviders(logger, cfg.Providers.Dir, loadRes.SkippedFiles, loadRes.SkippedReasons, true)
 	after := snapshotProviderFingerprints(reg)
 	return providersReloadResult{
 		LoadResult:       loadRes,
@@ -273,7 +273,7 @@ func reloadRuntime(cfg *config.Config, st *state, reg *dslconfig.Registry, pclie
 	return providersRes, nil
 }
 
-func logSkippedProviders(logger *logx.SystemLogger, providersDir string, skipped []string, reloading bool) {
+func logSkippedProviders(logger *logx.SystemLogger, providersDir string, skipped []string, skippedReasons map[string]string, reloading bool) {
 	if len(skipped) == 0 {
 		return
 	}
@@ -281,10 +281,21 @@ func logSkippedProviders(logger *logx.SystemLogger, providersDir string, skipped
 	if reloading {
 		phase = "reload"
 	}
+	sortedSkipped := append([]string(nil), skipped...)
+	sort.Strings(sortedSkipped)
+	details := make([]string, 0, len(sortedSkipped))
+	for _, file := range sortedSkipped {
+		reason := strings.TrimSpace(skippedReasons[file])
+		if reason == "" {
+			reason = "unknown"
+		}
+		details = append(details, fmt.Sprintf("%s: %s", file, reason))
+	}
 	logger.Warn(logx.SystemCategoryProviders, "providers skipped invalid files", map[string]any{
 		"phase":                 phase,
 		"providers_dir":         providersDir,
-		"skipped_invalid_files": strings.Join(skipped, ","),
+		"skipped_invalid_files": strings.Join(sortedSkipped, ","),
+		"skip_reasons":          strings.Join(details, " | "),
 	})
 }
 

@@ -57,6 +57,7 @@ func (r *Registry) GetProvider(name string) (ProviderFile, bool) {
 type LoadResult struct {
 	LoadedProviders []string
 	SkippedFiles    []string
+	SkippedReasons  map[string]string
 	Warnings        []ValidationWarning
 }
 
@@ -92,6 +93,7 @@ func (r *Registry) ReloadFromDir(providersDir string) (LoadResult, error) {
 	next := map[string]ProviderFile{}
 	loaded := make([]string, 0)
 	skipped := make([]string, 0)
+	skippedReasons := make(map[string]string)
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -104,61 +106,74 @@ func (r *Registry) ReloadFromDir(providersDir string) (LoadResult, error) {
 		contentBytes, err := os.ReadFile(path)
 		if err != nil {
 			skipped = append(skipped, entry.Name())
+			skippedReasons[entry.Name()] = err.Error()
 			continue
 		}
 		content, err := preprocessIncludes(path, string(contentBytes))
 		if err != nil {
 			skipped = append(skipped, entry.Name())
+			skippedReasons[entry.Name()] = err.Error()
 			continue
 		}
 		providerName, err := findProviderName(path, content)
 		if err != nil {
 			skipped = append(skipped, entry.Name())
+			skippedReasons[entry.Name()] = err.Error()
 			continue
 		}
 		providerName = normalizeProviderName(providerName)
 		expected := normalizeProviderName(strings.TrimSuffix(entry.Name(), providerConfExt))
 		if err := validateProviderName(providerName); err != nil {
 			skipped = append(skipped, entry.Name())
+			skippedReasons[entry.Name()] = err.Error()
 			continue
 		}
 		if err := validateProviderName(expected); err != nil {
 			skipped = append(skipped, entry.Name())
+			skippedReasons[entry.Name()] = err.Error()
 			continue
 		}
 		if providerName != expected {
 			skipped = append(skipped, entry.Name())
+			skippedReasons[entry.Name()] = fmt.Sprintf("provider name %q does not match filename %q", providerName, expected)
 			continue
 		}
 
 		if _, exists := next[providerName]; exists {
 			skipped = append(skipped, entry.Name())
+			skippedReasons[entry.Name()] = fmt.Sprintf("duplicate provider name %q", providerName)
 			continue
 		}
 
 		routing, headers, req, response, perr, usage, finish, balance, models, err := parseProviderConfig(path, content)
 		if err != nil {
 			skipped = append(skipped, entry.Name())
+			skippedReasons[entry.Name()] = err.Error()
 			continue
 		}
 		if err := validateProviderBaseURL(path, providerName, routing); err != nil {
 			skipped = append(skipped, entry.Name())
+			skippedReasons[entry.Name()] = err.Error()
 			continue
 		}
 		if err := validateProviderMatchAPIs(path, providerName, routing); err != nil {
 			skipped = append(skipped, entry.Name())
+			skippedReasons[entry.Name()] = err.Error()
 			continue
 		}
 		if err := validateProviderHeaders(path, providerName, headers); err != nil {
 			skipped = append(skipped, entry.Name())
+			skippedReasons[entry.Name()] = err.Error()
 			continue
 		}
 		if err := validateProviderBalance(path, providerName, balance); err != nil {
 			skipped = append(skipped, entry.Name())
+			skippedReasons[entry.Name()] = err.Error()
 			continue
 		}
 		if err := validateProviderModels(path, providerName, models); err != nil {
 			skipped = append(skipped, entry.Name())
+			skippedReasons[entry.Name()] = err.Error()
 			continue
 		}
 		next[providerName] = ProviderFile{
@@ -185,5 +200,5 @@ func (r *Registry) ReloadFromDir(providersDir string) (LoadResult, error) {
 	r.providers = next
 	r.mu.Unlock()
 
-	return LoadResult{LoadedProviders: loaded, SkippedFiles: skipped}, nil
+	return LoadResult{LoadedProviders: loaded, SkippedFiles: skipped, SkippedReasons: skippedReasons}, nil
 }

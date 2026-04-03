@@ -3,6 +3,7 @@ package dslconfig
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -137,6 +138,9 @@ provider "openai-compatible" {
 	}
 	if len(res.SkippedFiles) != 1 || res.SkippedFiles[0] != "openai-compatible.conf" {
 		t.Fatalf("expected skipped openai-compatible.conf, got: %#v", res.SkippedFiles)
+	}
+	if got := res.SkippedReasons["openai-compatible.conf"]; !strings.Contains(got, "header_set has been removed") {
+		t.Fatalf("expected skipped reason for openai-compatible.conf, got: %q", got)
 	}
 	if _, ok := reg.GetProvider("openai-compatible"); ok {
 		t.Fatalf("unexpected provider loaded")

@@ -82,7 +82,16 @@ func TestLogSkippedProviders_WarnCategory(t *testing.T) {
 	l, out := newTestSystemLogger(t, "debug")
 	l.SetNowFunc(func() time.Time { return time.Date(2026, 2, 27, 9, 0, 0, 0, time.UTC) })
 
-	logSkippedProviders(l, "./config/providers", []string{"a.conf", "b.conf"}, true)
+	logSkippedProviders(
+		l,
+		"./config/providers",
+		[]string{"b.conf", "a.conf"},
+		map[string]string{
+			"a.conf": "provider \"a\" in \"a.conf\": match[0].api \"chat.bad\" is unsupported",
+			"b.conf": "read b.conf: permission denied",
+		},
+		true,
+	)
 	got := out.String()
 	if !strings.Contains(got, "| WARN | providers | providers skipped invalid files") {
 		t.Fatalf("expected fixed warn/providers part, got=%q", got)
@@ -92,6 +101,9 @@ func TestLogSkippedProviders_WarnCategory(t *testing.T) {
 	}
 	if !strings.Contains(got, "skipped_invalid_files=a.conf,b.conf") {
 		t.Fatalf("expected skipped files, got=%q", got)
+	}
+	if !strings.Contains(got, "skip_reasons=\"a.conf: provider \\\"a\\\" in \\\"a.conf\\\": match[0].api \\\"chat.bad\\\" is unsupported | b.conf: read b.conf: permission denied\"") {
+		t.Fatalf("expected skipped reasons, got=%q", got)
 	}
 }
 
