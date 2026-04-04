@@ -43,7 +43,7 @@ provider "openai" {
 }
 `
 
-const validOpenAIConfWithDeprecated = `
+const validOpenAIConfWithUsageMetrics = `
 syntax "next-router/0.1";
 
 provider "openai" {
@@ -52,8 +52,8 @@ provider "openai" {
     auth { auth_bearer; }
     metrics {
       usage_extract custom;
-      input_tokens = $.usage.input_tokens;
-      output_tokens = $.usage.output_tokens;
+      input_tokens_expr = $.usage.input_tokens;
+      output_tokens_expr = $.usage.output_tokens;
     }
   }
 
@@ -172,13 +172,124 @@ func TestProviderEndpoints(t *testing.T) {
 
 	status, body = postJSON(t, httpSrv.URL+"/api/providers/validate", providerRequest{
 		Provider: "openai",
-		Content:  validOpenAIConfWithDeprecated,
+		Content:  validOpenAIConfWithUsageMetrics,
 	})
 	if status != http.StatusOK {
-		t.Fatalf("validate(deprecated) status=%d body=%v", status, body)
+		t.Fatalf("validate(metrics) status=%d body=%v", status, body)
 	}
-	if len(body.Warnings) == 0 {
-		t.Fatalf("expected deprecated warnings in validate response")
+	if len(body.Warnings) != 0 {
+		t.Fatalf("expected no warnings in validate response, got=%v", body.Warnings)
+	}
+}
+
+func TestProviderEndpoints_IgnoreGlobalUsageModeFile(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "usage-modes.conf"), []byte(`
+syntax "next-router/0.1";
+
+usage_mode "shared_openai" {
+  usage_extract custom;
+  usage_fact input token path="$.usage.input_tokens";
+  usage_fact output token path="$.usage.output_tokens";
+}
+`), 0o600); err != nil {
+		t.Fatalf("write usage mode conf: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "openai.conf"), []byte(`
+syntax "next-router/0.1";
+
+provider "openai" {
+  defaults {
+    upstream_config { base_url = "https://api.openai.com"; }
+    auth { auth_bearer; }
+    metrics { usage_extract shared_openai; }
+  }
+
+  match api = "chat.completions" {
+    upstream { set_path "/v1/chat/completions"; }
+    response { resp_passthrough; }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("write provider conf: %v", err)
+	}
+
+	srv, err := NewServer(dir)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	httpSrv := httptest.NewServer(srv.Handler())
+	defer httpSrv.Close()
+
+	listResp, err := http.Get(httpSrv.URL + "/api/providers")
+	if err != nil {
+		t.Fatalf("list providers: %v", err)
+	}
+	defer func() { _ = listResp.Body.Close() }()
+	if listResp.StatusCode != http.StatusOK {
+		t.Fatalf("list status=%d", listResp.StatusCode)
+	}
+	var listBody providerResponse
+	if err := json.NewDecoder(listResp.Body).Decode(&listBody); err != nil {
+		t.Fatalf("decode list body: %v", err)
+	}
+	if !listBody.OK || len(listBody.Providers) != 1 || listBody.Providers[0] != "openai" {
+		t.Fatalf("unexpected list body: %+v", listBody)
+	}
+}
+
+func TestProviderValidate_UsesSiblingOnrConfig(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "providers")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "onr.conf"), []byte(`
+syntax "next-router/0.1";
+
+usage_mode "shared_openai" {
+  usage_extract custom;
+  usage_fact input token path="$.usage.input_tokens";
+  usage_fact output token path="$.usage.output_tokens";
+}
+`), 0o600); err != nil {
+		t.Fatalf("write onr.conf: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "openai.conf"), []byte(validOpenAIConf), 0o600); err != nil {
+		t.Fatalf("write provider conf: %v", err)
+	}
+
+	srv, err := NewServer(dir)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	httpSrv := httptest.NewServer(srv.Handler())
+	defer httpSrv.Close()
+
+	status, body := postJSON(t, httpSrv.URL+"/api/providers/validate", providerRequest{
+		Provider: "openai",
+		Content: `
+syntax "next-router/0.1";
+
+provider "openai" {
+  defaults {
+    upstream_config { base_url = "https://api.openai.com/v2"; }
+    auth { auth_bearer; }
+    metrics { usage_extract shared_openai; }
+  }
+
+  match api = "chat.completions" {
+    upstream { set_path "/v1/chat/completions"; }
+    response { resp_passthrough; }
+  }
+}
+`,
+	})
+	if status != http.StatusOK {
+		t.Fatalf("validate status=%d body=%v", status, body)
 	}
 }
 

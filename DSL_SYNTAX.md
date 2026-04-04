@@ -1,8 +1,9 @@
 # Provider Config DSL Syntax (v0.1)
 
 This document describes the provider configuration DSL used by **onr** (open-next-router).
-Provider configs live under `config/providers/*.conf` in this repository and are loaded at startup (and on reload).
-The directory can be customized via `providers.dir` (config) or `ONR_PROVIDERS_DIR` (env).
+The main DSL entry point is usually `config/onr.conf` in this repository, and that file typically includes `config/providers/*.conf`.
+By default ONR loads `config/onr.conf`, and that file can `include "usage_modes.conf";`, `include "finish_reason_modes.conf";`, `include "models_modes.conf";`, `include "balance_modes.conf";`, plus `include "providers";` to compose the full DSL config set.
+You can still force directory mode via `providers.dir` (config) or `ONR_PROVIDERS_DIR` (env).
 
 ## Table of Contents
 
@@ -46,7 +47,7 @@ The directory can be customized via `providers.dir` (config) or `ONR_PROVIDERS_D
 - **Semicolon `;` is required**: every statement ends with `;`
 - **Only blocks use `{}`**: directives themselves do not use `{}` (nginx-like style)
 - **Recommended style: one directive per line** (better diffs and readability)
-- Comments are supported: `#`, `//`, `/* ... */`
+- Comments are supported: `#`, `//`
 
 Recommended formatting example:
 
@@ -71,10 +72,15 @@ match api = "chat.completions" {
 Syntax:
 
 ```conf
-include "relative/or/absolute/path.conf";
+include relative/or/absolute/path.conf;
+include providers;
+include providers/*.conf;
 ```
 
 - Relative paths are resolved against the current file directory.
+- A directory include expands to all `*.conf` files in that directory, sorted by file name.
+- Glob patterns are supported and expanded in sorted order.
+- Quoted include paths are still accepted for compatibility, but unquoted nginx-style paths are preferred.
 - Max recursion depth: 20.
 - Cycles are detected: a cyclic include fails parsing for that provider.
 
@@ -155,7 +161,7 @@ Merge rule (important):
 - In `metrics`, `request`, and `balance`, most **scalar fields** use field-level inheritance plus explicit override:
   - a field set in `match` overrides the same field from `defaults`
   - a field omitted in `match` keeps the value from `defaults`
-  - example: if `defaults.metrics` sets `finish_reason_extract openai;` and a matched `metrics` block only sets `usage_extract custom;`, the effective config still keeps `finish_reason_extract openai;`
+  - example: if `defaults.metrics` sets `finish_reason_extract openai_chat_completions;` and a matched `metrics` block only sets `usage_extract custom;`, the effective config still keeps `finish_reason_extract openai_chat_completions;`
 - Header operations in `auth` / `request`, plus list-like directives such as `json_*` and `sse_json_del_if` in `response` / `error`, are usually merged by **appending match directives after defaults**; when later directives conflict on the same target, the later directive typically wins
 - Scalar response/error directives such as the main `op` / `mode` can still be overridden by `match`
 - `upstream` does not follow a general whole-block merge rule: `defaults.upstream_config` mainly provides the default `base_url`, while concrete routing actions such as `set_path` and query rewrites come from the selected `match.upstream`
@@ -489,21 +495,105 @@ error { error_map openai; }
 
 ### 5.7 metrics (usage / finish_reason extraction)
 
+#### usage_mode (global reusable usage preset)
+
+```conf
+usage_mode "shared_openai" {
+  usage_fact input token path="$.usage.input_tokens";
+  usage_fact output token path="$.usage.output_tokens";
+}
+```
+
+- `usage_mode` is a top-level directive. It defines a reusable global usage preset for the whole providers config set.
+- The recommended location for global DSL presets is a separate file such as `config/usage_modes.conf`, then let `config/onr.conf` include it before `include providers;`.
+- It may appear in a dedicated `.conf` file that contains no `provider {}` block; such files are valid in `config/providers/` and are ignored by provider listing.
+- Inside the block, you can use the same usage directives supported by `metrics`: `usage_extract`, `usage_fact`, `*_tokens_path`, and `*_tokens_expr`.
+- Another `usage_mode` may be referenced from inside the block via `usage_extract <other_mode>;`, so larger presets can be composed. Recursive references are rejected.
+- Names are global within a providers directory or merged providers file. Duplicate `usage_mode` names are validation errors.
+- This repository's default `config/usage_modes.conf` defines API-specific presets such as `openai_chat_completions`, `openai_prompt_completion`, `openai_responses`, `anthropic_messages`, `anthropic_messages_stream`, `gemini_generate_content`, and `gemini_generate_content_stream`. Defining the same name in DSL overrides that preset.
+- At execution time, `usage_extract <custom_name>;` is resolved to the referenced preset and compiled into the same final usage plan as builtin modes.
+
+#### finish_reason_mode (global reusable finish_reason preset)
+
+```conf
+finish_reason_mode "anthropic_messages_stream" {
+  finish_reason_path "$.delta.stop_reason";
+  finish_reason_path "$.message.stop_reason" fallback=true;
+}
+```
+
+- `finish_reason_mode` is a top-level directive for reusable global finish reason presets.
+- The recommended location is a separate file such as `config/finish_reason_modes.conf`, then let `config/onr.conf` include it before `include providers;`.
+- It may appear in a dedicated `.conf` file that contains no `provider {}` block.
+- Inside the block, you can use the same finish-reason directives supported by `metrics`: `finish_reason_extract` and `finish_reason_path`.
+- Another `finish_reason_mode` may be referenced from inside the block via `finish_reason_extract <other_mode>;`. Recursive references are rejected.
+- Names are global within a providers directory or merged providers file. Duplicate `finish_reason_mode` names are validation errors.
+- This repository's default `config/finish_reason_modes.conf` defines API-specific presets such as `openai_chat_completions`, `openai_completions`, `openai_responses`, `anthropic_messages`, `anthropic_messages_stream`, `gemini_generate_content`, and `gemini_generate_content_stream`. Defining the same name in DSL overrides that preset.
+
+#### models_mode (global reusable models preset)
+
+```conf
+models_mode "openai" {
+  path "/v2/models";
+}
+```
+
+- `models_mode` is also available as a top-level directive for reusable global model-list presets.
+- The recommended location is a separate file such as `config/models_modes.conf`, then let `config/onr.conf` include it before `include providers;`.
+- It may appear in a dedicated `.conf` file that contains no `provider {}` block.
+- Inside the block, you can use the same directives supported by `models`: `models_mode`, `method`, `path`, `id_path`, `id_regex`, `id_allow_regex`, `set_header`, and `del_header`.
+- Another `models_mode` may be referenced from inside the block via `models_mode <other_mode>;`. Recursive references are rejected.
+- Names are global within a providers directory or merged providers file. Duplicate `models_mode` names are validation errors.
+- This repository's default `config/models_modes.conf` defines `openai` and `gemini` as global `models_mode` presets. Defining the same name in DSL overrides that preset.
+
+#### balance_mode (global reusable balance preset)
+
+```conf
+balance_mode "openai" {
+  usage_path "/v9/dashboard/billing/usage";
+}
+```
+
+- `balance_mode` is also available as a top-level directive for reusable global balance presets.
+- The recommended location is a separate file such as `config/balance_modes.conf`, then let `config/onr.conf` include it before `include providers;`.
+- It may appear in a dedicated `.conf` file that contains no `provider {}` block.
+- Inside the block, you can use the same directives supported by `balance`: `balance_mode`, `method`, `path`, `balance_path`, `balance_expr`, `used_path`, `used_expr`, `balance_unit`, `subscription_path`, `usage_path`, `set_header`, and `del_header`.
+- Another `balance_mode` may be referenced from inside the block via `balance_mode <other_mode>;`. Recursive references are rejected.
+- Names are global within a providers directory or merged providers file. Duplicate `balance_mode` names are validation errors.
+- This repository's default `config/balance_modes.conf` defines `openai` as a global `balance_mode` preset. Defining the same name in DSL overrides that preset.
+
 #### usage_extract
 
 ```conf
-metrics { usage_extract openai; }
-metrics { usage_extract anthropic; }
-metrics { usage_extract gemini; }
+usage_mode "shared_openai" {
+  usage_extract custom;
+  usage_fact input token path="$.usage.input_tokens";
+  usage_fact output token path="$.usage.output_tokens";
+}
+
+provider "openai" {
+  defaults {
+    metrics { usage_extract shared_openai; }
+  }
+}
+
+metrics { usage_extract openai_chat_completions; }
+metrics { usage_extract anthropic_messages; }
+metrics { usage_extract gemini_generate_content; }
 metrics { usage_extract custom; }
 ```
 
-- `openai`: OpenAI/OpenAI-compatible usage fields
-- `anthropic`: Anthropic usage fields
-- `gemini`: Gemini native usage fields (`usageMetadata.*`)
 - `custom`: extract from response JSON via a restricted JSONPath subset and optional arithmetic (see below)
+- any other mode name: a user-defined global `usage_mode`
+- The default repository config now focuses on API/path-specific presets such as `openai_chat_completions`, `openai_prompt_completion`, `openai_responses`, `anthropic_messages`, `anthropic_messages_stream`, `gemini_generate_content`, and `gemini_generate_content_stream`.
+- Generic names such as `openai`, `anthropic`, and `gemini` are no longer special builtin `usage_extract` modes. If you want those names, define them explicitly as global `usage_mode` presets.
+- user-defined `usage_mode` names are resolved before execution, then compiled into the same normalized fact-based plan.
+- Inside `metrics`, if you declare `usage_fact`, `*_tokens_path`, or `*_tokens_expr` without `usage_extract`, ONR treats the block as `usage_extract custom;`.
+- For code-side introspection, it helps to distinguish three layers:
+  - declared: explicit user-authored `usage_fact` rules
+  - compiled: the final normalized usage plan that actually executes
 
-Approximate `usage_extract custom` equivalents for the builtin modes:
+Migration sketches for the legacy generic provider modes:
 
 - `openai`:
 
@@ -527,8 +617,6 @@ metrics {
 
 ```conf
 metrics {
-  usage_extract custom;
-
   usage_fact input token path="$.usage.input_tokens";
   usage_fact output token path="$.usage.output_tokens";
   usage_fact cache_read token path="$.usage.cache_read_input_tokens";
@@ -590,7 +678,7 @@ metrics {
 ```
 
 - This covers the main Anthropic stream usage event shapes.
-- Compared with builtin `usage_extract anthropic;`, the main difference is ergonomics: the custom form is longer and easier to misconfigure.
+- Compared with the old generic Anthropic mode, the main difference is ergonomics: the custom form is longer and easier to misconfigure.
 
 OpenAI supplemental facts `custom` sketches:
 
@@ -618,7 +706,7 @@ metrics {
 }
 ```
 
-- The extra behavior behind `usage_extract openai;` can still be recreated with explicit `usage_fact` rules.
+- The old generic OpenAI behavior can still be recreated with explicit `usage_fact` rules.
 - The difference is scope: these supplemental facts are API-specific, so there is no single short custom snippet that fully replaces the builtin mode across every OpenAI-compatible endpoint.
 
 #### Custom extraction fields (recommended with `custom`)
@@ -660,7 +748,8 @@ metrics {
 ```
 
 - `usage_fact` normalizes measurable usage into canonical facts.
-- It is most commonly used with `usage_extract custom;`, but builtin modes can also supplement canonical facts.
+- In `metrics`, declaring `usage_fact` rules without `usage_extract` is equivalent to `usage_extract custom;`.
+- Named presets are compiled into the same internal fact-based execution plan and may still be supplemented with extra `usage_fact` rules.
 - Supported primitives: `path`, `count_path`, `sum_path`, `expr`.
 - `count_path` can be combined with `type` and `status`.
 - `attr.ttl` distinguishes Anthropic cache-write tiers.
@@ -671,19 +760,19 @@ metrics {
 - Supported `dimension` values and `dimension + unit` pairs are fixed by registry; see the later [`usage_fact`](#usage_fact) directive reference for the complete list.
 - `path`, `count_path`, `sum_path`, and `expr` may use either double-quoted or single-quoted strings.
 - For filter JSONPath, single-quoted DSL strings are usually easier to read because inner double quotes do not need escaping.
-- `usage_extract openai;` can currently supplement these canonical facts:
-  - `images.generations -> image.generate image`
-  - `images.edits -> image.edit image`
-  - `audio.transcriptions -> audio.stt second`
-  - `audio.translations -> audio.translate second`
-  - `audio.speech -> audio.tts second` when derived runtime usage is available
-  - `responses -> server_tool.web_search call`
+- The repository's API-specific OpenAI presets commonly model these canonical facts:
+  - `openai_images_generations -> image.generate image`
+  - `openai_images_edits -> image.edit image`
+  - `openai_audio_transcriptions -> audio.stt second`
+  - `openai_audio_translations -> audio.translate second`
+  - `openai_audio_speech -> audio.tts second`
+  - `openai_responses -> server_tool.web_search call`
 
 Examples:
 
 ```conf
 metrics {
-  usage_extract openai;
+  usage_extract openai_responses;
 
   usage_fact server_tool.web_search call count_path="$.output[*]" type="web_search_call" status="completed";
 }
@@ -691,7 +780,7 @@ metrics {
 
 ```conf
 metrics {
-  usage_extract openai;
+  usage_extract openai_images_generations;
 
   usage_fact image.generate image count_path="$.data[*]";
   usage_fact image.generate image source=request expr="$.n" fallback=true;
@@ -700,7 +789,7 @@ metrics {
 
 ```conf
 metrics {
-  usage_extract openai;
+  usage_extract openai_audio_speech;
 
   usage_fact audio.tts second source=derived path="$.audio.tts.seconds";
 }
@@ -717,18 +806,20 @@ metrics {
 #### finish_reason_extract
 
 ```conf
-metrics { finish_reason_extract openai; }
-metrics { finish_reason_extract anthropic; }
-metrics { finish_reason_extract gemini; }
-metrics { finish_reason_extract custom; finish_reason_path "$.choices[0].finish_reason"; }
+metrics { finish_reason_extract openai_chat_completions; }
+metrics { finish_reason_extract anthropic_messages; }
+metrics { finish_reason_extract gemini_generate_content; }
+metrics { finish_reason_path "$.choices[0].finish_reason"; }
 ```
 
-- `openai`: OpenAI/OpenAI-compatible finish reason (`choices[*].finish_reason`)
-- `anthropic`: Anthropic stop reason (`stop_reason`)
-- `gemini`: Gemini native finish reason (`candidates[*].finishReason`)
 - `custom`: extract from response JSON via `finish_reason_path` (restricted JSONPath subset, see above)
+- any other mode name: a user-defined global `finish_reason_mode`
+- A `finish_reason_mode` block may omit `finish_reason_extract` when it only declares `finish_reason_path` rules, in which case ONR treats it as `custom`.
+- Inside `metrics`, declaring `finish_reason_path` without `finish_reason_extract` is equivalent to `finish_reason_extract custom;`.
+- The default repository config now focuses on API/path-specific presets such as `openai_chat_completions`, `openai_completions`, `openai_responses`, `anthropic_messages`, `anthropic_messages_stream`, `gemini_generate_content`, and `gemini_generate_content_stream`.
+- Generic names such as `openai`, `anthropic`, and `gemini` are no longer special builtin `finish_reason_extract` modes. If you want those names, define them explicitly as global `finish_reason_mode` presets.
 
-Builtin extraction rules:
+Path-specific preset mappings:
 
 - `openai`
   - `chat.completions` / `completions`: checks `$.choices[*].finish_reason` and returns the first non-empty value
@@ -748,7 +839,6 @@ Equivalent `custom` examples:
 
 ```conf
 metrics {
-  finish_reason_extract custom;
   finish_reason_path "$.choices[0].finish_reason";
 }
 ```
@@ -818,7 +908,7 @@ metrics {
 
 ```conf
 metrics {
-  finish_reason_extract openai;
+  finish_reason_extract openai_chat_completions;
   finish_reason_path "$.choices[0].finish_reason";
 }
 ```
@@ -940,6 +1030,32 @@ Multiple: yes
 
 - `<path>` can be relative or absolute; relative paths resolve against the current file directory.
 - Includes are expanded as plain text before parsing; max depth 20; cycles are detected.
+
+#### usage_mode / finish_reason_mode / models_mode
+
+```text
+Syntax:  usage_mode "<name>" { ... }
+Syntax:  finish_reason_mode "<name>" { ... }
+Syntax:  models_mode "<name>" { ... }
+Default: —
+Context: file
+Multiple: yes
+```
+
+- Top-level reusable preset blocks for `metrics` and `models`.
+- Recommended locations: `config/usage_modes.conf`, `config/finish_reason_modes.conf`, and `config/models_modes.conf`.
+
+#### balance_mode
+
+```text
+Syntax:  balance_mode "<name>" { ... }
+Default: —
+Context: file
+Multiple: yes
+```
+
+- Top-level reusable preset blocks for `balance`.
+- Recommended location: `config/balance_modes.conf`.
 
 ### 7.2 provider (structure blocks)
 
@@ -1335,6 +1451,7 @@ Multiple: yes
 ```
 
 - Recommended for `usage_extract custom;` only; last one wins.
+- Compatibility-layer form: it is compiled into equivalent internal fact-based rules before execution.
 - `<expr>` is a restricted expression: `+/-`, JSONPath, integer constants; no parentheses, no `*/`, no functions.
 - JSONPath subset: `$.a.b.c` / `$.items[0].x` / `$.items[*].x` (sum with `[*]`).
 - Missing/non-numeric values are treated as `0`.
@@ -1384,6 +1501,7 @@ Multiple: yes
 - Same rules as `input_tokens_expr`.
 - If not explicitly set, defaults to `input_tokens_expr + output_tokens_expr`.
 - Not recommended: setting `total_tokens_expr` introduces an independent total fact source that can diverge from the total derived from `input/output`.
+- Also a compatibility-layer form: it is compiled into the unified internal usage plan before execution.
 
 #### input_tokens_path
 
@@ -1395,6 +1513,7 @@ Multiple: yes
 ```
 
 - Shorthand for `input_tokens_expr = <jsonpath>;` (single JSONPath only; no arithmetic).
+- Compatibility-layer shorthand: it is compiled into equivalent internal fact-based rules before execution.
 
 #### output_tokens_path
 
@@ -1406,6 +1525,7 @@ Multiple: yes
 ```
 
 - Shorthand for `output_tokens_expr = <jsonpath>;` (single JSONPath only; no arithmetic).
+- Compatibility-layer shorthand: it is compiled into equivalent internal fact-based rules before execution.
 
 #### cache_read_tokens_path
 
@@ -1417,6 +1537,7 @@ Multiple: yes
 ```
 
 - Shorthand for `cache_read_tokens_expr = <jsonpath>;` (single JSONPath only; no arithmetic).
+- Compatibility-layer shorthand: it is compiled into equivalent internal fact-based rules before execution.
 
 #### cache_write_tokens_path
 
@@ -1428,6 +1549,7 @@ Multiple: yes
 ```
 
 - Shorthand for `cache_write_tokens_expr = <jsonpath>;` (single JSONPath only; no arithmetic).
+- Compatibility-layer shorthand: it is compiled into equivalent internal fact-based rules before execution.
 
 #### usage_fact
 
@@ -1486,6 +1608,7 @@ Multiple: no
 ```
 
 - Supported: `openai` / `custom`.
+- Any other mode name is resolved as a global top-level `balance_mode` preset before execution.
 
 #### method
 
@@ -1577,6 +1700,7 @@ Multiple: no
 ```
 
 - Supported: `openai` / `gemini` / `custom`.
+- Any other mode name is resolved as a global top-level `models_mode` preset before execution.
 
 #### method
 

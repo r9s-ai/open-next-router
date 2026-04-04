@@ -9,7 +9,6 @@ import (
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/jsonutil"
-	onropenai "github.com/r9s-ai/open-next-router/onr-core/pkg/providerusage/openai"
 )
 
 type usageFactConfig struct {
@@ -75,20 +74,6 @@ var defaultUsageDimensionRegistry = NewUsageDimensionRegistry(
 	UsageDimension{Dimension: "audio.translate", Unit: "second"},
 )
 
-var builtinUsageFactSets = map[string]usageFactSet{
-	usageModeOpenAI:    newUsageFactSet([]usageFactConfig{{Dimension: "input", Unit: "token", Path: "$.usage.prompt_tokens"}, {Dimension: "input", Unit: "token", Path: "$.usage.input_tokens", Fallback: true}, {Dimension: "output", Unit: "token", Path: "$.usage.completion_tokens"}, {Dimension: "output", Unit: "token", Path: "$.usage.output_tokens", Fallback: true}, {Dimension: "cache_read", Unit: "token", Path: "$.usage.prompt_tokens_details.cached_tokens"}, {Dimension: "cache_read", Unit: "token", Path: "$.usage.input_tokens_details.cached_tokens", Fallback: true}, {Dimension: "cache_read", Unit: "token", Path: "$.usage.cached_tokens", Fallback: true}}),
-	usageModeAnthropic: newUsageFactSet([]usageFactConfig{{Dimension: "input", Unit: "token", Path: "$.usage.input_tokens"}, {Dimension: "output", Unit: "token", Path: "$.usage.output_tokens"}, {Dimension: "cache_read", Unit: "token", Path: "$.usage.cache_read_input_tokens"}, {Dimension: "cache_write", Unit: "token", Path: "$.usage.cache_creation.ephemeral_5m_input_tokens", Attrs: map[string]string{"ttl": "5m"}}, {Dimension: "cache_write", Unit: "token", Path: "$.usage.cache_creation.ephemeral_1h_input_tokens", Attrs: map[string]string{"ttl": "1h"}}, {Dimension: "cache_write", Unit: "token", Path: "$.usage.cache_creation_input_tokens", Fallback: true}}),
-	usageModeGemini: newUsageFactSet([]usageFactConfig{
-		{Dimension: "input", Unit: "token", Path: "$.usageMetadata.promptTokensDetails[?(@.modality==\"TEXT\")].tokenCount"},
-		{Dimension: "input", Unit: "token", Path: "$.usageMetadata.promptTokenCount", Fallback: true},
-		{Dimension: "image.input", Unit: "token", Path: "$.usageMetadata.promptTokensDetails[?(@.modality==\"IMAGE\")].tokenCount"},
-		{Dimension: "video.input", Unit: "token", Path: "$.usageMetadata.promptTokensDetails[?(@.modality==\"VIDEO\")].tokenCount"},
-		{Dimension: "audio.input", Unit: "token", Path: "$.usageMetadata.promptTokensDetails[?(@.modality==\"AUDIO\")].tokenCount"},
-		{Dimension: "output", Unit: "token", Path: "$.usageMetadata.candidatesTokenCount"},
-		{Dimension: "output", Unit: "token", Path: "$.usageMetadata.thoughtsTokenCount"},
-	}),
-}
-
 func NewUsageDimensionRegistry(keys ...UsageDimension) UsageDimensionRegistry {
 	reg := UsageDimensionRegistry{allowed: make(map[usageFactKey]struct{}, len(keys))}
 	for _, key := range keys {
@@ -120,10 +105,7 @@ func usageFactKeyString(k usageFactKey) string {
 	return k.Dimension + " " + k.Unit
 }
 
-func usageFactValueFromLegacy(cfg UsageExtractConfig, key usageFactKey) (usageFactConfig, bool) {
-	if strings.ToLower(strings.TrimSpace(cfg.Mode)) != usageModeCustom {
-		return usageFactConfig{}, false
-	}
+func legacyUsageFactValue(cfg UsageExtractConfig, key usageFactKey) (usageFactConfig, bool) {
 	switch key {
 	case usageFactKey{Dimension: "input", Unit: "token"}:
 		return usageFactConfig{
@@ -156,6 +138,71 @@ func usageFactValueFromLegacy(cfg UsageExtractConfig, key usageFactKey) (usageFa
 	default:
 		return usageFactConfig{}, false
 	}
+}
+
+func legacyUsageFactKeys(cfg UsageExtractConfig) map[usageFactKey]struct{} {
+	candidates := []usageFactKey{
+		{Dimension: "input", Unit: "token"},
+		{Dimension: "output", Unit: "token"},
+		{Dimension: "cache_read", Unit: "token"},
+		{Dimension: "cache_write", Unit: "token"},
+	}
+	out := make(map[usageFactKey]struct{}, len(candidates))
+	for _, key := range candidates {
+		fact, ok := legacyUsageFactValue(cfg, key)
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(fact.Path) == "" && fact.Expr == nil && strings.TrimSpace(fact.CountPath) == "" && strings.TrimSpace(fact.SumPath) == "" {
+			continue
+		}
+		out[key] = struct{}{}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func legacyUsageFactConfigs(cfg UsageExtractConfig, explicitKeys map[usageFactKey]struct{}) []usageFactConfig {
+	candidates := []usageFactKey{
+		{Dimension: "input", Unit: "token"},
+		{Dimension: "output", Unit: "token"},
+		{Dimension: "cache_read", Unit: "token"},
+		{Dimension: "cache_write", Unit: "token"},
+	}
+	out := make([]usageFactConfig, 0, len(candidates))
+	for _, key := range candidates {
+		if _, ok := explicitKeys[key]; ok {
+			continue
+		}
+		fact, ok := legacyUsageFactValue(cfg, key)
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(fact.Path) == "" && fact.Expr == nil && strings.TrimSpace(fact.CountPath) == "" && strings.TrimSpace(fact.SumPath) == "" {
+			continue
+		}
+		out = append(out, fact)
+	}
+	return out
+}
+
+func mergeUsageFactKeySets(sets ...map[usageFactKey]struct{}) map[usageFactKey]struct{} {
+	total := 0
+	for _, set := range sets {
+		total += len(set)
+	}
+	if total == 0 {
+		return nil
+	}
+	out := make(map[usageFactKey]struct{}, total)
+	for _, set := range sets {
+		for key := range set {
+			out[key] = struct{}{}
+		}
+	}
+	return out
 }
 
 func usageFactQuantities(reqRoot, respRoot, derivedRoot map[string]any, facts []usageFactConfig) map[usageFactKey]float64 {
@@ -342,32 +389,8 @@ func projectUsageFromFacts(facts []usageFactEval) (*Usage, int, error) {
 }
 
 func extractCustomUsage(reqRoot, respRoot, derivedRoot map[string]any, cfg UsageExtractConfig) (*Usage, int, error) {
-	explicitKeys := cfg.explicitFactKeys
-
-	evals := make([]usageFactEval, 0, len(cfg.facts)+4)
+	evals := make([]usageFactEval, 0, len(cfg.facts))
 	evals = append(evals, evaluateUsageFactConfigGroups(reqRoot, respRoot, derivedRoot, cfg.factGroups, len(cfg.facts))...)
-
-	legacyCandidates := []usageFactKey{
-		{Dimension: "input", Unit: "token"},
-		{Dimension: "output", Unit: "token"},
-		{Dimension: "cache_read", Unit: "token"},
-		{Dimension: "cache_write", Unit: "token"},
-	}
-	legacyFacts := make([]usageFactConfig, 0, len(legacyCandidates))
-	for _, key := range legacyCandidates {
-		if _, ok := explicitKeys[key]; ok {
-			continue
-		}
-		fact, ok := usageFactValueFromLegacy(cfg, key)
-		if !ok {
-			continue
-		}
-		if strings.TrimSpace(fact.Path) == "" && fact.Expr == nil && strings.TrimSpace(fact.CountPath) == "" && strings.TrimSpace(fact.SumPath) == "" {
-			continue
-		}
-		legacyFacts = append(legacyFacts, fact)
-	}
-	evals = append(evals, evaluateUsageFactConfigs(reqRoot, respRoot, derivedRoot, legacyFacts)...)
 
 	usage, cachedTokens, err := projectUsageFromFacts(evals)
 	if err != nil {
@@ -380,127 +403,81 @@ func extractCustomUsage(reqRoot, respRoot, derivedRoot map[string]any, cfg Usage
 	return usage, cachedTokens, nil
 }
 
-func extractBuiltinUsage(meta *dslmeta.Meta, reqRoot, respRoot, derivedRoot map[string]any, respBody []byte, cfg UsageExtractConfig) (*Usage, int, error) {
-	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
-	explicitKeys := cfg.explicitFactKeys
-
-	baseSet := builtinUsageFactSet(mode)
-	evals := make([]usageFactEval, 0, len(baseSet.facts)+len(cfg.facts))
-	for key, group := range baseSet.factGroups {
-		if _, ok := explicitKeys[key]; ok {
-			continue
-		}
-		evals = append(evals, evaluateUsageFactGroup(reqRoot, respRoot, derivedRoot, group)...)
-	}
-	evals = append(evals, evaluateUsageFactConfigGroups(reqRoot, respRoot, derivedRoot, cfg.factGroups, len(cfg.facts))...)
-	evals = append(evals, builtinSupplementalUsageFactEvals(meta, derivedRoot, respBody, mode, explicitKeys)...)
-	usage, cachedTokens, err := projectUsageFromFacts(evals)
-	if err != nil {
-		return nil, 0, err
-	}
-	if totalTokens := builtinTotalTokens(respRoot, mode); totalTokens > 0 {
-		usage.TotalTokens = totalTokens
-	}
-	return usage, cachedTokens, nil
-}
-
-func builtinSupplementalUsageFactEvals(meta *dslmeta.Meta, derivedRoot map[string]any, respBody []byte, mode string, explicitKeys map[usageFactKey]struct{}) []usageFactEval {
+func builtinSupplementalUsageFactConfigs(meta *dslmeta.Meta, mode string, explicitKeys map[usageFactKey]struct{}) []usageFactConfig {
 	if strings.ToLower(strings.TrimSpace(mode)) != usageModeOpenAI || meta == nil {
 		return nil
 	}
 	api := strings.ToLower(strings.TrimSpace(meta.API))
 	switch api {
 	case "images.generations":
-		return builtinSupplementalImageUsageFactEvals(respBody, usageFactKey{Dimension: "image.generate", Unit: "image"}, explicitKeys)
+		return builtinSupplementalImageUsageFactConfigs(usageFactKey{Dimension: "image.generate", Unit: "image"}, explicitKeys)
 	case "images.edits":
-		return builtinSupplementalImageUsageFactEvals(respBody, usageFactKey{Dimension: "image.edit", Unit: "image"}, explicitKeys)
+		return builtinSupplementalImageUsageFactConfigs(usageFactKey{Dimension: "image.edit", Unit: "image"}, explicitKeys)
 	case "audio.transcriptions":
-		return builtinSupplementalAudioSecondsUsageFactEvals(respBody, usageFactKey{Dimension: "audio.stt", Unit: "second"}, explicitKeys)
+		return builtinSupplementalAudioSecondsUsageFactConfigs(usageFactKey{Dimension: "audio.stt", Unit: "second"}, explicitKeys)
 	case "audio.translations":
-		return builtinSupplementalAudioSecondsUsageFactEvals(respBody, usageFactKey{Dimension: "audio.translate", Unit: "second"}, explicitKeys)
+		return builtinSupplementalAudioSecondsUsageFactConfigs(usageFactKey{Dimension: "audio.translate", Unit: "second"}, explicitKeys)
 	case "audio.speech":
 		key := usageFactKey{Dimension: "audio.tts", Unit: "second"}
-		if _, ok := explicitKeys[key]; ok || len(derivedRoot) == 0 {
+		if _, ok := explicitKeys[key]; ok {
 			return nil
 		}
-		quantity, matched := evaluateUsageFact(nil, nil, derivedRoot, usageFactConfig{
+		return []usageFactConfig{{
 			Dimension: key.Dimension,
 			Unit:      key.Unit,
 			Source:    "derived",
 			Path:      "$.audio_duration_seconds",
-		})
-		if !matched || quantity <= 0 {
-			return nil
-		}
-		return []usageFactEval{{
-			cfg: usageFactConfig{
-				Dimension: key.Dimension,
-				Unit:      key.Unit,
-				Source:    "derived",
-				Path:      "$.audio_duration_seconds",
-			},
-			quantity: quantity,
-			matched:  true,
 		}}
 	case "responses":
-		return builtinSupplementalWebSearchCallUsageFactEvals(respBody, usageFactKey{Dimension: "server_tool.web_search", Unit: "call"}, explicitKeys)
+		return builtinSupplementalWebSearchCallUsageFactConfigs(usageFactKey{Dimension: "server_tool.web_search", Unit: "call"}, explicitKeys)
 	default:
 		return nil
 	}
 }
 
-func builtinSupplementalImageUsageFactEvals(respBody []byte, key usageFactKey, explicitKeys map[usageFactKey]struct{}) []usageFactEval {
+func builtinSupplementalImageUsageFactConfigs(key usageFactKey, explicitKeys map[usageFactKey]struct{}) []usageFactConfig {
 	if _, ok := explicitKeys[key]; ok {
 		return nil
 	}
-	quantity, ok, err := onropenai.ImageCountFromResponseBody(respBody)
-	if err != nil || !ok || quantity <= 0 {
-		return nil
-	}
-	return []usageFactEval{{
-		cfg: usageFactConfig{
-			Dimension: key.Dimension,
-			Unit:      key.Unit,
-		},
-		quantity: quantity,
-		matched:  true,
+	return []usageFactConfig{{
+		Dimension: key.Dimension,
+		Unit:      key.Unit,
+		CountPath: "$.data[*]",
 	}}
 }
 
-func builtinSupplementalAudioSecondsUsageFactEvals(respBody []byte, key usageFactKey, explicitKeys map[usageFactKey]struct{}) []usageFactEval {
+func builtinSupplementalAudioSecondsUsageFactConfigs(key usageFactKey, explicitKeys map[usageFactKey]struct{}) []usageFactConfig {
 	if _, ok := explicitKeys[key]; ok {
 		return nil
 	}
-	quantity, ok, err := onropenai.AudioUsageSecondsFromResponseBody(respBody)
-	if err != nil || !ok || quantity <= 0 {
-		return nil
-	}
-	return []usageFactEval{{
-		cfg: usageFactConfig{
-			Dimension: key.Dimension,
-			Unit:      key.Unit,
-		},
-		quantity: quantity,
-		matched:  true,
+	return []usageFactConfig{{
+		Dimension: key.Dimension,
+		Unit:      key.Unit,
+		Path:      "$.usage.seconds",
 	}}
 }
 
-func builtinSupplementalWebSearchCallUsageFactEvals(respBody []byte, key usageFactKey, explicitKeys map[usageFactKey]struct{}) []usageFactEval {
+func builtinSupplementalWebSearchCallUsageFactConfigs(key usageFactKey, explicitKeys map[usageFactKey]struct{}) []usageFactConfig {
 	if _, ok := explicitKeys[key]; ok {
 		return nil
 	}
-	quantity, ok, err := onropenai.CompletedWebSearchCallsFromResponseBody(respBody)
-	if err != nil || !ok || quantity <= 0 {
-		return nil
-	}
-	return []usageFactEval{{
-		cfg: usageFactConfig{
+	return []usageFactConfig{
+		{
 			Dimension: key.Dimension,
 			Unit:      key.Unit,
+			CountPath: "$.output[*]",
+			Type:      "web_search_call",
+			Status:    "completed",
 		},
-		quantity: quantity,
-		matched:  true,
-	}}
+		{
+			Dimension: key.Dimension,
+			Unit:      key.Unit,
+			CountPath: "$.response.output[*]",
+			Type:      "web_search_call",
+			Status:    "completed",
+			Fallback:  true,
+		},
+	}
 }
 
 func builtinUsageFactConfigs(mode string) []usageFactConfig {
@@ -508,19 +485,47 @@ func builtinUsageFactConfigs(mode string) []usageFactConfig {
 }
 
 func builtinUsageFactSet(mode string) usageFactSet {
-	if set, ok := builtinUsageFactSets[strings.ToLower(strings.TrimSpace(mode))]; ok {
+	if set, ok := builtinUsageFactSets[builtinUsagePresetName(mode)]; ok {
 		return set
 	}
 	return usageFactSet{}
 }
 
-func builtinTotalTokens(root map[string]any, mode string) int {
-	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case usageModeGemini:
-		return jsonutil.GetIntByPath(root, "$.usageMetadata.totalTokenCount")
-	default:
-		return 0
-	}
+func builtinTotalTokensExpr(mode string) *UsageExpr {
+	return builtinUsageTotalTokensExprs[builtinUsagePresetName(mode)]
+}
+
+var builtinUsageFactSets = map[string]usageFactSet{
+	usageModeOpenAI: newUsageFactSet([]usageFactConfig{
+		{Dimension: "input", Unit: "token", Path: "$.usage.prompt_tokens"},
+		{Dimension: "input", Unit: "token", Path: "$.usage.input_tokens", Fallback: true},
+		{Dimension: "output", Unit: "token", Path: "$.usage.completion_tokens"},
+		{Dimension: "output", Unit: "token", Path: "$.usage.output_tokens", Fallback: true},
+		{Dimension: "cache_read", Unit: "token", Path: "$.usage.prompt_tokens_details.cached_tokens"},
+		{Dimension: "cache_read", Unit: "token", Path: "$.usage.input_tokens_details.cached_tokens", Fallback: true},
+		{Dimension: "cache_read", Unit: "token", Path: "$.usage.cached_tokens", Fallback: true},
+	}),
+	usageModeAnthropic: newUsageFactSet([]usageFactConfig{
+		{Dimension: "input", Unit: "token", Path: "$.usage.input_tokens"},
+		{Dimension: "output", Unit: "token", Path: "$.usage.output_tokens"},
+		{Dimension: "cache_read", Unit: "token", Path: "$.usage.cache_read_input_tokens"},
+		{Dimension: "cache_write", Unit: "token", Path: "$.usage.cache_creation.ephemeral_5m_input_tokens", Attrs: map[string]string{"ttl": "5m"}},
+		{Dimension: "cache_write", Unit: "token", Path: "$.usage.cache_creation.ephemeral_1h_input_tokens", Attrs: map[string]string{"ttl": "1h"}},
+		{Dimension: "cache_write", Unit: "token", Path: "$.usage.cache_creation_input_tokens", Fallback: true},
+	}),
+	usageModeGemini: newUsageFactSet([]usageFactConfig{
+		{Dimension: "input", Unit: "token", Path: `$.usageMetadata.promptTokensDetails[?(@.modality=="TEXT")].tokenCount`},
+		{Dimension: "input", Unit: "token", Path: "$.usageMetadata.promptTokenCount", Fallback: true},
+		{Dimension: "image.input", Unit: "token", Path: `$.usageMetadata.promptTokensDetails[?(@.modality=="IMAGE")].tokenCount`},
+		{Dimension: "video.input", Unit: "token", Path: `$.usageMetadata.promptTokensDetails[?(@.modality=="VIDEO")].tokenCount`},
+		{Dimension: "audio.input", Unit: "token", Path: `$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount`},
+		{Dimension: "output", Unit: "token", Path: "$.usageMetadata.candidatesTokenCount"},
+		{Dimension: "output", Unit: "token", Path: "$.usageMetadata.thoughtsTokenCount"},
+	}),
+}
+
+var builtinUsageTotalTokensExprs = map[string]*UsageExpr{
+	usageModeGemini: MustParseUsageExpr("$.usageMetadata.totalTokenCount"),
 }
 
 func appendUsageFactErrorPrefix(err error, fact usageFactConfig) error {
@@ -692,6 +697,24 @@ func compactUsageFactNameParts(parts []string) []string {
 			continue
 		}
 		out = append(out, p)
+	}
+	return out
+}
+
+func cloneUsageFactConfigs(facts []usageFactConfig) []usageFactConfig {
+	if len(facts) == 0 {
+		return nil
+	}
+	out := make([]usageFactConfig, 0, len(facts))
+	for _, fact := range facts {
+		item := fact
+		if len(fact.Attrs) > 0 {
+			item.Attrs = make(map[string]string, len(fact.Attrs))
+			for k, v := range fact.Attrs {
+				item.Attrs[k] = v
+			}
+		}
+		out = append(out, item)
 	}
 	return out
 }

@@ -96,16 +96,6 @@ func (s *scanner) scanComment() (token, bool) {
 			s.i++
 		}
 		return token{kind: tokComment, text: s.input[start:s.i], pos: start}, true
-	case s.hasPrefix("/*"):
-		start := s.i
-		s.i += 2
-		for s.i+1 < len(s.input) && (s.input[s.i] != '*' || s.input[s.i+1] != '/') {
-			s.i++
-		}
-		if s.i+1 < len(s.input) {
-			s.i += 2
-		}
-		return token{kind: tokComment, text: s.input[start:s.i], pos: start}, true
 	default:
 		return token{}, false
 	}

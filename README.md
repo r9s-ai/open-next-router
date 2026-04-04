@@ -25,7 +25,7 @@ open-next-router (ONR) is a lightweight, DSL-driven LLM gateway that routes requ
 
 ## Why ONR?
 
-- **Atomic, nginx-like DSL**: runtime behavior is explicitly declared in `config/providers/*.conf` (routing, auth headers, transforms, SSE parsing, usage extraction).
+- **Atomic, nginx-like DSL**: runtime behavior is explicitly declared in DSL loaded from `config/onr.conf` (typically including `config/providers/*.conf`, routing, auth headers, transforms, SSE parsing, usage extraction).
 - **Fast provider onboarding and patching**: fix provider quirks by editing a `.conf` file instead of changing and redeploying code.
 - **Hot reload**: reload `onr.yaml` / `keys.yaml` / `models.yaml` / provider DSL files via SIGHUP; provider DSL can also auto-reload by file watch (opt-in).
 - **No hidden magic**: compatibility is opt-in via directives (e.g. `req_map`, `resp_map`, `sse_parse`, `json_del`, `set_header`) rather than implicit heuristics.
@@ -35,7 +35,7 @@ open-next-router (ONR) is a lightweight, DSL-driven LLM gateway that routes requ
 ## DSL (nginx-like, atomic) at a glance
 
 All runtime behavior (routing, auth headers, request/response transforms, SSE parsing, usage extraction, etc.) is explicitly described
-by provider DSL files under `config/providers/*.conf`.
+by DSL loaded from `config/onr.conf`, which typically includes files under `config/providers/*.conf`.
 
 ```conf
 # Minimal: route + auth
@@ -278,8 +278,8 @@ Observability:
     • PROXY
 
 Config reload:
-- Send SIGHUP to reload `onr.yaml` / `keys.yaml` / `models.yaml` / `config/providers/*.conf` (nginx-like)
-- Optional: enable `providers.auto_reload.enabled=true` to watch `providers.dir` and auto-reload provider DSL files
+- Send SIGHUP to reload `onr.yaml` / `keys.yaml` / `models.yaml` / `config/onr.conf` and its included DSL files (nginx-like)
+- Optional: enable `providers.auto_reload.enabled=true` to watch the resolved provider DSL source directory and auto-reload included DSL files
 ```
 
 ## Auth
@@ -516,7 +516,7 @@ Configuration (config or env):
 Example:
 
 ```text
-[ONR] 2026/02/27 - 12:34:56 | INFO | startup | startup config loaded | config_path=./onr.yaml providers_dir=./config/providers keys_file=./keys.yaml models_file=./models.yaml
+[ONR] 2026/02/27 - 12:34:56 | INFO | startup | startup config loaded | config_path=./onr.yaml providers_path=./config/onr.conf providers_source_is_file=true keys_file=./keys.yaml models_file=./models.yaml
 [ONR] 2026/02/27 - 12:34:56 | INFO | startup | startup runtime flags | access_log_enabled=true access_log_target=stdout traffic_dump_enabled=false providers_auto_reload_enabled=false
 [ONR] 2026/02/27 - 12:34:56 | INFO | server | open-next-router listening | listen_url=http://127.0.0.1:3300
 ```
@@ -524,7 +524,7 @@ Example:
 Startup summary includes key runtime status fields:
 
 - `config_path`
-- `providers_dir` / `keys_file` / `models_file`
+- `providers_path` / `providers_source_is_file` / `keys_file` / `models_file`
 - `traffic_dump_enabled` / `traffic_dump_dir` / `traffic_dump_max_bytes`
 - `access_log_enabled` / `access_log_target`
 - `providers_auto_reload_enabled` / `providers_auto_reload_debounce_ms`

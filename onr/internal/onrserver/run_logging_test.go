@@ -55,7 +55,8 @@ func TestLogStartupSummary_ContainsRequiredFields(t *testing.T) {
 	}
 	for _, part := range []string{
 		"config_path=./onr.yaml",
-		"providers_dir=./config/providers",
+		"providers_path=./config/providers",
+		"providers_source_is_file=false",
 		"keys_file=./keys.yaml",
 		"models_file=./models.yaml",
 		"traffic_dump_enabled=true",
@@ -96,6 +97,9 @@ func TestLogSkippedProviders_WarnCategory(t *testing.T) {
 	if !strings.Contains(got, "| WARN | providers | providers skipped invalid files") {
 		t.Fatalf("expected fixed warn/providers part, got=%q", got)
 	}
+	if !strings.Contains(got, "providers_path=./config/providers") {
+		t.Fatalf("expected providers path, got=%q", got)
+	}
 	if !strings.Contains(got, "phase=reload") {
 		t.Fatalf("expected reload phase, got=%q", got)
 	}
@@ -124,6 +128,9 @@ func TestReloadLogs_CategoryAndSource(t *testing.T) {
 	got := out.String()
 	if !strings.Contains(got, "| INFO | reload | reload ok") || !strings.Contains(got, "source=signal") {
 		t.Fatalf("expected reload ok with source=signal, got=%q", got)
+	}
+	if !strings.Contains(got, "providers_path=./config/providers") || !strings.Contains(got, "providers_source_is_file=false") {
+		t.Fatalf("expected providers source fields, got=%q", got)
 	}
 	if !strings.Contains(got, "| ERROR | reload | reload failed") || !strings.Contains(got, "source=providers_auto") {
 		t.Fatalf("expected reload failed with source=providers_auto, got=%q", got)

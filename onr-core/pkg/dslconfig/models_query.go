@@ -71,6 +71,43 @@ func normalizeModelsQueryConfig(in ModelsQueryConfig) ModelsQueryConfig {
 	return out
 }
 
+func mergeModelsQueryConfig(base ModelsQueryConfig, override ModelsQueryConfig) ModelsQueryConfig {
+	out := base
+	if strings.TrimSpace(override.Mode) != "" {
+		out.Mode = override.Mode
+	}
+	if strings.TrimSpace(override.Method) != "" {
+		out.Method = override.Method
+	}
+	if strings.TrimSpace(override.Path) != "" {
+		out.Path = override.Path
+	}
+	if len(override.IDPaths) > 0 {
+		out.IDPaths = append([]string(nil), override.IDPaths...)
+	}
+	if strings.TrimSpace(override.IDRegex) != "" {
+		out.IDRegex = override.IDRegex
+	}
+	if strings.TrimSpace(override.IDAllowRegex) != "" {
+		out.IDAllowRegex = override.IDAllowRegex
+	}
+	if len(override.Headers) > 0 {
+		out.Headers = append([]HeaderOp(nil), override.Headers...)
+	}
+	return normalizeModelsQueryConfig(out)
+}
+
+func builtinModelsPresetName(mode string) string {
+	switch normalizeUsageMode(mode) {
+	case modelsModeOpenAI:
+		return modelsModeOpenAI
+	case modelsModeGemini:
+		return modelsModeGemini
+	default:
+		return ""
+	}
+}
+
 func ExtractModelIDs(cfg ModelsQueryConfig, respBody []byte) ([]string, error) {
 	normalized := normalizeModelsQueryConfig(cfg)
 	if len(normalized.IDPaths) == 0 {

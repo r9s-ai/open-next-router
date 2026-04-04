@@ -60,6 +60,14 @@ provider "openai" {
 	if err := os.WriteFile(filepath.Join(providersDir, "openai.conf"), []byte(conf), 0o600); err != nil {
 		t.Fatalf("write provider conf: %v", err)
 	}
+	onrConf := `
+syntax "next-router/0.1";
+
+models_mode "openai" {}
+`
+	if err := os.WriteFile(filepath.Join(dir, "onr.conf"), []byte(onrConf), 0o600); err != nil {
+		t.Fatalf("write onr.conf: %v", err)
+	}
 	keysPath := filepath.Join(dir, "keys.yaml")
 	keysYAML := `
 providers:

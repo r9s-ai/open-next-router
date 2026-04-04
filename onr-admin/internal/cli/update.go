@@ -24,6 +24,7 @@ import (
 
 	"github.com/r9s-ai/open-next-router/onr-admin/internal/store"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
+	"github.com/r9s-ai/open-next-router/pkg/config"
 	"github.com/spf13/cobra"
 )
 
@@ -472,7 +473,7 @@ func resolveUpdateProvidersDir(opts updateOptions) (string, error) {
 	if cfg != nil && strings.TrimSpace(cfg.Providers.Dir) != "" {
 		return strings.TrimSpace(cfg.Providers.Dir), nil
 	}
-	return defaultProvidersDir, nil
+	return config.ResolveProvidersDir(cfg), nil
 }
 
 func fetchURL(ctx context.Context, client *http.Client, url string) ([]byte, error) {

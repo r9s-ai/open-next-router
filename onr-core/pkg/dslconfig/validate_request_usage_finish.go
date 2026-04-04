@@ -43,32 +43,62 @@ func validateRequestTransform(path, providerName, scope string, t RequestTransfo
 	}
 }
 
-func validateProviderUsage(path, providerName string, usage ProviderUsage) error {
-	if err := validateUsageExtractConfig(path, providerName, "defaults.metrics", usage.Defaults); err != nil {
-		return err
+func validateProviderUsage(path, providerName string, usage ProviderUsage, registry usageModeRegistry) (ProviderUsage, error) {
+	resolvedDefaults, err := validateUsageExtractConfig(path, providerName, "defaults.metrics", usage.Defaults, registry)
+	if err != nil {
+		return ProviderUsage{}, err
 	}
+	resolved := ProviderUsage{Defaults: resolvedDefaults}
+	if len(usage.Matches) == 0 {
+		return resolved, nil
+	}
+	resolved.Matches = make([]MatchUsage, 0, len(usage.Matches))
 	for i, m := range usage.Matches {
 		scope := fmt.Sprintf("match[%d].metrics", i)
-		if err := validateUsageExtractConfig(path, providerName, scope, m.Extract); err != nil {
-			return err
+		extract, err := validateUsageExtractConfig(path, providerName, scope, m.Extract, registry)
+		if err != nil {
+			return ProviderUsage{}, err
 		}
+		m.Extract = extract
+		resolved.Matches = append(resolved.Matches, m)
 	}
-	return nil
+	return resolved, nil
 }
 
-func validateProviderFinishReason(path, providerName string, finish ProviderFinishReason) error {
-	if err := validateFinishReasonExtractConfig(path, providerName, "defaults.metrics", finish.Defaults); err != nil {
-		return err
+func validateProviderFinishReason(path, providerName string, finish ProviderFinishReason, registry finishReasonModeRegistry) (ProviderFinishReason, error) {
+	resolvedDefaults, err := validateFinishReasonExtractConfig(path, providerName, "defaults.metrics", finish.Defaults, registry)
+	if err != nil {
+		return ProviderFinishReason{}, err
 	}
+	resolved := ProviderFinishReason{Defaults: resolvedDefaults}
+	if len(finish.Matches) == 0 {
+		return resolved, nil
+	}
+	resolved.Matches = make([]MatchFinishReason, 0, len(finish.Matches))
 	for i, m := range finish.Matches {
 		scope := fmt.Sprintf("match[%d].metrics", i)
-		if err := validateFinishReasonExtractConfig(path, providerName, scope, m.Extract); err != nil {
-			return err
+		extract, err := validateFinishReasonExtractConfig(path, providerName, scope, m.Extract, registry)
+		if err != nil {
+			return ProviderFinishReason{}, err
 		}
+		m.Extract = extract
+		resolved.Matches = append(resolved.Matches, m)
 	}
-	return nil
+	return resolved, nil
 }
-func validateFinishReasonExtractConfig(path, providerName, scope string, cfg FinishReasonExtractConfig) error {
+
+func validateFinishReasonExtractConfig(path, providerName, scope string, cfg FinishReasonExtractConfig, registry finishReasonModeRegistry) (FinishReasonExtractConfig, error) {
+	resolved, err := resolveFinishReasonExtractConfig(path, providerName, scope, cfg, registry, nil)
+	if err != nil {
+		return FinishReasonExtractConfig{}, err
+	}
+	if err := validateResolvedFinishReasonExtractConfig(path, providerName, scope, resolved); err != nil {
+		return FinishReasonExtractConfig{}, err
+	}
+	return normalizeFinishReasonExtractConfig(resolved), nil
+}
+
+func validateResolvedFinishReasonExtractConfig(path, providerName, scope string, cfg FinishReasonExtractConfig) error {
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	paths := cfg.finishReasonPathConfigs()
 
@@ -76,7 +106,7 @@ func validateFinishReasonExtractConfig(path, providerName, scope string, cfg Fin
 		return nil
 	}
 	switch mode {
-	case "", "openai", "anthropic", "gemini":
+	case "":
 		// ok
 	case usageModeCustom:
 		if len(paths) == 0 {
@@ -101,7 +131,18 @@ func validateFinishReasonExtractConfig(path, providerName, scope string, cfg Fin
 	return nil
 }
 
-func validateUsageExtractConfig(path, providerName, scope string, cfg UsageExtractConfig) error {
+func validateUsageExtractConfig(path, providerName, scope string, cfg UsageExtractConfig, registry usageModeRegistry) (UsageExtractConfig, error) {
+	resolved, err := resolveUsageExtractConfig(path, providerName, scope, cfg, registry, nil)
+	if err != nil {
+		return UsageExtractConfig{}, err
+	}
+	if err := validateResolvedUsageExtractConfig(path, providerName, scope, resolved); err != nil {
+		return UsageExtractConfig{}, err
+	}
+	return resolved, nil
+}
+
+func validateResolvedUsageExtractConfig(path, providerName, scope string, cfg UsageExtractConfig) error {
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	if mode == "" {
 		if len(cfg.facts) > 0 {
@@ -110,7 +151,7 @@ func validateUsageExtractConfig(path, providerName, scope string, cfg UsageExtra
 		return nil
 	}
 	switch mode {
-	case usageModeOpenAI, usageModeAnthropic, usageModeGemini, usageModeCustom:
+	case usageModeCustom:
 		// ok
 	default:
 		return validationIssue(
@@ -120,11 +161,8 @@ func validateUsageExtractConfig(path, providerName, scope string, cfg UsageExtra
 		)
 	}
 	if mode == usageModeCustom {
-		if cfg.InputTokensExpr == nil && strings.TrimSpace(cfg.InputTokensPath) == "" && !hasUsageFactForKey(cfg, "input", "token") {
-			return fmt.Errorf("provider %q in %q: %s requires input_tokens_expr/input_tokens_path or usage_fact input token", providerName, path, scope)
-		}
-		if cfg.OutputTokensExpr == nil && strings.TrimSpace(cfg.OutputTokensPath) == "" && !hasUsageFactForKey(cfg, "output", "token") {
-			return fmt.Errorf("provider %q in %q: %s requires output_tokens_expr/output_tokens_path or usage_fact output token", providerName, path, scope)
+		if !hasAnyUsageExtractionRule(cfg) {
+			return fmt.Errorf("provider %q in %q: %s custom usage_extract requires at least one usage_fact or *_tokens_path/*_expr rule", providerName, path, scope)
 		}
 	}
 
@@ -147,6 +185,19 @@ func validateUsageExtractConfig(path, providerName, scope string, cfg UsageExtra
 		}
 	}
 	return nil
+}
+
+func hasAnyUsageExtractionRule(cfg UsageExtractConfig) bool {
+	return cfg.InputTokensExpr != nil ||
+		strings.TrimSpace(cfg.InputTokensPath) != "" ||
+		cfg.OutputTokensExpr != nil ||
+		strings.TrimSpace(cfg.OutputTokensPath) != "" ||
+		cfg.CacheReadTokensExpr != nil ||
+		strings.TrimSpace(cfg.CacheReadTokensPath) != "" ||
+		cfg.CacheWriteTokensExpr != nil ||
+		strings.TrimSpace(cfg.CacheWriteTokensPath) != "" ||
+		cfg.TotalTokensExpr != nil ||
+		len(cfg.facts) > 0
 }
 
 func hasUsageFactForKey(cfg UsageExtractConfig, dim, unit string) bool {

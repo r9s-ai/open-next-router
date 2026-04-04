@@ -52,63 +52,114 @@ func ValidateProviderFile(path string) (ProviderFile, error) {
 	if err != nil {
 		return ProviderFile{}, err
 	}
-	providerName, err := findProviderName(p, content)
+	rawModes, modePaths, _, err := loadGlobalUsageModesFromFile(globalConfigPathForProviderFile(p))
 	if err != nil {
 		return ProviderFile{}, err
 	}
-	providerName = normalizeProviderName(providerName)
-	expected := normalizeProviderName(strings.TrimSuffix(filepath.Base(p), ".conf"))
-	if providerName != expected {
-		return ProviderFile{}, fmt.Errorf(
-			"provider file %q declares provider %q, expected %q",
-			p, providerName, expected,
-		)
-	}
-	routing, headers, req, response, perr, usage, finish, balance, models, err := parseProviderConfig(p, content)
+	rawFinishReasonModes, finishReasonModePaths, _, err := loadGlobalFinishReasonModesFromFile(globalConfigPathForProviderFile(p))
 	if err != nil {
 		return ProviderFile{}, err
 	}
-	if err := validateProviderBaseURL(p, providerName, routing); err != nil {
+	rawModelsModes, modelsModePaths, _, err := loadGlobalModelsModesFromFile(globalConfigPathForProviderFile(p))
+	if err != nil {
 		return ProviderFile{}, err
 	}
-	if err := validateProviderMatchAPIs(p, providerName, routing); err != nil {
+	rawBalanceModes, balanceModePaths, _, err := loadGlobalBalanceModesFromFile(globalConfigPathForProviderFile(p))
+	if err != nil {
 		return ProviderFile{}, err
 	}
-	if err := validateProviderRequestTransform(p, providerName, req); err != nil {
+	localModes, err := parseGlobalUsageModes(p, content)
+	if err != nil {
 		return ProviderFile{}, err
 	}
-	if err := validateProviderHeaders(p, providerName, headers); err != nil {
+	localFinishReasonModes, err := parseGlobalFinishReasonModes(p, content)
+	if err != nil {
 		return ProviderFile{}, err
 	}
-	if err := validateProviderResponse(p, providerName, response); err != nil {
+	localModelsModes, err := parseGlobalModelsModes(p, content)
+	if err != nil {
 		return ProviderFile{}, err
 	}
-	if err := validateProviderUsage(p, providerName, usage); err != nil {
+	localBalanceModes, err := parseGlobalBalanceModes(p, content)
+	if err != nil {
 		return ProviderFile{}, err
 	}
-	if err := validateProviderFinishReason(p, providerName, finish); err != nil {
+	if rawModes == nil {
+		rawModes = usageModeRegistry{}
+	}
+	if modePaths == nil {
+		modePaths = map[string]string{}
+	}
+	if rawModelsModes == nil {
+		rawModelsModes = modelsModeRegistry{}
+	}
+	if rawFinishReasonModes == nil {
+		rawFinishReasonModes = finishReasonModeRegistry{}
+	}
+	if modelsModePaths == nil {
+		modelsModePaths = map[string]string{}
+	}
+	if finishReasonModePaths == nil {
+		finishReasonModePaths = map[string]string{}
+	}
+	if rawBalanceModes == nil {
+		rawBalanceModes = balanceModeRegistry{}
+	}
+	if balanceModePaths == nil {
+		balanceModePaths = map[string]string{}
+	}
+	for name, cfg := range localModes {
+		if prev, ok := modePaths[name]; ok {
+			return ProviderFile{}, fmt.Errorf("duplicate usage_mode %q in %q (already in %q)", name, p, prev)
+		}
+		rawModes[name] = cfg
+		modePaths[name] = p
+	}
+	for name, cfg := range localFinishReasonModes {
+		if prev, ok := finishReasonModePaths[name]; ok {
+			return ProviderFile{}, fmt.Errorf("duplicate finish_reason_mode %q in %q (already in %q)", name, p, prev)
+		}
+		rawFinishReasonModes[name] = cfg
+		finishReasonModePaths[name] = p
+	}
+	for name, cfg := range localModelsModes {
+		if prev, ok := modelsModePaths[name]; ok {
+			return ProviderFile{}, fmt.Errorf("duplicate models_mode %q in %q (already in %q)", name, p, prev)
+		}
+		rawModelsModes[name] = cfg
+		modelsModePaths[name] = p
+	}
+	for name, cfg := range localBalanceModes {
+		if prev, ok := balanceModePaths[name]; ok {
+			return ProviderFile{}, fmt.Errorf("duplicate balance_mode %q in %q (already in %q)", name, p, prev)
+		}
+		rawBalanceModes[name] = cfg
+		balanceModePaths[name] = p
+	}
+	resolvedModes, err := resolveUsageModeRegistry(modePaths, rawModes)
+	if err != nil {
 		return ProviderFile{}, err
 	}
-	if err := validateProviderBalance(p, providerName, balance); err != nil {
+	resolvedFinishReasonModes, err := resolveFinishReasonModeRegistry(finishReasonModePaths, rawFinishReasonModes)
+	if err != nil {
 		return ProviderFile{}, err
 	}
-	if err := validateProviderModels(p, providerName, models); err != nil {
+	resolvedModelsModes, err := resolveModelsModeRegistry(modelsModePaths, rawModelsModes)
+	if err != nil {
 		return ProviderFile{}, err
 	}
-	return ProviderFile{
-		Name:     providerName,
-		Path:     p,
-		Content:  content,
-		Routing:  routing,
-		Headers:  headers,
-		Request:  req,
-		Response: response,
-		Error:    perr,
-		Usage:    usage,
-		Finish:   finish,
-		Balance:  balance,
-		Models:   models,
-	}, nil
+	resolvedBalanceModes, err := resolveBalanceModeRegistry(balanceModePaths, rawBalanceModes)
+	if err != nil {
+		return ProviderFile{}, err
+	}
+	pf, hasProvider, err := validateAndBuildProviderFile(p, content, resolvedModes, resolvedFinishReasonModes, resolvedModelsModes, resolvedBalanceModes)
+	if err != nil {
+		return ProviderFile{}, err
+	}
+	if !hasProvider {
+		return ProviderFile{}, fmt.Errorf("%s: no provider block found", p)
+	}
+	return pf, nil
 }
 
 // ValidateProvidersDir validates all *.conf files in a directory.
@@ -123,27 +174,146 @@ func ValidateProvidersDir(providersDir string) (LoadResult, error) {
 		return LoadResult{}, fmt.Errorf("read providers dir %q: %w", dir, err)
 	}
 
-	loaded := make([]string, 0)
+	type candidate struct {
+		path    string
+		content string
+	}
+	candidates := make([]candidate, 0)
 	warnings := make([]ValidationWarning, 0)
-	seen := map[string]string{} // provider -> file
+	rawModes, modePaths, globalContent, err := loadGlobalUsageModesFromFile(globalConfigPathForProvidersDir(dir))
+	if err != nil {
+		return LoadResult{}, err
+	}
+	rawFinishReasonModes, finishReasonModePaths, _, err := loadGlobalFinishReasonModesFromFile(globalConfigPathForProvidersDir(dir))
+	if err != nil {
+		return LoadResult{}, err
+	}
+	rawModelsModes, modelsModePaths, _, err := loadGlobalModelsModesFromFile(globalConfigPathForProvidersDir(dir))
+	if err != nil {
+		return LoadResult{}, err
+	}
+	rawBalanceModes, balanceModePaths, _, err := loadGlobalBalanceModesFromFile(globalConfigPathForProvidersDir(dir))
+	if err != nil {
+		return LoadResult{}, err
+	}
+	if rawModes == nil {
+		rawModes = usageModeRegistry{}
+	}
+	if modePaths == nil {
+		modePaths = map[string]string{}
+	}
+	if rawModelsModes == nil {
+		rawModelsModes = modelsModeRegistry{}
+	}
+	if rawFinishReasonModes == nil {
+		rawFinishReasonModes = finishReasonModeRegistry{}
+	}
+	if modelsModePaths == nil {
+		modelsModePaths = map[string]string{}
+	}
+	if finishReasonModePaths == nil {
+		finishReasonModePaths = map[string]string{}
+	}
+	if rawBalanceModes == nil {
+		rawBalanceModes = balanceModeRegistry{}
+	}
+	if balanceModePaths == nil {
+		balanceModePaths = map[string]string{}
+	}
+	if strings.TrimSpace(globalContent) != "" {
+		warnings = append(warnings, collectDeprecatedDirectiveWarnings(globalConfigPathForProvidersDir(dir), globalContent)...)
+	}
 	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		if filepath.Ext(entry.Name()) != ".conf" {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".conf" {
 			continue
 		}
 		path := filepath.Join(dir, entry.Name())
-		pf, err := ValidateProviderFile(path)
+		contentBytes, err := os.ReadFile(path)
+		if err != nil {
+			return LoadResult{}, fmt.Errorf("read provider file %q: %w", path, err)
+		}
+		content, err := preprocessIncludes(path, string(contentBytes))
 		if err != nil {
 			return LoadResult{}, err
 		}
-		if prev, ok := seen[pf.Name]; ok {
-			return LoadResult{}, fmt.Errorf("duplicate provider name %q in %q (already in %q)", pf.Name, path, prev)
+		defs, err := parseGlobalUsageModes(path, content)
+		if err != nil {
+			return LoadResult{}, err
 		}
-		seen[pf.Name] = path
+		finishDefs, err := parseGlobalFinishReasonModes(path, content)
+		if err != nil {
+			return LoadResult{}, err
+		}
+		modelDefs, err := parseGlobalModelsModes(path, content)
+		if err != nil {
+			return LoadResult{}, err
+		}
+		balanceDefs, err := parseGlobalBalanceModes(path, content)
+		if err != nil {
+			return LoadResult{}, err
+		}
+		for name, cfg := range defs {
+			if prev, ok := modePaths[name]; ok {
+				return LoadResult{}, fmt.Errorf("duplicate usage_mode %q in %q (already in %q)", name, path, prev)
+			}
+			modePaths[name] = path
+			rawModes[name] = cfg
+		}
+		for name, cfg := range finishDefs {
+			if prev, ok := finishReasonModePaths[name]; ok {
+				return LoadResult{}, fmt.Errorf("duplicate finish_reason_mode %q in %q (already in %q)", name, path, prev)
+			}
+			finishReasonModePaths[name] = path
+			rawFinishReasonModes[name] = cfg
+		}
+		for name, cfg := range modelDefs {
+			if prev, ok := modelsModePaths[name]; ok {
+				return LoadResult{}, fmt.Errorf("duplicate models_mode %q in %q (already in %q)", name, path, prev)
+			}
+			modelsModePaths[name] = path
+			rawModelsModes[name] = cfg
+		}
+		for name, cfg := range balanceDefs {
+			if prev, ok := balanceModePaths[name]; ok {
+				return LoadResult{}, fmt.Errorf("duplicate balance_mode %q in %q (already in %q)", name, path, prev)
+			}
+			balanceModePaths[name] = path
+			rawBalanceModes[name] = cfg
+		}
+		candidates = append(candidates, candidate{path: path, content: content})
+		warnings = append(warnings, collectDeprecatedDirectiveWarnings(path, content)...)
+	}
+	resolvedModes, err := resolveUsageModeRegistry(modePaths, rawModes)
+	if err != nil {
+		return LoadResult{}, err
+	}
+	resolvedFinishReasonModes, err := resolveFinishReasonModeRegistry(finishReasonModePaths, rawFinishReasonModes)
+	if err != nil {
+		return LoadResult{}, err
+	}
+	resolvedModelsModes, err := resolveModelsModeRegistry(modelsModePaths, rawModelsModes)
+	if err != nil {
+		return LoadResult{}, err
+	}
+	resolvedBalanceModes, err := resolveBalanceModeRegistry(balanceModePaths, rawBalanceModes)
+	if err != nil {
+		return LoadResult{}, err
+	}
+	loaded := make([]string, 0)
+	seen := map[string]string{}
+	for _, candidate := range candidates {
+		pf, hasProvider, err := validateAndBuildProviderFile(candidate.path, candidate.content, resolvedModes, resolvedFinishReasonModes, resolvedModelsModes, resolvedBalanceModes)
+		if err != nil {
+			return LoadResult{}, err
+		}
+		if !hasProvider {
+			continue
+		}
+		if prev, ok := seen[pf.Name]; ok {
+			return LoadResult{}, fmt.Errorf("duplicate provider name %q in %q (already in %q)", pf.Name, candidate.path, prev)
+		}
+		seen[pf.Name] = candidate.path
 		loaded = append(loaded, pf.Name)
-		warnings = append(warnings, collectDeprecatedDirectiveWarnings(path, pf.Content)...)
 	}
 
 	sort.Strings(loaded)
@@ -160,4 +330,19 @@ func ValidateProvidersDir(providersDir string) (LoadResult, error) {
 		return warnings[i].Directive < warnings[j].Directive
 	})
 	return LoadResult{LoadedProviders: loaded, Warnings: warnings}, nil
+}
+
+func ValidateProvidersPath(path string) (LoadResult, error) {
+	p := strings.TrimSpace(path)
+	if p == "" {
+		return LoadResult{}, fmt.Errorf("providers path is empty")
+	}
+	info, err := os.Stat(p)
+	if err != nil {
+		return LoadResult{}, err
+	}
+	if info.IsDir() {
+		return ValidateProvidersDir(p)
+	}
+	return ValidateProvidersFile(p)
 }

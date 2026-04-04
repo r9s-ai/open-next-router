@@ -487,7 +487,9 @@ provider "openai" {
 
   match api = "images.generations" {
     metrics {
-      usage_extract openai;
+      usage_fact input token path="$.usage.input_tokens";
+      usage_fact output token path="$.usage.output_tokens";
+      usage_fact image.generate image count_path="$.data[*]";
     }
     upstream {
       set_path "/v1/images/generations";
@@ -496,7 +498,6 @@ provider "openai" {
 
   match api = "images.edits" {
     metrics {
-      usage_extract openai;
       usage_fact image.edit image source=request expr="$.n" fallback=true;
     }
     upstream {
@@ -506,7 +507,6 @@ provider "openai" {
 
   match api = "audio.speech" {
     metrics {
-      usage_extract openai;
       usage_fact audio.tts second source=derived path="$.audio_duration_seconds";
     }
     upstream {
@@ -516,7 +516,11 @@ provider "openai" {
 
   match api = "responses" {
     metrics {
-      usage_extract openai;
+      usage_fact input token path="$.usage.input_tokens";
+      usage_fact output token path="$.usage.output_tokens";
+      usage_fact cache_read token path="$.usage.input_tokens_details.cached_tokens";
+      usage_fact server_tool.web_search call count_path="$.output[*]" type="web_search_call" status="completed";
+      usage_fact server_tool.web_search call count_path="$.response.output[*]" type="web_search_call" status="completed" fallback=true;
     }
     upstream {
       set_path "/v1/responses";
@@ -525,7 +529,8 @@ provider "openai" {
 
   match api = "embeddings" {
     metrics {
-      usage_extract openai;
+      usage_fact input token path="$.usage.prompt_tokens";
+      usage_fact output token expr="0";
     }
     upstream {
       set_path "/v1/embeddings";
@@ -534,7 +539,13 @@ provider "openai" {
 
   match api = "chat.completions" stream = false {
     metrics {
-      usage_extract openai;
+      usage_fact input token path="$.usage.prompt_tokens";
+      usage_fact input token path="$.usage.input_tokens" fallback=true;
+      usage_fact output token path="$.usage.completion_tokens";
+      usage_fact output token path="$.usage.output_tokens" fallback=true;
+      usage_fact cache_read token path="$.usage.prompt_tokens_details.cached_tokens";
+      usage_fact cache_read token path="$.usage.input_tokens_details.cached_tokens" fallback=true;
+      usage_fact cache_read token path="$.usage.cached_tokens" fallback=true;
     }
     upstream {
       set_path "/v1/chat/completions";
@@ -543,7 +554,8 @@ provider "openai" {
 
   match api = "audio.transcriptions" {
     metrics {
-      usage_extract openai;
+      usage_fact input token path="$.usage.input_tokens";
+      usage_fact output token path="$.usage.output_tokens";
       usage_fact audio.stt second path="$.usage.seconds";
     }
     upstream {
@@ -553,7 +565,8 @@ provider "openai" {
 
   match api = "audio.translations" {
     metrics {
-      usage_extract openai;
+      usage_fact input token path="$.usage.input_tokens";
+      usage_fact output token path="$.usage.output_tokens";
       usage_fact audio.translate second path="$.usage.seconds";
     }
     upstream {

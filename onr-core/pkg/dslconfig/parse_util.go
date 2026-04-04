@@ -84,13 +84,15 @@ func skipStmtOrBlock(s *scanner) error {
 		if err := skipBalancedBraces(s); err != nil {
 			return err
 		}
-		semi := s.nextNonTrivia()
-		if semi.kind == tokSemicolon {
-			return nil
-		}
 		return nil
 	}
 	for tok.kind != tokSemicolon && tok.kind != tokEOF {
+		if tok.kind == tokLBrace {
+			if err := skipBalancedBraces(s); err != nil {
+				return err
+			}
+			return nil
+		}
 		tok = s.next()
 	}
 	if tok.kind == tokEOF {

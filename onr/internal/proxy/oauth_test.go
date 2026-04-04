@@ -132,8 +132,10 @@ provider "openai" {
       resp_passthrough;
     }
     metrics {
-      usage_extract openai;
-      finish_reason_extract openai;
+      usage_fact input token path="$.usage.prompt_tokens";
+      usage_fact output token path="$.usage.completion_tokens";
+      usage_fact cache_read token path="$.usage.prompt_tokens_details.cached_tokens";
+      finish_reason_path "$.choices[*].finish_reason";
     }
   }
   match api = "chat.completions" stream = false {

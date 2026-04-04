@@ -113,3 +113,89 @@ provider "demo" {
 		t.Fatalf("expected no warnings, got %d: %#v", len(res.Warnings), res.Warnings)
 	}
 }
+
+func TestValidateProvidersDir_GlobalUsageModeSharedAcrossProviders(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "providers")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "onr.conf"), []byte(`
+syntax "next-router/0.1";
+
+usage_mode "shared_tokens" {
+  usage_extract custom;
+  usage_fact input token path="$.usage.input_tokens";
+  usage_fact output token path="$.usage.output_tokens";
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile onr.conf: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "openai.conf"), []byte(`
+syntax "next-router/0.1";
+
+provider "openai" {
+  defaults {
+    upstream_config { base_url = "https://api.openai.com"; }
+    metrics { usage_extract shared_tokens; }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile openai: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "anthropic.conf"), []byte(`
+syntax "next-router/0.1";
+
+provider "anthropic" {
+  defaults {
+    upstream_config { base_url = "https://api.anthropic.com"; }
+    metrics { usage_extract shared_tokens; }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile anthropic: %v", err)
+	}
+
+	res, err := ValidateProvidersDir(dir)
+	if err != nil {
+		t.Fatalf("ValidateProvidersDir: %v", err)
+	}
+	if len(res.LoadedProviders) != 2 {
+		t.Fatalf("expected 2 providers, got %#v", res.LoadedProviders)
+	}
+	if len(res.Warnings) != 0 {
+		t.Fatalf("expected no warnings, got %#v", res.Warnings)
+	}
+}
+
+func TestValidateProvidersDir_RejectsDuplicateGlobalUsageMode(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "providers")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "onr.conf"), []byte(`
+syntax "next-router/0.1";
+
+usage_mode "shared_tokens" {
+  usage_extract custom;
+  usage_fact input token path="$.usage.input_tokens";
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile onr.conf: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "usage-b.conf"), []byte(`
+syntax "next-router/0.1";
+
+usage_mode "shared_tokens" {
+  usage_extract custom;
+  usage_fact output token path="$.usage.output_tokens";
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile usage-b: %v", err)
+	}
+
+	if _, err := ValidateProvidersDir(dir); err == nil {
+		t.Fatalf("expected duplicate usage_mode error")
+	}
+}

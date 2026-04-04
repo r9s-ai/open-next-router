@@ -16,6 +16,8 @@ func TestValidateProviderFile_UsageFactCustomFirstExtract(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`
 syntax "next-router/0.1";
 
+usage_mode "anthropic" {}
+
 provider "demo" {
   defaults {
     upstream_config {
@@ -103,6 +105,8 @@ func TestValidateProviderFile_UsageFactExpr(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`
 syntax "next-router/0.1";
 
+usage_mode "anthropic" {}
+
 provider "demo" {
   defaults {
     upstream_config {
@@ -150,11 +154,51 @@ provider "demo" {
 	}
 }
 
+func TestValidateProviderFile_UsageModeImplicitCustomWhenFactsPresent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+usage_mode "shared_tokens" {
+  usage_fact input token path="$.usage.input_tokens";
+  usage_fact output token path="$.usage.output_tokens";
+}
+
+provider "demo" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_extract shared_tokens;
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+	if got, want := normalizeUsageMode(pf.Usage.Defaults.Mode), usageModeCustom; got != want {
+		t.Fatalf("usage mode got %q, want %q", got, want)
+	}
+	facts := pf.Usage.Defaults.CompiledFacts(nil)
+	if len(facts) != 2 {
+		t.Fatalf("compiled facts got %d, want 2: %#v", len(facts), facts)
+	}
+}
+
 func TestExtractUsage_UsageFactFilterPath(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "demo.conf")
 	if err := os.WriteFile(path, []byte(`
 syntax "next-router/0.1";
+
+usage_mode "anthropic" {}
 
 provider "demo" {
   defaults {
@@ -208,6 +252,8 @@ func TestExtractUsage_UsageFactGeminiMultimodalInputTokens(t *testing.T) {
 	path := filepath.Join(dir, "demo.conf")
 	if err := os.WriteFile(path, []byte(`
 syntax "next-router/0.1";
+
+usage_mode "anthropic" {}
 
 provider "demo" {
   defaults {
@@ -280,6 +326,8 @@ func TestExtractUsage_UsageFactFilterPathSingleQuotedString(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`
 syntax "next-router/0.1";
 
+usage_mode "anthropic" {}
+
 provider "demo" {
   defaults {
     upstream_config {
@@ -331,12 +379,17 @@ provider "demo" {
 	}
 }
 
-func TestValidateProviderFile_UsageFactBuiltinModeAllowed(t *testing.T) {
+func TestValidateProviderFile_UsageFactAllowedWithUserPreset(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "demo.conf")
 	// #nosec G306 -- test data file.
 	if err := os.WriteFile(path, []byte(`
 syntax "next-router/0.1";
+
+usage_mode "anthropic" {}
+usage_mode "shared_usage" {
+  usage_fact output token path="$.usage.output_tokens";
+}
 
 provider "demo" {
   defaults {
@@ -344,7 +397,7 @@ provider "demo" {
       base_url = "https://api.example.com";
     }
     metrics {
-      usage_extract anthropic;
+      usage_extract shared_usage;
       usage_fact input token path="$.usage.input_tokens";
     }
 	}
@@ -358,12 +411,16 @@ provider "demo" {
 	}
 }
 
-func TestValidateProviderFile_UsageFactAllowedWithBuiltinMode(t *testing.T) {
+func TestValidateProviderFile_UsageFactAllowedWithNamedPreset(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "demo.conf")
 	// #nosec G306 -- test data file.
 	if err := os.WriteFile(path, []byte(`
 syntax "next-router/0.1";
+
+usage_mode "tool_usage" {
+  usage_fact input token path="$.usage.input_tokens";
+}
 
 provider "demo" {
   defaults {
@@ -371,7 +428,7 @@ provider "demo" {
       base_url = "https://api.example.com";
     }
     metrics {
-      usage_extract anthropic;
+      usage_extract tool_usage;
       usage_fact server_tool.web_search call count_path="$.tool_results[*]" type="web_search_call" status="completed";
     }
   }
@@ -385,7 +442,7 @@ provider "demo" {
 	}
 }
 
-func TestValidateProviderFile_UsageFactRequiresExplicitCustomMode(t *testing.T) {
+func TestValidateProviderFile_UsageFactImplicitCustomMode(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "demo.conf")
 	// #nosec G306 -- test data file.
@@ -407,8 +464,20 @@ provider "demo" {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	if _, err := ValidateProviderFile(path); err == nil {
-		t.Fatalf("expected validation error")
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+	cfg, ok := pf.Usage.Select(&dslmeta.Meta{API: "chat.completions"})
+	if !ok {
+		t.Fatalf("Usage.Select: no config selected")
+	}
+	if cfg.Mode != usageModeCustom {
+		t.Fatalf("expected implicit custom mode, got %q", cfg.Mode)
+	}
+	facts := cfg.CompiledFacts(&dslmeta.Meta{API: "chat.completions"})
+	if len(facts) != 2 {
+		t.Fatalf("expected 2 compiled facts, got %d", len(facts))
 	}
 }
 
@@ -480,12 +549,12 @@ provider "demo" {
     upstream_config {
       base_url = "https://api.example.com";
     }
-    metrics {
-      usage_extract custom;
-      usage_fact image.generate image path="$.usage.image_count";
-      usage_fact output token path="$.usage.output_tokens";
-    }
-  }
+	    metrics {
+	      usage_extract custom;
+	      usage_fact unsupported.metric unit path="$.usage.image_count";
+	      usage_fact output token path="$.usage.output_tokens";
+	    }
+	  }
 }
 `), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -894,6 +963,78 @@ func TestExtractUsage_BuiltinAnthropicUsageFactOverrideCacheWrite(t *testing.T) 
 	}
 }
 
+func TestExtractUsage_CustomLegacyFieldsCompiledIntoFacts(t *testing.T) {
+	inExpr := mustParseUsageExpr(t, "$.usage.prompt_tokens + $.usage.extra_input")
+	cfg := UsageExtractConfig{
+		Mode:                usageModeCustom,
+		InputTokensExpr:     inExpr,
+		OutputTokensPath:    "$.usage.output_tokens",
+		CacheReadTokensPath: "$.usage.cached_tokens",
+	}
+
+	body := []byte(`{
+	  "usage": {
+	    "prompt_tokens": 7,
+	    "extra_input": 2,
+	    "output_tokens": 5,
+	    "cached_tokens": 4
+	  }
+	}`)
+
+	usage, cached, err := ExtractUsage(nil, cfg, body)
+	if err != nil {
+		t.Fatalf("ExtractUsage: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage")
+	}
+	if got, want := usage.InputTokens, 9; got != want {
+		t.Fatalf("InputTokens got %d, want %d", got, want)
+	}
+	if got, want := usage.OutputTokens, 5; got != want {
+		t.Fatalf("OutputTokens got %d, want %d", got, want)
+	}
+	if got, want := cached, 4; got != want {
+		t.Fatalf("cached got %d, want %d", got, want)
+	}
+	if usage.InputTokenDetails == nil || usage.InputTokenDetails.CachedTokens != 4 {
+		t.Fatalf("expected cached token details, got=%+v", usage.InputTokenDetails)
+	}
+}
+
+func TestExtractUsage_BuiltinOpenAILegacyOverrideDoesNotDoubleCount(t *testing.T) {
+	outExpr := mustParseUsageExpr(t, "$.usage.alt_output_tokens")
+	cfg := UsageExtractConfig{
+		Mode:             usageModeOpenAI,
+		OutputTokensExpr: outExpr,
+	}
+
+	body := []byte(`{
+	  "usage": {
+	    "prompt_tokens": 8,
+	    "output_tokens": 9,
+	    "alt_output_tokens": 13
+	  }
+	}`)
+
+	usage, _, err := ExtractUsage(&dslmeta.Meta{API: "chat.completions", IsStream: false}, cfg, body)
+	if err != nil {
+		t.Fatalf("ExtractUsage: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage")
+	}
+	if got, want := usage.InputTokens, 8; got != want {
+		t.Fatalf("InputTokens got %d, want %d", got, want)
+	}
+	if got, want := usage.OutputTokens, 13; got != want {
+		t.Fatalf("OutputTokens got %d, want %d", got, want)
+	}
+	if got, want := usage.TotalTokens, 21; got != want {
+		t.Fatalf("TotalTokens got %d, want %d", got, want)
+	}
+}
+
 func TestExtractUsage_UsageFactSameDimensionDeclarationOrder(t *testing.T) {
 	cfg := UsageExtractConfig{
 		Mode: usageModeCustom,
@@ -1045,7 +1186,6 @@ provider "derived-source" {
       base_url = "https://api.example.com";
     }
     metrics {
-      usage_extract openai;
       usage_fact audio.tts second source="derived" path="$.audio_duration_seconds";
     }
   }
@@ -1056,6 +1196,304 @@ provider "derived-source" {
 
 	if _, err := ValidateProviderFile(path); err != nil {
 		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+}
+
+func TestValidateProviderFile_CustomDerivedOnlyUsageFactAllowed(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "custom-derived-only.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "custom-derived-only" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_extract custom;
+      usage_fact audio.tts second source="derived" path="$.audio_duration_seconds";
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+
+	meta := &dslmeta.Meta{
+		DerivedUsage: map[string]any{
+			"audio_duration_seconds": 2.352,
+		},
+	}
+
+	usage, _, err := ExtractUsage(meta, pf.Usage.Defaults, []byte("fake-audio-binary-response"))
+	if err != nil {
+		t.Fatalf("ExtractUsage: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage")
+	}
+	if got, want := usage.FlatFields["audio_tts_seconds"], 2.352; got != want {
+		t.Fatalf("audio_tts_seconds got %v, want %v", got, want)
+	}
+}
+
+func TestValidateProviderFile_UserUsageModeNamedOpenAIWorksAsNormalPreset(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "openai.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+usage_mode "openai" {
+  usage_fact input token path="$.custom_usage.in";
+  usage_fact output token path="$.custom_usage.out";
+}
+
+provider "openai" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_extract openai;
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+	if got, want := normalizeUsageMode(pf.Usage.Defaults.Mode), usageModeCustom; got != want {
+		t.Fatalf("usage mode got %q, want %q", got, want)
+	}
+
+	facts := pf.Usage.Defaults.CompiledFacts(nil)
+	if len(facts) != 2 {
+		t.Fatalf("compiled facts len=%d want=2", len(facts))
+	}
+	var foundInput bool
+	var foundOutput bool
+	for _, fact := range facts {
+		if fact.Dimension == "input" && fact.Path == "$.custom_usage.in" {
+			foundInput = true
+		}
+		if fact.Dimension == "output" && fact.Path == "$.custom_usage.out" {
+			foundOutput = true
+		}
+	}
+	if !foundInput || !foundOutput {
+		t.Fatalf("unexpected compiled facts: %#v", facts)
+	}
+}
+
+func TestValidateProviderFile_EmptyNamedUsageModeProducesNoSelection(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "openai.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+usage_mode "openai" {}
+
+provider "openai" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_extract openai;
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+	if _, ok := pf.Usage.Select(&dslmeta.Meta{API: "chat.completions"}); ok {
+		t.Fatalf("expected no usage config selected")
+	}
+}
+
+func TestValidateProviderFile_UsageModeNamedOpenAIDoesNotInjectBuiltinFacts(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "openai.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+usage_mode "openai" {
+  usage_fact input token path="$.custom_usage.in";
+  usage_fact output token path="$.custom_usage.out";
+}
+
+provider "openai" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_extract openai;
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+	if got, want := normalizeUsageMode(pf.Usage.Defaults.Mode), usageModeCustom; got != want {
+		t.Fatalf("usage mode got %q, want %q", got, want)
+	}
+	facts := pf.Usage.Defaults.CompiledFacts(nil)
+	var foundInput bool
+	var foundOutput bool
+	for _, fact := range facts {
+		if fact.Dimension == "input" && fact.Path == "$.custom_usage.in" {
+			foundInput = true
+		}
+		if fact.Dimension == "output" && fact.Path == "$.custom_usage.out" {
+			foundOutput = true
+		}
+	}
+	if !foundInput || !foundOutput || len(facts) != 2 {
+		t.Fatalf("unexpected compiled facts: %#v", facts)
+	}
+}
+
+func TestValidateProviderFile_UsageModeRequiresGlobalConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "openai.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "openai" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_extract openai;
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if _, err := ValidateProviderFile(path); err == nil {
+		t.Fatalf("expected validation error")
+	}
+}
+
+func TestValidateProviderFile_ProviderMetricsUsageRulesImplicitCustom(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "demo" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_fact input token path="$.usage.input_tokens";
+      usage_fact output token path="$.usage.output_tokens";
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile(%q): %v", path, err)
+	}
+	cfg, ok := pf.Usage.Select(&dslmeta.Meta{API: "chat.completions"})
+	if !ok {
+		t.Fatalf("expected usage config selected")
+	}
+	if got := normalizeUsageMode(cfg.Mode); got != usageModeCustom {
+		t.Fatalf("mode=%q want=%q", cfg.Mode, usageModeCustom)
+	}
+	facts := cfg.CompiledFacts(&dslmeta.Meta{API: "chat.completions"})
+	if len(facts) != 2 {
+		t.Fatalf("compiled facts len=%d want=2", len(facts))
+	}
+}
+
+func TestValidateProviderFile_LoadsSiblingOnrConfigUsageMode(t *testing.T) {
+	root := t.TempDir()
+	providersDir := filepath.Join(root, "providers")
+	if err := os.MkdirAll(providersDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "onr.conf"), []byte(`
+syntax "next-router/0.1";
+
+usage_mode "shared_tokens" {
+  usage_extract custom;
+  usage_fact input token path="$.usage.input_tokens";
+  usage_fact output token path="$.usage.output_tokens";
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile onr.conf: %v", err)
+	}
+	path := filepath.Join(providersDir, "openai.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "openai" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_extract shared_tokens;
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile provider: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+	facts := pf.Usage.Defaults.CompiledFacts(nil)
+	if len(facts) != 2 {
+		t.Fatalf("compiled facts len=%d want=2", len(facts))
+	}
+	if facts[0].Path != "$.usage.input_tokens" || facts[1].Path != "$.usage.output_tokens" {
+		t.Fatalf("unexpected compiled facts: %#v", facts)
+	}
+}
+
+func TestUsesDerivedUsagePath_BuiltinOpenAIAudioSpeechSugar(t *testing.T) {
+	meta := &dslmeta.Meta{API: "audio.speech", IsStream: false}
+	cfg := UsageExtractConfig{Mode: usageModeOpenAI}
+
+	if !UsesDerivedUsagePath(meta, cfg, "$.audio_duration_seconds") {
+		t.Fatalf("expected builtin openai audio.speech to reference derived audio duration")
+	}
+	if UsesDerivedUsagePath(&dslmeta.Meta{API: "chat.completions", IsStream: false}, cfg, "$.audio_duration_seconds") {
+		t.Fatalf("did not expect chat.completions openai usage to reference derived audio duration")
 	}
 }
 

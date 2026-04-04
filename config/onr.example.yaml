@@ -14,10 +14,11 @@ server:
   pid_file: "/var/run/onr.pid"
 
 providers:
-  # Directory containing provider DSL files (*.conf)
-  dir: "./config/providers"
+  # Optional explicit providers directory.
+  # Leave empty to load providers from ./config/onr.conf (which can include ./config/providers).
+  dir: ""
   auto_reload:
-    # Watch providers.dir and reload provider DSL files automatically.
+    # Watch the resolved provider DSL source directory and reload automatically.
     # Disabled by default; enable only when you need file-watch based reload.
     enabled: false
     # Merge rapid editor events into one reload.

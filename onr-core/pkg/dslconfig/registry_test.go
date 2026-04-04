@@ -146,3 +146,52 @@ provider "openai-compatible" {
 		t.Fatalf("unexpected provider loaded")
 	}
 }
+
+func TestRegistryReloadFromDir_GlobalUsageModeFile(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "usage-modes.conf"), []byte(`
+syntax "next-router/0.1";
+
+usage_mode "shared_tokens" {
+  usage_extract custom;
+  usage_fact input token path="$.usage.input_tokens";
+  usage_fact output token path="$.usage.output_tokens";
+}
+`), 0o600); err != nil {
+		t.Fatalf("write usage mode file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "openai-compatible.conf"), []byte(`
+syntax "next-router/0.1";
+
+provider "openai-compatible" {
+  defaults {
+    upstream_config { base_url = "https://api.example.com"; }
+    metrics { usage_extract shared_tokens; }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("write provider file: %v", err)
+	}
+
+	reg := NewRegistry()
+	res, err := reg.ReloadFromDir(dir)
+	if err != nil {
+		t.Fatalf("ReloadFromDir: %v", err)
+	}
+	if len(res.LoadedProviders) != 1 || res.LoadedProviders[0] != "openai-compatible" {
+		t.Fatalf("unexpected loaded providers: %#v", res.LoadedProviders)
+	}
+	if len(res.SkippedFiles) != 0 {
+		t.Fatalf("expected no skipped files, got %#v", res.SkippedFiles)
+	}
+	p, ok := reg.GetProvider("openai-compatible")
+	if !ok {
+		t.Fatalf("provider not found")
+	}
+	if got := normalizeUsageMode(p.Usage.Defaults.Mode); got != usageModeCustom {
+		t.Fatalf("expected resolved custom mode, got %q", got)
+	}
+	if len(p.Usage.Defaults.CompiledFacts(nil)) != 2 {
+		t.Fatalf("expected 2 compiled facts, got %#v", p.Usage.Defaults.CompiledFacts(nil))
+	}
+}

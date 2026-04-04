@@ -268,3 +268,171 @@ provider "invalid_finish" {
 		t.Fatalf("expected invalid finish_reason_path to be rejected")
 	}
 }
+
+func TestValidateProviderFile_GlobalFinishReasonModePreset(t *testing.T) {
+	rootDir := t.TempDir()
+	providersDir := filepath.Join(rootDir, "providers")
+	if err := os.MkdirAll(providersDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(rootDir, "onr.conf"), []byte(`
+syntax "next-router/0.1";
+
+include finish_reason_modes.conf;
+include providers/*.conf;
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile onr.conf: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(rootDir, "finish_reason_modes.conf"), []byte(`
+syntax "next-router/0.1";
+
+finish_reason_mode "shared_finish" {
+  finish_reason_path "$.meta.finish";
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile finish_reason_modes.conf: %v", err)
+	}
+	providerPath := filepath.Join(providersDir, "demo.conf")
+	if err := os.WriteFile(providerPath, []byte(`
+syntax "next-router/0.1";
+
+provider "demo" {
+  defaults {
+    upstream_config { base_url = "https://example.com"; }
+    metrics {
+      finish_reason_extract shared_finish;
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile provider: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(providerPath)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile(%q): %v", providerPath, err)
+	}
+
+	cfg, ok := pf.Finish.Select(&dslmeta.Meta{API: "chat.completions"})
+	if !ok {
+		t.Fatalf("expected finish_reason config selected")
+	}
+	if cfg.Mode != usageModeCustom {
+		t.Fatalf("mode=%q want=%q", cfg.Mode, usageModeCustom)
+	}
+	rules := cfg.finishReasonPathConfigs()
+	if got, want := len(rules), 1; got != want {
+		t.Fatalf("path rules len=%d want=%d", got, want)
+	}
+	if got := rules[0].Path; got != "$.meta.finish" {
+		t.Fatalf("path=%q want=%q", got, "$.meta.finish")
+	}
+}
+
+func TestValidateProviderFile_FinishReasonModeNamedOpenAIWorksAsNormalPreset(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.conf")
+	content := []byte(`
+syntax "next-router/0.1";
+
+finish_reason_mode "openai" {
+  finish_reason_path "$.meta.finish";
+}
+
+provider "demo" {
+  defaults {
+    upstream_config { base_url = "https://example.com"; }
+    metrics {
+      finish_reason_extract openai;
+    }
+  }
+}
+`)
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatalf("write provider file: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile(%q): %v", path, err)
+	}
+
+	cfg, ok := pf.Finish.Select(&dslmeta.Meta{API: "chat.completions"})
+	if !ok {
+		t.Fatalf("expected finish_reason config selected")
+	}
+	if cfg.Mode != usageModeCustom {
+		t.Fatalf("mode=%q want=%q", cfg.Mode, usageModeCustom)
+	}
+	got, err := ExtractFinishReason(&dslmeta.Meta{API: "chat.completions"}, cfg, []byte(`{"meta":{"finish":"tool_calls"},"choices":[{"finish_reason":"stop"}]}`))
+	if err != nil {
+		t.Fatalf("ExtractFinishReason: %v", err)
+	}
+	if got != "tool_calls" {
+		t.Fatalf("finish_reason=%q want=tool_calls", got)
+	}
+}
+
+func TestValidateProviderFile_FinishReasonModeRequiresGlobalConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.conf")
+	content := []byte(`
+syntax "next-router/0.1";
+
+provider "demo" {
+  defaults {
+    upstream_config { base_url = "https://example.com"; }
+    metrics {
+      finish_reason_extract openai;
+    }
+  }
+}
+`)
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatalf("write provider file: %v", err)
+	}
+
+	if _, err := ValidateProviderFile(path); err == nil {
+		t.Fatalf("expected validation error")
+	}
+}
+
+func TestValidateProviderFile_ProviderMetricsFinishReasonPathImplicitCustom(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.conf")
+	content := []byte(`
+syntax "next-router/0.1";
+
+provider "demo" {
+  defaults {
+    upstream_config { base_url = "https://example.com"; }
+    metrics {
+      finish_reason_path "$.meta.finish";
+    }
+  }
+}
+`)
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatalf("write provider file: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile(%q): %v", path, err)
+	}
+
+	cfg, ok := pf.Finish.Select(&dslmeta.Meta{API: "chat.completions"})
+	if !ok {
+		t.Fatalf("expected finish_reason config selected")
+	}
+	if got := normalizeFinishReasonMode(cfg.Mode); got != usageModeCustom {
+		t.Fatalf("mode=%q want=%q", cfg.Mode, usageModeCustom)
+	}
+	got, err := ExtractFinishReason(&dslmeta.Meta{API: "chat.completions"}, cfg, []byte(`{"meta":{"finish":"tool_calls"},"choices":[{"finish_reason":"stop"}]}`))
+	if err != nil {
+		t.Fatalf("ExtractFinishReason: %v", err)
+	}
+	if got != "tool_calls" {
+		t.Fatalf("finish_reason=%q want=tool_calls", got)
+	}
+}

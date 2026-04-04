@@ -11,6 +11,7 @@ import (
 
 type FinishReasonExtractConfig struct {
 	Mode             string
+	builtinPreset    string
 	FinishReasonPath string
 	paths            []finishReasonPathConfig
 }

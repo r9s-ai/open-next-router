@@ -48,6 +48,7 @@ Validate config files.
 
 ```bash
 onr-admin validate all --config ./onr.yaml
+onr-admin validate providers --config ./onr.yaml --show-usage-plan
 ```
 
 ## 5. balance
@@ -70,7 +71,8 @@ Sync model pricing from `https://models.dev/api.json` into `price.yaml`.
 onr-admin pricing providers
 onr-admin pricing providers --search openai
 
-# If --provider/--providers is omitted, it loads all providers from providers.dir in onr.yaml
+# If --provider/--providers is omitted, it loads all providers from the configured DSL source
+# (default: ./config/onr.conf, which can include ./config/providers)
 onr-admin pricing sync --config ./onr.yaml --out ./price.yaml
 
 onr-admin pricing sync -p openai --models gpt-4o-mini,gpt-4o --out ./price.yaml
@@ -183,6 +185,6 @@ Behavior:
 
 - Submit `provider + content` to validate against the whole providers directory.
 - Save happens only after validation succeeds.
-- Target file is `providers.dir/<provider>.conf`.
+- Target file is `<providers-dir>/<provider>.conf` (default `./config/providers/<provider>.conf`).
 - Test Response supports extracting `request_id` from response headers (`X-Onr-Request-Id` first, then `X-Request-Id`) and loading the matching dump file inline.
 - Dump lookup reads files from `traffic_dump.dir` in config (fallback `./dumps`), so ONR must enable `traffic_dump.enabled=true` and the directory must be accessible.

@@ -370,6 +370,55 @@ func TestExtractUsage_OpenAI_ResponsesWebSearchCanonicalFact_StreamFinalResponse
 	}
 }
 
+func TestExtractUsage_OpenAI_ChatCompletionsWebSearchCanonicalFact(t *testing.T) {
+	meta := &dslmeta.Meta{API: "chat.completions", IsStream: false}
+	cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
+
+	resp := []byte(`{
+	  "choices": [
+	    {
+	      "message": {
+	        "annotations": [
+	          {"type": "url_citation"},
+	          {"type": "url_citation"}
+	        ]
+	      }
+	    }
+	  ],
+	  "usage": {
+	    "prompt_tokens": 8,
+	    "completion_tokens": 9
+	  }
+	}`)
+
+	u, _, err := ExtractUsage(meta, cfg, resp)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if u == nil {
+		t.Fatalf("usage nil")
+	}
+	if got, want := u.InputTokens, 8; got != want {
+		t.Fatalf("input_tokens=%v want=%v", got, want)
+	}
+	if got, want := u.OutputTokens, 9; got != want {
+		t.Fatalf("output_tokens=%v want=%v", got, want)
+	}
+	if got, want := u.FlatFields["server_tool_web_search_calls"], 1; got != want {
+		t.Fatalf("server_tool_web_search_calls=%v want=%v", got, want)
+	}
+	found := false
+	for _, fact := range u.DebugFacts {
+		if fact.Dimension == "server_tool.web_search" && fact.Unit == "call" && fact.Quantity == 1 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected server_tool.web_search call fact, got=%#v", u.DebugFacts)
+	}
+}
+
 func TestExtractUsage_OpenAI_ChatCompletionsMultimodalRealResponse(t *testing.T) {
 	meta := &dslmeta.Meta{API: "chat.completions", IsStream: false}
 	cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)

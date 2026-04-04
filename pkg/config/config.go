@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -17,6 +18,8 @@ const (
 	defaultAccessLogRotateMaxSizeMB  = 100
 	defaultAccessLogRotateMaxBackups = 14
 	defaultAccessLogRotateMaxAgeDays = 14
+	DefaultProvidersDir              = "./config/providers"
+	DefaultProvidersDSLFile          = "./config/onr.conf"
 )
 
 var allowedTrafficDumpSections = []string{
@@ -113,7 +116,7 @@ type Config struct {
 
 	Providers struct {
 		Dir string `yaml:"dir"`
-		// AutoReload watches providers.dir and reloads provider DSL files at runtime.
+		// AutoReload watches the resolved provider DSL source directory and reloads provider DSL files at runtime.
 		AutoReload struct {
 			Enabled    bool `yaml:"enabled"`
 			DebounceMs int  `yaml:"debounce_ms"`
@@ -183,6 +186,33 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
+func ResolveProvidersDir(cfg *Config) string {
+	if cfg != nil && strings.TrimSpace(cfg.Providers.Dir) != "" {
+		return strings.TrimSpace(cfg.Providers.Dir)
+	}
+	return DefaultProvidersDir
+}
+
+func ResolveProviderDSLSource(cfg *Config) (string, bool) {
+	if cfg != nil && strings.TrimSpace(cfg.Providers.Dir) != "" {
+		return strings.TrimSpace(cfg.Providers.Dir), false
+	}
+	if _, err := os.Stat(DefaultProvidersDSLFile); err == nil {
+		return DefaultProvidersDSLFile, true
+	}
+	return DefaultProvidersDir, false
+}
+
+func ResolveProviderDSLWatchDir(cfg *Config) string {
+	if cfg != nil && strings.TrimSpace(cfg.Providers.Dir) != "" {
+		return strings.TrimSpace(cfg.Providers.Dir)
+	}
+	if _, err := os.Stat(DefaultProvidersDSLFile); err == nil {
+		return filepath.Dir(DefaultProvidersDSLFile)
+	}
+	return DefaultProvidersDir
+}
+
 func applyDefaults(cfg *Config) {
 	if strings.TrimSpace(cfg.Server.Listen) == "" {
 		cfg.Server.Listen = ":3300"
@@ -195,9 +225,6 @@ func applyDefaults(cfg *Config) {
 	}
 	if strings.TrimSpace(cfg.Server.PidFile) == "" {
 		cfg.Server.PidFile = "/var/run/onr.pid"
-	}
-	if strings.TrimSpace(cfg.Providers.Dir) == "" {
-		cfg.Providers.Dir = "./config/providers"
 	}
 	if cfg.Providers.AutoReload.DebounceMs <= 0 {
 		cfg.Providers.AutoReload.DebounceMs = 300

@@ -46,6 +46,9 @@
 //
 //   - ExtractUsage
 //
+//   - (UsageExtractConfig).DeclaredFacts, (UsageExtractConfig).BuiltinFacts,
+//     (UsageExtractConfig).CompiledFacts, (UsageExtractConfig).CompiledPlan
+//
 //   - Balance extraction:
 //
 //   - ProviderBalance, MatchBalance, BalanceQueryConfig

@@ -52,6 +52,24 @@ func (e *UsageExpr) Eval(root map[string]any) int {
 	}
 }
 
+func (e *UsageExpr) String() string {
+	if e == nil {
+		return ""
+	}
+	switch e.kind {
+	case usageExprInt:
+		return strconv.Itoa(e.value)
+	case usageExprPath:
+		return e.path
+	case usageExprAdd:
+		return e.left.String() + " + " + e.right.String()
+	case usageExprSub:
+		return e.left.String() + " - " + e.right.String()
+	default:
+		return ""
+	}
+}
+
 func ParseUsageExpr(s string) (*UsageExpr, error) {
 	p := &usageExprParser{src: strings.TrimSpace(s)}
 	expr, err := p.parseExpr()
@@ -63,6 +81,14 @@ func ParseUsageExpr(s string) (*UsageExpr, error) {
 		return nil, fmt.Errorf("unexpected token at %d", p.pos)
 	}
 	return expr, nil
+}
+
+func MustParseUsageExpr(s string) *UsageExpr {
+	expr, err := ParseUsageExpr(s)
+	if err != nil {
+		panic(err)
+	}
+	return expr
 }
 
 type usageExprParser struct {

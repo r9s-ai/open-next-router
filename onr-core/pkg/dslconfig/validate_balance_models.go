@@ -6,24 +6,44 @@ import (
 	"strings"
 )
 
-func validateProviderBalance(path, providerName string, balance ProviderBalance) error {
-	if err := validateBalanceQueryConfig(path, providerName, "defaults.balance", balance.Defaults); err != nil {
-		return err
+func validateProviderBalance(path, providerName string, balance ProviderBalance, registry balanceModeRegistry) (ProviderBalance, error) {
+	resolvedDefaults, err := validateBalanceQueryConfig(path, providerName, "defaults.balance", balance.Defaults, registry)
+	if err != nil {
+		return ProviderBalance{}, err
 	}
+	resolved := ProviderBalance{Defaults: resolvedDefaults}
 	for i, m := range balance.Matches {
 		scope := fmt.Sprintf("match[%d].balance", i)
-		if err := validateBalanceQueryConfig(path, providerName, scope, m.Query); err != nil {
-			return err
+		query, err := validateBalanceQueryConfig(path, providerName, scope, m.Query, registry)
+		if err != nil {
+			return ProviderBalance{}, err
 		}
+		m.Query = query
+		resolved.Matches = append(resolved.Matches, m)
 	}
-	return nil
+	return resolved, nil
 }
 
-func validateProviderModels(path, providerName string, models ProviderModels) error {
-	return validateModelsQueryConfig(path, providerName, "defaults.models", models.Defaults)
+func validateProviderModels(path, providerName string, models ProviderModels, registry modelsModeRegistry) (ProviderModels, error) {
+	resolved, err := validateModelsQueryConfig(path, providerName, "defaults.models", models.Defaults, registry)
+	if err != nil {
+		return ProviderModels{}, err
+	}
+	return ProviderModels{Defaults: resolved}, nil
 }
 
-func validateBalanceQueryConfig(path, providerName, scope string, cfg BalanceQueryConfig) error {
+func validateBalanceQueryConfig(path, providerName, scope string, cfg BalanceQueryConfig, registry balanceModeRegistry) (BalanceQueryConfig, error) {
+	resolved, err := resolveBalanceQueryConfig(path, providerName, scope, cfg, registry, nil)
+	if err != nil {
+		return BalanceQueryConfig{}, err
+	}
+	if err := validateResolvedBalanceQueryConfig(path, providerName, scope, resolved); err != nil {
+		return BalanceQueryConfig{}, err
+	}
+	return resolved, nil
+}
+
+func validateResolvedBalanceQueryConfig(path, providerName, scope string, cfg BalanceQueryConfig) error {
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	if mode == "" {
 		return nil
@@ -153,7 +173,18 @@ func validateBalanceHeaders(path, providerName, scope string, headers []HeaderOp
 	return validateHeaderOps(path, providerName, scope+".headers", headers)
 }
 
-func validateModelsQueryConfig(path, providerName, scope string, cfg ModelsQueryConfig) error {
+func validateModelsQueryConfig(path, providerName, scope string, cfg ModelsQueryConfig, registry modelsModeRegistry) (ModelsQueryConfig, error) {
+	resolved, err := resolveModelsQueryConfig(path, providerName, scope, cfg, registry, nil)
+	if err != nil {
+		return ModelsQueryConfig{}, err
+	}
+	if err := validateResolvedModelsQueryConfig(path, providerName, scope, resolved); err != nil {
+		return ModelsQueryConfig{}, err
+	}
+	return normalizeModelsQueryConfig(resolved), nil
+}
+
+func validateResolvedModelsQueryConfig(path, providerName, scope string, cfg ModelsQueryConfig) error {
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	if mode == "" {
 		return nil

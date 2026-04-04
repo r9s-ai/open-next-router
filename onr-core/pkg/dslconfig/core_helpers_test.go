@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -56,6 +57,46 @@ func TestDefaultRegistryAndReloadDefault(t *testing.T) {
 	}
 	if _, ok := DefaultRegistry().GetProvider("openai-compatible"); !ok {
 		t.Fatalf("provider should exist in default registry after reload")
+	}
+}
+
+func TestPreprocessIncludes_UnquotedDirInclude(t *testing.T) {
+	root := t.TempDir()
+	providersDir := filepath.Join(root, "providers")
+	if err := os.MkdirAll(providersDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	writeProviderConf(t, providersDir, "alpha", "https://alpha.example.com")
+	writeProviderConf(t, providersDir, "beta", "https://beta.example.com")
+
+	content, err := preprocessIncludes(filepath.Join(root, "onr.conf"), "include providers;\n")
+	if err != nil {
+		t.Fatalf("preprocessIncludes: %v", err)
+	}
+	if !strings.Contains(content, `provider "alpha"`) || !strings.Contains(content, `provider "beta"`) {
+		t.Fatalf("unexpected expanded content: %q", content)
+	}
+}
+
+func TestPreprocessIncludes_UnquotedGlobInclude(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "parts")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.conf"), []byte("syntax \"next-router/0.1\";\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile a.conf: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.conf"), []byte("provider \"demo\" { defaults { upstream_config { base_url = \"https://api.example.com\"; } } }\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile b.conf: %v", err)
+	}
+
+	content, err := preprocessIncludes(filepath.Join(root, "onr.conf"), "include parts/*.conf;\n")
+	if err != nil {
+		t.Fatalf("preprocessIncludes: %v", err)
+	}
+	if !strings.Contains(content, `syntax "next-router/0.1";`) || !strings.Contains(content, `provider "demo"`) {
+		t.Fatalf("unexpected expanded content: %q", content)
 	}
 }
 

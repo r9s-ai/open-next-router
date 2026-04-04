@@ -333,7 +333,7 @@ func populateNonStreamDerivedUsage(meta *dslmeta.Meta, pf dslconfig.ProviderFile
 		return
 	}
 	usageCfg, ok := pf.Usage.Select(meta)
-	if !ok || !dslconfig.UsesDerivedUsagePath(usageCfg, "$.audio_duration_seconds") {
+	if !ok || !dslconfig.UsesDerivedUsagePath(meta, usageCfg, "$.audio_duration_seconds") {
 		return
 	}
 	seconds, err := onraudio.DurationFromBytes(respBody)

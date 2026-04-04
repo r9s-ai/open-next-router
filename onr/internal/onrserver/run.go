@@ -1,6 +1,7 @@
 package onrserver
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -60,11 +61,12 @@ func Run(cfgPath string) error {
 	}
 
 	reg := dslconfig.NewRegistry()
-	loadRes, err := reg.ReloadFromDir(cfg.Providers.Dir)
+	providersPath, providersFromFile := config.ResolveProviderDSLSource(cfg)
+	loadRes, err := reg.ReloadFromPath(providersPath)
 	if err != nil {
-		return fmt.Errorf("load providers dir %q: %w", cfg.Providers.Dir, err)
+		return fmt.Errorf("load providers %q: %w", providersPath, err)
 	}
-	logSkippedProviders(sysLogger, cfg.Providers.Dir, loadRes.SkippedFiles, loadRes.SkippedReasons, false)
+	logSkippedProviders(sysLogger, providersPath, loadRes.SkippedFiles, loadRes.SkippedReasons, false)
 
 	keys, err := keystore.Load(cfg.Keys.File)
 	if err != nil {
@@ -128,7 +130,8 @@ func Run(cfgPath string) error {
 
 	logStartupSummary(sysLogger, cfg, cfgPath)
 	sysLogger.Info(logx.SystemCategoryServer, "open-next-router listening", map[string]any{
-		"listen_url": resolveListenURL(cfg.Server.Listen),
+		"listen_url":               resolveListenURL(cfg.Server.Listen),
+		"providers_source_is_file": providersFromFile,
 	})
 	if err := engine.Run(cfg.Server.Listen); err != nil {
 		return fmt.Errorf("run: %w", err)
@@ -234,11 +237,12 @@ func reloadProvidersRuntime(cfg *config.Config, reg *dslconfig.Registry, logger 
 		return providersReloadResult{}, errors.New("reload providers: nil cfg/registry")
 	}
 	before := snapshotProviderFingerprints(reg)
-	loadRes, err := reg.ReloadFromDir(cfg.Providers.Dir)
+	providersPath, _ := config.ResolveProviderDSLSource(cfg)
+	loadRes, err := reg.ReloadFromPath(providersPath)
 	if err != nil {
-		return providersReloadResult{}, fmt.Errorf("reload providers dir %q: %w", cfg.Providers.Dir, err)
+		return providersReloadResult{}, fmt.Errorf("reload providers %q: %w", providersPath, err)
 	}
-	logSkippedProviders(logger, cfg.Providers.Dir, loadRes.SkippedFiles, loadRes.SkippedReasons, true)
+	logSkippedProviders(logger, providersPath, loadRes.SkippedFiles, loadRes.SkippedReasons, true)
 	after := snapshotProviderFingerprints(reg)
 	return providersReloadResult{
 		LoadResult:       loadRes,
@@ -273,7 +277,7 @@ func reloadRuntime(cfg *config.Config, st *state, reg *dslconfig.Registry, pclie
 	return providersRes, nil
 }
 
-func logSkippedProviders(logger *logx.SystemLogger, providersDir string, skipped []string, skippedReasons map[string]string, reloading bool) {
+func logSkippedProviders(logger *logx.SystemLogger, providersPath string, skipped []string, skippedReasons map[string]string, reloading bool) {
 	if len(skipped) == 0 {
 		return
 	}
@@ -293,7 +297,7 @@ func logSkippedProviders(logger *logx.SystemLogger, providersDir string, skipped
 	}
 	logger.Warn(logx.SystemCategoryProviders, "providers skipped invalid files", map[string]any{
 		"phase":                 phase,
-		"providers_dir":         providersDir,
+		"providers_path":        providersPath,
 		"skipped_invalid_files": strings.Join(sortedSkipped, ","),
 		"skip_reasons":          strings.Join(details, " | "),
 	})
@@ -303,11 +307,13 @@ func logStartupSummary(logger *logx.SystemLogger, cfg *config.Config, cfgPath st
 	if cfg == nil {
 		return
 	}
+	providersPath, providersFromFile := config.ResolveProviderDSLSource(cfg)
 	logger.Info(logx.SystemCategoryStartup, "startup config loaded", map[string]any{
-		"config_path":   strings.TrimSpace(cfgPath),
-		"providers_dir": cfg.Providers.Dir,
-		"keys_file":     cfg.Keys.File,
-		"models_file":   cfg.Models.File,
+		"config_path":              strings.TrimSpace(cfgPath),
+		"providers_path":           providersPath,
+		"providers_source_is_file": providersFromFile,
+		"keys_file":                cfg.Keys.File,
+		"models_file":              cfg.Models.File,
 	})
 	logger.Info(logx.SystemCategoryStartup, "startup runtime flags", map[string]any{
 		"traffic_dump_enabled":              cfg.TrafficDump.Enabled,
@@ -334,14 +340,16 @@ func logReloadOK(logger *logx.SystemLogger, source string, cfg *config.Config, p
 	if cfg == nil {
 		return
 	}
+	providersPath, providersFromFile := config.ResolveProviderDSLSource(cfg)
 	logger.Info(logx.SystemCategoryReload, "reload ok", map[string]any{
-		"source":                 source,
-		"providers_dir":          cfg.Providers.Dir,
-		"changed_providers":      providerNamesForLog(providersRes.ChangedProviders),
-		"keys_file":              cfg.Keys.File,
-		"models_file":            cfg.Models.File,
-		"pricing_file":           cfg.Pricing.File,
-		"pricing_overrides_file": cfg.Pricing.OverridesFile,
+		"source":                   source,
+		"providers_path":           providersPath,
+		"providers_source_is_file": providersFromFile,
+		"changed_providers":        providerNamesForLog(providersRes.ChangedProviders),
+		"keys_file":                cfg.Keys.File,
+		"models_file":              cfg.Models.File,
+		"pricing_file":             cfg.Pricing.File,
+		"pricing_overrides_file":   cfg.Pricing.OverridesFile,
 	})
 }
 
@@ -405,7 +413,37 @@ func snapshotProviderFingerprints(reg *dslconfig.Registry) map[string]string {
 }
 
 func providerFingerprint(pf dslconfig.ProviderFile) string {
-	return strings.TrimSpace(pf.Path) + "\x00" + pf.Content
+	type providerFingerprintSnapshot struct {
+		Path     string                               `json:"path,omitempty"`
+		Content  string                               `json:"content,omitempty"`
+		Routing  dslconfig.ProviderRouting            `json:"routing,omitempty"`
+		Headers  dslconfig.ProviderHeaders            `json:"headers,omitempty"`
+		Request  dslconfig.ProviderRequestTransform   `json:"request,omitempty"`
+		Response dslconfig.ProviderResponse           `json:"response,omitempty"`
+		Error    dslconfig.ProviderError              `json:"error,omitempty"`
+		Usage    dslconfig.ProviderUsageExecutionPlan `json:"usage,omitempty"`
+		Finish   dslconfig.ProviderFinishReason       `json:"finish,omitempty"`
+		Balance  dslconfig.ProviderBalance            `json:"balance,omitempty"`
+		Models   dslconfig.ProviderModels             `json:"models,omitempty"`
+	}
+	snapshot := providerFingerprintSnapshot{
+		Path:     strings.TrimSpace(pf.Path),
+		Content:  pf.Content,
+		Routing:  pf.Routing,
+		Headers:  pf.Headers,
+		Request:  pf.Request,
+		Response: pf.Response,
+		Error:    pf.Error,
+		Usage:    pf.Usage.CompiledPlans(),
+		Finish:   pf.Finish,
+		Balance:  pf.Balance,
+		Models:   pf.Models,
+	}
+	b, err := json.Marshal(snapshot)
+	if err != nil {
+		return strings.TrimSpace(pf.Path) + "\x00" + pf.Content
+	}
+	return string(b)
 }
 
 func diffChangedProviderNames(before map[string]string, after map[string]string) []string {

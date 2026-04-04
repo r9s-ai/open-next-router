@@ -37,3 +37,22 @@ type UsageFact struct {
 	Type      string `json:"type,omitempty"`
 	Status    string `json:"status,omitempty"`
 }
+
+// UsageExecutionPlan is the normalized internal plan used after usage_extract
+// syntax sugar and compatibility-layer fields are compiled into explicit rules.
+type UsageExecutionPlan struct {
+	Mode            string      `json:"mode,omitempty"`
+	Facts           []UsageFact `json:"facts,omitempty"`
+	TotalTokensExpr string      `json:"total_tokens_expr,omitempty"`
+}
+
+type MatchUsageExecutionPlan struct {
+	API    string             `json:"api,omitempty"`
+	Stream *bool              `json:"stream,omitempty"`
+	Plan   UsageExecutionPlan `json:"plan,omitempty"`
+}
+
+type ProviderUsageExecutionPlan struct {
+	Defaults UsageExecutionPlan        `json:"defaults,omitempty"`
+	Matches  []MatchUsageExecutionPlan `json:"matches,omitempty"`
+}

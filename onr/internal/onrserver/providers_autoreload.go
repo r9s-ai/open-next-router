@@ -23,7 +23,7 @@ func installProvidersAutoReload(cfg *config.Config, reg *dslconfig.Registry, mu 
 		return nil, nil
 	}
 
-	dir := strings.TrimSpace(cfg.Providers.Dir)
+	dir := strings.TrimSpace(config.ResolveProviderDSLWatchDir(cfg))
 	if dir == "" {
 		return nil, nil
 	}
@@ -120,9 +120,9 @@ func installProvidersAutoReload(cfg *config.Config, reg *dslconfig.Registry, mu 
 	}()
 
 	logger.Info(logx.SystemCategoryProviders, "providers auto-reload enabled", map[string]any{
-		"source":        "providers_auto",
-		"providers_dir": dir,
-		"debounce_ms":   cfg.Providers.AutoReload.DebounceMs,
+		"source":              "providers_auto",
+		"providers_watch_dir": dir,
+		"debounce_ms":         cfg.Providers.AutoReload.DebounceMs,
 	})
 	return closerFunc(func() error {
 		close(stopCh)

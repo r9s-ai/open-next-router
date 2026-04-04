@@ -12,6 +12,8 @@ import (
 type UsageExtractConfig struct {
 	Mode string
 
+	builtinPreset string
+
 	InputTokensPath      string
 	OutputTokensPath     string
 	CacheReadTokensPath  string
@@ -103,6 +105,7 @@ func extractUsageFromResponseRoot(meta *dslmeta.Meta, cfg UsageExtractConfig, re
 }
 
 func extractUsageFromRoots(meta *dslmeta.Meta, cfg UsageExtractConfig, reqRoot, respRoot, derivedRoot map[string]any, respBody []byte) (*Usage, int, error) {
+	cfg = compileUsageExtractConfig(meta, cfg)
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	switch mode {
 	case usageModeCustom:
@@ -111,8 +114,6 @@ func extractUsageFromRoots(meta *dslmeta.Meta, cfg UsageExtractConfig, reqRoot, 
 			return nil, 0, err
 		}
 		return usage, cachedTokens, nil
-	case usageModeOpenAI, usageModeAnthropic, usageModeGemini:
-		return extractBuiltinUsage(meta, reqRoot, respRoot, derivedRoot, respBody, cfg)
 	default:
 		return nil, 0, fmt.Errorf("unsupported usage_extract mode %q", cfg.Mode)
 	}
@@ -141,7 +142,7 @@ func usageConfigAllowsNonJSONResponse(meta *dslmeta.Meta, cfg UsageExtractConfig
 		}
 	}
 	if meta != nil &&
-		strings.EqualFold(strings.TrimSpace(cfg.Mode), usageModeOpenAI) &&
+		usageBuiltinPreset(cfg) == usageModeOpenAI &&
 		strings.EqualFold(strings.TrimSpace(meta.API), "audio.speech") &&
 		len(meta.DerivedUsage) > 0 {
 		return true
@@ -171,6 +172,46 @@ func prepareUsageExtractConfig(cfg UsageExtractConfig) UsageExtractConfig {
 	return cfg
 }
 
+func compileUsageExtractConfig(meta *dslmeta.Meta, cfg UsageExtractConfig) UsageExtractConfig {
+	cfg = prepareUsageExtractConfig(cfg)
+	mode := normalizeUsageMode(cfg.Mode)
+	builtinMode := usageBuiltinPreset(cfg)
+	switch {
+	case mode == "":
+		return cfg
+	case mode == usageModeCustom && builtinMode == "":
+		compiled := UsageExtractConfig{
+			Mode:            usageModeCustom,
+			TotalTokensExpr: cfg.TotalTokensExpr,
+		}
+		compiled.facts = append(compiled.facts, legacyUsageFactConfigs(cfg, cfg.explicitFactKeys)...)
+		compiled.facts = append(compiled.facts, cloneUsageFactConfigs(cfg.facts)...)
+		return prepareUsageExtractConfig(compiled)
+	case builtinMode != "":
+		overrideKeys := mergeUsageFactKeySets(cfg.explicitFactKeys, legacyUsageFactKeys(cfg))
+		compiled := UsageExtractConfig{Mode: usageModeCustom}
+		baseSet := builtinUsageFactSet(builtinMode)
+		for key, group := range baseSet.factGroups {
+			if _, ok := overrideKeys[key]; ok {
+				continue
+			}
+			compiled.facts = append(compiled.facts, cloneUsageFactConfigs(group)...)
+		}
+		compiled.facts = append(compiled.facts, legacyUsageFactConfigs(cfg, cfg.explicitFactKeys)...)
+		compiled.facts = append(compiled.facts, cloneUsageFactConfigs(cfg.facts)...)
+		compiled.facts = append(compiled.facts, builtinSupplementalUsageFactConfigs(meta, builtinMode, overrideKeys)...)
+		if totalExpr := builtinTotalTokensExpr(builtinMode); totalExpr != nil {
+			compiled.TotalTokensExpr = totalExpr
+		}
+		if cfg.TotalTokensExpr != nil {
+			compiled.TotalTokensExpr = cfg.TotalTokensExpr
+		}
+		return prepareUsageExtractConfig(compiled)
+	default:
+		return cfg
+	}
+}
+
 func derivedRootFromMeta(meta *dslmeta.Meta) map[string]any {
 	if meta == nil || len(meta.DerivedUsage) == 0 {
 		return nil
@@ -191,6 +232,7 @@ func mergeUsageConfig(base UsageExtractConfig, override UsageExtractConfig) Usag
 	out.explicitFactKeys = nil
 	if strings.TrimSpace(override.Mode) != "" {
 		out.Mode = override.Mode
+		out.builtinPreset = override.builtinPreset
 	}
 	if strings.TrimSpace(override.InputTokensPath) != "" {
 		out.InputTokensPath = override.InputTokensPath
@@ -230,8 +272,8 @@ func mergeUsageConfig(base UsageExtractConfig, override UsageExtractConfig) Usag
 
 // UsesDerivedUsagePath reports whether the config explicitly references a
 // derived-source usage_fact at the given JSON path.
-func UsesDerivedUsagePath(cfg UsageExtractConfig, path string) bool {
-	cfg = prepareUsageExtractConfig(cfg)
+func UsesDerivedUsagePath(meta *dslmeta.Meta, cfg UsageExtractConfig, path string) bool {
+	cfg = compileUsageExtractConfig(meta, cfg)
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return false
@@ -245,4 +287,24 @@ func UsesDerivedUsagePath(cfg UsageExtractConfig, path string) bool {
 		}
 	}
 	return false
+}
+
+func builtinUsagePresetName(mode string) string {
+	switch normalizeUsageMode(mode) {
+	case usageModeOpenAI:
+		return usageModeOpenAI
+	case usageModeAnthropic:
+		return usageModeAnthropic
+	case usageModeGemini:
+		return usageModeGemini
+	default:
+		return ""
+	}
+}
+
+func usageBuiltinPreset(cfg UsageExtractConfig) string {
+	if preset := builtinUsagePresetName(cfg.builtinPreset); preset != "" {
+		return preset
+	}
+	return builtinUsagePresetName(cfg.Mode)
 }

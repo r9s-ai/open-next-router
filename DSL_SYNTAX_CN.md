@@ -1,8 +1,9 @@
 # Provider 配置 DSL 语法（v0.1）
 
 本文档描述 **onr**（open-next-router）使用的 Provider 配置 DSL。
-Provider 配置文件位于本仓库 `config/providers/*.conf`，在启动时（以及 reload 时）加载。
-目录可通过配置项 `providers.dir` 或环境变量 `ONR_PROVIDERS_DIR` 自定义。
+本仓库的 DSL 主入口通常是 `config/onr.conf`，而这个文件一般会再 `include` 进 `config/providers/*.conf`。
+默认情况下 ONR 会加载 `config/onr.conf`，而这个文件通常会先 `include usage_modes.conf;`、`include finish_reason_modes.conf;`、`include models_modes.conf;`、`include balance_modes.conf;`，再 `include providers;`，把全局预设和 provider 配置一起纳入进来。
+如果需要，也仍然可以通过配置项 `providers.dir` 或环境变量 `ONR_PROVIDERS_DIR` 强制走目录模式。
 
 ## 目录
 
@@ -45,7 +46,7 @@ Provider 配置文件位于本仓库 `config/providers/*.conf`，在启动时（
 - **分号 `;` 必须写**：所有语句以 `;` 结束
 - **只有 block 才使用花括号 `{}`**：指令本身不使用 `{}`（nginx 风格）
 - **推荐书写风格：每行一条指令**（便于 diff 与可读性）
-- 支持注释：`#`、`//`、`/* ... */`
+- 支持注释：`#`、`//`
 
 推荐格式示例：
 
@@ -70,10 +71,15 @@ match api = "chat.completions" {
 语法：
 
 ```conf
-include "relative/or/absolute/path.conf";
+include relative/or/absolute/path.conf;
+include providers;
+include providers/*.conf;
 ```
 
 - 相对路径以「当前文件所在目录」为基准
+- 如果 include 的目标是一个目录，会按文件名字典序展开该目录下全部 `*.conf`
+- 支持 glob 模式，展开结果同样按字典序处理
+- 目前仍兼容带引号写法，但更推荐使用 nginx 风格的不带引号写法
 - 最大递归深度：20
 - 检测循环 include：出现循环会报错并跳过该 provider 文件加载
 
@@ -152,7 +158,7 @@ match api = "<api-name>" { ... }
 - `metrics`、`request`、`balance` 中的大多数**单值字段**按“字段级继承 + 显式覆盖”处理：
   - `match` 里写了的字段覆盖 `defaults`
   - `match` 里没写的字段继续继承 `defaults`
-  - 例如：`defaults.metrics` 写了 `finish_reason_extract openai;`，某个 `match.metrics` 只写 `usage_extract custom;`，则最终同时生效 `usage_extract custom;` 与 `finish_reason_extract openai;`
+  - 例如：`defaults.metrics` 写了 `finish_reason_extract openai_chat_completions;`，某个 `match.metrics` 只写 `usage_extract custom;`，则最终同时生效 `usage_extract custom;` 与 `finish_reason_extract openai_chat_completions;`
 - `auth` / `request` 里的 header 操作，以及 `response` / `error` 里的 `json_*`、`sse_json_del_if` 等**列表型指令**，通常按“defaults 在前，match 追加在后”处理；若存在同一对象上的后续冲突，通常以后出现的指令结果为准
 - `response` / `error` 里的单值指令（如主 `op` / `mode`）仍可被 `match` 覆盖
 - `upstream` 不按通用“整块 merge”处理：`defaults.upstream_config` 主要提供 `base_url` 默认值；具体路由动作（如 `set_path`、query 改写）来自命中的 `match.upstream`
@@ -511,23 +517,115 @@ error { error_map openai; }
 
 ### 5.7 metrics（用量提取 / usage）
 
+#### usage_mode（全局可复用 usage 预设）
+
+```conf
+usage_mode "shared_openai" {
+  usage_fact input token path="$.usage.input_tokens";
+  usage_fact output token path="$.usage.output_tokens";
+}
+```
+
+说明：
+
+- `usage_mode` 是顶层指令，用来给整个 providers 配置集合声明一个可复用的全局 usage 预设。
+- 推荐把这类全局 DSL 预设单独放在 `config/usage_modes.conf` 这类文件里，再由 `config/onr.conf` 在 `include providers;` 之前先引入。
+- 它可以单独放在一个没有 `provider {}` 的 `.conf` 文件里；这类文件在 `config/providers/` 中是合法的，但不会出现在 provider 列表里。
+- `usage_mode` 块内支持和 `metrics` 相同的 usage 指令：`usage_extract`、`usage_fact`、`*_tokens_path`、`*_tokens_expr`。
+- `usage_mode` 内部也可以继续通过 `usage_extract <other_mode>;` 引用另一个 `usage_mode`，用于组合更大的预设；递归引用会报错。
+- 在同一个 providers 目录或合并后的 providers 文件中，`usage_mode` 名字是全局唯一的；重名会在校验期报错。
+- 本仓库默认的 `config/usage_modes.conf` 会定义 `openai`、`anthropic`、`gemini`，以及 `openai_chat_completions`、`openai_prompt_completion`、`openai_responses`、`anthropic_messages`、`anthropic_messages_stream`、`gemini_generate_content`、`gemini_generate_content_stream` 这类按 API / 路径拆分的全局 `usage_mode` 预设；如果你在 DSL 里声明同名 `usage_mode`，就会覆盖这份默认预设。
+- 执行时，`usage_extract <custom_name>;` 会先解析到对应的 `usage_mode`，再编译成与 builtin mode 相同的最终 usage plan。
+
+#### finish_reason_mode（全局可复用 finish_reason 预设）
+
+```conf
+finish_reason_mode "anthropic_messages_stream" {
+  finish_reason_path "$.delta.stop_reason";
+  finish_reason_path "$.message.stop_reason" fallback=true;
+}
+```
+
+说明：
+
+- `finish_reason_mode` 是顶层指令，用来给整个 providers 配置集合声明一个可复用的全局 finish_reason 预设。
+- 推荐把这类全局 DSL 预设单独放在 `config/finish_reason_modes.conf` 这类文件里，再由 `config/onr.conf` 在 `include providers;` 之前先引入。
+- 它也可以单独放在一个没有 `provider {}` 的 `.conf` 文件里。
+- `finish_reason_mode` 块内支持和 `metrics` 中 finish reason 提取相同的指令：`finish_reason_extract`、`finish_reason_path`。
+- `finish_reason_mode` 内部也可以继续通过 `finish_reason_extract <other_mode>;` 引用另一个 `finish_reason_mode`，用于组合更大的预设；递归引用会报错。
+- 在同一个 providers 目录或合并后的 providers 文件中，`finish_reason_mode` 名字是全局唯一的；重名会在校验期报错。
+- 本仓库默认的 `config/finish_reason_modes.conf` 会定义 `openai_chat_completions`、`openai_completions`、`openai_responses`、`anthropic_messages`、`anthropic_messages_stream`、`gemini_generate_content`、`gemini_generate_content_stream` 这类更具体的全局 `finish_reason_mode` 预设；如果你在 DSL 里声明同名 `finish_reason_mode`，就会覆盖这份默认预设。
+
+#### models_mode（全局可复用 models 预设）
+
+```conf
+models_mode "openai" {
+  path "/v2/models";
+}
+```
+
+说明：
+
+- `models_mode` 也可以作为顶层指令，用来给整个 providers 配置集合声明一个可复用的全局 models 预设。
+- 推荐把这类全局 DSL 预设单独放在 `config/models_modes.conf` 这类文件里，再由 `config/onr.conf` 在 `include providers;` 之前先引入。
+- 它也可以单独放在一个没有 `provider {}` 的 `.conf` 文件里。
+- `models_mode` 块内支持和 `models` phase 相同的指令：`models_mode`、`method`、`path`、`id_path`、`id_regex`、`id_allow_regex`、`set_header`、`del_header`。
+- `models_mode` 内部也可以继续通过 `models_mode <other_mode>;` 引用另一个 `models_mode`，用于组合更大的预设；递归引用会报错。
+- 在同一个 providers 目录或合并后的 providers 文件中，`models_mode` 名字是全局唯一的；重名会在校验期报错。
+- 本仓库默认的 `config/models_modes.conf` 会定义 `openai` 和 `gemini` 这几个全局 `models_mode` 预设；如果你在 DSL 里声明同名 `models_mode`，就会覆盖这份默认预设。
+
+#### balance_mode（全局可复用 balance 预设）
+
+```conf
+balance_mode "openai" {
+  usage_path "/v9/dashboard/billing/usage";
+}
+```
+
+说明：
+
+- `balance_mode` 也可以作为顶层指令，用来给整个 providers 配置集合声明一个可复用的全局 balance 预设。
+- 推荐把这类全局 DSL 预设单独放在 `config/balance_modes.conf` 这类文件里，再由 `config/onr.conf` 在 `include providers;` 之前先引入。
+- 它也可以单独放在一个没有 `provider {}` 的 `.conf` 文件里。
+- `balance_mode` 块内支持和 `balance` phase 相同的指令：`balance_mode`、`method`、`path`、`balance_path`、`balance_expr`、`used_path`、`used_expr`、`balance_unit`、`subscription_path`、`usage_path`、`set_header`、`del_header`。
+- `balance_mode` 内部也可以继续通过 `balance_mode <other_mode>;` 引用另一个 `balance_mode`，用于组合更大的预设；递归引用会报错。
+- 在同一个 providers 目录或合并后的 providers 文件中，`balance_mode` 名字是全局唯一的；重名会在校验期报错。
+- 本仓库默认的 `config/balance_modes.conf` 会定义 `openai` 这个全局 `balance_mode` 预设；如果你在 DSL 里声明同名 `balance_mode`，就会覆盖这份默认预设。
+
 #### usage_extract
 
 ```conf
-metrics { usage_extract openai; }
-metrics { usage_extract anthropic; }
-metrics { usage_extract gemini; }
+usage_mode "shared_openai" {
+  usage_extract custom;
+  usage_fact input token path="$.usage.input_tokens";
+  usage_fact output token path="$.usage.output_tokens";
+}
+
+provider "openai" {
+  defaults {
+    metrics { usage_extract shared_openai; }
+  }
+}
+
+metrics { usage_extract openai_chat_completions; }
+metrics { usage_extract anthropic_messages; }
+metrics { usage_extract gemini_generate_content; }
 metrics { usage_extract custom; }
 ```
 
 说明：
 
-- `openai`：兼容 OpenAI/OpenAI-compatible 的 usage 字段
-- `anthropic`：兼容 Anthropic 的 usage 字段
-- `gemini`：兼容 Gemini 原生 usage 字段（`usageMetadata.*`）
 - `custom`：使用受限 JSONPath 子集从响应 JSON 中提取（可选加减表达式，见下）
+- 其他任意 mode 名：用户自定义的全局 `usage_mode`
+- 仓库默认配置现在只保留更具体的 API / 路径级预设，例如 `openai_chat_completions`、`openai_prompt_completion`、`openai_responses`、`anthropic_messages`、`anthropic_messages_stream`、`gemini_generate_content`、`gemini_generate_content_stream`。
+- `openai` / `anthropic` / `gemini` 这类泛化名字不再是特殊的 DSL 内置 `usage_extract` mode；如果你想继续用这些名字，需要自己显式定义对应的全局 `usage_mode` 预设。
+- 用户自定义 `usage_mode` 也会先完成解析，再编译进同一套统一 fact-based 执行计划。
+- 在 `metrics` 里，如果声明了 `usage_fact`、`*_tokens_path` 或 `*_tokens_expr`，但没有写 `usage_extract`，ONR 会自动按 `usage_extract custom;` 处理。
+- 若在代码侧做 introspection，建议区分三层：
+  - declared：用户显式写的 `usage_fact`
+  - compiled：最终真正参与执行的统一 usage plan
 
-内置 mode 对应的 `usage_extract custom` 近似写法：
+旧的泛化 provider mode 迁移到 `custom` 时，可参考以下近似写法：
 
 - `openai` 等价思路：
 
@@ -551,8 +649,6 @@ metrics {
 
 ```conf
 metrics {
-  usage_extract custom;
-
   usage_fact input token path="$.usage.input_tokens";
   usage_fact output token path="$.usage.output_tokens";
   usage_fact cache_read token path="$.usage.cache_read_input_tokens";
@@ -614,7 +710,7 @@ metrics {
 ```
 
 - 这类配置可以覆盖 Anthropic stream 的主要 usage 事件
-- 相比内置 `usage_extract anthropic;`，主要差异在于配置更长、更容易漏掉某一种事件路径
+- 相比旧的泛化 `anthropic` mode，主要差异在于配置更长、更容易漏掉某一种事件路径
 
 OpenAI supplemental facts 的 `custom` 补充示意：
 
@@ -642,7 +738,7 @@ metrics {
 }
 ```
 
-- `usage_extract openai;` 的额外能力本质上仍然可以用 `usage_fact` 补齐
+- 旧的泛化 OpenAI 行为本质上仍然可以用 `usage_fact` 补齐
 - 但这些规则与具体 API 强相关，所以不像 Gemini/Anthropic 核心 token 提取那样能用一小段通用配置统一覆盖
 
 #### 自定义 JSONPath 字段（仅建议配合 custom）
@@ -698,7 +794,8 @@ metrics {
 ```
 
 - `usage_fact` 用于把不同来源的用量统一抽成规范化事实
-- 目前仅在 `usage_extract custom;` 下启用
+- 在 `metrics` 里，只写 `usage_fact` 而省略 `usage_extract`，等价于 `usage_extract custom;`
+- 命名 preset 现在也会先编译成同一套内部 fact-based 执行计划，再叠加显式 `usage_fact`
 - 第一批支持 `path` / `count_path` / `sum_path` / `expr`
 - `attr.ttl` 用于区分 Anthropic 的 `5m` / `1h` cache write
 - 同一 `dimension + unit` 可声明多条 `usage_fact`；所有命中的非 fallback 规则会按声明顺序累计求和
@@ -708,19 +805,19 @@ metrics {
 - 当前不支持除 `response` / `request` / `derived` 之外的其他 `source`
 - `dimension` 是 registry 中的扁平命名空间字符串，`.` 只是名称的一部分，不表示嵌套结构
 - 当前支持的 `dimension` 与 `dimension + unit` 固定 registry，完整列表见后文 [`usage_fact`](#usage_fact) 指令说明
-- `usage_extract openai;` 当前除了传统 token 提取外，也会补充这些 canonical facts：
-  - `images.generations -> image.generate image`
-  - `images.edits -> image.edit image`
-  - `audio.transcriptions -> audio.stt second`
-  - `audio.translations -> audio.translate second`
-  - `audio.speech -> audio.tts second`（依赖 derived runtime usage）
-  - `responses -> server_tool.web_search call`
+- 仓库内置的 OpenAI API-specific 预设通常会补齐这些 canonical facts：
+  - `openai_images_generations -> image.generate image`
+  - `openai_images_edits -> image.edit image`
+  - `openai_audio_transcriptions -> audio.stt second`
+  - `openai_audio_translations -> audio.translate second`
+  - `openai_audio_speech -> audio.tts second`
+  - `openai_responses -> server_tool.web_search call`
 
 补充示例：
 
 ```conf
 metrics {
-  usage_extract openai;
+  usage_extract openai_responses;
 
   usage_fact server_tool.web_search call count_path="$.output[*]" type="web_search_call" status="completed";
 }
@@ -728,7 +825,7 @@ metrics {
 
 ```conf
 metrics {
-  usage_extract openai;
+  usage_extract openai_images_generations;
 
   usage_fact image.generate image count_path="$.data[*]";
   usage_fact image.generate image source=request expr="$.n" fallback=true;
@@ -737,7 +834,7 @@ metrics {
 
 ```conf
 metrics {
-  usage_extract openai;
+  usage_extract openai_audio_speech;
 
   usage_fact audio.tts second source=derived path="$.audio.tts.seconds";
 }
@@ -792,20 +889,22 @@ metrics {
 用于从响应 JSON 中提取 `finish_reason`（用于日志 / 计费上报等）。
 
 ```conf
-metrics { finish_reason_extract openai; }
-metrics { finish_reason_extract anthropic; }
-metrics { finish_reason_extract gemini; }
-metrics { finish_reason_extract custom; finish_reason_path "$.choices[0].finish_reason"; }
+metrics { finish_reason_extract openai_chat_completions; }
+metrics { finish_reason_extract anthropic_messages; }
+metrics { finish_reason_extract gemini_generate_content; }
+metrics { finish_reason_path "$.choices[0].finish_reason"; }
 ```
 
 说明：
 
-- `openai`：从 `$.choices[*].finish_reason` 提取（取第一个非空）
-- `anthropic`：从 `$.stop_reason` / `$.delta.stop_reason` / `$.message.stop_reason` 提取（取第一个非空）
-- `gemini`：从 `$.candidates[*].finishReason`（或 `finish_reason` 兜底）提取（取第一个非空）
 - `custom`：必须提供 `finish_reason_path`（JSONPath 子集），从该路径提取 finish_reason
+- 其他任意 mode 名：用户自定义的全局 `finish_reason_mode`
+- `finish_reason_mode` 在块内如果省略 `finish_reason_extract`，但已经声明了 `finish_reason_path`，ONR 会自动按 `custom` 处理。
+- 在 `metrics` 里，只写 `finish_reason_path` 而省略 `finish_reason_extract`，等价于 `finish_reason_extract custom;`
+- 仓库默认配置现在只保留更具体的 API / 路径级预设，例如 `openai_chat_completions`、`openai_completions`、`openai_responses`、`anthropic_messages`、`anthropic_messages_stream`、`gemini_generate_content`、`gemini_generate_content_stream`。
+- `openai` / `anthropic` / `gemini` 这类泛化名字不再是特殊的 DSL 内置 `finish_reason_extract` mode；如果你想继续用这些名字，需要自己显式定义对应的全局 `finish_reason_mode` 预设。
 
-内置提取规则：
+这些 path-specific 预设对应的提取路径：
 
 - `openai`
   - `chat.completions` / `completions`：读取 `$.choices[*].finish_reason`（取第一个非空）
@@ -823,7 +922,6 @@ metrics { finish_reason_extract custom; finish_reason_path "$.choices[0].finish_
 
 ```conf
 metrics {
-  finish_reason_extract custom;
   finish_reason_path "$.choices[0].finish_reason";
 }
 ```
@@ -898,7 +996,7 @@ metrics {
 
 ```conf
 metrics {
-  finish_reason_extract openai;
+  finish_reason_extract openai_chat_completions;
   finish_reason_path "$.choices[0].finish_reason";
 }
 ```
@@ -973,6 +1071,21 @@ Multiple: yes
 
 - `<path>` 可为相对路径或绝对路径；相对路径以当前文件所在目录为基准。
 - include 在解析前做纯文本展开；最大深度 20；会检测循环引用。
+
+#### usage_mode / finish_reason_mode / models_mode / balance_mode
+
+```text
+Syntax:  usage_mode "<name>" { ... }
+Syntax:  finish_reason_mode "<name>" { ... }
+Syntax:  models_mode "<name>" { ... }
+Syntax:  balance_mode "<name>" { ... }
+Default: —
+Context: file
+Multiple: yes
+```
+
+- 用于声明可复用的顶层 `metrics` / `models` / `balance` 预设块。
+- 推荐分别放在 `config/usage_modes.conf`、`config/finish_reason_modes.conf`、`config/models_modes.conf` 与 `config/balance_modes.conf`。
 
 ### 7.2 provider（结构块）
 
@@ -1432,6 +1545,7 @@ Multiple: yes
 ```
 
 - 建议仅配合 `usage_extract custom;` 使用；同字段多次出现时后者覆盖前者。
+- 这是兼容层写法：执行前会被编译成等价的内部 fact-based 规则。
 - `<expr>` 为受限表达式：只允许 `+/-`、JSONPath、整数常量；不支持括号/乘除/函数。
 - JSONPath 子集与 `*_tokens_path` 相同：`$.a.b.c` / `$.items[0].x` / `$.items[*].x` / `$.items[?(@.field=="VALUE")].x`（`[*]` 或 filter 命中多项时对数组求和）。
 - 取不到/非数值按 `0` 处理。
@@ -1481,6 +1595,7 @@ Multiple: yes
 - 规则同 `input_tokens_expr`。
 - 若未显式声明，则默认按 `input_tokens_expr + output_tokens_expr` 计算。
 - 不推荐：显式配置 `total_tokens_expr` 会额外引入一个独立的 total 事实源，容易与由 `input/output` 聚合出的 total 产生口径分歧。
+- 也是兼容层写法：执行前会被编译到统一的内部 usage plan。
 
 #### input_tokens_path
 
@@ -1493,6 +1608,7 @@ Multiple: yes
 
 - 建议仅配合 `usage_extract custom;` 使用；同字段多次出现时后者覆盖前者。
 - 等价于 `input_tokens_expr = <jsonpath>;` 的简写（仅能写单个 JSONPath，不支持加减）。
+- 同样属于兼容层写法：执行前会被编译成等价的内部 fact-based 规则。
 
 #### output_tokens_path
 
@@ -1505,6 +1621,7 @@ Multiple: yes
 
 - 建议仅配合 `usage_extract custom;` 使用；同字段多次出现时后者覆盖前者。
 - 等价于 `output_tokens_expr = <jsonpath>;` 的简写（仅能写单个 JSONPath，不支持加减）。
+- 同样属于兼容层写法：执行前会被编译成等价的内部 fact-based 规则。
 
 #### cache_read_tokens_path
 
@@ -1517,6 +1634,7 @@ Multiple: yes
 
 - 建议仅配合 `usage_extract custom;` 使用；同字段多次出现时后者覆盖前者。
 - 等价于 `cache_read_tokens_expr = <jsonpath>;` 的简写（仅能写单个 JSONPath，不支持加减）。
+- 同样属于兼容层写法：执行前会被编译成等价的内部 fact-based 规则。
 
 #### cache_write_tokens_path
 
@@ -1529,6 +1647,7 @@ Multiple: yes
 
 - 建议仅配合 `usage_extract custom;` 使用；同字段多次出现时后者覆盖前者。
 - 等价于 `cache_write_tokens_expr = <jsonpath>;` 的简写（仅能写单个 JSONPath，不支持加减）。
+- 同样属于兼容层写法：执行前会被编译成等价的内部 fact-based 规则。
 
 ### 7.10 balance（上游余额查询）
 
@@ -1542,6 +1661,7 @@ Multiple: no
 ```
 
 - 支持：`openai` / `custom`。
+- 其他任意 mode 名：会先解析为顶层全局 `balance_mode` 预设，再统一执行。
 
 #### method
 
@@ -1620,6 +1740,78 @@ Multiple: yes
 ```
 
 - `balance_mode openai` 的可选覆盖项。
+
+### 7.11 models（上游模型列表查询）
+
+#### models_mode
+
+```text
+Syntax:  models_mode <mode>;
+Default: —
+Context: models
+Multiple: no
+```
+
+- 支持：`openai` / `gemini` / `custom`
+- 其他任意 mode 名：会先解析为顶层全局 `models_mode` 预设，再统一执行
+
+#### method
+
+```text
+Syntax:  method <GET|POST>;
+Default: GET
+Context: models
+Multiple: yes
+```
+
+#### path
+
+```text
+Syntax:  path <path-or-url>;
+Default: 与 mode 相关
+Context: models
+Multiple: yes
+```
+
+- `models_mode openai`：默认 `/v1/models`
+- `models_mode gemini`：默认 `/v1beta/models`
+- `models_mode custom`：必填
+
+#### id_path
+
+```text
+Syntax:  id_path <jsonpath>;
+Default: 与 mode 相关
+Context: models
+Multiple: yes
+```
+
+- `models_mode openai`：默认 `$.data[*].id`
+- `models_mode gemini`：默认 `$.models[*].name`
+- `models_mode custom`：至少需要一个 `id_path`
+
+#### id_regex / id_allow_regex
+
+```text
+Syntax:  id_regex <regex>;
+Syntax:  id_allow_regex <regex>;
+Default: —
+Context: models
+Multiple: yes
+```
+
+- `id_regex` 用于重写模型 ID（优先取第 1 个捕获组）
+- `id_allow_regex` 用于重写后的白名单过滤
+
+#### set_header / del_header
+
+```text
+Syntax:  set_header <Header-Name> <expr>;
+Syntax:  del_header <Header-Name>;
+Default: —
+Context: models
+Multiple: yes
+```
 
 ---
 

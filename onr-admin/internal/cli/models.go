@@ -82,18 +82,11 @@ func runModelsGetWithOptions(opts modelsGetOptions) error {
 	}
 	cfg, _ := store.LoadConfigIfExists(strings.TrimSpace(opts.cfgPath))
 	keysPath, _ := store.ResolveDataPaths(cfg, opts.keysPath, "")
-	providersDir := strings.TrimSpace(opts.providersDir)
-	if providersDir == "" {
-		if cfg != nil && strings.TrimSpace(cfg.Providers.Dir) != "" {
-			providersDir = strings.TrimSpace(cfg.Providers.Dir)
-		} else {
-			providersDir = defaultProvidersDir
-		}
-	}
+	providersDir := resolveProviderSourcePath(cfg, opts.providersDir)
 
-	reg := dslconfig.NewRegistry()
-	if _, err := reg.ReloadFromDir(providersDir); err != nil {
-		return fmt.Errorf("load providers dir %s failed: %w", providersDir, err)
+	reg, _, err := loadRegistryFromProviderSource(providersDir)
+	if err != nil {
+		return fmt.Errorf("load providers %s failed: %w", providersDir, err)
 	}
 	targets, err := resolveTargetProviders(reg, opts.provider, opts.providersCSV, opts.allProviders)
 	if err != nil {

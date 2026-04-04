@@ -79,7 +79,8 @@ func runConfigTest(cfgPath string) error {
 	}
 	fmt.Fprintln(os.Stdout, "ok: config")
 
-	res, err := dslconfig.ValidateProvidersDir(cfg.Providers.Dir)
+	providersPath, _ := config.ResolveProviderDSLSource(cfg)
+	res, err := dslconfig.ValidateProvidersPath(providersPath)
 	if err != nil {
 		return fmt.Errorf("providers: %w", err)
 	}

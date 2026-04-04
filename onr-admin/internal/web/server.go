@@ -410,8 +410,9 @@ func (s *Server) validateCandidate(provider string, content string) (dslconfig.L
 	}
 	defer func() { _ = os.RemoveAll(tmpRoot) }()
 
-	tmpDir := filepath.Join(tmpRoot, "providers")
-	if err := copyDirectory(s.providersDir, tmpDir); err != nil {
+	configRoot := filepath.Dir(s.providersDir)
+	tmpDir := filepath.Join(tmpRoot, filepath.Base(s.providersDir))
+	if err := copyDirectory(configRoot, tmpRoot); err != nil {
 		return dslconfig.LoadResult{}, "", err
 	}
 	if err := os.WriteFile(filepath.Join(tmpDir, name+".conf"), []byte(content), 0o600); err != nil {
@@ -580,6 +581,16 @@ func listProviders(providersDir string) ([]string, error) {
 		}
 		base := strings.TrimSuffix(name, ".conf")
 		if base == "" {
+			continue
+		}
+		path := filepath.Join(providersDir, name)
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok, err := dslconfig.FindProviderNameOptional(path, string(b)); err != nil {
+			return nil, err
+		} else if !ok {
 			continue
 		}
 		out = append(out, strings.ToLower(base))

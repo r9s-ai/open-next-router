@@ -10,13 +10,10 @@ import (
 	"time"
 
 	"github.com/r9s-ai/open-next-router/onr-admin/internal/store"
-	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/pricing"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
-
-const defaultProvidersDir = "./config/providers"
 
 func newPricingCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -131,13 +128,10 @@ func resolvePricingSyncProviders(opts pricingSyncOptions) ([]string, error) {
 		return providers, nil
 	}
 	cfg, _ := store.LoadConfigIfExists(strings.TrimSpace(opts.cfgPath))
-	providersDir := defaultProvidersDir
-	if cfg != nil && strings.TrimSpace(cfg.Providers.Dir) != "" {
-		providersDir = strings.TrimSpace(cfg.Providers.Dir)
-	}
-	reg := dslconfig.NewRegistry()
-	if _, err := reg.ReloadFromDir(providersDir); err != nil {
-		return nil, fmt.Errorf("load providers dir %s failed: %w", providersDir, err)
+	providersDir := resolveProviderSourcePath(cfg, "")
+	reg, _, err := loadRegistryFromProviderSource(providersDir)
+	if err != nil {
+		return nil, fmt.Errorf("load providers %s failed: %w", providersDir, err)
 	}
 	providers := reg.ListProviderNames()
 	if len(providers) == 0 {

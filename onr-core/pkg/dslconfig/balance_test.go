@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
 )
 
 func TestParseBalanceExprAndEval(t *testing.T) {
@@ -152,5 +154,165 @@ provider "demo" {
 		if issue.Directive != "balance_unit" {
 			t.Fatalf("unexpected directive: %q", issue.Directive)
 		}
+	}
+}
+
+func TestValidateProviderFile_LoadsSiblingOnrConfigBalanceMode(t *testing.T) {
+	root := t.TempDir()
+	providersDir := filepath.Join(root, "providers")
+	if err := os.MkdirAll(providersDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "onr.conf"), []byte(`
+syntax "next-router/0.1";
+
+balance_mode "shared_openai_balance" {
+  balance_mode openai;
+  usage_path "/v9/dashboard/billing/usage";
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile onr.conf: %v", err)
+	}
+	path := filepath.Join(providersDir, "demo.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "demo" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    balance {
+      balance_mode shared_openai_balance;
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile provider: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+	cfg, ok := pf.Balance.Select(&dslmeta.Meta{API: "chat.completions"})
+	if !ok {
+		t.Fatalf("expected balance config selected")
+	}
+	if got, want := cfg.Mode, balanceModeOpenAI; got != want {
+		t.Fatalf("balance mode=%q want=%q", got, want)
+	}
+	if got, want := cfg.UsagePath, "/v9/dashboard/billing/usage"; got != want {
+		t.Fatalf("usage_path=%q want=%q", got, want)
+	}
+}
+
+func TestValidateProviderFile_UserBalanceModeOverridesBuiltinName(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+balance_mode "openai" {
+  balance_mode custom;
+  path "/v1/credits";
+  balance_path "$.data.balance";
+}
+
+provider "demo" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    balance {
+      balance_mode openai;
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+	cfg, ok := pf.Balance.Select(&dslmeta.Meta{API: "chat.completions"})
+	if !ok {
+		t.Fatalf("expected balance config selected")
+	}
+	if got, want := cfg.Mode, balanceModeCustom; got != want {
+		t.Fatalf("balance mode=%q want=%q", got, want)
+	}
+	if got, want := cfg.Path, "/v1/credits"; got != want {
+		t.Fatalf("path=%q want=%q", got, want)
+	}
+	if got, want := cfg.BalancePath, "$.data.balance"; got != want {
+		t.Fatalf("balance_path=%q want=%q", got, want)
+	}
+}
+
+func TestValidateProviderFile_ImplicitBuiltinBalanceModeByName(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+balance_mode "openai" {
+  usage_path "/v2/dashboard/billing/usage";
+}
+
+provider "demo" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    balance {
+      balance_mode openai;
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+	cfg, ok := pf.Balance.Select(&dslmeta.Meta{API: "chat.completions"})
+	if !ok {
+		t.Fatalf("expected balance config selected")
+	}
+	if got, want := cfg.Mode, balanceModeOpenAI; got != want {
+		t.Fatalf("balance mode=%q want=%q", got, want)
+	}
+	if got, want := cfg.UsagePath, "/v2/dashboard/billing/usage"; got != want {
+		t.Fatalf("usage_path=%q want=%q", got, want)
+	}
+}
+
+func TestValidateProviderFile_BalanceModeRequiresGlobalConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "demo" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    balance {
+      balance_mode openai;
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if _, err := ValidateProviderFile(path); err == nil {
+		t.Fatalf("expected missing global balance_mode to fail validation")
 	}
 }

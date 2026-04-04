@@ -31,8 +31,11 @@ auth:
 	if cfg.Auth.TokenKey.AllowBYOKWithoutK {
 		t.Fatalf("auth.token_key.allow_byok_without_k default should be false")
 	}
-	if cfg.Keys.File == "" || cfg.Models.File == "" || cfg.Providers.Dir == "" {
+	if cfg.Keys.File == "" || cfg.Models.File == "" {
 		t.Fatalf("expected default paths")
+	}
+	if cfg.Providers.Dir != "" {
+		t.Fatalf("providers.dir default should be empty, got %q", cfg.Providers.Dir)
 	}
 	if cfg.Providers.AutoReload.Enabled {
 		t.Fatalf("providers.auto_reload.enabled default should be false")
@@ -66,6 +69,53 @@ auth:
 	}
 	if cfg.Logging.AccessLogRotate.Compress {
 		t.Fatalf("logging.access_log_rotate.compress default should be false")
+	}
+}
+
+func TestResolveProviderDSLSource_DefaultsToOnrConfWhenPresent(t *testing.T) {
+	t.Setenv("ONR_PROVIDERS_DIR", "")
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	tmp := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmp, "config"), 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "config", "onr.conf"), []byte(`syntax "next-router/0.1";`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(wd) }()
+
+	path, isFile := ResolveProviderDSLSource(&Config{})
+	if path != DefaultProvidersDSLFile || !isFile {
+		t.Fatalf("ResolveProviderDSLSource got (%q,%v), want (%q,true)", path, isFile, DefaultProvidersDSLFile)
+	}
+}
+
+func TestResolveProviderDSLWatchDir_DefaultsToConfigDirWhenOnrConfPresent(t *testing.T) {
+	t.Setenv("ONR_PROVIDERS_DIR", "")
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	tmp := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmp, "config"), 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "config", "onr.conf"), []byte(`syntax "next-router/0.1";`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(wd) }()
+
+	if got, want := ResolveProviderDSLWatchDir(&Config{}), "config"; got != want {
+		t.Fatalf("ResolveProviderDSLWatchDir=%q want=%q", got, want)
 	}
 }
 
