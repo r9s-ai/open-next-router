@@ -39,33 +39,27 @@ func TestUsageExtractConfigDeclaredFacts(t *testing.T) {
 }
 
 func TestUsageExtractConfigBuiltinFacts(t *testing.T) {
-	cfg := UsageExtractConfig{Mode: "gemini"}
+	cfg := UsageExtractConfig{Mode: "gemini_generate_content"}
 
 	facts := cfg.BuiltinFacts()
-	if len(facts) != 7 {
-		t.Fatalf("expected 7 builtin facts, got %d", len(facts))
-	}
-	if facts[0].Dimension != "input" || facts[0].Unit != "token" {
-		t.Fatalf("unexpected fact[0]: %#v", facts[0])
-	}
-	if facts[2].Dimension != "image.input" || facts[2].Unit != "token" {
-		t.Fatalf("unexpected fact[2]: %#v", facts[2])
-	}
-	if facts[4].Dimension != "audio.input" || facts[4].Unit != "token" {
-		t.Fatalf("unexpected fact[4]: %#v", facts[4])
+	if len(facts) != 0 {
+		t.Fatalf("expected builtin facts removed, got %d", len(facts))
 	}
 }
 
 func TestUsageExtractConfigCompiledFacts_OpenAIAudioSpeech(t *testing.T) {
-	cfg := UsageExtractConfig{Mode: "openai"}
+	cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", "audio.speech", false)
 
 	facts := cfg.CompiledFacts(&dslmeta.Meta{API: "audio.speech", IsStream: false})
-	if len(facts) != 8 {
-		t.Fatalf("expected 8 compiled facts, got %d", len(facts))
+	found := false
+	for _, fact := range facts {
+		if fact.Dimension == "audio.tts" && fact.Unit == "second" && fact.Source == "derived" && fact.Path == "$.audio_duration_seconds" {
+			found = true
+			break
+		}
 	}
-	last := facts[len(facts)-1]
-	if last.Dimension != "audio.tts" || last.Unit != "second" || last.Source != "derived" || last.Path != "$.audio_duration_seconds" {
-		t.Fatalf("unexpected last fact: %#v", last)
+	if !found {
+		t.Fatalf("expected derived audio.tts fact, got %#v", facts)
 	}
 }
 
@@ -107,7 +101,7 @@ func TestProviderUsageCompiledPlans_MergeDefaultsIntoMatch(t *testing.T) {
 	streamFalse := false
 	p := ProviderUsage{
 		Defaults: UsageExtractConfig{
-			Mode:                usageModeOpenAI,
+			Mode:                usageModeCustom,
 			CacheReadTokensPath: "$.usage.cached_tokens_override",
 		},
 		Matches: []MatchUsage{

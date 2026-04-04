@@ -650,6 +650,8 @@ metrics {
 ```conf
 metrics {
   usage_fact input token path="$.usage.input_tokens";
+  usage_fact input token path="$.usage.cache_read_input_tokens";
+  usage_fact input token path="$.usage.cache_creation_input_tokens";
   usage_fact output token path="$.usage.output_tokens";
   usage_fact cache_read token path="$.usage.cache_read_input_tokens";
 
@@ -679,7 +681,7 @@ metrics {
 注意：
 
 - `gemini`：当前内置行为已经可以用 `custom` 配置完整平替；内置口径为 `input token` 优先取 `TEXT` 模态，再 fallback 到 `promptTokenCount`
-- `anthropic`：上述配置已覆盖核心 token / cache 提取；对流式场景，`custom` 也能平替，但通常要自己显式处理 `message.usage` 与顶层 `usage` 两种事件形态
+- `anthropic`：ONR 现在将 `input` 视为包含 cache 的有效输入总量，因此 `cache_read_input_tokens` 与 `cache_creation_input_tokens` 也应并入 `input`
 - `openai`：上述配置只覆盖核心 token / cache 提取；图片、音频、tool usage 等 API-specific supplemental facts 仍需额外显式写 `usage_fact`
 - `gemini` 的输出 token 会把 `candidatesTokenCount` 与 `thoughtsTokenCount` 一并计入 `output`；这里既可以像示例一样写多条同维度 `usage_fact` 让系统自动求和，也可以直接写成 `output_tokens_expr = $.usageMetadata.candidatesTokenCount + $.usageMetadata.thoughtsTokenCount;`
 - `total_tokens` 默认会由 `input + output` 自动聚合；通常不建议再显式配置 `total_tokens_expr`，避免引入多个事实源
@@ -693,6 +695,10 @@ metrics {
 
   usage_fact input token path="$.usage.input_tokens";
   usage_fact input token path="$.message.usage.input_tokens";
+  usage_fact input token path="$.usage.cache_read_input_tokens";
+  usage_fact input token path="$.message.usage.cache_read_input_tokens";
+  usage_fact input token path="$.usage.cache_creation_input_tokens";
+  usage_fact input token path="$.message.usage.cache_creation_input_tokens";
 
   usage_fact output token path="$.usage.output_tokens";
   usage_fact output token path="$.message.usage.output_tokens";

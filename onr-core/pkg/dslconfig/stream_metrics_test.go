@@ -9,9 +9,10 @@ import (
 
 func TestStreamMetricsAggregator_OpenAIUsageLast_FinishFirst(t *testing.T) {
 	meta := &dslmeta.Meta{API: "chat.completions", IsStream: true}
+	usageCfg, finishCfg := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
 	agg := NewStreamMetricsAggregator(meta,
-		UsageExtractConfig{Mode: "openai"},
-		FinishReasonExtractConfig{Mode: "openai"},
+		usageCfg,
+		finishCfg,
 	)
 
 	_ = agg.OnSSEDataJSON([]byte(`{"choices":[{"finish_reason":"stop"}]}`))
@@ -34,9 +35,10 @@ func TestStreamMetricsAggregator_OpenAIUsageLast_FinishFirst(t *testing.T) {
 
 func TestStreamMetricsAggregator_AnthropicSnapshot(t *testing.T) {
 	meta := &dslmeta.Meta{API: "claude.messages", IsStream: true}
+	usageCfg, finishCfg := mustLoadProviderMatchConfigs(t, "anthropic.conf", meta.API, meta.IsStream)
 	agg := NewStreamMetricsAggregator(meta,
-		UsageExtractConfig{Mode: "anthropic"},
-		FinishReasonExtractConfig{Mode: "anthropic"},
+		usageCfg,
+		finishCfg,
 	)
 
 	// message_start: usage under message.usage
@@ -50,7 +52,7 @@ func TestStreamMetricsAggregator_AnthropicSnapshot(t *testing.T) {
 	if !ok || u == nil {
 		t.Fatalf("expected usage ok")
 	}
-	if u.InputTokens != 3 || u.OutputTokens != 7 || u.TotalTokens != 10 {
+	if u.InputTokens != 10 || u.OutputTokens != 7 || u.TotalTokens != 17 {
 		t.Fatalf("unexpected usage: %+v", *u)
 	}
 	if cached != 2 {
@@ -82,9 +84,10 @@ func TestStreamMetricsAggregator_AnthropicSnapshot(t *testing.T) {
 
 func TestStreamMetricsAggregator_AnthropicSnapshot_DoesNotOverridePositiveWithZero(t *testing.T) {
 	meta := &dslmeta.Meta{API: "claude.messages", IsStream: true}
+	usageCfg, finishCfg := mustLoadProviderMatchConfigs(t, "anthropic.conf", meta.API, meta.IsStream)
 	agg := NewStreamMetricsAggregator(meta,
-		UsageExtractConfig{Mode: "anthropic"},
-		FinishReasonExtractConfig{Mode: "anthropic"},
+		usageCfg,
+		finishCfg,
 	)
 
 	_ = agg.OnSSEDataJSON([]byte(`{"type":"message_start","message":{"usage":{"input_tokens":12}}}`))
@@ -96,7 +99,7 @@ func TestStreamMetricsAggregator_AnthropicSnapshot_DoesNotOverridePositiveWithZe
 	if !ok || u == nil {
 		t.Fatalf("expected usage ok")
 	}
-	if u.InputTokens != 12 || u.OutputTokens != 6 || u.TotalTokens != 18 {
+	if u.InputTokens != 25 || u.OutputTokens != 6 || u.TotalTokens != 31 {
 		t.Fatalf("unexpected usage: %+v", *u)
 	}
 	if cached != 4 {
@@ -113,11 +116,51 @@ func TestStreamMetricsAggregator_AnthropicSnapshot_DoesNotOverridePositiveWithZe
 	}
 }
 
+func TestStreamMetricsAggregator_AnthropicProviderSnapshot_WebSearchProjection(t *testing.T) {
+	meta := &dslmeta.Meta{API: "claude.messages", IsStream: true}
+	usageCfg, finishCfg := mustLoadProviderMatchConfigs(t, "anthropic.conf", meta.API, meta.IsStream)
+	agg := NewStreamMetricsAggregator(meta, usageCfg, finishCfg)
+
+	_ = agg.OnSSEDataJSON([]byte(`{"type":"message_start","message":{"usage":{"input_tokens":3,"cache_creation":{"ephemeral_5m_input_tokens":5},"cache_creation_input_tokens":5,"server_tool_use":{"web_search_requests":1}}}}`))
+	_ = agg.OnSSEDataJSON([]byte(`{"type":"message_delta","usage":{"output_tokens":7,"cache_read_input_tokens":2,"cache_creation_input_tokens":5}}`))
+
+	u, cached, _, ok := agg.Result()
+	if !ok || u == nil {
+		t.Fatalf("expected usage ok")
+	}
+	if u.InputTokens != 10 || u.OutputTokens != 7 || u.TotalTokens != 17 {
+		t.Fatalf("unexpected usage: %+v", *u)
+	}
+	if cached != 2 {
+		t.Fatalf("unexpected cached tokens: %d", cached)
+	}
+	if u.FlatFields == nil {
+		t.Fatalf("expected FlatFields")
+	}
+	if got, want := u.FlatFields["server_tool_web_search_calls"], 1; got != want {
+		t.Fatalf("server_tool_web_search_calls=%v want=%v", got, want)
+	}
+	if got, want := u.FlatFields["cache_write_ttl_5m_tokens"], 5; got != want {
+		t.Fatalf("cache_write_ttl_5m_tokens=%v want=%v", got, want)
+	}
+	found := false
+	for _, fact := range u.DebugFacts {
+		if fact.Dimension == "server_tool.web_search" && fact.Unit == "call" && fact.Quantity == 1 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected server_tool.web_search call fact, got=%#v", u.DebugFacts)
+	}
+}
+
 func TestStreamMetricsAggregator_GeminiUsage(t *testing.T) {
 	meta := &dslmeta.Meta{API: "gemini.streamGenerateContent", IsStream: true}
+	usageCfg, finishCfg := mustLoadProviderMatchConfigs(t, "gemini.conf", meta.API, meta.IsStream)
 	agg := NewStreamMetricsAggregator(meta,
-		UsageExtractConfig{Mode: "gemini"},
-		FinishReasonExtractConfig{Mode: "gemini"},
+		usageCfg,
+		finishCfg,
 	)
 	_ = agg.OnSSEDataJSON([]byte(`{"candidates":[{"finishReason":"STOP"}]}`))
 	_ = agg.OnSSEDataJSON([]byte(`{"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":2,"thoughtsTokenCount":3,"totalTokenCount":6}}`))
@@ -135,9 +178,10 @@ func TestStreamMetricsAggregator_GeminiUsage(t *testing.T) {
 
 func TestStreamMetricsAggregator_GeminiUsageMultimodalBuiltin(t *testing.T) {
 	meta := &dslmeta.Meta{API: "gemini.streamGenerateContent", IsStream: true}
+	usageCfg, finishCfg := mustLoadProviderMatchConfigs(t, "gemini.conf", meta.API, meta.IsStream)
 	agg := NewStreamMetricsAggregator(meta,
-		UsageExtractConfig{Mode: "gemini"},
-		FinishReasonExtractConfig{Mode: "gemini"},
+		usageCfg,
+		finishCfg,
 	)
 	_ = agg.OnSSEDataJSON([]byte(`{"candidates":[{"finishReason":"STOP"}]}`))
 	_ = agg.OnSSEDataJSON([]byte(`{
@@ -177,9 +221,10 @@ func TestStreamMetricsAggregator_GeminiUsageMultimodalBuiltin(t *testing.T) {
 
 func TestStreamMetricsAggregator_GeminiSnakeCaseUsageIgnored(t *testing.T) {
 	meta := &dslmeta.Meta{API: "gemini.streamGenerateContent", IsStream: true}
+	usageCfg, finishCfg := mustLoadProviderMatchConfigs(t, "gemini.conf", meta.API, meta.IsStream)
 	agg := NewStreamMetricsAggregator(meta,
-		UsageExtractConfig{Mode: "gemini"},
-		FinishReasonExtractConfig{Mode: "gemini"},
+		usageCfg,
+		finishCfg,
 	)
 	_ = agg.OnSSEDataJSON([]byte(`{"usage_metadata":{"prompt_token_count":1,"candidates_token_count":2,"thoughts_token_count":3,"total_token_count":6}}`))
 	u, _, _, ok := agg.Result()
@@ -190,9 +235,10 @@ func TestStreamMetricsAggregator_GeminiSnakeCaseUsageIgnored(t *testing.T) {
 
 func TestStreamMetricsAggregator_OpenAIResponsesStreamEnvelopeFinishReason(t *testing.T) {
 	meta := &dslmeta.Meta{API: "responses", IsStream: true}
+	usageCfg, finishCfg := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
 	agg := NewStreamMetricsAggregator(meta,
-		UsageExtractConfig{Mode: "openai"},
-		FinishReasonExtractConfig{Mode: "openai"},
+		usageCfg,
+		finishCfg,
 	)
 
 	_ = agg.OnSSEDataJSON([]byte(`{"type":"response.created","response":{"status":"in_progress"}}`))
@@ -225,7 +271,10 @@ func TestStreamMetricsAggregator_CustomMerge_DoesNotOverrideWithZero(t *testing.
 			InputTokensExpr:  inExpr,
 			OutputTokensExpr: outExpr,
 		},
-		FinishReasonExtractConfig{Mode: "anthropic"},
+		func() FinishReasonExtractConfig {
+			_, cfg := mustLoadProviderMatchConfigs(t, "anthropic.conf", meta.API, meta.IsStream)
+			return cfg
+		}(),
 	)
 
 	// event 1: input tokens appear under message.usage
@@ -256,7 +305,10 @@ func TestStreamMetricsAggregator_CustomUsageFactMerge_CacheFirstOutputLater(t *t
 				{Dimension: "cache_write", Unit: "token", Path: "$.usage.cache_creation_input_tokens", Fallback: true},
 			},
 		},
-		FinishReasonExtractConfig{Mode: "anthropic"},
+		func() FinishReasonExtractConfig {
+			_, cfg := mustLoadProviderMatchConfigs(t, "anthropic.conf", meta.API, meta.IsStream)
+			return cfg
+		}(),
 	)
 
 	_ = agg.OnSSEDataJSON([]byte(`{"type":"message_start","usage":{"input_tokens":11,"cache_read_input_tokens":3,"cache_creation":{"ephemeral_5m_input_tokens":7,"ephemeral_1h_input_tokens":0},"cache_creation_input_tokens":7}}`))

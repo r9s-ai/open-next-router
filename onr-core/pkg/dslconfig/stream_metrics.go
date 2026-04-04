@@ -26,6 +26,9 @@ type StreamMetricsAggregator struct {
 	finishCfg FinishReasonExtractConfig
 	extract   streamUsageExtractFunc
 
+	inputIncludesCache  bool
+	maxFreshInputTokens int
+
 	// merged usage snapshot across SSE events
 	lastUsage        *Usage
 	lastCachedTokens int
@@ -39,10 +42,11 @@ type streamUsageExtractFunc func(respRoot map[string]any, respBody []byte) (*Usa
 func NewStreamMetricsAggregator(meta *dslmeta.Meta, usageCfg UsageExtractConfig, finishCfg FinishReasonExtractConfig) *StreamMetricsAggregator {
 	usageCfg = prepareUsageExtractConfig(usageCfg)
 	return &StreamMetricsAggregator{
-		meta:      meta,
-		usageCfg:  usageCfg,
-		finishCfg: finishCfg,
-		extract:   newStreamUsageExtractFunc(meta, usageCfg),
+		meta:               meta,
+		usageCfg:           usageCfg,
+		finishCfg:          finishCfg,
+		extract:            newStreamUsageExtractFunc(meta, usageCfg),
+		inputIncludesCache: usageConfigInputIncludesCache(meta, usageCfg),
 	}
 }
 
@@ -73,20 +77,12 @@ func (a *StreamMetricsAggregator) OnSSEDataJSON(payload []byte) error {
 		}
 	}
 
-	mode := usageBuiltinPreset(a.usageCfg)
-	if mode == "" {
-		mode = strings.ToLower(strings.TrimSpace(a.usageCfg.Mode))
-	}
+	mode := strings.ToLower(strings.TrimSpace(a.usageCfg.Mode))
 	if mode == "" {
 		return nil
 	}
 
-	usageRoot := root
-	if mode == usageModeAnthropic {
-		usageRoot = normalizeAnthropicStreamUsageRoot(root)
-	}
-
-	u, cachedTokens, err := a.extract(usageRoot, payload)
+	u, cachedTokens, err := a.extract(root, payload)
 	if err != nil {
 		// ignore individual event errors
 		return nil
@@ -94,18 +90,20 @@ func (a *StreamMetricsAggregator) OnSSEDataJSON(payload []byte) error {
 	if u == nil || isAllZeroUsage(u) {
 		return nil
 	}
+	a.recordFreshInputTokens(u)
 	// Merge semantics: do not allow 0 to overwrite a previously known value.
 	if a.lastUsage == nil {
 		a.lastUsage = u
 	} else {
 		mergeUsagePreferNonZero(a.lastUsage, u)
 	}
+	a.recomputeMergedInputTokens()
 	if cachedTokens > 0 {
 		a.lastCachedTokens = cachedTokens
 	}
 	// For anthropic/custom split-stream usage, recompute total from the merged fields unless
 	// custom mode explicitly provides TotalTokensExpr.
-	if shouldRecomputeMergedTotal(mode, a.usageCfg) && a.lastUsage != nil {
+	if shouldRecomputeMergedTotal(a.usageCfg) && a.lastUsage != nil {
 		normalizeUsageFields(a.lastUsage)
 		a.lastUsage.TotalTokens = a.lastUsage.InputTokens + a.lastUsage.OutputTokens
 	}
@@ -150,15 +148,12 @@ func (a *StreamMetricsAggregator) Result() (usage *Usage, cachedTokens int, fini
 	}
 	finishReason = strings.TrimSpace(a.finishReason)
 
-	mode := usageBuiltinPreset(a.usageCfg)
-	if mode == "" {
-		mode = strings.ToLower(strings.TrimSpace(a.usageCfg.Mode))
-	}
 	if a.lastUsage == nil || isAllZeroUsage(a.lastUsage) {
 		return nil, 0, finishReason, false
 	}
+	a.recomputeMergedInputTokens()
 	normalizeUsageFields(a.lastUsage)
-	if shouldRecomputeMergedTotal(mode, a.usageCfg) {
+	if shouldRecomputeMergedTotal(a.usageCfg) {
 		a.lastUsage.TotalTokens = a.lastUsage.InputTokens + a.lastUsage.OutputTokens
 	}
 	return a.lastUsage, a.lastCachedTokens, finishReason, true
@@ -225,16 +220,81 @@ func mergeUsagePreferNonZero(dst *Usage, src *Usage) {
 	normalizeUsageFields(dst)
 }
 
-func shouldRecomputeMergedTotal(mode string, cfg UsageExtractConfig) bool {
-	rawMode := strings.ToLower(strings.TrimSpace(mode))
-	mode = builtinUsagePresetName(mode)
-	if mode == "" {
-		mode = rawMode
+func (a *StreamMetricsAggregator) recordFreshInputTokens(u *Usage) {
+	if a == nil || !a.inputIncludesCache || u == nil {
+		return
 	}
-	if mode == usageModeAnthropic {
-		return true
+	fresh := u.InputTokens
+	if u.InputTokenDetails != nil {
+		fresh -= u.InputTokenDetails.CachedTokens
+		fresh -= u.InputTokenDetails.CacheWriteTokens
 	}
-	return mode == usageModeCustom && cfg.TotalTokensExpr == nil
+	if fresh > a.maxFreshInputTokens {
+		a.maxFreshInputTokens = fresh
+	}
+}
+
+func (a *StreamMetricsAggregator) recomputeMergedInputTokens() {
+	if a == nil || !a.inputIncludesCache || a.lastUsage == nil {
+		return
+	}
+	total := a.maxFreshInputTokens
+	if a.lastUsage.InputTokenDetails != nil {
+		total += a.lastUsage.InputTokenDetails.CachedTokens
+		total += a.lastUsage.InputTokenDetails.CacheWriteTokens
+	}
+	if total > 0 {
+		a.lastUsage.InputTokens = total
+		a.lastUsage.PromptTokens = total
+	}
+}
+
+func usageConfigInputIncludesCache(meta *dslmeta.Meta, cfg UsageExtractConfig) bool {
+	compiled := compileUsageExtractConfig(meta, cfg)
+	if normalizeUsageMode(compiled.Mode) != usageModeCustom {
+		return false
+	}
+	inputRules := map[string]struct{}{}
+	for _, fact := range compiled.facts {
+		if normalizeUsageFactKey(fact.Dimension, fact.Unit) != (usageFactKey{Dimension: "input", Unit: "token"}) {
+			continue
+		}
+		inputRules[usageFactMergeSignature(fact)] = struct{}{}
+	}
+	if len(inputRules) == 0 {
+		return false
+	}
+	for _, fact := range compiled.facts {
+		key := normalizeUsageFactKey(fact.Dimension, fact.Unit)
+		if key != (usageFactKey{Dimension: "cache_read", Unit: "token"}) &&
+			key != (usageFactKey{Dimension: "cache_write", Unit: "token"}) {
+			continue
+		}
+		if _, ok := inputRules[usageFactMergeSignature(fact)]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func usageFactMergeSignature(fact usageFactConfig) string {
+	expr := ""
+	if fact.Expr != nil {
+		expr = fact.Expr.String()
+	}
+	return strings.Join([]string{
+		strings.TrimSpace(fact.Source),
+		strings.TrimSpace(fact.Path),
+		strings.TrimSpace(fact.CountPath),
+		strings.TrimSpace(fact.SumPath),
+		expr,
+		strings.TrimSpace(fact.Type),
+		strings.TrimSpace(fact.Status),
+	}, "|")
+}
+
+func shouldRecomputeMergedTotal(cfg UsageExtractConfig) bool {
+	return strings.EqualFold(strings.TrimSpace(cfg.Mode), usageModeCustom) && cfg.TotalTokensExpr == nil
 }
 
 func newStreamUsageExtractFunc(meta *dslmeta.Meta, cfg UsageExtractConfig) streamUsageExtractFunc {
@@ -242,26 +302,6 @@ func newStreamUsageExtractFunc(meta *dslmeta.Meta, cfg UsageExtractConfig) strea
 	return func(respRoot map[string]any, respBody []byte) (*Usage, int, error) {
 		return extractUsageFromResponseRoot(meta, compiled, respRoot, respBody)
 	}
-}
-
-func normalizeAnthropicStreamUsageRoot(root map[string]any) map[string]any {
-	if _, ok := root["usage"]; ok {
-		return root
-	}
-	msg, ok := root["message"].(map[string]any)
-	if !ok || msg == nil {
-		return root
-	}
-	usage, ok := msg["usage"]
-	if !ok {
-		return root
-	}
-	normalized := make(map[string]any, len(root)+1)
-	for k, v := range root {
-		normalized[k] = v
-	}
-	normalized["usage"] = usage
-	return normalized
 }
 
 func normalizeUsageFields(u *Usage) {

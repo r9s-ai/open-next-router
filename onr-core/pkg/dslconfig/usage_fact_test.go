@@ -892,11 +892,15 @@ provider "demo" {
 	}
 }
 
-func TestExtractUsage_BuiltinOpenAIUsageFactOverrideCacheRead(t *testing.T) {
+func TestExtractUsage_CustomUsageFactOverrideCacheRead(t *testing.T) {
 	meta := &dslmeta.Meta{API: "chat.completions", IsStream: false}
 	cfg := UsageExtractConfig{
-		Mode: usageModeOpenAI,
+		Mode: usageModeCustom,
 		facts: []usageFactConfig{
+			{Dimension: "input", Unit: "token", Path: "$.usage.prompt_tokens"},
+			{Dimension: "input", Unit: "token", Path: "$.usage.input_tokens", Fallback: true},
+			{Dimension: "output", Unit: "token", Path: "$.usage.completion_tokens"},
+			{Dimension: "output", Unit: "token", Path: "$.usage.output_tokens", Fallback: true},
 			{Dimension: "cache_read", Unit: "token", Path: "$.usage.cached_tokens"},
 		},
 	}
@@ -927,11 +931,13 @@ func TestExtractUsage_BuiltinOpenAIUsageFactOverrideCacheRead(t *testing.T) {
 	}
 }
 
-func TestExtractUsage_BuiltinAnthropicUsageFactOverrideCacheWrite(t *testing.T) {
+func TestExtractUsage_CustomUsageFactOverrideCacheWrite(t *testing.T) {
 	meta := &dslmeta.Meta{API: "claude.messages", IsStream: false}
 	cfg := UsageExtractConfig{
-		Mode: usageModeAnthropic,
+		Mode: usageModeCustom,
 		facts: []usageFactConfig{
+			{Dimension: "input", Unit: "token", Path: "$.usage.input_tokens"},
+			{Dimension: "output", Unit: "token", Path: "$.usage.output_tokens"},
 			{Dimension: "cache_write", Unit: "token", Path: "$.override.cache_write_tokens"},
 		},
 	}
@@ -1002,10 +1008,11 @@ func TestExtractUsage_CustomLegacyFieldsCompiledIntoFacts(t *testing.T) {
 	}
 }
 
-func TestExtractUsage_BuiltinOpenAILegacyOverrideDoesNotDoubleCount(t *testing.T) {
+func TestExtractUsage_CustomLegacyOverrideDoesNotDoubleCount(t *testing.T) {
 	outExpr := mustParseUsageExpr(t, "$.usage.alt_output_tokens")
 	cfg := UsageExtractConfig{
-		Mode:             usageModeOpenAI,
+		Mode:             usageModeCustom,
+		InputTokensPath:  "$.usage.prompt_tokens",
 		OutputTokensExpr: outExpr,
 	}
 
@@ -1144,7 +1151,7 @@ func TestExtractUsage_UsageFactRequestSource(t *testing.T) {
 
 func TestExtractUsage_UsageFactDerivedSourceWithNonJSONResponse(t *testing.T) {
 	cfg := UsageExtractConfig{
-		Mode: usageModeOpenAI,
+		Mode: usageModeCustom,
 		facts: []usageFactConfig{
 			{Dimension: "audio.tts", Unit: "second", Source: "derived", Path: "$.audio_duration_seconds"},
 		},
@@ -1485,15 +1492,16 @@ provider "openai" {
 	}
 }
 
-func TestUsesDerivedUsagePath_BuiltinOpenAIAudioSpeechSugar(t *testing.T) {
+func TestUsesDerivedUsagePath_CustomDerivedAudioSpeech(t *testing.T) {
 	meta := &dslmeta.Meta{API: "audio.speech", IsStream: false}
-	cfg := UsageExtractConfig{Mode: usageModeOpenAI}
+	cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
 
 	if !UsesDerivedUsagePath(meta, cfg, "$.audio_duration_seconds") {
-		t.Fatalf("expected builtin openai audio.speech to reference derived audio duration")
+		t.Fatalf("expected audio.speech preset to reference derived audio duration")
 	}
-	if UsesDerivedUsagePath(&dslmeta.Meta{API: "chat.completions", IsStream: false}, cfg, "$.audio_duration_seconds") {
-		t.Fatalf("did not expect chat.completions openai usage to reference derived audio duration")
+	chatCfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", "chat.completions", false)
+	if UsesDerivedUsagePath(&dslmeta.Meta{API: "chat.completions", IsStream: false}, chatCfg, "$.audio_duration_seconds") {
+		t.Fatalf("did not expect chat.completions usage to reference derived audio duration")
 	}
 }
 

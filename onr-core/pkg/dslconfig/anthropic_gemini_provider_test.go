@@ -22,7 +22,6 @@ func TestValidateProviderFile_AnthropicUsesPathSpecificUsageModes(t *testing.T) 
 		dimension string
 		unit      string
 		path      string
-		expr      string
 	}{
 		{
 			api:       "chat.completions",
@@ -43,7 +42,21 @@ func TestValidateProviderFile_AnthropicUsesPathSpecificUsageModes(t *testing.T) 
 			stream:    true,
 			dimension: "cache_write",
 			unit:      "token",
-			expr:      "$.usage.cache_creation.ephemeral_5m_input_tokens + $.message.usage.cache_creation.ephemeral_5m_input_tokens",
+			path:      "$.message.usage.cache_creation.ephemeral_5m_input_tokens",
+		},
+		{
+			api:       "claude.messages",
+			stream:    false,
+			dimension: "server_tool.web_search",
+			unit:      "call",
+			path:      "$.usage.server_tool_use.web_search_requests",
+		},
+		{
+			api:       "claude.messages",
+			stream:    true,
+			dimension: "server_tool.web_search",
+			unit:      "call",
+			path:      "$.message.usage.server_tool_use.web_search_requests",
 		},
 	}
 
@@ -63,9 +76,6 @@ func TestValidateProviderFile_AnthropicUsesPathSpecificUsageModes(t *testing.T) 
 				continue
 			}
 			if tc.path != "" && fact.Path != tc.path {
-				continue
-			}
-			if tc.expr != "" && fact.Expr != tc.expr {
 				continue
 			}
 			found = true

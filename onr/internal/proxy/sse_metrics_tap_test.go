@@ -13,7 +13,11 @@ func TestSSEMetricsTap_LargeSingleEventKeepsUsage(t *testing.T) {
 
 	agg := dslconfig.NewStreamMetricsAggregator(
 		&dslmeta.Meta{API: "images.generations", IsStream: true},
-		dslconfig.UsageExtractConfig{Mode: "openai"},
+		dslconfig.UsageExtractConfig{
+			Mode:             "custom",
+			InputTokensPath:  "$.usage.input_tokens",
+			OutputTokensPath: "$.usage.output_tokens",
+		},
 		dslconfig.FinishReasonExtractConfig{},
 	)
 	tap := newSSEMetricsTap(agg)

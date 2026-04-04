@@ -8,7 +8,7 @@ import (
 
 func BenchmarkExtractUsage_OpenAI_Exported(b *testing.B) {
 	meta := &dslmeta.Meta{API: "chat.completions", IsStream: false}
-	cfg := UsageExtractConfig{Mode: "openai"}
+	cfg, _ := mustLoadProviderMatchConfigsTB(b, "openai.conf", meta.API, meta.IsStream)
 	respBody, _ := benchmarkOpenAIUsagePayload()
 
 	b.ReportAllocs()
@@ -22,7 +22,7 @@ func BenchmarkExtractUsage_OpenAI_Exported(b *testing.B) {
 
 func BenchmarkExtractUsage_OpenAI_FromRoot(b *testing.B) {
 	meta := &dslmeta.Meta{API: "chat.completions", IsStream: false}
-	cfg := UsageExtractConfig{Mode: "openai"}
+	cfg, _ := mustLoadProviderMatchConfigsTB(b, "openai.conf", meta.API, meta.IsStream)
 	respBody, root := benchmarkOpenAIUsagePayload()
 
 	b.ReportAllocs()
@@ -60,7 +60,7 @@ func BenchmarkExtractUsage_CustomFacts_FromRoot(b *testing.B) {
 
 func BenchmarkExtractFinishReason_OpenAI_Exported(b *testing.B) {
 	meta := &dslmeta.Meta{API: "chat.completions", IsStream: false}
-	cfg := FinishReasonExtractConfig{Mode: "openai"}
+	_, cfg := mustLoadProviderMatchConfigsTB(b, "openai.conf", meta.API, meta.IsStream)
 	body := []byte(`{"choices":[{"index":0,"finish_reason":"stop"}]}`)
 
 	b.ReportAllocs()
@@ -74,7 +74,7 @@ func BenchmarkExtractFinishReason_OpenAI_Exported(b *testing.B) {
 
 func BenchmarkExtractFinishReason_OpenAI_FromRoot(b *testing.B) {
 	meta := &dslmeta.Meta{API: "chat.completions", IsStream: false}
-	cfg := FinishReasonExtractConfig{Mode: "openai"}
+	_, cfg := mustLoadProviderMatchConfigsTB(b, "openai.conf", meta.API, meta.IsStream)
 	root := map[string]any{
 		"choices": []any{
 			map[string]any{"index": float64(0), "finish_reason": "stop"},
@@ -102,8 +102,8 @@ func BenchmarkProviderUsageSelect_Match(b *testing.B) {
 			},
 		},
 		Matches: []MatchUsage{
-			{API: "embeddings", Stream: &streamFalse, Extract: UsageExtractConfig{Mode: usageModeOpenAI}},
-			{API: "responses", Stream: &streamTrue, Extract: UsageExtractConfig{Mode: usageModeOpenAI}},
+			{API: "embeddings", Stream: &streamFalse, Extract: UsageExtractConfig{Mode: usageModeCustom}},
+			{API: "responses", Stream: &streamTrue, Extract: UsageExtractConfig{Mode: usageModeCustom}},
 			{API: "chat.completions", Stream: &streamTrue, Extract: UsageExtractConfig{
 				facts: []usageFactConfig{
 					{Dimension: "cache_read", Unit: "token", Source: "response", Path: "$.usage.cached_tokens"},
@@ -125,7 +125,7 @@ func BenchmarkProviderUsageSelect_Match(b *testing.B) {
 func BenchmarkProviderFinishReasonSelect_Match(b *testing.B) {
 	streamTrue := true
 	provider := ProviderFinishReason{
-		Defaults: FinishReasonExtractConfig{Mode: "openai"},
+		Defaults: FinishReasonExtractConfig{Mode: "custom", FinishReasonPath: "$.choices[0].finish_reason"},
 		Matches: []MatchFinishReason{
 			{API: "embeddings", Extract: FinishReasonExtractConfig{Mode: "custom", FinishReasonPath: "$.x"}},
 			{API: "chat.completions", Stream: &streamTrue, Extract: FinishReasonExtractConfig{Mode: "custom", FinishReasonPath: "$.choices[0].finish_reason"}},

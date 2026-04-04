@@ -7,7 +7,6 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/jsonutil"
 )
 
@@ -401,131 +400,6 @@ func extractCustomUsage(reqRoot, respRoot, derivedRoot map[string]any, cfg Usage
 		usage.TotalTokens = total
 	}
 	return usage, cachedTokens, nil
-}
-
-func builtinSupplementalUsageFactConfigs(meta *dslmeta.Meta, mode string, explicitKeys map[usageFactKey]struct{}) []usageFactConfig {
-	if strings.ToLower(strings.TrimSpace(mode)) != usageModeOpenAI || meta == nil {
-		return nil
-	}
-	api := strings.ToLower(strings.TrimSpace(meta.API))
-	switch api {
-	case "images.generations":
-		return builtinSupplementalImageUsageFactConfigs(usageFactKey{Dimension: "image.generate", Unit: "image"}, explicitKeys)
-	case "images.edits":
-		return builtinSupplementalImageUsageFactConfigs(usageFactKey{Dimension: "image.edit", Unit: "image"}, explicitKeys)
-	case "audio.transcriptions":
-		return builtinSupplementalAudioSecondsUsageFactConfigs(usageFactKey{Dimension: "audio.stt", Unit: "second"}, explicitKeys)
-	case "audio.translations":
-		return builtinSupplementalAudioSecondsUsageFactConfigs(usageFactKey{Dimension: "audio.translate", Unit: "second"}, explicitKeys)
-	case "audio.speech":
-		key := usageFactKey{Dimension: "audio.tts", Unit: "second"}
-		if _, ok := explicitKeys[key]; ok {
-			return nil
-		}
-		return []usageFactConfig{{
-			Dimension: key.Dimension,
-			Unit:      key.Unit,
-			Source:    "derived",
-			Path:      "$.audio_duration_seconds",
-		}}
-	case "responses":
-		return builtinSupplementalWebSearchCallUsageFactConfigs(usageFactKey{Dimension: "server_tool.web_search", Unit: "call"}, explicitKeys)
-	default:
-		return nil
-	}
-}
-
-func builtinSupplementalImageUsageFactConfigs(key usageFactKey, explicitKeys map[usageFactKey]struct{}) []usageFactConfig {
-	if _, ok := explicitKeys[key]; ok {
-		return nil
-	}
-	return []usageFactConfig{{
-		Dimension: key.Dimension,
-		Unit:      key.Unit,
-		CountPath: "$.data[*]",
-	}}
-}
-
-func builtinSupplementalAudioSecondsUsageFactConfigs(key usageFactKey, explicitKeys map[usageFactKey]struct{}) []usageFactConfig {
-	if _, ok := explicitKeys[key]; ok {
-		return nil
-	}
-	return []usageFactConfig{{
-		Dimension: key.Dimension,
-		Unit:      key.Unit,
-		Path:      "$.usage.seconds",
-	}}
-}
-
-func builtinSupplementalWebSearchCallUsageFactConfigs(key usageFactKey, explicitKeys map[usageFactKey]struct{}) []usageFactConfig {
-	if _, ok := explicitKeys[key]; ok {
-		return nil
-	}
-	return []usageFactConfig{
-		{
-			Dimension: key.Dimension,
-			Unit:      key.Unit,
-			CountPath: "$.output[*]",
-			Type:      "web_search_call",
-			Status:    "completed",
-		},
-		{
-			Dimension: key.Dimension,
-			Unit:      key.Unit,
-			CountPath: "$.response.output[*]",
-			Type:      "web_search_call",
-			Status:    "completed",
-			Fallback:  true,
-		},
-	}
-}
-
-func builtinUsageFactConfigs(mode string) []usageFactConfig {
-	return builtinUsageFactSet(mode).facts
-}
-
-func builtinUsageFactSet(mode string) usageFactSet {
-	if set, ok := builtinUsageFactSets[builtinUsagePresetName(mode)]; ok {
-		return set
-	}
-	return usageFactSet{}
-}
-
-func builtinTotalTokensExpr(mode string) *UsageExpr {
-	return builtinUsageTotalTokensExprs[builtinUsagePresetName(mode)]
-}
-
-var builtinUsageFactSets = map[string]usageFactSet{
-	usageModeOpenAI: newUsageFactSet([]usageFactConfig{
-		{Dimension: "input", Unit: "token", Path: "$.usage.prompt_tokens"},
-		{Dimension: "input", Unit: "token", Path: "$.usage.input_tokens", Fallback: true},
-		{Dimension: "output", Unit: "token", Path: "$.usage.completion_tokens"},
-		{Dimension: "output", Unit: "token", Path: "$.usage.output_tokens", Fallback: true},
-		{Dimension: "cache_read", Unit: "token", Path: "$.usage.prompt_tokens_details.cached_tokens"},
-		{Dimension: "cache_read", Unit: "token", Path: "$.usage.input_tokens_details.cached_tokens", Fallback: true},
-		{Dimension: "cache_read", Unit: "token", Path: "$.usage.cached_tokens", Fallback: true},
-	}),
-	usageModeAnthropic: newUsageFactSet([]usageFactConfig{
-		{Dimension: "input", Unit: "token", Path: "$.usage.input_tokens"},
-		{Dimension: "output", Unit: "token", Path: "$.usage.output_tokens"},
-		{Dimension: "cache_read", Unit: "token", Path: "$.usage.cache_read_input_tokens"},
-		{Dimension: "cache_write", Unit: "token", Path: "$.usage.cache_creation.ephemeral_5m_input_tokens", Attrs: map[string]string{"ttl": "5m"}},
-		{Dimension: "cache_write", Unit: "token", Path: "$.usage.cache_creation.ephemeral_1h_input_tokens", Attrs: map[string]string{"ttl": "1h"}},
-		{Dimension: "cache_write", Unit: "token", Path: "$.usage.cache_creation_input_tokens", Fallback: true},
-	}),
-	usageModeGemini: newUsageFactSet([]usageFactConfig{
-		{Dimension: "input", Unit: "token", Path: `$.usageMetadata.promptTokensDetails[?(@.modality=="TEXT")].tokenCount`},
-		{Dimension: "input", Unit: "token", Path: "$.usageMetadata.promptTokenCount", Fallback: true},
-		{Dimension: "image.input", Unit: "token", Path: `$.usageMetadata.promptTokensDetails[?(@.modality=="IMAGE")].tokenCount`},
-		{Dimension: "video.input", Unit: "token", Path: `$.usageMetadata.promptTokensDetails[?(@.modality=="VIDEO")].tokenCount`},
-		{Dimension: "audio.input", Unit: "token", Path: `$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount`},
-		{Dimension: "output", Unit: "token", Path: "$.usageMetadata.candidatesTokenCount"},
-		{Dimension: "output", Unit: "token", Path: "$.usageMetadata.thoughtsTokenCount"},
-	}),
-}
-
-var builtinUsageTotalTokensExprs = map[string]*UsageExpr{
-	usageModeGemini: MustParseUsageExpr("$.usageMetadata.totalTokenCount"),
 }
 
 func appendUsageFactErrorPrefix(err error, fact usageFactConfig) error {

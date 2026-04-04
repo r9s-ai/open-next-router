@@ -618,6 +618,8 @@ metrics {
 ```conf
 metrics {
   usage_fact input token path="$.usage.input_tokens";
+  usage_fact input token path="$.usage.cache_read_input_tokens";
+  usage_fact input token path="$.usage.cache_creation_input_tokens";
   usage_fact output token path="$.usage.output_tokens";
   usage_fact cache_read token path="$.usage.cache_read_input_tokens";
 
@@ -647,7 +649,7 @@ metrics {
 Notes:
 
 - `gemini`: the current builtin behavior can now be fully replaced by `custom` configuration; builtin `input token` now prefers the `TEXT` modality and falls back to `promptTokenCount`, and builtin also emits `image.input/audio.input/video.input token` facts when available.
-- `anthropic`: the example above covers the core token/cache extraction; `custom` can also replace the streaming case, but you usually need to account for both `message.usage` and top-level `usage` event shapes yourself.
+- `anthropic`: ONR now treats `input` as the effective input size, so `cache_read_input_tokens` and `cache_creation_input_tokens` should also be included in `input`.
 - `openai`: the example above only covers core token/cache extraction. Builtin image/audio/tool supplemental facts still need extra explicit `usage_fact` rules in a custom-first setup.
 - Gemini output tokens intentionally include both `candidatesTokenCount` and `thoughtsTokenCount`; you can express that either by multiple same-dimension `usage_fact` rules that sum together, or more explicitly with `output_tokens_expr = $.usageMetadata.candidatesTokenCount + $.usageMetadata.thoughtsTokenCount;`.
 - `total_tokens` is derived from `input + output` by default; in most cases you should avoid setting `total_tokens_expr` explicitly, because that introduces a second total fact source.
@@ -661,6 +663,10 @@ metrics {
 
   usage_fact input token path="$.usage.input_tokens";
   usage_fact input token path="$.message.usage.input_tokens";
+  usage_fact input token path="$.usage.cache_read_input_tokens";
+  usage_fact input token path="$.message.usage.cache_read_input_tokens";
+  usage_fact input token path="$.usage.cache_creation_input_tokens";
+  usage_fact input token path="$.message.usage.cache_creation_input_tokens";
 
   usage_fact output token path="$.usage.output_tokens";
   usage_fact output token path="$.message.usage.output_tokens";

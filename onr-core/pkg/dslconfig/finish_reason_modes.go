@@ -95,19 +95,6 @@ func normalizeFinishReasonExtractConfig(cfg FinishReasonExtractConfig) FinishRea
 	return cfg
 }
 
-func builtinFinishReasonPresetName(mode string) string {
-	switch normalizeFinishReasonMode(mode) {
-	case usageModeOpenAI:
-		return usageModeOpenAI
-	case usageModeAnthropic:
-		return usageModeAnthropic
-	case usageModeGemini:
-		return usageModeGemini
-	default:
-		return ""
-	}
-}
-
 func resolveFinishReasonModeRegistry(pathByMode map[string]string, raw finishReasonModeRegistry) (finishReasonModeRegistry, error) {
 	merged := finishReasonModeRegistry{}
 	paths := map[string]string{}
@@ -163,12 +150,8 @@ func resolveFinishReasonExtractConfig(path, providerName, scope string, cfg Fini
 		if err != nil {
 			return FinishReasonExtractConfig{}, err
 		}
-		if base.builtinPreset == mode {
-			base.Mode = mode
-		}
 		override := cfg
 		override.Mode = ""
-		override.builtinPreset = ""
 		return normalizeFinishReasonExtractConfig(mergeFinishReasonConfig(base, override)), nil
 	}
 	return FinishReasonExtractConfig{}, validationIssue(

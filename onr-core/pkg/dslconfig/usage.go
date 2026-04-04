@@ -12,8 +12,6 @@ import (
 type UsageExtractConfig struct {
 	Mode string
 
-	builtinPreset string
-
 	InputTokensPath      string
 	OutputTokensPath     string
 	CacheReadTokensPath  string
@@ -31,10 +29,7 @@ type UsageExtractConfig struct {
 }
 
 const (
-	usageModeOpenAI    = "openai"
-	usageModeAnthropic = "anthropic"
-	usageModeGemini    = "gemini"
-	usageModeCustom    = "custom"
+	usageModeCustom = "custom"
 )
 
 type ProviderUsage struct {
@@ -141,12 +136,7 @@ func usageConfigAllowsNonJSONResponse(meta *dslmeta.Meta, cfg UsageExtractConfig
 			return true
 		}
 	}
-	if meta != nil &&
-		usageBuiltinPreset(cfg) == usageModeOpenAI &&
-		strings.EqualFold(strings.TrimSpace(meta.API), "audio.speech") &&
-		len(meta.DerivedUsage) > 0 {
-		return true
-	}
+	_ = meta
 	return false
 }
 
@@ -173,39 +163,19 @@ func prepareUsageExtractConfig(cfg UsageExtractConfig) UsageExtractConfig {
 }
 
 func compileUsageExtractConfig(meta *dslmeta.Meta, cfg UsageExtractConfig) UsageExtractConfig {
+	_ = meta
 	cfg = prepareUsageExtractConfig(cfg)
 	mode := normalizeUsageMode(cfg.Mode)
-	builtinMode := usageBuiltinPreset(cfg)
 	switch {
 	case mode == "":
 		return cfg
-	case mode == usageModeCustom && builtinMode == "":
+	case mode == usageModeCustom:
 		compiled := UsageExtractConfig{
 			Mode:            usageModeCustom,
 			TotalTokensExpr: cfg.TotalTokensExpr,
 		}
 		compiled.facts = append(compiled.facts, legacyUsageFactConfigs(cfg, cfg.explicitFactKeys)...)
 		compiled.facts = append(compiled.facts, cloneUsageFactConfigs(cfg.facts)...)
-		return prepareUsageExtractConfig(compiled)
-	case builtinMode != "":
-		overrideKeys := mergeUsageFactKeySets(cfg.explicitFactKeys, legacyUsageFactKeys(cfg))
-		compiled := UsageExtractConfig{Mode: usageModeCustom}
-		baseSet := builtinUsageFactSet(builtinMode)
-		for key, group := range baseSet.factGroups {
-			if _, ok := overrideKeys[key]; ok {
-				continue
-			}
-			compiled.facts = append(compiled.facts, cloneUsageFactConfigs(group)...)
-		}
-		compiled.facts = append(compiled.facts, legacyUsageFactConfigs(cfg, cfg.explicitFactKeys)...)
-		compiled.facts = append(compiled.facts, cloneUsageFactConfigs(cfg.facts)...)
-		compiled.facts = append(compiled.facts, builtinSupplementalUsageFactConfigs(meta, builtinMode, overrideKeys)...)
-		if totalExpr := builtinTotalTokensExpr(builtinMode); totalExpr != nil {
-			compiled.TotalTokensExpr = totalExpr
-		}
-		if cfg.TotalTokensExpr != nil {
-			compiled.TotalTokensExpr = cfg.TotalTokensExpr
-		}
 		return prepareUsageExtractConfig(compiled)
 	default:
 		return cfg
@@ -232,7 +202,6 @@ func mergeUsageConfig(base UsageExtractConfig, override UsageExtractConfig) Usag
 	out.explicitFactKeys = nil
 	if strings.TrimSpace(override.Mode) != "" {
 		out.Mode = override.Mode
-		out.builtinPreset = override.builtinPreset
 	}
 	if strings.TrimSpace(override.InputTokensPath) != "" {
 		out.InputTokensPath = override.InputTokensPath
@@ -287,24 +256,4 @@ func UsesDerivedUsagePath(meta *dslmeta.Meta, cfg UsageExtractConfig, path strin
 		}
 	}
 	return false
-}
-
-func builtinUsagePresetName(mode string) string {
-	switch normalizeUsageMode(mode) {
-	case usageModeOpenAI:
-		return usageModeOpenAI
-	case usageModeAnthropic:
-		return usageModeAnthropic
-	case usageModeGemini:
-		return usageModeGemini
-	default:
-		return ""
-	}
-}
-
-func usageBuiltinPreset(cfg UsageExtractConfig) string {
-	if preset := builtinUsagePresetName(cfg.builtinPreset); preset != "" {
-		return preset
-	}
-	return builtinUsagePresetName(cfg.Mode)
 }

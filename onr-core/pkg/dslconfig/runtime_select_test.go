@@ -10,7 +10,7 @@ func TestProviderUsageSelect_MergeMatch(t *testing.T) {
 	streamTrue := true
 	p := ProviderUsage{
 		Defaults: UsageExtractConfig{
-			Mode:             usageModeOpenAI,
+			Mode:             usageModeCustom,
 			InputTokensPath:  "$.usage.input",
 			OutputTokensPath: "$.usage.output",
 		},
@@ -88,7 +88,7 @@ func TestProviderUsageSelect_MergeFactsDoesNotMutateDefaults(t *testing.T) {
 
 func TestProviderFinishReasonSelect_MergeAndEmpty(t *testing.T) {
 	p := ProviderFinishReason{
-		Defaults: FinishReasonExtractConfig{Mode: "openai", FinishReasonPath: "$.a"},
+		Defaults: FinishReasonExtractConfig{Mode: "custom", FinishReasonPath: "$.a"},
 		Matches: []MatchFinishReason{
 			{
 				API:    "chat.completions",

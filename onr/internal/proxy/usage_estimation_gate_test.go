@@ -31,7 +31,7 @@ func TestHandleNonStreamResponse_SkipUsageEstimationOnNon200(t *testing.T) {
 	meta := &dslmeta.Meta{API: "chat.completions"}
 	pf := dslconfig.ProviderFile{
 		Finish: dslconfig.ProviderFinishReason{
-			Defaults: dslconfig.FinishReasonExtractConfig{Mode: "openai"},
+			Defaults: dslconfig.FinishReasonExtractConfig{Mode: "custom", FinishReasonPath: "$.choices[0].finish_reason"},
 		},
 	}
 	client := &Client{

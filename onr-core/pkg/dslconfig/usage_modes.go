@@ -150,9 +150,6 @@ func resolveUsageExtractConfig(path, providerName, scope string, cfg UsageExtrac
 		if err != nil {
 			return UsageExtractConfig{}, err
 		}
-		if usageBuiltinPreset(base) == mode {
-			base.Mode = mode
-		}
 		override := cfg
 		override.Mode = ""
 		return mergeUsageConfig(base, override), nil

@@ -12,16 +12,8 @@ func (cfg UsageExtractConfig) DeclaredFacts() []UsageFact {
 }
 
 func (cfg UsageExtractConfig) BuiltinFacts() []UsageFact {
-	cfg = prepareUsageExtractConfig(cfg)
-	mode := usageBuiltinPreset(cfg)
-	if mode == "" {
-		return nil
-	}
-	set := builtinUsageFactSet(mode)
-	if len(set.facts) == 0 {
-		return nil
-	}
-	return cloneUsageFactsForIntrospection(set.facts)
+	_ = cfg
+	return nil
 }
 
 func (cfg UsageExtractConfig) CompiledFacts(meta *dslmeta.Meta) []UsageFact {

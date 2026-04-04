@@ -11,7 +11,8 @@ import (
 func TestExtractFinishReason_OpenAI(t *testing.T) {
 	meta := &dslmeta.Meta{API: "chat.completions"}
 	body := []byte(`{"choices":[{"index":0,"finish_reason":"stop"}]}`)
-	v, err := ExtractFinishReason(meta, FinishReasonExtractConfig{Mode: "openai"}, body)
+	_, cfg := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
+	v, err := ExtractFinishReason(meta, cfg, body)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -23,7 +24,8 @@ func TestExtractFinishReason_OpenAI(t *testing.T) {
 func TestExtractFinishReason_OpenAIResponsesIncompleteMaxOutputTokens(t *testing.T) {
 	meta := &dslmeta.Meta{API: "responses"}
 	body := []byte(`{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[]}`)
-	v, err := ExtractFinishReason(meta, FinishReasonExtractConfig{Mode: "openai"}, body)
+	_, cfg := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
+	v, err := ExtractFinishReason(meta, cfg, body)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -35,7 +37,8 @@ func TestExtractFinishReason_OpenAIResponsesIncompleteMaxOutputTokens(t *testing
 func TestExtractFinishReason_OpenAIResponsesContentFilter(t *testing.T) {
 	meta := &dslmeta.Meta{API: "responses"}
 	body := []byte(`{"status":"incomplete","incomplete_details":{"reason":"content_filter"},"output":[]}`)
-	v, err := ExtractFinishReason(meta, FinishReasonExtractConfig{Mode: "openai"}, body)
+	_, cfg := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
+	v, err := ExtractFinishReason(meta, cfg, body)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -47,7 +50,8 @@ func TestExtractFinishReason_OpenAIResponsesContentFilter(t *testing.T) {
 func TestExtractFinishReason_OpenAIResponsesStreamEnvelope(t *testing.T) {
 	meta := &dslmeta.Meta{API: "responses", IsStream: true}
 	body := []byte(`{"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}}}`)
-	v, err := ExtractFinishReason(meta, FinishReasonExtractConfig{Mode: "openai"}, body)
+	_, cfg := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
+	v, err := ExtractFinishReason(meta, cfg, body)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -59,7 +63,8 @@ func TestExtractFinishReason_OpenAIResponsesStreamEnvelope(t *testing.T) {
 func TestExtractFinishReason_OpenAIResponsesCompletedReturnsEmpty(t *testing.T) {
 	meta := &dslmeta.Meta{API: "responses"}
 	body := []byte(`{"status":"completed","output":[]}`)
-	v, err := ExtractFinishReason(meta, FinishReasonExtractConfig{Mode: "openai"}, body)
+	_, cfg := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
+	v, err := ExtractFinishReason(meta, cfg, body)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -71,10 +76,8 @@ func TestExtractFinishReason_OpenAIResponsesCompletedReturnsEmpty(t *testing.T) 
 func TestExtractFinishReason_OpenAIPathOverrideTakesPrecedence(t *testing.T) {
 	meta := &dslmeta.Meta{API: "responses"}
 	body := []byte(`{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"meta":{"finish":"tool_calls"}}`)
-	v, err := ExtractFinishReason(meta, FinishReasonExtractConfig{
-		Mode:             "openai",
-		FinishReasonPath: "$.meta.finish",
-	}, body)
+	cfg := FinishReasonExtractConfig{Mode: "custom", FinishReasonPath: "$.meta.finish"}
+	v, err := ExtractFinishReason(meta, cfg, body)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -87,7 +90,8 @@ func TestExtractFinishReason_Anthropic(t *testing.T) {
 	const finishReasonEndTurn = "end_turn"
 	meta := &dslmeta.Meta{API: "claude.messages"}
 	body := []byte(`{"stop_reason":"` + finishReasonEndTurn + `"}`)
-	v, err := ExtractFinishReason(meta, FinishReasonExtractConfig{Mode: "anthropic"}, body)
+	_, cfg := mustLoadProviderMatchConfigs(t, "anthropic.conf", meta.API, meta.IsStream)
+	v, err := ExtractFinishReason(meta, cfg, body)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -100,7 +104,8 @@ func TestExtractFinishReason_AnthropicStreamDelta(t *testing.T) {
 	const finishReasonEndTurn = "end_turn"
 	meta := &dslmeta.Meta{API: "claude.messages", IsStream: true}
 	body := []byte(`{"type":"message_delta","delta":{"stop_reason":"` + finishReasonEndTurn + `","stop_sequence":null},"usage":{"output_tokens":12}}`)
-	v, err := ExtractFinishReason(meta, FinishReasonExtractConfig{Mode: "anthropic"}, body)
+	_, cfg := mustLoadProviderMatchConfigs(t, "anthropic.conf", meta.API, meta.IsStream)
+	v, err := ExtractFinishReason(meta, cfg, body)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -113,7 +118,8 @@ func TestExtractFinishReason_AnthropicStreamMessageStartFallback(t *testing.T) {
 	const finishReasonMaxTokens = "max_tokens"
 	meta := &dslmeta.Meta{API: "claude.messages", IsStream: true}
 	body := []byte(`{"type":"message_start","message":{"stop_reason":"` + finishReasonMaxTokens + `"}}`)
-	v, err := ExtractFinishReason(meta, FinishReasonExtractConfig{Mode: "anthropic"}, body)
+	_, cfg := mustLoadProviderMatchConfigs(t, "anthropic.conf", meta.API, meta.IsStream)
+	v, err := ExtractFinishReason(meta, cfg, body)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -125,7 +131,8 @@ func TestExtractFinishReason_AnthropicStreamMessageStartFallback(t *testing.T) {
 func TestExtractFinishReason_Gemini(t *testing.T) {
 	meta := &dslmeta.Meta{API: "gemini.generateContent"}
 	body := []byte(`{"candidates":[{"finishReason":"STOP"}]}`)
-	v, err := ExtractFinishReason(meta, FinishReasonExtractConfig{Mode: "gemini"}, body)
+	_, cfg := mustLoadProviderMatchConfigs(t, "gemini.conf", meta.API, meta.IsStream)
+	v, err := ExtractFinishReason(meta, cfg, body)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -137,7 +144,8 @@ func TestExtractFinishReason_Gemini(t *testing.T) {
 func TestExtractFinishReason_GeminiSnakeCaseFallback(t *testing.T) {
 	meta := &dslmeta.Meta{API: "gemini.generateContent"}
 	body := []byte(`{"candidates":[{"finish_reason":"SAFETY"}]}`)
-	v, err := ExtractFinishReason(meta, FinishReasonExtractConfig{Mode: "gemini"}, body)
+	_, cfg := mustLoadProviderMatchConfigs(t, "gemini.conf", meta.API, meta.IsStream)
+	v, err := ExtractFinishReason(meta, cfg, body)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

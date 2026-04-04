@@ -9,7 +9,7 @@ import (
 
 func TestExtractUsage_OpenAI_NonStream(t *testing.T) {
 	meta := &dslmeta.Meta{API: "chat.completions", IsStream: false}
-	cfg := UsageExtractConfig{Mode: "openai"}
+	cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
 
 	resp := []byte(`{
 	  "usage": {
@@ -41,7 +41,7 @@ func TestExtractUsage_OpenAI_NonStream(t *testing.T) {
 
 func TestExtractUsage_OpenAI_ImagesGenerations(t *testing.T) {
 	meta := &dslmeta.Meta{API: "images.generations", IsStream: false}
-	cfg := UsageExtractConfig{Mode: "openai"}
+	cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
 
 	resp := []byte(`{
 	  "created": 1743264000,
@@ -97,7 +97,7 @@ func TestExtractUsage_OpenAI_ImagesGenerations(t *testing.T) {
 
 func TestExtractUsage_OpenAI_ImagesEditsCanonicalFact(t *testing.T) {
 	meta := &dslmeta.Meta{API: "images.edits", IsStream: false}
-	cfg := UsageExtractConfig{Mode: "openai"}
+	cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
 
 	resp := []byte(`{
 	  "created": 1743264000,
@@ -133,7 +133,7 @@ func TestExtractUsage_OpenAI_ImagesEditsCanonicalFact(t *testing.T) {
 
 func TestExtractUsage_OpenAI_AudioTranscriptionsCanonicalFact(t *testing.T) {
 	meta := &dslmeta.Meta{API: "audio.transcriptions", IsStream: false}
-	cfg := UsageExtractConfig{Mode: "openai"}
+	cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
 
 	resp := []byte(`{
 	  "text":"hello",
@@ -167,7 +167,7 @@ func TestExtractUsage_OpenAI_AudioTranscriptionsCanonicalFact(t *testing.T) {
 
 func TestExtractUsage_OpenAI_AudioTranslationsCanonicalFact(t *testing.T) {
 	meta := &dslmeta.Meta{API: "audio.translations", IsStream: false}
-	cfg := UsageExtractConfig{Mode: "openai"}
+	cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
 
 	resp := []byte(`{
 	  "text":"hello translated",
@@ -205,7 +205,7 @@ func TestExtractUsage_OpenAI_AudioSpeechDerivedCanonicalFact(t *testing.T) {
 		IsStream:     false,
 		DerivedUsage: map[string]any{"audio_duration_seconds": 1.5},
 	}
-	cfg := UsageExtractConfig{Mode: "openai"}
+	cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
 
 	u, _, err := ExtractUsage(meta, cfg, []byte("not-json-audio"))
 	if err != nil {
@@ -301,7 +301,7 @@ func TestExtractUsage_OpenAI_AudioSpeechMiniRealResponse(t *testing.T) {
 
 func TestExtractUsage_OpenAI_ResponsesWebSearchCanonicalFact(t *testing.T) {
 	meta := &dslmeta.Meta{API: "responses", IsStream: false}
-	cfg := UsageExtractConfig{Mode: "openai"}
+	cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
 
 	resp := []byte(`{
 	  "output": [
@@ -336,7 +336,7 @@ func TestExtractUsage_OpenAI_ResponsesWebSearchCanonicalFact(t *testing.T) {
 
 func TestExtractUsage_OpenAI_ResponsesWebSearchCanonicalFact_StreamFinalResponse(t *testing.T) {
 	meta := &dslmeta.Meta{API: "responses", IsStream: true}
-	cfg := UsageExtractConfig{Mode: "openai"}
+	cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
 
 	resp := []byte(`{
 	  "response": {
@@ -463,7 +463,7 @@ func TestExtractUsage_OpenAI_ResponsesMultimodalRealResponse(t *testing.T) {
 
 func TestExtractUsage_Anthropic_NonStream_TTLFactsAndProjection(t *testing.T) {
 	meta := &dslmeta.Meta{API: "claude.messages", IsStream: false}
-	cfg := UsageExtractConfig{Mode: "anthropic"}
+	cfg, _ := mustLoadProviderMatchConfigs(t, "anthropic.conf", meta.API, meta.IsStream)
 
 	resp := []byte(`{
 	  "usage": {
@@ -485,7 +485,7 @@ func TestExtractUsage_Anthropic_NonStream_TTLFactsAndProjection(t *testing.T) {
 	if u == nil {
 		t.Fatalf("usage nil")
 	}
-	if u.InputTokens != 10 || u.OutputTokens != 170 || u.TotalTokens != 180 {
+	if u.InputTokens != 6816 || u.OutputTokens != 170 || u.TotalTokens != 6986 {
 		t.Fatalf("unexpected usage: %+v", *u)
 	}
 	if cached != 4 {
@@ -510,7 +510,7 @@ func TestExtractUsage_Anthropic_NonStream_TTLFactsAndProjection(t *testing.T) {
 
 func TestExtractUsage_Anthropic_NonStream_CacheWriteFallbackOnly(t *testing.T) {
 	meta := &dslmeta.Meta{API: "claude.messages", IsStream: false}
-	cfg := UsageExtractConfig{Mode: "anthropic"}
+	cfg, _ := mustLoadProviderMatchConfigs(t, "anthropic.conf", meta.API, meta.IsStream)
 
 	resp := []byte(`{
 	  "usage": {
@@ -526,6 +526,9 @@ func TestExtractUsage_Anthropic_NonStream_CacheWriteFallbackOnly(t *testing.T) {
 	if u == nil {
 		t.Fatalf("usage nil")
 	}
+	if got, want := u.InputTokens, 14; got != want {
+		t.Fatalf("InputTokens got %d, want %d", got, want)
+	}
 	if cached != 3 {
 		t.Fatalf("cached=%d want=3", cached)
 	}
@@ -539,7 +542,7 @@ func TestExtractUsage_Anthropic_NonStream_CacheWriteFallbackOnly(t *testing.T) {
 
 func TestExtractUsage_Anthropic_NonStream_CacheReadOnly(t *testing.T) {
 	meta := &dslmeta.Meta{API: "claude.messages", IsStream: false}
-	cfg := UsageExtractConfig{Mode: "anthropic"}
+	cfg, _ := mustLoadProviderMatchConfigs(t, "anthropic.conf", meta.API, meta.IsStream)
 
 	resp := []byte(`{
 	  "usage": {
@@ -554,6 +557,9 @@ func TestExtractUsage_Anthropic_NonStream_CacheReadOnly(t *testing.T) {
 	if u == nil {
 		t.Fatalf("usage nil")
 	}
+	if got, want := u.InputTokens, 6; got != want {
+		t.Fatalf("InputTokens got %d, want %d", got, want)
+	}
 	if cached != 6 {
 		t.Fatalf("cached=%d want=6", cached)
 	}
@@ -565,9 +571,62 @@ func TestExtractUsage_Anthropic_NonStream_CacheReadOnly(t *testing.T) {
 	}
 }
 
+func TestExtractUsage_AnthropicProvider_NonStream_WebSearchProjection(t *testing.T) {
+	meta := &dslmeta.Meta{API: "claude.messages", IsStream: false}
+	cfg, _ := mustLoadProviderMatchConfigs(t, "anthropic.conf", meta.API, meta.IsStream)
+
+	resp := []byte(`{
+	  "usage": {
+	    "input_tokens": 105,
+	    "output_tokens": 6039,
+	    "cache_read_input_tokens": 7123,
+	    "cache_creation_input_tokens": 7345,
+	    "server_tool_use": {
+	      "web_search_requests": 1
+	    }
+	  }
+	}`)
+
+	u, cached, err := ExtractUsage(meta, cfg, resp)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if u == nil {
+		t.Fatalf("usage nil")
+	}
+	if u.InputTokens != 14573 || u.OutputTokens != 6039 || u.TotalTokens != 20612 {
+		t.Fatalf("unexpected usage: %+v", *u)
+	}
+	if cached != 7123 {
+		t.Fatalf("cached=%d want=7123", cached)
+	}
+	if u.InputTokenDetails == nil {
+		t.Fatalf("expected InputTokenDetails")
+	}
+	if u.InputTokenDetails.CachedTokens != 7123 || u.InputTokenDetails.CacheWriteTokens != 7345 {
+		t.Fatalf("unexpected InputTokenDetails: %+v", *u.InputTokenDetails)
+	}
+	if u.FlatFields == nil {
+		t.Fatalf("expected FlatFields")
+	}
+	if got, want := u.FlatFields["server_tool_web_search_calls"], 1; got != want {
+		t.Fatalf("server_tool_web_search_calls=%v want=%v", got, want)
+	}
+	found := false
+	for _, fact := range u.DebugFacts {
+		if fact.Dimension == "server_tool.web_search" && fact.Unit == "call" && fact.Quantity == 1 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected server_tool.web_search call fact, got=%#v", u.DebugFacts)
+	}
+}
+
 func TestExtractUsage_Gemini_NonStream(t *testing.T) {
 	meta := &dslmeta.Meta{API: "gemini.generateContent", IsStream: false}
-	cfg := UsageExtractConfig{Mode: "gemini"}
+	cfg, _ := mustLoadProviderMatchConfigs(t, "gemini.conf", meta.API, meta.IsStream)
 
 	resp := []byte(`{
 	  "candidates":[{"content":{"parts":[{"text":"hi"}]}}],
@@ -600,7 +659,7 @@ func TestExtractUsage_Gemini_NonStream(t *testing.T) {
 
 func TestExtractUsage_Gemini_NonStream_MultimodalBuiltin(t *testing.T) {
 	meta := &dslmeta.Meta{API: "gemini.generateContent", IsStream: false}
-	cfg := UsageExtractConfig{Mode: "gemini"}
+	cfg, _ := mustLoadProviderMatchConfigs(t, "gemini.conf", meta.API, meta.IsStream)
 
 	resp := []byte(`{
 	  "usageMetadata":{
@@ -646,7 +705,7 @@ func TestExtractUsage_Gemini_NonStream_MultimodalBuiltin(t *testing.T) {
 
 func TestExtractUsage_Gemini_NonStream_SnakeCaseUsageIgnored(t *testing.T) {
 	meta := &dslmeta.Meta{API: "gemini.generateContent", IsStream: false}
-	cfg := UsageExtractConfig{Mode: "gemini"}
+	cfg, _ := mustLoadProviderMatchConfigs(t, "gemini.conf", meta.API, meta.IsStream)
 
 	resp := []byte(`{
 	  "usage_metadata":{
