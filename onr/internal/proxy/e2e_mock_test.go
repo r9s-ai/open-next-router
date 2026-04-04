@@ -254,6 +254,179 @@ func TestE2EMock_ChatCompletions_AzureResponses_StreamCompletedEarly(t *testing.
 	assertGolden(t, "golden/azure_responses_stream_completed_early_openai_chat.sse", normalizeForGolden(body))
 }
 
+func TestE2EMock_ChatCompletions_OpenAI_StreamFinalUsageChunk(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockResp := mustReadTestData(t, "mock_upstream/openai/chat_completions_stream_usage_final.sse")
+	fixtureReq := []byte(`{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hhh"}],"stream":true}`)
+
+	var includeUsage bool
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		var req map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode upstream request: %v", err)
+		}
+		streamOptions, _ := req["stream_options"].(map[string]any)
+		if v, ok := streamOptions["include_usage"].(bool); ok {
+			includeUsage = v
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(mockResp)
+	}))
+	t.Cleanup(mock.Close)
+
+	c := newMockE2EClient(t, map[string]string{
+		"openai.conf": providerConfOpenAIMultimodal(mock.URL),
+	})
+	gc, rec := newGinJSONRequestPath(t, "/v1/chat/completions", fixtureReq)
+	res, err := c.ProxyJSON(gc, "openai", ProviderKey{Name: "openai-key", Value: "mock-key"}, "chat.completions", true)
+	if err != nil {
+		t.Fatalf("proxy error: %v", err)
+	}
+	if res == nil || res.Status != http.StatusOK {
+		t.Fatalf("unexpected result: %#v", res)
+	}
+	if !includeUsage {
+		t.Fatalf("expected stream_options.include_usage=true")
+	}
+	if res.Usage == nil {
+		t.Fatalf("expected usage")
+	}
+	if got, want := asInt(res.Usage["input_tokens"]), 8; got != want {
+		t.Fatalf("input_tokens=%d want=%d", got, want)
+	}
+	if got, want := asInt(res.Usage["output_tokens"]), 9; got != want {
+		t.Fatalf("output_tokens=%d want=%d", got, want)
+	}
+	if got, want := asInt(res.Usage["total_tokens"]), 17; got != want {
+		t.Fatalf("total_tokens=%d want=%d", got, want)
+	}
+	if res.UsageStage != "upstream" {
+		t.Fatalf("usage_stage=%q want=upstream", res.UsageStage)
+	}
+	if res.FinishReason != "stop" {
+		t.Fatalf("finish_reason=%q want=stop", res.FinishReason)
+	}
+
+	body := rec.Body.String()
+	if !containsAll(body,
+		`"content":"Hello"`,
+		`"finish_reason":"stop"`,
+		`"choices":[]`,
+		`"total_tokens":17`,
+		"data: [DONE]",
+	) {
+		t.Fatalf("unexpected stream body:\n%s", body)
+	}
+	assertGolden(t, "golden/openai_chat_stream_usage_final.sse", normalizeForGolden(body))
+}
+
+func TestE2EMock_ChatCompletions_AnthropicMessages_StreamMaxTokens(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockResp := mustReadTestData(t, "mock_upstream/anthropic/messages_stream_max_tokens.sse")
+	fixtureReq := []byte(`{"model":"claude-haiku-4-5","messages":[{"role":"user","content":"hi"}],"max_tokens":12,"stream":true}`)
+
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/messages" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(mockResp)
+	}))
+	t.Cleanup(mock.Close)
+
+	c := newMockE2EClient(t, map[string]string{
+		"anthropic.conf": providerConfAnthropicStreamFinish(mock.URL),
+	})
+	gc, rec := newGinJSONRequestPath(t, "/v1/chat/completions", fixtureReq)
+	res, err := c.ProxyJSON(gc, "anthropic", ProviderKey{Name: "anthropic-key", Value: "mock-key"}, "chat.completions", true)
+	if err != nil {
+		t.Fatalf("proxy error: %v", err)
+	}
+	if res == nil || res.Status != http.StatusOK {
+		t.Fatalf("unexpected result: %#v", res)
+	}
+	if res.Usage != nil {
+		t.Fatalf("did not expect transformed anthropic stream usage, got %#v", res.Usage)
+	}
+	if strings.TrimSpace(res.UsageStage) != "" {
+		t.Fatalf("usage_stage=%q want empty", res.UsageStage)
+	}
+	if res.FinishReason != "length" {
+		t.Fatalf("finish_reason=%q want=length", res.FinishReason)
+	}
+
+	body := rec.Body.String()
+	if !containsAll(body,
+		`"role":"assistant"`,
+		`"content":"Hello"`,
+		`"content":"!"`,
+		`"finish_reason":"length"`,
+		"data: [DONE]",
+	) {
+		t.Fatalf("unexpected stream body:\n%s", body)
+	}
+	assertGolden(t, "golden/anthropic_stream_max_tokens_openai_chat.sse", normalizeForGolden(body))
+}
+
+func TestE2EMock_ChatCompletions_OpenAIResponses_StreamIncomplete(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockResp := mustReadTestData(t, "mock_upstream/openai/responses_stream_incomplete.sse")
+	fixtureReq := mustReadTestData(t, "fixtures/chat_nonstream_request.json")
+
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/responses" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(mockResp)
+	}))
+	t.Cleanup(mock.Close)
+
+	c := newMockE2EClient(t, map[string]string{
+		"openai.conf": providerConfOpenAIResponsesStreamFinish(mock.URL),
+	})
+	gc, rec := newGinJSONRequestPath(t, "/v1/chat/completions", fixtureReq)
+	res, err := c.ProxyJSON(gc, "openai", ProviderKey{Name: "openai-key", Value: "mock-key"}, "chat.completions", true)
+	if err != nil {
+		t.Fatalf("proxy error: %v", err)
+	}
+	if res == nil || res.Status != http.StatusOK {
+		t.Fatalf("unexpected result: %#v", res)
+	}
+	if res.Usage != nil {
+		t.Fatalf("did not expect proxy-level usage projection here, got %#v", res.Usage)
+	}
+	if strings.TrimSpace(res.UsageStage) != "" {
+		t.Fatalf("usage_stage=%q want empty", res.UsageStage)
+	}
+	if res.FinishReason != "length" {
+		t.Fatalf("finish_reason=%q want=length", res.FinishReason)
+	}
+
+	body := rec.Body.String()
+	if !containsAll(body,
+		`"finish_reason":"length"`,
+		`"total_tokens":7`,
+		"data: [DONE]",
+	) {
+		t.Fatalf("unexpected stream body:\n%s", body)
+	}
+	assertGolden(t, "golden/openai_responses_stream_incomplete_openai_chat.sse", normalizeForGolden(body))
+}
+
 func TestE2EMock_AudioTranscriptions_OpenAI_Multipart(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -932,6 +1105,44 @@ provider "anthropic" {
 `, baseURL)
 }
 
+func providerConfAnthropicStreamFinish(baseURL string) string {
+	return fmt.Sprintf(`syntax "next-router/0.1";
+
+provider "anthropic" {
+  defaults {
+    upstream_config {
+      base_url = %q;
+    }
+    auth {
+      auth_header_key "x-api-key";
+    }
+    request {
+      set_header "anthropic-version" "2023-06-01";
+    }
+    response {
+      resp_passthrough;
+    }
+  }
+
+  match api = "chat.completions" stream = true {
+    metrics {
+      finish_reason_path "$.choices[*].finish_reason";
+    }
+    request {
+      req_map openai_chat_to_anthropic_messages;
+      json_del "$.stream_options";
+    }
+    upstream {
+      set_path "/v1/messages";
+    }
+    response {
+      sse_parse anthropic_to_openai_chunks;
+    }
+  }
+}
+`, baseURL)
+}
+
 func providerConfGemini(baseURL string) string {
 	return fmt.Sprintf(`syntax "next-router/0.1";
 
@@ -1151,6 +1362,41 @@ provider "openai" {
     }
     upstream {
       set_path "/v1/responses";
+    }
+  }
+}
+`, baseURL)
+}
+
+func providerConfOpenAIResponsesStreamFinish(baseURL string) string {
+	return fmt.Sprintf(`syntax "next-router/0.1";
+
+provider "openai" {
+  defaults {
+    upstream_config {
+      base_url = %q;
+    }
+    auth {
+      auth_bearer;
+    }
+    response {
+      resp_passthrough;
+    }
+  }
+
+  match api = "chat.completions" stream = true {
+    metrics {
+      finish_reason_path "$.choices[*].finish_reason";
+    }
+    request {
+      req_map openai_chat_to_openai_responses;
+      set_header "Accept-Encoding" "identity";
+    }
+    upstream {
+      set_path "/v1/responses";
+    }
+    response {
+      sse_parse openai_responses_to_openai_chat_chunks;
     }
   }
 }

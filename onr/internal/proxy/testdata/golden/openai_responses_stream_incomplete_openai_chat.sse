@@ -1,0 +1,5 @@
+data: {"choices":[{"delta":{},"index":0}],"created":0,"id":"chatcmpl_mock","model":"gpt-5-mini-2025-08-07","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{},"finish_reason":"length","index":0}],"created":0,"id":"chatcmpl_mock","model":"gpt-5-mini-2025-08-07","object":"chat.completion.chunk","usage":{"completion_tokens":0,"input_tokens":7,"output_tokens":0,"prompt_tokens":7,"total_tokens":7}}
+
+data: [DONE]

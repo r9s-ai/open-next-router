@@ -1,0 +1,8 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_022c96b0441c81130069cb7ba13eb08194aa943dc9f3a1d768","object":"response","created_at":1774943137,"status":"in_progress","model":"gpt-5-mini-2025-08-07","output":[],"usage":null},"sequence_number":0}
+
+event: response.in_progress
+data: {"type":"response.in_progress","response":{"id":"resp_022c96b0441c81130069cb7ba13eb08194aa943dc9f3a1d768","object":"response","created_at":1774943137,"status":"in_progress","model":"gpt-5-mini-2025-08-07","output":[],"usage":null},"sequence_number":1}
+
+event: response.incomplete
+data: {"type":"response.incomplete","response":{"id":"resp_022c96b0441c81130069cb7ba13eb08194aa943dc9f3a1d768","object":"response","created_at":1774943137,"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"model":"gpt-5-mini-2025-08-07","output":[],"usage":{"input_tokens":7,"input_tokens_details":{"cached_tokens":0},"output_tokens":0,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":7}},"sequence_number":2}

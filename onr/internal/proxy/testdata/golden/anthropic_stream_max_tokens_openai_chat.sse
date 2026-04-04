@@ -1,0 +1,9 @@
+data: {"choices":[{"delta":{"role":"assistant"},"index":0}],"created":0,"id":"chatcmpl_mock","model":"claude-haiku-4-5-20251001","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"content":"Hello"},"index":0}],"created":0,"id":"chatcmpl_mock","model":"claude-haiku-4-5-20251001","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"content":"!"},"index":0}],"created":0,"id":"chatcmpl_mock","model":"claude-haiku-4-5-20251001","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{},"finish_reason":"length","index":0}],"created":0,"id":"chatcmpl_mock","model":"claude-haiku-4-5-20251001","object":"chat.completion.chunk"}
+
+data: [DONE]
