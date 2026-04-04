@@ -18,18 +18,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/r9s-ai/open-next-router/onr-admin/internal/providersource"
 	"github.com/r9s-ai/open-next-router/onr-admin/internal/store"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
+	cfgpkg "github.com/r9s-ai/open-next-router/pkg/config"
 )
 
 const (
-	defaultProvidersDir = "./config/providers"
-	defaultDumpsDir     = "./dumps"
-	defaultListen       = "0.0.0.0:3310"
-	defaultAPIBaseURL   = "http://127.0.0.1:3300"
-	envAPIBaseURL       = "ONR_ADMIN_WEB_CURL_API_BASE_URL"
-	envListen           = "ONR_ADMIN_WEB_LISTEN"
-	dumpBodyLimitBytes  = 2 * 1024 * 1024
+	defaultDumpsDir    = "./dumps"
+	defaultListen      = "0.0.0.0:3310"
+	defaultAPIBaseURL  = "http://127.0.0.1:3300"
+	envAPIBaseURL      = "ONR_ADMIN_WEB_CURL_API_BASE_URL"
+	envListen          = "ONR_ADMIN_WEB_LISTEN"
+	dumpBodyLimitBytes = 2 * 1024 * 1024
 )
 
 var providerNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
@@ -41,10 +42,10 @@ type Options struct {
 }
 
 type Server struct {
-	providersDir string
-	dumpsDir     string
-	indexHTML    string
-	mu           sync.Mutex
+	providerSource providersource.Info
+	dumpsDir       string
+	indexHTML      string
+	mu             sync.Mutex
 }
 
 type providerRequest struct {
@@ -90,18 +91,19 @@ type dumpByRequestIDResponse struct {
 }
 
 func Run(opts Options) error {
-	providersDir := resolveProvidersDir(opts.ConfigPath, opts.ProvidersDir)
+	providersPath := resolveProviderSourcePath(opts.ConfigPath, opts.ProvidersDir)
 	dumpsDir := resolveDumpsDir(opts.ConfigPath)
 	defaultBaseURL := resolveDefaultAPIBaseURL()
-	srv, err := newServer(providersDir, dumpsDir, defaultBaseURL)
+	srv, err := newServer(providersPath, dumpsDir, defaultBaseURL)
 	if err != nil {
 		return err
 	}
 	listen := resolveListenAddress(opts.Listen)
 	log.Printf(
-		"onr-admin web listening: url=%q providers_dir=%q dumps_dir=%q default_curl_api_base_url=%q",
+		"onr-admin web listening: url=%q providers_source=%q providers_edit_path=%q dumps_dir=%q default_curl_api_base_url=%q",
 		"http://"+listen,
-		providersDir,
+		srv.providerSource.SourcePath,
+		srv.providerSource.EditablePath,
 		dumpsDir,
 		defaultBaseURL,
 	)
@@ -113,18 +115,22 @@ func NewServer(providersDir string) (*Server, error) {
 }
 
 func newServer(providersDir string, dumpsDir string, defaultBaseURL string) (*Server, error) {
-	providerDir := strings.TrimSpace(providersDir)
-	if providerDir == "" {
-		return nil, errors.New("providers dir is empty")
+	sourcePath := strings.TrimSpace(providersDir)
+	if sourcePath == "" {
+		return nil, errors.New("providers source is empty")
+	}
+	sourceInfo, err := providersource.Resolve(sourcePath)
+	if err != nil {
+		return nil, err
 	}
 	dumpDir := strings.TrimSpace(dumpsDir)
 	if dumpDir == "" {
 		dumpDir = defaultDumpsDir
 	}
 	return &Server{
-		providersDir: providerDir,
-		dumpsDir:     dumpDir,
-		indexHTML:    renderIndexHTML(defaultBaseURL),
+		providerSource: sourceInfo,
+		dumpsDir:       dumpDir,
+		indexHTML:      renderIndexHTML(defaultBaseURL),
 	}, nil
 }
 
@@ -158,7 +164,7 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 		writeMethodNotAllowed(w, http.MethodGet)
 		return
 	}
-	names, err := listProviders(s.providersDir)
+	names, err := listProviders(s.providerSource)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, providerResponse{OK: false, Error: err.Error()})
 		return
@@ -179,9 +185,7 @@ func (s *Server) handleProvider(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, providerResponse{OK: false, Error: err.Error()})
 		return
 	}
-	target := filepath.Join(s.providersDir, provider+".conf")
-	// #nosec G304 -- target path is sanitized provider name under configured providers dir.
-	b, err := os.ReadFile(target)
+	target, b, err := readProviderContent(s.providerSource, provider)
 	if err != nil {
 		if os.IsNotExist(err) {
 			writeJSON(w, http.StatusNotFound, providerResponse{OK: false, Error: "provider file not found"})
@@ -240,11 +244,7 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, providerResponse{OK: false, Error: err.Error()})
 		return
 	}
-	if err := os.MkdirAll(s.providersDir, 0o750); err != nil {
-		writeJSON(w, http.StatusInternalServerError, providerResponse{OK: false, Error: err.Error()})
-		return
-	}
-	if err := store.WriteAtomic(target, []byte(in.Content), false); err != nil {
+	if err := writeProviderContent(s.providerSource, in.Provider, in.Content); err != nil {
 		writeJSON(w, http.StatusInternalServerError, providerResponse{OK: false, Error: err.Error()})
 		return
 	}
@@ -402,7 +402,7 @@ func (s *Server) validateCandidate(provider string, content string) (dslconfig.L
 	if err != nil {
 		return dslconfig.LoadResult{}, "", err
 	}
-	target := filepath.Join(s.providersDir, name+".conf")
+	target := providerTargetPath(s.providerSource, name)
 
 	tmpRoot, err := os.MkdirTemp("", "onr-admin-web-providers-*")
 	if err != nil {
@@ -410,15 +410,40 @@ func (s *Server) validateCandidate(provider string, content string) (dslconfig.L
 	}
 	defer func() { _ = os.RemoveAll(tmpRoot) }()
 
-	configRoot := filepath.Dir(s.providersDir)
-	tmpDir := filepath.Join(tmpRoot, filepath.Base(s.providersDir))
+	configRoot := filepath.Dir(s.providerSource.SourcePath)
 	if err := copyDirectory(configRoot, tmpRoot); err != nil {
 		return dslconfig.LoadResult{}, "", err
 	}
-	if err := os.WriteFile(filepath.Join(tmpDir, name+".conf"), []byte(content), 0o600); err != nil {
+	tmpSourcePath, err := mapSourcePathUnderTemp(tmpRoot, configRoot, s.providerSource.SourcePath)
+	if err != nil {
 		return dslconfig.LoadResult{}, "", err
 	}
-	res, err := dslconfig.ValidateProvidersDir(tmpDir)
+	if s.providerSource.EditableIsFile {
+		// #nosec G304 -- temp source path is derived from a trusted temp root and source layout.
+		body, err := os.ReadFile(tmpSourcePath)
+		if err != nil {
+			return dslconfig.LoadResult{}, "", err
+		}
+		updated, err := dslconfig.UpsertProviderBlock(tmpSourcePath, string(body), name, content)
+		if err != nil {
+			return dslconfig.LoadResult{}, "", err
+		}
+		if err := os.WriteFile(tmpSourcePath, []byte(updated), 0o600); err != nil {
+			return dslconfig.LoadResult{}, "", err
+		}
+	} else {
+		tmpEditablePath, err := mapSourcePathUnderTemp(tmpRoot, configRoot, s.providerSource.EditablePath)
+		if err != nil {
+			return dslconfig.LoadResult{}, "", err
+		}
+		if err := os.MkdirAll(tmpEditablePath, 0o750); err != nil {
+			return dslconfig.LoadResult{}, "", err
+		}
+		if err := os.WriteFile(filepath.Join(tmpEditablePath, name+".conf"), []byte(content), 0o600); err != nil {
+			return dslconfig.LoadResult{}, "", err
+		}
+	}
+	res, err := dslconfig.ValidateProvidersPath(tmpSourcePath)
 	if err != nil {
 		return dslconfig.LoadResult{}, "", err
 	}
@@ -543,15 +568,13 @@ func writeMethodNotAllowed(w http.ResponseWriter, allowed string) {
 	writeJSON(w, http.StatusMethodNotAllowed, providerResponse{OK: false, Error: "method not allowed"})
 }
 
-func resolveProvidersDir(cfgPath, override string) string {
-	if dir := strings.TrimSpace(override); dir != "" {
-		return dir
+func resolveProviderSourcePath(cfgPath, override string) string {
+	if path := strings.TrimSpace(override); path != "" {
+		return path
 	}
 	cfg, _ := store.LoadConfigIfExists(strings.TrimSpace(cfgPath))
-	if cfg != nil && strings.TrimSpace(cfg.Providers.Dir) != "" {
-		return strings.TrimSpace(cfg.Providers.Dir)
-	}
-	return defaultProvidersDir
+	path, _ := cfgpkg.ResolveProviderDSLSource(cfg)
+	return path
 }
 
 func resolveDumpsDir(cfgPath string) string {
@@ -562,7 +585,31 @@ func resolveDumpsDir(cfgPath string) string {
 	return defaultDumpsDir
 }
 
-func listProviders(providersDir string) ([]string, error) {
+func listProviders(source providersource.Info) ([]string, error) {
+	if source.EditableIsFile {
+		// #nosec G304 -- editable provider source path is configured by the user.
+		b, err := os.ReadFile(source.EditablePath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return []string{}, nil
+			}
+			return nil, err
+		}
+		blocks, err := dslconfig.ListProviderBlocks(source.EditablePath, string(b))
+		if err != nil {
+			return nil, err
+		}
+		out := make([]string, 0, len(blocks))
+		for _, block := range blocks {
+			out = append(out, block.Name)
+		}
+		sort.Strings(out)
+		return out, nil
+	}
+	return listProvidersInDir(source.EditablePath)
+}
+
+func listProvidersInDir(providersDir string) ([]string, error) {
 	entries, err := os.ReadDir(providersDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -597,6 +644,68 @@ func listProviders(providersDir string) ([]string, error) {
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+func readProviderContent(source providersource.Info, provider string) (string, []byte, error) {
+	if source.EditableIsFile {
+		// #nosec G304 -- editable provider source path is configured by the user.
+		b, err := os.ReadFile(source.EditablePath)
+		if err != nil {
+			return "", nil, err
+		}
+		block, ok, err := dslconfig.ExtractProviderBlockOptional(source.EditablePath, string(b), provider)
+		if err != nil {
+			return "", nil, err
+		}
+		if !ok {
+			return "", nil, os.ErrNotExist
+		}
+		return source.EditablePath, []byte(block), nil
+	}
+	target := filepath.Join(source.EditablePath, provider+".conf")
+	// #nosec G304 -- target path is sanitized provider name under configured providers dir.
+	b, err := os.ReadFile(target)
+	if err != nil {
+		return "", nil, err
+	}
+	return target, b, nil
+}
+
+func writeProviderContent(source providersource.Info, provider string, content string) error {
+	if source.EditableIsFile {
+		if err := os.MkdirAll(filepath.Dir(source.EditablePath), 0o750); err != nil {
+			return err
+		}
+		// #nosec G304 -- editable provider source path is configured by the user.
+		b, err := os.ReadFile(source.EditablePath)
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		updated, err := dslconfig.UpsertProviderBlock(source.EditablePath, string(b), provider, content)
+		if err != nil {
+			return err
+		}
+		return store.WriteAtomic(source.EditablePath, []byte(updated), false)
+	}
+	if err := os.MkdirAll(source.EditablePath, 0o750); err != nil {
+		return err
+	}
+	return store.WriteAtomic(filepath.Join(source.EditablePath, provider+".conf"), []byte(content), false)
+}
+
+func providerTargetPath(source providersource.Info, provider string) string {
+	if source.EditableIsFile {
+		return source.EditablePath
+	}
+	return filepath.Join(source.EditablePath, provider+".conf")
+}
+
+func mapSourcePathUnderTemp(tmpRoot string, configRoot string, path string) (string, error) {
+	rel, err := filepath.Rel(configRoot, path)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(tmpRoot, rel), nil
 }
 
 func copyDirectory(src, dst string) error {

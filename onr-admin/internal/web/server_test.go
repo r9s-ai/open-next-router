@@ -293,6 +293,81 @@ provider "openai" {
 	}
 }
 
+func TestProviderEndpoints_FileSourceWithIncludedProvidersDir(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, "config")
+	providersDir := filepath.Join(configDir, "providers")
+	if err := os.MkdirAll(providersDir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	onrPath := filepath.Join(configDir, "onr.conf")
+	if err := os.WriteFile(onrPath, []byte(`
+syntax "next-router/0.1";
+
+include providers/*.conf;
+`), 0o600); err != nil {
+		t.Fatalf("write onr.conf: %v", err)
+	}
+	target := filepath.Join(providersDir, "openai.conf")
+	if err := os.WriteFile(target, []byte(validOpenAIConf), 0o600); err != nil {
+		t.Fatalf("write provider conf: %v", err)
+	}
+
+	srv, err := NewServer(onrPath)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	httpSrv := httptest.NewServer(srv.Handler())
+	defer httpSrv.Close()
+
+	listResp, err := http.Get(httpSrv.URL + "/api/providers")
+	if err != nil {
+		t.Fatalf("list providers: %v", err)
+	}
+	defer func() { _ = listResp.Body.Close() }()
+	if listResp.StatusCode != http.StatusOK {
+		t.Fatalf("list status=%d", listResp.StatusCode)
+	}
+	var listBody providerResponse
+	if err := json.NewDecoder(listResp.Body).Decode(&listBody); err != nil {
+		t.Fatalf("decode list body: %v", err)
+	}
+	if !listBody.OK || len(listBody.Providers) != 1 || listBody.Providers[0] != "openai" {
+		t.Fatalf("unexpected list body: %+v", listBody)
+	}
+
+	getResp, err := http.Get(httpSrv.URL + "/api/provider?name=openai")
+	if err != nil {
+		t.Fatalf("get provider: %v", err)
+	}
+	defer func() { _ = getResp.Body.Close() }()
+	if getResp.StatusCode != http.StatusOK {
+		t.Fatalf("get status=%d", getResp.StatusCode)
+	}
+	var getBody providerResponse
+	if err := json.NewDecoder(getResp.Body).Decode(&getBody); err != nil {
+		t.Fatalf("decode get body: %v", err)
+	}
+	if getBody.TargetFile != target {
+		t.Fatalf("target file=%q want=%q", getBody.TargetFile, target)
+	}
+
+	status, body := postJSON(t, httpSrv.URL+"/api/providers/save", providerRequest{
+		Provider: "openai",
+		Content:  validOpenAIConfUpdated,
+	})
+	if status != http.StatusOK {
+		t.Fatalf("save status=%d body=%v", status, body)
+	}
+	saved, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read saved file: %v", err)
+	}
+	if string(saved) != validOpenAIConfUpdated {
+		t.Fatalf("unexpected saved content")
+	}
+}
+
 func TestResolveDefaultAPIBaseURL_FromEnv(t *testing.T) {
 	t.Setenv(envAPIBaseURL, "https://example.internal:3344/")
 	got := resolveDefaultAPIBaseURL()

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/r9s-ai/open-next-router/onr-admin/internal/providersource"
 )
 
 func TestRootCmdHasUpdateSubcommands(t *testing.T) {
@@ -201,22 +203,94 @@ func TestResolveBinaryTargetPath_PreferFlag(t *testing.T) {
 	}
 }
 
-func TestResolveUpdateProvidersDir(t *testing.T) {
+func TestResolveUpdateProvidersSource(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	providersDir := filepath.Join(dir, "providers")
+	configDir := filepath.Join(dir, "config")
+	providersDir := filepath.Join(configDir, "providers")
+	if err := os.MkdirAll(providersDir, 0o750); err != nil {
+		t.Fatalf("mkdir providers: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(providersDir, "openai.conf"), []byte(`
+syntax "next-router/0.1";
+provider "openai" {
+  defaults { upstream_config { base_url = "https://api.openai.com"; } }
+}
+`), 0o600); err != nil {
+		t.Fatalf("write provider: %v", err)
+	}
+	onrConf := filepath.Join(configDir, "onr.conf")
+	if err := os.WriteFile(onrConf, []byte(`
+syntax "next-router/0.1";
+include providers/*.conf;
+`), 0o600); err != nil {
+		t.Fatalf("write onr.conf: %v", err)
+	}
 	cfgPath := filepath.Join(dir, "onr.yaml")
-	cfg := "auth:\n  api_key: \"x\"\nproviders:\n  dir: \"" + providersDir + "\"\n"
+	cfg := "auth:\n  api_key: \"x\"\nproviders:\n  dir: \"" + onrConf + "\"\n"
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	got, err := resolveUpdateProvidersDir(updateOptions{cfgPath: cfgPath})
+	got, err := resolveUpdateProvidersSource(updateOptions{cfgPath: cfgPath})
 	if err != nil {
-		t.Fatalf("resolveUpdateProvidersDir: %v", err)
+		t.Fatalf("resolveUpdateProvidersSource: %v", err)
 	}
-	if got != providersDir {
-		t.Fatalf("got=%q want=%q", got, providersDir)
+	if got.SourcePath != onrConf || got.EditablePath != providersDir || !got.SourceIsFile || got.EditableIsFile {
+		t.Fatalf("unexpected source info: %+v", got)
+	}
+}
+
+func TestUpdateMergedProviderSource(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	sourcePath := filepath.Join(root, "providers.conf")
+	if err := os.WriteFile(sourcePath, []byte(`
+syntax "next-router/0.1";
+
+provider "openai" {
+  defaults { upstream_config { base_url = "https://old.example.com"; } }
+}
+`), 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	files := map[string][]byte{
+		"openai.conf": []byte(`
+syntax "next-router/0.1";
+
+provider "openai" {
+  defaults {
+    upstream_config { base_url = "https://api.openai.com/v2"; }
+    auth { auth_bearer; }
+  }
+
+  match api = "chat.completions" {
+    upstream { set_path "/v1/chat/completions"; }
+    response { resp_passthrough; }
+  }
+}
+`),
+	}
+	changed, unchanged, err := updateMergedProviderSource(providersource.Info{
+		SourcePath:     sourcePath,
+		SourceIsFile:   true,
+		EditablePath:   sourcePath,
+		EditableIsFile: true,
+	}, []string{"openai.conf"}, files, false, func() time.Time { return time.Unix(0, 0) })
+	if err != nil {
+		t.Fatalf("updateMergedProviderSource: %v", err)
+	}
+	if changed != 1 || unchanged != 0 {
+		t.Fatalf("changed=%d unchanged=%d", changed, unchanged)
+	}
+	body, err := os.ReadFile(sourcePath)
+	if err != nil {
+		t.Fatalf("read source: %v", err)
+	}
+	if !strings.Contains(string(body), `https://api.openai.com/v2`) {
+		t.Fatalf("updated source missing new base_url: %s", string(body))
 	}
 }
 

@@ -119,6 +119,14 @@ func TestResolveProviderDSLWatchDir_DefaultsToConfigDirWhenOnrConfPresent(t *tes
 	}
 }
 
+func TestResolveProviderDSLWatchDir_ExplicitFileUsesParentDir(t *testing.T) {
+	cfg := &Config{}
+	cfg.Providers.Dir = "./config/onr.conf"
+	if got, want := ResolveProviderDSLWatchDir(cfg), filepath.Clean("./config"); got != want {
+		t.Fatalf("ResolveProviderDSLWatchDir=%q want=%q", got, want)
+	}
+}
+
 func TestLoad_EnvOverrides(t *testing.T) {
 	path := writeConfigFile(t, `
 auth:
