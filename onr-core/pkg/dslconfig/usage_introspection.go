@@ -64,16 +64,17 @@ func cloneUsageFactsForIntrospection(facts []usageFactConfig) []UsageFact {
 	out := make([]UsageFact, 0, len(facts))
 	for _, fact := range facts {
 		item := UsageFact{
-			Dimension: fact.Dimension,
-			Unit:      fact.Unit,
-			Source:    fact.Source,
-			Fallback:  fact.Fallback,
-			Event:     fact.Event,
-			Path:      fact.Path,
-			CountPath: fact.CountPath,
-			SumPath:   fact.SumPath,
-			Type:      fact.Type,
-			Status:    fact.Status,
+			Dimension:     fact.Dimension,
+			Unit:          fact.Unit,
+			Source:        fact.Source,
+			Fallback:      fact.Fallback,
+			Event:         fact.Event,
+			EventOptional: fact.EventOptional,
+			Path:          fact.Path,
+			CountPath:     fact.CountPath,
+			SumPath:       fact.SumPath,
+			Type:          fact.Type,
+			Status:        fact.Status,
 		}
 		if fact.Expr != nil {
 			item.Expr = usageExprString(fact.Expr)

@@ -251,7 +251,9 @@ func validateUsageFactConfig(path, providerName, scope string, idx int, fact usa
 		}
 	}
 	if strings.TrimSpace(fact.Event) == "" {
-		// ok
+		if fact.EventOptional {
+			return fmt.Errorf("provider %q in %q: %s usage_fact[%d] event_optional requires event", providerName, path, scope, idx)
+		}
 	} else if strings.ContainsAny(strings.TrimSpace(fact.Event), " \t\r\n") {
 		return fmt.Errorf("provider %q in %q: %s usage_fact[%d] event must not contain whitespace", providerName, path, scope, idx)
 	}

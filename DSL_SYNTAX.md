@@ -681,6 +681,7 @@ metrics {
 
 - This covers the main Anthropic stream usage event shapes.
 - `event="..."` gates a `usage_fact` rule by SSE `event:` name. It only applies to stream extraction.
+- `event_optional=true` allows the same rule to fall back to normal chunk matching when the upstream stream omits `event:` framing. If an event name is present, it must still match.
 - Compared with the old generic Anthropic mode, the main difference is ergonomics: the custom form is longer and easier to misconfigure.
 
 OpenAI supplemental facts `custom` sketches:
@@ -756,6 +757,7 @@ metrics {
 - Supported primitives: `path`, `count_path`, `sum_path`, `expr`.
 - `count_path` can be combined with `type` and `status`.
 - `event="..."` optionally restricts a `usage_fact` rule to SSE events such as `message_start` or `message_delta`.
+- `event_optional=true` may be used together with `event="..."` when a provider sometimes omits SSE `event:` names.
 - `attr.ttl` distinguishes Anthropic cache-write tiers.
 - Multiple `usage_fact` rules may share the same `dimension + unit`; all matched non-fallback rules are summed in declaration order.
 - `fallback=true` applies only when no more specific fact exists for the same `dimension + unit`.

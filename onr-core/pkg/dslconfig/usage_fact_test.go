@@ -1545,7 +1545,7 @@ provider "event-option" {
     }
     metrics {
       usage_fact input token path="$.message.usage.input_tokens" event="message_start";
-      usage_fact output token path="$.usage.output_tokens" event="message_delta";
+      usage_fact output token path="$.usage.output_tokens" event="message_delta" event_optional=true;
     }
   }
 }
@@ -1566,6 +1566,9 @@ provider "event-option" {
 	}
 	if got, want := facts[1].Event, "message_delta"; got != want {
 		t.Fatalf("facts[1].Event=%q want=%q", got, want)
+	}
+	if !facts[1].EventOptional {
+		t.Fatalf("facts[1].EventOptional got false want true")
 	}
 }
 
@@ -1617,6 +1620,64 @@ func TestExtractUsage_UsageFactEventFilter(t *testing.T) {
 	}
 	if got, want := usage.OutputTokens, 7; got != want {
 		t.Fatalf("OutputTokens got %d want %d", got, want)
+	}
+}
+
+func TestExtractUsage_UsageFactEventOptionalFallsBackWhenEventMissing(t *testing.T) {
+	cfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		facts: []usageFactConfig{
+			{Dimension: "output", Unit: "token", Path: "$.usage.output_tokens", Event: "message_delta", EventOptional: true},
+		},
+	}
+	root := map[string]any{
+		"usage": map[string]any{
+			"output_tokens": 7,
+		},
+	}
+
+	usage, _, err := extractUsageFromRootsWithEvent(nil, "", cfg, nil, root, nil, nil)
+	if err != nil {
+		t.Fatalf("extractUsageFromRootsWithEvent empty event: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage for empty event fallback")
+	}
+	if got, want := usage.OutputTokens, 7; got != want {
+		t.Fatalf("OutputTokens got %d want %d", got, want)
+	}
+
+	usage, _, err = extractUsageFromRootsWithEvent(nil, "message_start", cfg, nil, root, nil, nil)
+	if err != nil {
+		t.Fatalf("extractUsageFromRootsWithEvent mismatched event: %v", err)
+	}
+	if usage != nil && usage.OutputTokens != 0 {
+		t.Fatalf("expected mismatched non-empty event to stay filtered, got %+v", *usage)
+	}
+}
+
+func TestValidateProviderFile_UsageFactEventOptionalRequiresEvent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "event-optional-invalid.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "event-optional-invalid" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_fact output token path="$.usage.output_tokens" event_optional=true;
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if _, err := ValidateProviderFile(path); err == nil || !strings.Contains(err.Error(), "event_optional requires event") {
+		t.Fatalf("ValidateProviderFile err=%v, want event_optional requires event", err)
 	}
 }
 

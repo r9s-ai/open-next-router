@@ -20,9 +20,10 @@ type usageFactConfig struct {
 	SumPath   string
 	Expr      *UsageExpr
 
-	Type   string
-	Status string
-	Event  string
+	Type          string
+	Status        string
+	Event         string
+	EventOptional bool
 
 	Attrs    map[string]string
 	Fallback bool
@@ -303,8 +304,14 @@ func evaluateUsageFactWithEvent(event string, reqRoot, respRoot, derivedRoot map
 	if len(root) == 0 {
 		return 0, false
 	}
-	if strings.TrimSpace(fact.Event) != "" && !strings.EqualFold(strings.TrimSpace(fact.Event), strings.TrimSpace(event)) {
-		return 0, false
+	if expectedEvent := strings.TrimSpace(fact.Event); expectedEvent != "" {
+		currentEvent := strings.TrimSpace(event)
+		switch {
+		case currentEvent == "" && fact.EventOptional:
+			// Fallback to regular chunk matching when SSE framing does not provide an event name.
+		case !strings.EqualFold(expectedEvent, currentEvent):
+			return 0, false
+		}
 	}
 	switch {
 	case fact.Expr != nil:
@@ -460,17 +467,18 @@ func buildUsageDebugFacts(facts []usageFactEval) []UsageFact {
 			continue
 		}
 		item := UsageFact{
-			Dimension: fact.cfg.Dimension,
-			Unit:      fact.cfg.Unit,
-			Quantity:  fact.quantity,
-			Source:    normalizeUsageFactSource(fact.cfg.Source),
-			Fallback:  fact.cfg.Fallback,
-			Event:     fact.cfg.Event,
-			Path:      fact.cfg.Path,
-			CountPath: fact.cfg.CountPath,
-			SumPath:   fact.cfg.SumPath,
-			Type:      fact.cfg.Type,
-			Status:    fact.cfg.Status,
+			Dimension:     fact.cfg.Dimension,
+			Unit:          fact.cfg.Unit,
+			Quantity:      fact.quantity,
+			Source:        normalizeUsageFactSource(fact.cfg.Source),
+			Fallback:      fact.cfg.Fallback,
+			Event:         fact.cfg.Event,
+			EventOptional: fact.cfg.EventOptional,
+			Path:          fact.cfg.Path,
+			CountPath:     fact.cfg.CountPath,
+			SumPath:       fact.cfg.SumPath,
+			Type:          fact.cfg.Type,
+			Status:        fact.cfg.Status,
 		}
 		if len(fact.cfg.Attrs) > 0 {
 			attrs := make(map[string]string, len(fact.cfg.Attrs))

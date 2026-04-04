@@ -29,14 +29,15 @@ type UsageFact struct {
 	Attributes map[string]string `json:"attributes,omitempty"`
 	Source     string            `json:"source,omitempty"`
 
-	Fallback  bool   `json:"fallback,omitempty"`
-	Event     string `json:"event,omitempty"`
-	Path      string `json:"path,omitempty"`
-	CountPath string `json:"count_path,omitempty"`
-	SumPath   string `json:"sum_path,omitempty"`
-	Expr      string `json:"expr,omitempty"`
-	Type      string `json:"type,omitempty"`
-	Status    string `json:"status,omitempty"`
+	Fallback      bool   `json:"fallback,omitempty"`
+	Event         string `json:"event,omitempty"`
+	EventOptional bool   `json:"event_optional,omitempty"`
+	Path          string `json:"path,omitempty"`
+	CountPath     string `json:"count_path,omitempty"`
+	SumPath       string `json:"sum_path,omitempty"`
+	Expr          string `json:"expr,omitempty"`
+	Type          string `json:"type,omitempty"`
+	Status        string `json:"status,omitempty"`
 }
 
 // UsageExecutionPlan is the normalized internal plan used after usage_extract

@@ -713,6 +713,7 @@ metrics {
 
 - 这类配置可以覆盖 Anthropic stream 的主要 usage 事件
 - `event="..."` 可以把 `usage_fact` 限制在指定的 SSE `event:` 名上，只在流式提取时生效
+- `event_optional=true` 可与 `event="..."` 搭配使用：如果上游没有返回 `event:`，这条规则会退化为普通 chunk 匹配；如果有 `event:`，仍然必须匹配指定名字
 - 相比旧的泛化 `anthropic` mode，主要差异在于配置更长、更容易漏掉某一种事件路径
 
 OpenAI supplemental facts 的 `custom` 补充示意：
@@ -801,6 +802,7 @@ metrics {
 - 命名 preset 现在也会先编译成同一套内部 fact-based 执行计划，再叠加显式 `usage_fact`
 - 第一批支持 `path` / `count_path` / `sum_path` / `expr`
 - `event="..."` 可选，用于把 `usage_fact` 限制在指定 SSE 事件，例如 `message_start` / `message_delta`
+- `event_optional=true` 可选，需要与 `event="..."` 一起使用，用于兼容“有时有 event、有时没有 event”的上游
 - `attr.ttl` 用于区分 Anthropic 的 `5m` / `1h` cache write
 - 同一 `dimension + unit` 可声明多条 `usage_fact`；所有命中的非 fallback 规则会按声明顺序累计求和
 - `fallback=true` 用于在更具体的事实不存在时回退到总量字段
