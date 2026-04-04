@@ -348,9 +348,13 @@ func TestExtractUsage_OpenAI_ResponsesWebSearchCanonicalFact_StreamFinalResponse
 	  }
 	}`)
 
-	u, _, err := ExtractUsage(meta, cfg, resp)
+	root, err := responseRootFromBody(meta, cfg, resp)
 	if err != nil {
 		t.Fatalf("err: %v", err)
+	}
+	u, _, err := extractUsageFromRootsWithEvent(meta, "response.completed", cfg, nil, root, nil, resp)
+	if err != nil {
+		t.Fatalf("extractUsageFromRootsWithEvent: %v", err)
 	}
 	if u == nil {
 		t.Fatalf("usage nil")

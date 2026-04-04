@@ -144,6 +144,22 @@ func TestValidateProviderFile_OpenAIIncludesImageAndAudioRoutes(t *testing.T) {
 	if !foundWebSearch {
 		t.Fatalf("chat.completions compiled facts missing web search annotation fact: %#v", chatFacts)
 	}
+
+	responsesStreamUsageCfg, ok := pf.Usage.Select(&dslmeta.Meta{API: "responses", IsStream: true})
+	if !ok {
+		t.Fatalf("expected usage config for responses stream")
+	}
+	responsesStreamFacts := responsesStreamUsageCfg.CompiledFacts(&dslmeta.Meta{API: "responses", IsStream: true})
+	var foundCompletedUsage bool
+	for _, fact := range responsesStreamFacts {
+		if fact.Dimension == "input" && fact.Unit == "token" && fact.Path == "$.response.usage.input_tokens" && fact.Event == "response.completed" {
+			foundCompletedUsage = true
+			break
+		}
+	}
+	if !foundCompletedUsage {
+		t.Fatalf("responses stream compiled facts missing response.completed usage fact: %#v", responsesStreamFacts)
+	}
 }
 
 func TestValidateProviderFile_OpenAIUsesPathSpecificFinishReasonModes(t *testing.T) {

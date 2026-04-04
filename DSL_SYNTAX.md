@@ -510,7 +510,7 @@ usage_mode "shared_openai" {
 - Inside the block, you can use the same usage directives supported by `metrics`: `usage_extract`, `usage_fact`, `*_tokens_path`, and `*_tokens_expr`.
 - Another `usage_mode` may be referenced from inside the block via `usage_extract <other_mode>;`, so larger presets can be composed. Recursive references are rejected.
 - Names are global within a providers directory or merged providers file. Duplicate `usage_mode` names are validation errors.
-- This repository's default `config/modes/usage_modes.conf` defines API-specific presets such as `openai_chat_completions`, `openai_prompt_completion`, `openai_responses`, `anthropic_messages`, `anthropic_messages_stream`, `gemini_generate_content`, and `gemini_generate_content_stream`. Defining the same name in DSL overrides that preset.
+- This repository's default `config/modes/usage_modes.conf` defines API-specific presets such as `openai_chat_completions`, `openai_prompt_completion`, `openai_responses`, `openai_responses_stream`, `anthropic_messages`, `anthropic_messages_stream`, `gemini_generate_content`, and `gemini_generate_content_stream`. Defining the same name in DSL overrides that preset.
 - At execution time, `usage_extract <custom_name>;` is resolved to the referenced preset and compiled into the same final usage plan as builtin modes.
 
 #### finish_reason_mode (global reusable finish_reason preset)
@@ -585,7 +585,7 @@ metrics { usage_extract custom; }
 
 - `custom`: extract from response JSON via a restricted JSONPath subset and optional arithmetic (see below)
 - any other mode name: a user-defined global `usage_mode`
-- The default repository config now focuses on API/path-specific presets such as `openai_chat_completions`, `openai_prompt_completion`, `openai_responses`, `anthropic_messages`, `anthropic_messages_stream`, `gemini_generate_content`, and `gemini_generate_content_stream`.
+- The default repository config now focuses on API/path-specific presets such as `openai_chat_completions`, `openai_prompt_completion`, `openai_responses`, `openai_responses_stream`, `anthropic_messages`, `anthropic_messages_stream`, `gemini_generate_content`, and `gemini_generate_content_stream`.
 - Generic names such as `openai`, `anthropic`, and `gemini` are no longer special builtin `usage_extract` modes. If you want those names, define them explicitly as global `usage_mode` presets.
 - user-defined `usage_mode` names are resolved before execution, then compiled into the same normalized fact-based plan.
 - Inside `metrics`, if you declare `usage_fact`, `*_tokens_path`, or `*_tokens_expr` without `usage_extract`, ONR treats the block as `usage_extract custom;`.
@@ -820,7 +820,7 @@ metrics { finish_reason_path "$.choices[0].finish_reason"; }
 - any other mode name: a user-defined global `finish_reason_mode`
 - A `finish_reason_mode` block may omit `finish_reason_extract` when it only declares `finish_reason_path` rules, in which case ONR treats it as `custom`.
 - Inside `metrics`, declaring `finish_reason_path` without `finish_reason_extract` is equivalent to `finish_reason_extract custom;`.
-- The default repository config now focuses on API/path-specific presets such as `openai_chat_completions`, `openai_completions`, `openai_responses`, `anthropic_messages`, `anthropic_messages_stream`, `gemini_generate_content`, and `gemini_generate_content_stream`.
+- The default repository config now focuses on API/path-specific presets such as `openai_chat_completions`, `openai_completions`, `openai_responses`, `openai_responses_stream`, `anthropic_messages`, `anthropic_messages_stream`, `gemini_generate_content`, and `gemini_generate_content_stream`.
 - Generic names such as `openai`, `anthropic`, and `gemini` are no longer special builtin `finish_reason_extract` modes. If you want those names, define them explicitly as global `finish_reason_mode` presets.
 
 Path-specific preset mappings:

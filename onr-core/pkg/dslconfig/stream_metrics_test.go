@@ -253,6 +253,39 @@ func TestStreamMetricsAggregator_OpenAIResponsesStreamEnvelopeFinishReason(t *te
 	}
 }
 
+func TestStreamMetricsAggregator_OpenAIResponsesStreamUsageUsesSSEEventFilter(t *testing.T) {
+	meta := &dslmeta.Meta{API: "responses", IsStream: true}
+	usageCfg, finishCfg := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
+	agg := NewStreamMetricsAggregator(meta, usageCfg, finishCfg)
+
+	_ = agg.OnSSEEventDataJSON("response.output_text.delta", []byte(`{"delta":"Hello"}`))
+	_ = agg.OnSSEEventDataJSON("response.completed", []byte(`{
+	  "type":"response.completed",
+	  "response":{
+	    "status":"completed",
+	    "usage":{"input_tokens":11,"output_tokens":5,"input_tokens_details":{"cached_tokens":2}},
+	    "output":[
+	      {"type":"web_search_call","status":"completed"},
+	      {"type":"web_search_call","status":"failed"}
+	    ]
+	  }
+	}`))
+
+	u, cached, _, ok := agg.Result()
+	if !ok || u == nil {
+		t.Fatalf("expected usage ok")
+	}
+	if u.InputTokens != 11 || u.OutputTokens != 5 || u.TotalTokens != 16 {
+		t.Fatalf("unexpected usage: %+v", *u)
+	}
+	if cached != 2 {
+		t.Fatalf("cached=%d want=2", cached)
+	}
+	if got, want := u.FlatFields["server_tool_web_search_calls"], 1; got != want {
+		t.Fatalf("server_tool_web_search_calls=%v want=%v", got, want)
+	}
+}
+
 func TestStreamMetricsAggregator_CustomMerge_DoesNotOverrideWithZero(t *testing.T) {
 	meta := &dslmeta.Meta{API: "claude.messages", IsStream: true}
 

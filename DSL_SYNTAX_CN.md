@@ -534,7 +534,7 @@ usage_mode "shared_openai" {
 - `usage_mode` 块内支持和 `metrics` 相同的 usage 指令：`usage_extract`、`usage_fact`、`*_tokens_path`、`*_tokens_expr`。
 - `usage_mode` 内部也可以继续通过 `usage_extract <other_mode>;` 引用另一个 `usage_mode`，用于组合更大的预设；递归引用会报错。
 - 在同一个 providers 目录或合并后的 providers 文件中，`usage_mode` 名字是全局唯一的；重名会在校验期报错。
-- 本仓库默认的 `config/modes/usage_modes.conf` 会定义 `openai_chat_completions`、`openai_prompt_completion`、`openai_responses`、`anthropic_messages`、`anthropic_messages_stream`、`gemini_generate_content`、`gemini_generate_content_stream` 这类按 API / 路径拆分的全局 `usage_mode` 预设；如果你在 DSL 里声明同名 `usage_mode`，就会覆盖这份默认预设。
+- 本仓库默认的 `config/modes/usage_modes.conf` 会定义 `openai_chat_completions`、`openai_prompt_completion`、`openai_responses`、`openai_responses_stream`、`anthropic_messages`、`anthropic_messages_stream`、`gemini_generate_content`、`gemini_generate_content_stream` 这类按 API / 路径拆分的全局 `usage_mode` 预设；如果你在 DSL 里声明同名 `usage_mode`，就会覆盖这份默认预设。
 - 执行时，`usage_extract <custom_name>;` 会先解析到对应的 `usage_mode`，再编译成与 builtin mode 相同的最终 usage plan。
 
 #### finish_reason_mode（全局可复用 finish_reason 预设）
@@ -617,7 +617,7 @@ metrics { usage_extract custom; }
 
 - `custom`：使用受限 JSONPath 子集从响应 JSON 中提取（可选加减表达式，见下）
 - 其他任意 mode 名：用户自定义的全局 `usage_mode`
-- 仓库默认配置现在只保留更具体的 API / 路径级预设，例如 `openai_chat_completions`、`openai_prompt_completion`、`openai_responses`、`anthropic_messages`、`anthropic_messages_stream`、`gemini_generate_content`、`gemini_generate_content_stream`。
+- 仓库默认配置现在只保留更具体的 API / 路径级预设，例如 `openai_chat_completions`、`openai_prompt_completion`、`openai_responses`、`openai_responses_stream`、`anthropic_messages`、`anthropic_messages_stream`、`gemini_generate_content`、`gemini_generate_content_stream`。
 - `openai` / `anthropic` / `gemini` 这类泛化名字不再是特殊的 DSL 内置 `usage_extract` mode；如果你想继续用这些名字，需要自己显式定义对应的全局 `usage_mode` 预设。
 - 用户自定义 `usage_mode` 也会先完成解析，再编译进同一套统一 fact-based 执行计划。
 - 在 `metrics` 里，如果声明了 `usage_fact`、`*_tokens_path` 或 `*_tokens_expr`，但没有写 `usage_extract`，ONR 会自动按 `usage_extract custom;` 处理。
@@ -905,7 +905,7 @@ metrics { finish_reason_path "$.choices[0].finish_reason"; }
 - 其他任意 mode 名：用户自定义的全局 `finish_reason_mode`
 - `finish_reason_mode` 在块内如果省略 `finish_reason_extract`，但已经声明了 `finish_reason_path`，ONR 会自动按 `custom` 处理。
 - 在 `metrics` 里，只写 `finish_reason_path` 而省略 `finish_reason_extract`，等价于 `finish_reason_extract custom;`
-- 仓库默认配置现在只保留更具体的 API / 路径级预设，例如 `openai_chat_completions`、`openai_completions`、`openai_responses`、`anthropic_messages`、`anthropic_messages_stream`、`gemini_generate_content`、`gemini_generate_content_stream`。
+- 仓库默认配置现在只保留更具体的 API / 路径级预设，例如 `openai_chat_completions`、`openai_completions`、`openai_responses`、`openai_responses_stream`、`anthropic_messages`、`anthropic_messages_stream`、`gemini_generate_content`、`gemini_generate_content_stream`。
 - `openai` / `anthropic` / `gemini` 这类泛化名字不再是特殊的 DSL 内置 `finish_reason_extract` mode；如果你想继续用这些名字，需要自己显式定义对应的全局 `finish_reason_mode` 预设。
 
 这些 path-specific 预设对应的提取路径：
