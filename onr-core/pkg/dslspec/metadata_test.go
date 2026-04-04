@@ -80,6 +80,18 @@ func TestDirectivesByBlock(t *testing.T) {
 	if !foundFilterHeaderValues {
 		t.Fatalf("expected filter_header_values in request block directives")
 	}
+
+	usageMode := DirectivesByBlock("usage_mode")
+	found = false
+	for _, d := range usageMode {
+		if d == "usage_fact" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected usage_fact in usage_mode block directives")
+	}
 }
 
 func TestDirectiveHover(t *testing.T) {
@@ -171,8 +183,8 @@ func TestMetadata_ModeOptionsConsistency(t *testing.T) {
 	assertSetEqual(t, "oauth_mode", ModesByDirective("oauth_mode"), []string{"openai", "gemini", "qwen", "claude", "iflow", "antigravity", "kimi", "custom"})
 	assertSetEqual(t, "balance_mode", ModesByDirective("balance_mode"), []string{"openai", "custom"})
 	assertSetEqual(t, "models_mode", ModesByDirective("models_mode"), []string{"openai", "gemini", "custom"})
-	assertSetEqual(t, "usage_extract", ModesByDirective("usage_extract"), []string{"openai", "anthropic", "gemini", "custom"})
-	assertSetEqual(t, "finish_reason_extract", ModesByDirective("finish_reason_extract"), []string{"openai", "anthropic", "gemini", "custom"})
+	assertSetEqual(t, "usage_extract", ModesByDirective("usage_extract"), []string{"custom"})
+	assertSetEqual(t, "finish_reason_extract", ModesByDirective("finish_reason_extract"), []string{"custom"})
 	assertSetEqual(t, "error_map", ModesByDirective("error_map"), []string{"openai", "common", "passthrough"})
 }
 
@@ -201,7 +213,7 @@ func TestModeDirectiveNames(t *testing.T) {
 }
 
 func TestDirectiveAllowedBlocks(t *testing.T) {
-	assertSetEqual(t, "set_header", DirectiveAllowedBlocks("set_header"), []string{"request", "balance", "models"})
+	assertSetEqual(t, "set_header", DirectiveAllowedBlocks("set_header"), []string{"request", "balance", "models", "balance_mode", "models_mode"})
 	assertSetEqual(t, "pass_header", DirectiveAllowedBlocks("pass_header"), []string{"request"})
 	assertSetEqual(t, "req_map", DirectiveAllowedBlocks("req_map"), []string{"request"})
 	assertSetEqual(t, "filter_header_values", DirectiveAllowedBlocks("filter_header_values"), []string{"request"})
@@ -220,7 +232,7 @@ func TestBlockDirectiveNamesAndIsBlockDirective(t *testing.T) {
 	if IsBlockDirective("req_map") != false {
 		t.Fatalf("req_map should not be a block directive")
 	}
-	for _, must := range []string{"provider", "defaults", "match", "request", "response"} {
+	for _, must := range []string{"provider", "defaults", "match", "request", "response", "usage_mode", "finish_reason_mode", "models_mode", "balance_mode"} {
 		found := false
 		for _, b := range blocks {
 			if b == must {

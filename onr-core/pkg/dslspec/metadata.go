@@ -28,8 +28,12 @@ type DirectiveArg struct {
 
 var directiveMetadata = []DirectiveMetadata{
 	{Name: "syntax", Block: "top", Hover: "`syntax \"next-router/0.1\";`\n\nDeclares DSL syntax version for this file."},
-	{Name: "include", Block: "top", Hover: "`include \"path.conf\";`\n\nIncludes another DSL fragment file before parsing this provider file."},
+	{Name: "include", Block: "top", Hover: "`include path.conf;`\n\nIncludes another DSL fragment file before parsing. Supports unquoted nginx-style paths like `providers;` and `providers/*.conf;`."},
 	{Name: "provider", Block: "top", Hover: "`provider \"name\" { ... }`\n\nDefines one provider DSL block. File name should match provider name."},
+	{Name: "usage_mode", Block: "top", Hover: "`usage_mode \"name\" { ... }`\n\nDefines one reusable global usage extraction preset."},
+	{Name: "finish_reason_mode", Block: "top", Hover: "`finish_reason_mode \"name\" { ... }`\n\nDefines one reusable global finish reason extraction preset."},
+	{Name: "models_mode", Block: "top", Hover: "`models_mode \"name\" { ... }`\n\nDefines one reusable global models query preset."},
+	{Name: "balance_mode", Block: "top", Hover: "`balance_mode \"name\" { ... }`\n\nDefines one reusable global balance query preset."},
 
 	{Name: "defaults", Block: "provider", Hover: "`defaults { ... }`\n\nDefault phases shared by all `match` rules unless overridden."},
 	{Name: "match", Block: "provider", Hover: "`match api = \"...\" [stream = true|false] { ... }`\n\nRoute rule. First match wins."},
@@ -49,6 +53,43 @@ var directiveMetadata = []DirectiveMetadata{
 	{Name: "response", Block: "match", Hover: "`response { ... }`\n\nDownstream response mapping/transformation directives."},
 	{Name: "error", Block: "match", Hover: "`error { error_map <mode>; }`\n\nNormalize upstream error payloads."},
 	{Name: "metrics", Block: "match", Hover: "`metrics { ... }`\n\nToken usage and finish reason extraction rules."},
+
+	{Name: "usage_extract", Block: "usage_mode", Hover: "`usage_extract <mode>;`\n\nSelects `custom` or inherits another reusable `usage_mode` preset.", Modes: []string{"custom"}},
+	{Name: "usage_fact", Block: "usage_mode", Hover: "`usage_fact <dimension> <unit> path=\"$.path\"|count_path=\"$.path\"|sum_path=\"$.path\"|expr=\"<expr>\" ...;`\n\nAdds one usage fact extraction rule to a reusable `usage_mode` preset.\n\nCurrent `source` values: `response`, `request`, `derived`.\nRestricted filter JSONPath is supported, for example `$.usageMetadata.promptTokensDetails[?(@.modality==\\\"AUDIO\\\")].tokenCount`."},
+	{Name: "input_tokens_expr", Block: "usage_mode", Hover: "`input_tokens_expr = <expr>;`\n\nCustom extraction expression for input/prompt tokens in a reusable `usage_mode` preset."},
+	{Name: "output_tokens_expr", Block: "usage_mode", Hover: "`output_tokens_expr = <expr>;`\n\nCustom extraction expression for output/completion tokens in a reusable `usage_mode` preset."},
+	{Name: "cache_read_tokens_expr", Block: "usage_mode", Hover: "`cache_read_tokens_expr = <expr>;`\n\nCustom extraction expression for cache read tokens in a reusable `usage_mode` preset."},
+	{Name: "cache_write_tokens_expr", Block: "usage_mode", Hover: "`cache_write_tokens_expr = <expr>;`\n\nCustom extraction expression for cache write tokens in a reusable `usage_mode` preset."},
+	{Name: "total_tokens_expr", Block: "usage_mode", Hover: "`total_tokens_expr = <expr>;`\n\nCustom extraction expression for total tokens in a reusable `usage_mode` preset."},
+	{Name: "input_tokens_path", Block: "usage_mode", Hover: "`input_tokens_path \"$.path\";`\n\nPath override for input token extraction in a reusable `usage_mode` preset."},
+	{Name: "output_tokens_path", Block: "usage_mode", Hover: "`output_tokens_path \"$.path\";`\n\nPath override for output token extraction in a reusable `usage_mode` preset."},
+	{Name: "cache_read_tokens_path", Block: "usage_mode", Hover: "`cache_read_tokens_path \"$.path\";`\n\nPath override for cache-read token extraction in a reusable `usage_mode` preset."},
+	{Name: "cache_write_tokens_path", Block: "usage_mode", Hover: "`cache_write_tokens_path \"$.path\";`\n\nPath override for cache-write token extraction in a reusable `usage_mode` preset."},
+
+	{Name: "finish_reason_extract", Block: "finish_reason_mode", Hover: "`finish_reason_extract <mode>;`\n\nSelects `custom` or inherits another reusable `finish_reason_mode` preset.", Modes: []string{"custom"}},
+	{Name: "finish_reason_path", Block: "finish_reason_mode", Hover: "`finish_reason_path \"$.path\";`\n\nPath override for finish_reason extraction in a reusable `finish_reason_mode` preset."},
+
+	{Name: "models_mode", Block: "models_mode", Hover: "`models_mode <mode>;`\n\nSelects `openai`, `gemini`, `custom`, or another reusable `models_mode` preset.", Modes: []string{"openai", "gemini", "custom"}},
+	{Name: "method", Block: "models_mode", Hover: "`method GET|POST;`\n\nHTTP method used by models query endpoint.", Args: []DirectiveArg{{Name: "method", Kind: "enum", Enum: []string{"GET", "POST"}}}},
+	{Name: "path", Block: "models_mode", Hover: "`path <expr>;`\n\nPath for models query endpoint."},
+	{Name: "id_path", Block: "models_mode", Hover: "`id_path \"$.path\";`\n\nJSON path to extract model id(s) from models response."},
+	{Name: "id_regex", Block: "models_mode", Hover: "`id_regex \"<regex>\";`\n\nRegex rewrite applied to extracted model ids."},
+	{Name: "id_allow_regex", Block: "models_mode", Hover: "`id_allow_regex \"<regex>\";`\n\nFilter extracted model ids by regex allowlist."},
+	{Name: "set_header", Block: "models_mode", Hover: "`set_header <Header-Name> <expr>;`\n\nSets header for models query request."},
+	{Name: "del_header", Block: "models_mode", Hover: "`del_header <Header-Name>;`\n\nDeletes header for models query request."},
+
+	{Name: "balance_mode", Block: "balance_mode", Hover: "`balance_mode <mode>;`\n\nSelects `openai`, `custom`, or another reusable `balance_mode` preset.", Modes: []string{"openai", "custom"}},
+	{Name: "method", Block: "balance_mode", Hover: "`method GET|POST;`\n\nHTTP method used by balance query endpoint.", Args: []DirectiveArg{{Name: "method", Kind: "enum", Enum: []string{"GET", "POST"}}}},
+	{Name: "path", Block: "balance_mode", Hover: "`path <expr>;`\n\nPath for balance query endpoint (required in custom mode)."},
+	{Name: "balance_path", Block: "balance_mode", Hover: "`balance_path \"$.path\";`\n\nJSON path used to read balance amount from response."},
+	{Name: "used_path", Block: "balance_mode", Hover: "`used_path \"$.path\";`\n\nJSON path used to read used amount from response."},
+	{Name: "balance_unit", Block: "balance_mode", Hover: "`balance_unit <unit>;`\n\nBalance currency/unit label (e.g. USD).", Args: []DirectiveArg{{Name: "unit", Kind: "enum", Enum: []string{"USD", "CNY"}}}},
+	{Name: "subscription_path", Block: "balance_mode", Hover: "`subscription_path <path>;`\n\nOptional path to query subscription endpoint."},
+	{Name: "usage_path", Block: "balance_mode", Hover: "`usage_path <path>;`\n\nOptional path to query usage endpoint."},
+	{Name: "balance_expr", Block: "balance_mode", Hover: "`balance_expr = <expr>;`\n\nCustom expression for balance value extraction."},
+	{Name: "used_expr", Block: "balance_mode", Hover: "`used_expr = <expr>;`\n\nCustom expression for used value extraction."},
+	{Name: "set_header", Block: "balance_mode", Hover: "`set_header <Header-Name> <expr>;`\n\nSets header for balance query request."},
+	{Name: "del_header", Block: "balance_mode", Hover: "`del_header <Header-Name>;`\n\nDeletes header for balance query request."},
 
 	{Name: "base_url", Block: "upstream_config", Hover: "`base_url = \"https://...\";`\n\nSets provider default upstream base URL."},
 	{Name: "set_path", Block: "upstream", Hover: "`set_path <expr>;`\n\nSets upstream request path."},
@@ -98,7 +139,7 @@ var directiveMetadata = []DirectiveMetadata{
 
 	{Name: "error_map", Block: "error", Hover: "`error_map <mode>;`\n\nNormalize upstream error payload into target error schema.", Modes: []string{"openai", "common", "passthrough"}},
 
-	{Name: "usage_extract", Block: "metrics", Hover: "`usage_extract <mode>;`\n\nExtract usage token fields from response/SSE payload.", Modes: []string{"openai", "anthropic", "gemini", "custom"}},
+	{Name: "usage_extract", Block: "metrics", Hover: "`usage_extract <mode>;`\n\nExtract usage token fields from response/SSE payload. Supports `custom` and user-defined global `usage_mode` presets.", Modes: []string{"custom"}},
 	{Name: "usage_fact", Block: "metrics", Hover: "`usage_fact <dimension> <unit> path=\"$.path\"|count_path=\"$.path\"|sum_path=\"$.path\"|expr=\"<expr>\" ...;`\n\nCustom usage fact extraction rule with optional `attr.*` and `fallback=true`.\n\nCurrent `source` values: `response`, `request`, `derived`.\nRestricted filter JSONPath is supported, for example `$.usageMetadata.promptTokensDetails[?(@.modality==\\\"AUDIO\\\")].tokenCount`."},
 	{Name: "input_tokens_expr", Block: "metrics", Hover: "`input_tokens_expr = <expr>;`\n\nCustom extraction expression for input/prompt tokens."},
 	{Name: "output_tokens_expr", Block: "metrics", Hover: "`output_tokens_expr = <expr>;`\n\nCustom extraction expression for output/completion tokens."},
@@ -109,10 +150,10 @@ var directiveMetadata = []DirectiveMetadata{
 	{Name: "output_tokens_path", Block: "metrics", Hover: "`output_tokens_path \"$.path\";`\n\nPath override for output token extraction (custom mode)."},
 	{Name: "cache_read_tokens_path", Block: "metrics", Hover: "`cache_read_tokens_path \"$.path\";`\n\nPath override for cache-read token extraction (custom mode)."},
 	{Name: "cache_write_tokens_path", Block: "metrics", Hover: "`cache_write_tokens_path \"$.path\";`\n\nPath override for cache-write token extraction (custom mode)."},
-	{Name: "finish_reason_extract", Block: "metrics", Hover: "`finish_reason_extract <mode>;`\n\nExtract finish_reason from response/SSE payload.", Modes: []string{"openai", "anthropic", "gemini", "custom"}},
+	{Name: "finish_reason_extract", Block: "metrics", Hover: "`finish_reason_extract <mode>;`\n\nExtract finish_reason from response/SSE payload. Supports `custom` and user-defined global `finish_reason_mode` presets.", Modes: []string{"custom"}},
 	{Name: "finish_reason_path", Block: "metrics", Hover: "`finish_reason_path \"$.path\";`\n\nPath override for finish_reason extraction (custom mode)."},
 
-	{Name: "balance_mode", Block: "balance", Hover: "`balance_mode <mode>;`\n\nSelects built-in or custom balance query mode.", Modes: []string{"openai", "custom"}},
+	{Name: "balance_mode", Block: "balance", Hover: "`balance_mode <mode>;`\n\nSelects `openai`, `custom`, or a user-defined global `balance_mode` preset.", Modes: []string{"openai", "custom"}},
 	{Name: "method", Block: "balance", Hover: "`method GET|POST;`\n\nHTTP method used by balance query endpoint.", Args: []DirectiveArg{{Name: "method", Kind: "enum", Enum: []string{"GET", "POST"}}}},
 	{Name: "path", Block: "balance", Hover: "`path <expr>;`\n\nPath for balance query endpoint (required in custom mode)."},
 	{Name: "balance_path", Block: "balance", Hover: "`balance_path \"$.path\";`\n\nJSON path used to read balance amount from response."},
@@ -125,7 +166,7 @@ var directiveMetadata = []DirectiveMetadata{
 	{Name: "set_header", Block: "balance", Hover: "`set_header <Header-Name> <expr>;`\n\nSets header for balance query request."},
 	{Name: "del_header", Block: "balance", Hover: "`del_header <Header-Name>;`\n\nDeletes header for balance query request."},
 
-	{Name: "models_mode", Block: "models", Hover: "`models_mode <mode>;`\n\nSelects models list query mode.", Modes: []string{"openai", "gemini", "custom"}},
+	{Name: "models_mode", Block: "models", Hover: "`models_mode <mode>;`\n\nSelects `openai`, `gemini`, `custom`, or a user-defined global `models_mode` preset.", Modes: []string{"openai", "gemini", "custom"}},
 	{Name: "method", Block: "models", Hover: "`method GET|POST;`\n\nHTTP method used by models query endpoint.", Args: []DirectiveArg{{Name: "method", Kind: "enum", Enum: []string{"GET", "POST"}}}},
 	{Name: "path", Block: "models", Hover: "`path <expr>;`\n\nPath for models query endpoint."},
 	{Name: "id_path", Block: "models", Hover: "`id_path \"$.path\";`\n\nJSON path to extract model id(s) from models response."},

@@ -196,19 +196,19 @@ func loadRegistryDirCandidate(dir string, entry os.DirEntry) (registryDirCandida
 func resolveRegistryDirModeState(modeState modeRegistryState, candidates []registryDirCandidate, modeFiles modeFileIndex, skipped []string, skippedReasons map[string]string) (modeRegistryState, []registryDirCandidate, []string, map[string]string, error) {
 	state := modeState.clone()
 	var err error
-	state.usage, candidates, skipped, skippedReasons, err = resolveModeRegistryWithSkips(candidates, skipped, skippedReasons, state.usagePaths, state.usage, modeFiles.usage, resolveUsageModeRegistry)
+	state.usage, candidates, skipped, skippedReasons, err = resolveModeRegistryWithSkips[UsageExtractConfig, usageModeRegistry](candidates, skipped, skippedReasons, state.usagePaths, state.usage, modeFiles.usage, resolveUsageModeRegistry)
 	if err != nil {
 		return modeRegistryState{}, nil, skipped, skippedReasons, err
 	}
-	state.finishReason, candidates, skipped, skippedReasons, err = resolveModeRegistryWithSkips(candidates, skipped, skippedReasons, state.finishReasonPaths, state.finishReason, modeFiles.finishReason, resolveFinishReasonModeRegistry)
+	state.finishReason, candidates, skipped, skippedReasons, err = resolveModeRegistryWithSkips[FinishReasonExtractConfig, finishReasonModeRegistry](candidates, skipped, skippedReasons, state.finishReasonPaths, state.finishReason, modeFiles.finishReason, resolveFinishReasonModeRegistry)
 	if err != nil {
 		return modeRegistryState{}, nil, skipped, skippedReasons, err
 	}
-	state.models, candidates, skipped, skippedReasons, err = resolveModeRegistryWithSkips(candidates, skipped, skippedReasons, state.modelsPaths, state.models, modeFiles.models, resolveModelsModeRegistry)
+	state.models, candidates, skipped, skippedReasons, err = resolveModeRegistryWithSkips[ModelsQueryConfig, modelsModeRegistry](candidates, skipped, skippedReasons, state.modelsPaths, state.models, modeFiles.models, resolveModelsModeRegistry)
 	if err != nil {
 		return modeRegistryState{}, nil, skipped, skippedReasons, err
 	}
-	state.balance, candidates, skipped, skippedReasons, err = resolveModeRegistryWithSkips(candidates, skipped, skippedReasons, state.balancePaths, state.balance, modeFiles.balance, resolveBalanceModeRegistry)
+	state.balance, candidates, skipped, skippedReasons, err = resolveModeRegistryWithSkips[BalanceQueryConfig, balanceModeRegistry](candidates, skipped, skippedReasons, state.balancePaths, state.balance, modeFiles.balance, resolveBalanceModeRegistry)
 	if err != nil {
 		return modeRegistryState{}, nil, skipped, skippedReasons, err
 	}
