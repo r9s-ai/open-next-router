@@ -12,11 +12,31 @@ func TestValidateProvidersDir_ConfigProviders(t *testing.T) {
 		filepath.Join("..", "..", "config", "providers"),
 	}
 	for _, dir := range candidates {
-		if _, err := ValidateProvidersDir(dir); err == nil {
-			return
+		res, err := ValidateProvidersDir(dir)
+		if err != nil {
+			continue
 		}
+		if !containsLoadedProvider(res.LoadedProviders, "openai") {
+			t.Fatalf("expected openai provider in %q, got %#v", dir, res.LoadedProviders)
+		}
+		if !containsLoadedProvider(res.LoadedProviders, "anthropic") {
+			t.Fatalf("expected anthropic provider in %q, got %#v", dir, res.LoadedProviders)
+		}
+		if len(res.Warnings) != 0 {
+			t.Fatalf("expected no warnings for %q, got %#v", dir, res.Warnings)
+		}
+		return
 	}
 	t.Fatalf("validate providers dir failed for all candidates: %v", candidates)
+}
+
+func containsLoadedProvider(items []string, want string) bool {
+	for _, item := range items {
+		if item == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestValidateProvidersDir_RejectsLegacyUsageDirectiveAliases(t *testing.T) {

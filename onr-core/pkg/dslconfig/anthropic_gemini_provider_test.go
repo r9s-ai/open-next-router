@@ -22,6 +22,8 @@ func TestValidateProviderFile_AnthropicUsesPathSpecificUsageModes(t *testing.T) 
 		dimension string
 		unit      string
 		path      string
+		event     string
+		optional  bool
 	}{
 		{
 			api:       "chat.completions",
@@ -43,6 +45,8 @@ func TestValidateProviderFile_AnthropicUsesPathSpecificUsageModes(t *testing.T) 
 			dimension: "cache_write",
 			unit:      "token",
 			path:      "$.message.usage.cache_creation.ephemeral_5m_input_tokens",
+			event:     "message_start",
+			optional:  true,
 		},
 		{
 			api:       "claude.messages",
@@ -76,6 +80,12 @@ func TestValidateProviderFile_AnthropicUsesPathSpecificUsageModes(t *testing.T) 
 				continue
 			}
 			if tc.path != "" && fact.Path != tc.path {
+				continue
+			}
+			if tc.event != "" && fact.Event != tc.event {
+				continue
+			}
+			if tc.optional && !fact.EventOptional {
 				continue
 			}
 			found = true

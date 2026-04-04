@@ -269,11 +269,15 @@ func evaluateUsageFactGroup(reqRoot, respRoot, derivedRoot map[string]any, facts
 func evaluateUsageFactGroupWithEvent(event string, reqRoot, respRoot, derivedRoot map[string]any, facts []usageFactConfig) []usageFactEval {
 	out := make([]usageFactEval, 0, len(facts))
 	var specificMatched bool
+	seenEventOptionalFallback := make(map[string]struct{}, len(facts))
 	// Ordering rule for the same dimension+unit:
 	// - non-fallback rules run first, preserving declaration order
 	// - fallback rules only run when no non-fallback rule matched, also preserving declaration order
 	for _, fact := range facts {
 		if fact.Fallback {
+			continue
+		}
+		if shouldSkipDuplicateEventOptionalFallback(event, fact, seenEventOptionalFallback) {
 			continue
 		}
 		q, matched := evaluateUsageFactWithEvent(event, reqRoot, respRoot, derivedRoot, fact)
@@ -289,10 +293,50 @@ func evaluateUsageFactGroupWithEvent(event string, reqRoot, respRoot, derivedRoo
 		if !fact.Fallback {
 			continue
 		}
+		if shouldSkipDuplicateEventOptionalFallback(event, fact, seenEventOptionalFallback) {
+			continue
+		}
 		q, matched := evaluateUsageFactWithEvent(event, reqRoot, respRoot, derivedRoot, fact)
 		out = append(out, usageFactEval{cfg: fact, quantity: q, matched: matched})
 	}
 	return out
+}
+
+func shouldSkipDuplicateEventOptionalFallback(event string, fact usageFactConfig, seen map[string]struct{}) bool {
+	if strings.TrimSpace(event) != "" || !fact.EventOptional || strings.TrimSpace(fact.Event) == "" {
+		return false
+	}
+	key := usageFactEventOptionalFallbackKey(fact)
+	if _, ok := seen[key]; ok {
+		return true
+	}
+	seen[key] = struct{}{}
+	return false
+}
+
+func usageFactEventOptionalFallbackKey(fact usageFactConfig) string {
+	var attrs []string
+	if len(fact.Attrs) > 0 {
+		keys := make([]string, 0, len(fact.Attrs))
+		for k := range fact.Attrs {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		attrs = make([]string, 0, len(keys))
+		for _, k := range keys {
+			attrs = append(attrs, k+"="+fact.Attrs[k])
+		}
+	}
+	return strings.Join([]string{
+		strings.TrimSpace(fact.Source),
+		strings.TrimSpace(fact.Path),
+		strings.TrimSpace(fact.CountPath),
+		strings.TrimSpace(fact.SumPath),
+		strings.TrimSpace(fact.Expr.String()),
+		strings.TrimSpace(fact.Type),
+		strings.TrimSpace(fact.Status),
+		strings.Join(attrs, ","),
+	}, "\x1f")
 }
 
 func evaluateUsageFact(reqRoot, respRoot, derivedRoot map[string]any, fact usageFactConfig) (quantity float64, matched bool) {

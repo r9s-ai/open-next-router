@@ -11,11 +11,13 @@ func TestUsageExtractConfigDeclaredFacts(t *testing.T) {
 		Mode: "custom",
 		facts: []usageFactConfig{
 			{
-				Dimension: "server_tool.web_search",
-				Unit:      "call",
-				CountPath: "$.output[*]",
-				Type:      "web_search_call",
-				Status:    "completed",
+				Dimension:     "server_tool.web_search",
+				Unit:          "call",
+				CountPath:     "$.output[*]",
+				Type:          "web_search_call",
+				Status:        "completed",
+				Event:         "message_delta",
+				EventOptional: true,
 			},
 			{
 				Dimension: "audio.tts",
@@ -32,6 +34,9 @@ func TestUsageExtractConfigDeclaredFacts(t *testing.T) {
 	}
 	if facts[0].Dimension != "server_tool.web_search" || facts[0].Unit != "call" || facts[0].CountPath != "$.output[*]" {
 		t.Fatalf("unexpected fact[0]: %#v", facts[0])
+	}
+	if !facts[0].EventOptional || facts[0].Event != "message_delta" {
+		t.Fatalf("unexpected event metadata in fact[0]: %#v", facts[0])
 	}
 	if facts[1].Dimension != "audio.tts" || facts[1].Unit != "second" || facts[1].Source != "derived" {
 		t.Fatalf("unexpected fact[1]: %#v", facts[1])
@@ -94,6 +99,33 @@ func TestUsageExtractConfigCompiledPlan_CustomLegacyFields(t *testing.T) {
 	}
 	if plan.TotalTokensExpr != "$.usage.total_tokens - $.usage.cached_tokens" {
 		t.Fatalf("total_tokens_expr=%q", plan.TotalTokensExpr)
+	}
+}
+
+func TestUsageExtractConfigCompiledFacts_PreserveEventMetadata(t *testing.T) {
+	cfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		facts: []usageFactConfig{
+			{
+				Dimension:     "output",
+				Unit:          "token",
+				Path:          "$.usage.output_tokens",
+				Event:         "message_delta",
+				EventOptional: true,
+			},
+		},
+	}
+
+	facts := cfg.CompiledFacts(&dslmeta.Meta{API: "responses", IsStream: true})
+	if len(facts) != 1 {
+		t.Fatalf("expected 1 compiled fact, got %d", len(facts))
+	}
+	if !facts[0].EventOptional || facts[0].Event != "message_delta" {
+		t.Fatalf("compiled fact lost event metadata: %#v", facts[0])
+	}
+	plan := cfg.CompiledPlan(&dslmeta.Meta{API: "responses", IsStream: true})
+	if len(plan.Facts) != 1 || !plan.Facts[0].EventOptional {
+		t.Fatalf("compiled plan lost event metadata: %#v", plan)
 	}
 }
 

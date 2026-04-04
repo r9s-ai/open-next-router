@@ -151,14 +151,20 @@ func TestValidateProviderFile_OpenAIIncludesImageAndAudioRoutes(t *testing.T) {
 	}
 	responsesStreamFacts := responsesStreamUsageCfg.CompiledFacts(&dslmeta.Meta{API: "responses", IsStream: true})
 	var foundCompletedUsage bool
+	var foundCompletedEventOptional bool
 	for _, fact := range responsesStreamFacts {
 		if fact.Dimension == "input" && fact.Unit == "token" && fact.Path == "$.response.usage.input_tokens" && fact.Event == "response.completed" {
 			foundCompletedUsage = true
-			break
+		}
+		if fact.Dimension == "input" && fact.Unit == "token" && fact.Path == "$.response.usage.input_tokens" && fact.Event == "response.completed" && fact.EventOptional {
+			foundCompletedEventOptional = true
 		}
 	}
 	if !foundCompletedUsage {
 		t.Fatalf("responses stream compiled facts missing response.completed usage fact: %#v", responsesStreamFacts)
+	}
+	if !foundCompletedEventOptional {
+		t.Fatalf("responses stream compiled facts missing event_optional flag: %#v", responsesStreamFacts)
 	}
 }
 

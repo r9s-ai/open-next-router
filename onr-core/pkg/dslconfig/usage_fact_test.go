@@ -1656,6 +1656,63 @@ func TestExtractUsage_UsageFactEventOptionalFallsBackWhenEventMissing(t *testing
 	}
 }
 
+func TestExtractUsage_UsageFactEventOptionalFallback_DeduplicatesEquivalentRules(t *testing.T) {
+	cfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		facts: []usageFactConfig{
+			{Dimension: "output", Unit: "token", Path: "$.usage.output_tokens", Event: "message_start", EventOptional: true},
+			{Dimension: "output", Unit: "token", Path: "$.usage.output_tokens", Event: "message_delta", EventOptional: true},
+		},
+	}
+	root := map[string]any{
+		"usage": map[string]any{
+			"output_tokens": 7,
+		},
+	}
+
+	usage, _, err := extractUsageFromRootsWithEvent(nil, "", cfg, nil, root, nil, nil)
+	if err != nil {
+		t.Fatalf("extractUsageFromRootsWithEvent empty event: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage for empty event fallback")
+	}
+	if got, want := usage.OutputTokens, 7; got != want {
+		t.Fatalf("OutputTokens got %d want %d", got, want)
+	}
+	if got, want := len(usage.DebugFacts), 1; got != want {
+		t.Fatalf("DebugFacts len got %d want %d: %#v", got, want, usage.DebugFacts)
+	}
+}
+
+func TestExtractUsage_UsageFactEventRequiredDoesNotFallbackWhenEventMissing(t *testing.T) {
+	cfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		facts: []usageFactConfig{
+			{Dimension: "output", Unit: "token", Path: "$.usage.output_tokens", Event: "message_delta"},
+		},
+	}
+	root := map[string]any{
+		"usage": map[string]any{
+			"output_tokens": 7,
+		},
+	}
+
+	usage, _, err := extractUsageFromRootsWithEvent(nil, "", cfg, nil, root, nil, nil)
+	if err != nil {
+		t.Fatalf("extractUsageFromRootsWithEvent empty event: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage object for empty event")
+	}
+	if got := usage.OutputTokens; got != 0 {
+		t.Fatalf("OutputTokens got %d want 0", got)
+	}
+	if len(usage.DebugFacts) != 0 {
+		t.Fatalf("expected no debug facts, got %#v", usage.DebugFacts)
+	}
+}
+
 func TestValidateProviderFile_UsageFactEventOptionalRequiresEvent(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "event-optional-invalid.conf")

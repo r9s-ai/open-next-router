@@ -286,6 +286,105 @@ func TestStreamMetricsAggregator_OpenAIResponsesStreamUsageUsesSSEEventFilter(t 
 	}
 }
 
+func TestStreamMetricsAggregator_OpenAIResponsesStreamUsageFallsBackWithoutEvent(t *testing.T) {
+	meta := &dslmeta.Meta{API: "responses", IsStream: true}
+	usageCfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		facts: []usageFactConfig{
+			{Dimension: "input", Unit: "token", Path: "$.response.usage.input_tokens", Event: "response.completed", EventOptional: true},
+			{Dimension: "output", Unit: "token", Path: "$.response.usage.output_tokens", Event: "response.completed", EventOptional: true},
+			{Dimension: "cache_read", Unit: "token", Path: "$.response.usage.input_tokens_details.cached_tokens", Event: "response.completed", EventOptional: true},
+			{Dimension: "server_tool.web_search", Unit: "call", CountPath: "$.response.output[*]", Type: "web_search_call", Status: "completed", Event: "response.completed", EventOptional: true},
+		},
+	}
+	finishCfg := FinishReasonExtractConfig{Mode: usageModeCustom}
+	agg := NewStreamMetricsAggregator(meta, usageCfg, finishCfg)
+
+	_ = agg.OnSSEDataJSON([]byte(`{
+	  "response":{
+	    "status":"completed",
+	    "usage":{"input_tokens":11,"output_tokens":5,"input_tokens_details":{"cached_tokens":2}},
+	    "output":[{"type":"web_search_call","status":"completed"}]
+	  }
+	}`))
+
+	u, cached, _, ok := agg.Result()
+	if !ok || u == nil {
+		t.Fatalf("expected usage ok")
+	}
+	if u.InputTokens != 11 || u.OutputTokens != 5 || u.TotalTokens != 16 {
+		t.Fatalf("unexpected usage: %+v", *u)
+	}
+	if cached != 2 {
+		t.Fatalf("cached=%d want=2", cached)
+	}
+	if got, want := u.FlatFields["server_tool_web_search_calls"], 1; got != want {
+		t.Fatalf("server_tool_web_search_calls=%v want=%v", got, want)
+	}
+}
+
+func TestStreamMetricsAggregator_OpenAIResponsesProviderFallbackWithoutEvent_DoesNotDoubleCount(t *testing.T) {
+	meta := &dslmeta.Meta{API: "responses", IsStream: true}
+	usageCfg, finishCfg := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
+	agg := NewStreamMetricsAggregator(meta, usageCfg, finishCfg)
+
+	_ = agg.OnSSEDataJSON([]byte(`{
+	  "response":{
+	    "status":"completed",
+	    "usage":{"input_tokens":11,"output_tokens":5,"input_tokens_details":{"cached_tokens":2}},
+	    "output":[{"type":"web_search_call","status":"completed"}]
+	  }
+	}`))
+
+	u, cached, _, ok := agg.Result()
+	if !ok || u == nil {
+		t.Fatalf("expected usage ok")
+	}
+	if u.InputTokens != 11 || u.OutputTokens != 5 || u.TotalTokens != 16 {
+		t.Fatalf("unexpected usage: %+v", *u)
+	}
+	if cached != 2 {
+		t.Fatalf("cached=%d want=2", cached)
+	}
+	if got, want := u.FlatFields["server_tool_web_search_calls"], 1; got != want {
+		t.Fatalf("server_tool_web_search_calls=%v want=%v", got, want)
+	}
+}
+
+func TestStreamMetricsAggregator_AnthropicStreamUsageFallsBackWithoutEvent(t *testing.T) {
+	meta := &dslmeta.Meta{API: "claude.messages", IsStream: true}
+	usageCfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		facts: []usageFactConfig{
+			{Dimension: "input", Unit: "token", Path: "$.message.usage.input_tokens", Event: "message_start", EventOptional: true},
+			{Dimension: "input", Unit: "token", Path: "$.message.usage.cache_read_input_tokens", Event: "message_start", EventOptional: true},
+			{Dimension: "input", Unit: "token", Path: "$.message.usage.cache_creation_input_tokens", Event: "message_start", EventOptional: true},
+			{Dimension: "output", Unit: "token", Path: "$.usage.output_tokens", Event: "message_delta", EventOptional: true},
+			{Dimension: "cache_read", Unit: "token", Path: "$.message.usage.cache_read_input_tokens", Event: "message_start", EventOptional: true},
+			{Dimension: "server_tool.web_search", Unit: "call", Path: "$.message.usage.server_tool_use.web_search_requests", Event: "message_start", EventOptional: true},
+			{Dimension: "cache_write", Unit: "token", Path: "$.message.usage.cache_creation_input_tokens", Event: "message_start", EventOptional: true},
+		},
+	}
+	finishCfg := FinishReasonExtractConfig{Mode: usageModeCustom}
+	agg := NewStreamMetricsAggregator(meta, usageCfg, finishCfg)
+
+	_ = agg.OnSSEDataJSON([]byte(`{"message":{"usage":{"input_tokens":8,"cache_read_input_tokens":2,"cache_creation_input_tokens":3,"server_tool_use":{"web_search_requests":1}}},"usage":{"output_tokens":5}}`))
+
+	u, cached, _, ok := agg.Result()
+	if !ok || u == nil {
+		t.Fatalf("expected usage ok")
+	}
+	if u.InputTokens != 13 || u.OutputTokens != 5 || u.TotalTokens != 18 {
+		t.Fatalf("unexpected usage: %+v", *u)
+	}
+	if cached != 2 {
+		t.Fatalf("cached=%d want=2", cached)
+	}
+	if got, want := u.FlatFields["server_tool_web_search_calls"], 1; got != want {
+		t.Fatalf("server_tool_web_search_calls=%v want=%v", got, want)
+	}
+}
+
 func TestStreamMetricsAggregator_CustomMerge_DoesNotOverrideWithZero(t *testing.T) {
 	meta := &dslmeta.Meta{API: "claude.messages", IsStream: true}
 
