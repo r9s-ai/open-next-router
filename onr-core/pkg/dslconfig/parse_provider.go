@@ -629,6 +629,13 @@ func parseUsageFactMetaOption(s *scanner, keyTok token, key string, valTok token
 		}
 		fact.Status = val
 		return nil
+	case key == "event":
+		val, err := parseUsageFactStringValue(s, valTok, "event")
+		if err != nil {
+			return err
+		}
+		fact.Event = val
+		return nil
 	case key == "source":
 		val, err := parseUsageFactStringValue(s, valTok, "source")
 		if err != nil {

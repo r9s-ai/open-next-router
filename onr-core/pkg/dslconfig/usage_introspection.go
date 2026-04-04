@@ -68,6 +68,7 @@ func cloneUsageFactsForIntrospection(facts []usageFactConfig) []UsageFact {
 			Unit:      fact.Unit,
 			Source:    fact.Source,
 			Fallback:  fact.Fallback,
+			Event:     fact.Event,
 			Path:      fact.Path,
 			CountPath: fact.CountPath,
 			SumPath:   fact.SumPath,

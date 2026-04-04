@@ -11,8 +11,9 @@ import (
 type sseMetricsTap struct {
 	agg *dslconfig.StreamMetricsAggregator
 
-	lineBuf []byte
-	curData [][]byte
+	lineBuf  []byte
+	curEvent string
+	curData  [][]byte
 }
 
 func newSSEMetricsTap(agg *dslconfig.StreamMetricsAggregator) *sseMetricsTap {
@@ -54,6 +55,10 @@ func (t *sseMetricsTap) processLine(line []byte) {
 		t.flush()
 		return
 	}
+	if bytes.HasPrefix(line, []byte("event:")) {
+		t.curEvent = string(bytes.TrimSpace(bytes.TrimPrefix(line, []byte("event:"))))
+		return
+	}
 	if bytes.HasPrefix(line, []byte("data:")) {
 		t.curData = append(t.curData, bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:"))))
 	}
@@ -61,9 +66,13 @@ func (t *sseMetricsTap) processLine(line []byte) {
 
 func (t *sseMetricsTap) flush() {
 	if t == nil || t.agg == nil || len(t.curData) == 0 {
+		if t != nil {
+			t.curEvent = ""
+		}
 		return
 	}
 	payload := bytes.TrimSpace(bytes.Join(t.curData, []byte{'\n'}))
 	t.curData = t.curData[:0]
-	_ = t.agg.OnSSEDataJSON(payload)
+	_ = t.agg.OnSSEEventDataJSON(t.curEvent, payload)
+	t.curEvent = ""
 }

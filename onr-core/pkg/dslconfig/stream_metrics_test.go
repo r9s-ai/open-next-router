@@ -42,11 +42,11 @@ func TestStreamMetricsAggregator_AnthropicSnapshot(t *testing.T) {
 	)
 
 	// message_start: usage under message.usage
-	_ = agg.OnSSEDataJSON([]byte(`{"type":"message_start","message":{"usage":{"input_tokens":3,"output_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":5},"cache_creation_input_tokens":5}}}`))
+	_ = agg.OnSSEEventDataJSON("message_start", []byte(`{"type":"message_start","message":{"usage":{"input_tokens":3,"output_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":5},"cache_creation_input_tokens":5}}}`))
 	// message_delta: usage under top-level usage
-	_ = agg.OnSSEDataJSON([]byte(`{"type":"message_delta","usage":{"input_tokens":0,"output_tokens":7,"cache_read_input_tokens":2,"cache_creation_input_tokens":5}}`))
+	_ = agg.OnSSEEventDataJSON("message_delta", []byte(`{"type":"message_delta","usage":{"input_tokens":0,"output_tokens":7,"cache_read_input_tokens":2,"cache_creation_input_tokens":5}}`))
 	// stop_reason appears in delta for anthropic
-	_ = agg.OnSSEDataJSON([]byte(`{"type":"message_delta","delta":{"stop_reason":"end_turn"}}`))
+	_ = agg.OnSSEEventDataJSON("message_delta", []byte(`{"type":"message_delta","delta":{"stop_reason":"end_turn"}}`))
 
 	u, cached, fr, ok := agg.Result()
 	if !ok || u == nil {
@@ -90,10 +90,10 @@ func TestStreamMetricsAggregator_AnthropicSnapshot_DoesNotOverridePositiveWithZe
 		finishCfg,
 	)
 
-	_ = agg.OnSSEDataJSON([]byte(`{"type":"message_start","message":{"usage":{"input_tokens":12}}}`))
-	_ = agg.OnSSEDataJSON([]byte(`{"type":"message_delta","usage":{"cache_read_input_tokens":4,"cache_creation_input_tokens":9}}`))
-	_ = agg.OnSSEDataJSON([]byte(`{"type":"message_delta","usage":{"input_tokens":0,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}`))
-	_ = agg.OnSSEDataJSON([]byte(`{"type":"message_delta","usage":{"output_tokens":6}}`))
+	_ = agg.OnSSEEventDataJSON("message_start", []byte(`{"type":"message_start","message":{"usage":{"input_tokens":12}}}`))
+	_ = agg.OnSSEEventDataJSON("message_delta", []byte(`{"type":"message_delta","usage":{"cache_read_input_tokens":4,"cache_creation_input_tokens":9}}`))
+	_ = agg.OnSSEEventDataJSON("message_delta", []byte(`{"type":"message_delta","usage":{"input_tokens":0,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}`))
+	_ = agg.OnSSEEventDataJSON("message_delta", []byte(`{"type":"message_delta","usage":{"output_tokens":6}}`))
 
 	u, cached, _, ok := agg.Result()
 	if !ok || u == nil {
@@ -121,8 +121,8 @@ func TestStreamMetricsAggregator_AnthropicProviderSnapshot_WebSearchProjection(t
 	usageCfg, finishCfg := mustLoadProviderMatchConfigs(t, "anthropic.conf", meta.API, meta.IsStream)
 	agg := NewStreamMetricsAggregator(meta, usageCfg, finishCfg)
 
-	_ = agg.OnSSEDataJSON([]byte(`{"type":"message_start","message":{"usage":{"input_tokens":3,"cache_creation":{"ephemeral_5m_input_tokens":5},"cache_creation_input_tokens":5,"server_tool_use":{"web_search_requests":1}}}}`))
-	_ = agg.OnSSEDataJSON([]byte(`{"type":"message_delta","usage":{"output_tokens":7,"cache_read_input_tokens":2,"cache_creation_input_tokens":5}}`))
+	_ = agg.OnSSEEventDataJSON("message_start", []byte(`{"type":"message_start","message":{"usage":{"input_tokens":3,"cache_creation":{"ephemeral_5m_input_tokens":5},"cache_creation_input_tokens":5,"server_tool_use":{"web_search_requests":1}}}}`))
+	_ = agg.OnSSEEventDataJSON("message_delta", []byte(`{"type":"message_delta","usage":{"output_tokens":7,"cache_read_input_tokens":2,"cache_creation_input_tokens":5}}`))
 
 	u, cached, _, ok := agg.Result()
 	if !ok || u == nil {

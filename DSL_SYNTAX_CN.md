@@ -680,7 +680,7 @@ metrics {
 
 注意：
 
-- `gemini`：当前内置行为已经可以用 `custom` 配置完整平替；内置口径为 `input token` 优先取 `TEXT` 模态，再 fallback 到 `promptTokenCount`
+- `gemini`：当前默认预设行为已经可以用 `custom` 配置完整平替；`input token` 通常优先取 `TEXT` 模态，再 fallback 到 `promptTokenCount`
 - `anthropic`：ONR 现在将 `input` 视为包含 cache 的有效输入总量，因此 `cache_read_input_tokens` 与 `cache_creation_input_tokens` 也应并入 `input`
 - `openai`：上述配置只覆盖核心 token / cache 提取；图片、音频、tool usage 等 API-specific supplemental facts 仍需额外显式写 `usage_fact`
 - `gemini` 的输出 token 会把 `candidatesTokenCount` 与 `thoughtsTokenCount` 一并计入 `output`；这里既可以像示例一样写多条同维度 `usage_fact` 让系统自动求和，也可以直接写成 `output_tokens_expr = $.usageMetadata.candidatesTokenCount + $.usageMetadata.thoughtsTokenCount;`
@@ -691,31 +691,28 @@ Anthropic 流式场景的 `custom` 写法示意：
 
 ```conf
 metrics {
-  usage_extract custom;
+  usage_fact input token path="$.message.usage.input_tokens" event="message_start";
+  usage_fact input token path="$.message.usage.cache_read_input_tokens" event="message_start";
+  usage_fact input token path="$.message.usage.cache_creation_input_tokens" event="message_start";
+  usage_fact input token path="$.usage.cache_read_input_tokens" event="message_delta";
+  usage_fact input token path="$.usage.cache_creation_input_tokens" event="message_delta";
 
-  usage_fact input token path="$.usage.input_tokens";
-  usage_fact input token path="$.message.usage.input_tokens";
-  usage_fact input token path="$.usage.cache_read_input_tokens";
-  usage_fact input token path="$.message.usage.cache_read_input_tokens";
-  usage_fact input token path="$.usage.cache_creation_input_tokens";
-  usage_fact input token path="$.message.usage.cache_creation_input_tokens";
+  usage_fact output token path="$.usage.output_tokens" event="message_delta";
 
-  usage_fact output token path="$.usage.output_tokens";
-  usage_fact output token path="$.message.usage.output_tokens";
+  usage_fact cache_read token path="$.message.usage.cache_read_input_tokens" event="message_start";
+  usage_fact cache_read token path="$.usage.cache_read_input_tokens" event="message_delta";
 
-  usage_fact cache_read token path="$.usage.cache_read_input_tokens";
-  usage_fact cache_read token path="$.message.usage.cache_read_input_tokens";
-
-  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
-  usage_fact cache_write token path="$.message.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
-  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
-  usage_fact cache_write token path="$.message.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
-  usage_fact cache_write token path="$.usage.cache_creation_input_tokens" fallback=true;
-  usage_fact cache_write token path="$.message.usage.cache_creation_input_tokens" fallback=true;
+  usage_fact cache_write token path="$.message.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m" event="message_start";
+  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m" event="message_delta";
+  usage_fact cache_write token path="$.message.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h" event="message_start";
+  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h" event="message_delta";
+  usage_fact cache_write token path="$.message.usage.cache_creation_input_tokens" fallback=true event="message_start";
+  usage_fact cache_write token path="$.usage.cache_creation_input_tokens" fallback=true event="message_delta";
 }
 ```
 
 - 这类配置可以覆盖 Anthropic stream 的主要 usage 事件
+- `event="..."` 可以把 `usage_fact` 限制在指定的 SSE `event:` 名上，只在流式提取时生效
 - 相比旧的泛化 `anthropic` mode，主要差异在于配置更长、更容易漏掉某一种事件路径
 
 OpenAI supplemental facts 的 `custom` 补充示意：
@@ -803,6 +800,7 @@ metrics {
 - 在 `metrics` 里，只写 `usage_fact` 而省略 `usage_extract`，等价于 `usage_extract custom;`
 - 命名 preset 现在也会先编译成同一套内部 fact-based 执行计划，再叠加显式 `usage_fact`
 - 第一批支持 `path` / `count_path` / `sum_path` / `expr`
+- `event="..."` 可选，用于把 `usage_fact` 限制在指定 SSE 事件，例如 `message_start` / `message_delta`
 - `attr.ttl` 用于区分 Anthropic 的 `5m` / `1h` cache write
 - 同一 `dimension + unit` 可声明多条 `usage_fact`；所有命中的非 fallback 规则会按声明顺序累计求和
 - `fallback=true` 用于在更具体的事实不存在时回退到总量字段

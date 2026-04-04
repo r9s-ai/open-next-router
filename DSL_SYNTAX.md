@@ -648,9 +648,9 @@ metrics {
 
 Notes:
 
-- `gemini`: the current builtin behavior can now be fully replaced by `custom` configuration; builtin `input token` now prefers the `TEXT` modality and falls back to `promptTokenCount`, and builtin also emits `image.input/audio.input/video.input token` facts when available.
+- `gemini`: the current default preset behavior can be fully replaced by `custom` configuration; `input token` usually prefers the `TEXT` modality and falls back to `promptTokenCount`, while multimodal details can be emitted as `image.input/audio.input/video.input token` facts.
 - `anthropic`: ONR now treats `input` as the effective input size, so `cache_read_input_tokens` and `cache_creation_input_tokens` should also be included in `input`.
-- `openai`: the example above only covers core token/cache extraction. Builtin image/audio/tool supplemental facts still need extra explicit `usage_fact` rules in a custom-first setup.
+- `openai`: the example above only covers core token/cache extraction. Image/audio/tool supplemental facts still need extra explicit `usage_fact` rules in a custom-first setup.
 - Gemini output tokens intentionally include both `candidatesTokenCount` and `thoughtsTokenCount`; you can express that either by multiple same-dimension `usage_fact` rules that sum together, or more explicitly with `output_tokens_expr = $.usageMetadata.candidatesTokenCount + $.usageMetadata.thoughtsTokenCount;`.
 - `total_tokens` is derived from `input + output` by default; in most cases you should avoid setting `total_tokens_expr` explicitly, because that introduces a second total fact source.
 - Gemini native usage fields are handled in camelCase: `usageMetadata.promptTokenCount`, `candidatesTokenCount`, `thoughtsTokenCount`, and `totalTokenCount`.
@@ -659,31 +659,28 @@ Anthropic streaming `custom` sketch:
 
 ```conf
 metrics {
-  usage_extract custom;
+  usage_fact input token path="$.message.usage.input_tokens" event="message_start";
+  usage_fact input token path="$.message.usage.cache_read_input_tokens" event="message_start";
+  usage_fact input token path="$.message.usage.cache_creation_input_tokens" event="message_start";
+  usage_fact input token path="$.usage.cache_read_input_tokens" event="message_delta";
+  usage_fact input token path="$.usage.cache_creation_input_tokens" event="message_delta";
 
-  usage_fact input token path="$.usage.input_tokens";
-  usage_fact input token path="$.message.usage.input_tokens";
-  usage_fact input token path="$.usage.cache_read_input_tokens";
-  usage_fact input token path="$.message.usage.cache_read_input_tokens";
-  usage_fact input token path="$.usage.cache_creation_input_tokens";
-  usage_fact input token path="$.message.usage.cache_creation_input_tokens";
+  usage_fact output token path="$.usage.output_tokens" event="message_delta";
 
-  usage_fact output token path="$.usage.output_tokens";
-  usage_fact output token path="$.message.usage.output_tokens";
+  usage_fact cache_read token path="$.message.usage.cache_read_input_tokens" event="message_start";
+  usage_fact cache_read token path="$.usage.cache_read_input_tokens" event="message_delta";
 
-  usage_fact cache_read token path="$.usage.cache_read_input_tokens";
-  usage_fact cache_read token path="$.message.usage.cache_read_input_tokens";
-
-  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
-  usage_fact cache_write token path="$.message.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
-  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
-  usage_fact cache_write token path="$.message.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
-  usage_fact cache_write token path="$.usage.cache_creation_input_tokens" fallback=true;
-  usage_fact cache_write token path="$.message.usage.cache_creation_input_tokens" fallback=true;
+  usage_fact cache_write token path="$.message.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m" event="message_start";
+  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m" event="message_delta";
+  usage_fact cache_write token path="$.message.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h" event="message_start";
+  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h" event="message_delta";
+  usage_fact cache_write token path="$.message.usage.cache_creation_input_tokens" fallback=true event="message_start";
+  usage_fact cache_write token path="$.usage.cache_creation_input_tokens" fallback=true event="message_delta";
 }
 ```
 
 - This covers the main Anthropic stream usage event shapes.
+- `event="..."` gates a `usage_fact` rule by SSE `event:` name. It only applies to stream extraction.
 - Compared with the old generic Anthropic mode, the main difference is ergonomics: the custom form is longer and easier to misconfigure.
 
 OpenAI supplemental facts `custom` sketches:
@@ -758,6 +755,7 @@ metrics {
 - Named presets are compiled into the same internal fact-based execution plan and may still be supplemented with extra `usage_fact` rules.
 - Supported primitives: `path`, `count_path`, `sum_path`, `expr`.
 - `count_path` can be combined with `type` and `status`.
+- `event="..."` optionally restricts a `usage_fact` rule to SSE events such as `message_start` or `message_delta`.
 - `attr.ttl` distinguishes Anthropic cache-write tiers.
 - Multiple `usage_fact` rules may share the same `dimension + unit`; all matched non-fallback rules are summed in declaration order.
 - `fallback=true` applies only when no more specific fact exists for the same `dimension + unit`.

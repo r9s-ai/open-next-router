@@ -37,7 +37,7 @@ type StreamMetricsAggregator struct {
 	finishReason string
 }
 
-type streamUsageExtractFunc func(respRoot map[string]any, respBody []byte) (*Usage, int, error)
+type streamUsageExtractFunc func(event string, respRoot map[string]any, respBody []byte) (*Usage, int, error)
 
 func NewStreamMetricsAggregator(meta *dslmeta.Meta, usageCfg UsageExtractConfig, finishCfg FinishReasonExtractConfig) *StreamMetricsAggregator {
 	usageCfg = prepareUsageExtractConfig(usageCfg)
@@ -51,6 +51,10 @@ func NewStreamMetricsAggregator(meta *dslmeta.Meta, usageCfg UsageExtractConfig,
 }
 
 func (a *StreamMetricsAggregator) OnSSEDataJSON(payload []byte) error {
+	return a.OnSSEEventDataJSON("", payload)
+}
+
+func (a *StreamMetricsAggregator) OnSSEEventDataJSON(event string, payload []byte) error {
 	if a == nil {
 		return nil
 	}
@@ -82,7 +86,7 @@ func (a *StreamMetricsAggregator) OnSSEDataJSON(payload []byte) error {
 		return nil
 	}
 
-	u, cachedTokens, err := a.extract(root, payload)
+	u, cachedTokens, err := a.extract(event, root, payload)
 	if err != nil {
 		// ignore individual event errors
 		return nil
@@ -116,19 +120,26 @@ func (a *StreamMetricsAggregator) OnSSETail(sse []byte) {
 		return
 	}
 	lines := bytes.Split(sse, []byte{'\n'})
+	var curEvent string
 	var curData [][]byte
 	flush := func() {
 		if len(curData) == 0 {
+			curEvent = ""
 			return
 		}
 		payload := bytes.TrimSpace(bytes.Join(curData, []byte{'\n'}))
 		curData = curData[:0]
-		_ = a.OnSSEDataJSON(payload)
+		_ = a.OnSSEEventDataJSON(curEvent, payload)
+		curEvent = ""
 	}
 	for _, raw := range lines {
 		line := bytes.TrimRight(raw, "\r")
 		if len(bytes.TrimSpace(line)) == 0 {
 			flush()
+			continue
+		}
+		if bytes.HasPrefix(line, []byte("event:")) {
+			curEvent = string(bytes.TrimSpace(bytes.TrimPrefix(line, []byte("event:"))))
 			continue
 		}
 		if bytes.HasPrefix(line, []byte("data:")) {
@@ -284,6 +295,7 @@ func usageFactMergeSignature(fact usageFactConfig) string {
 	}
 	return strings.Join([]string{
 		strings.TrimSpace(fact.Source),
+		strings.TrimSpace(fact.Event),
 		strings.TrimSpace(fact.Path),
 		strings.TrimSpace(fact.CountPath),
 		strings.TrimSpace(fact.SumPath),
@@ -299,8 +311,10 @@ func shouldRecomputeMergedTotal(cfg UsageExtractConfig) bool {
 
 func newStreamUsageExtractFunc(meta *dslmeta.Meta, cfg UsageExtractConfig) streamUsageExtractFunc {
 	compiled := compileUsageExtractConfig(meta, cfg)
-	return func(respRoot map[string]any, respBody []byte) (*Usage, int, error) {
-		return extractUsageFromResponseRoot(meta, compiled, respRoot, respBody)
+	return func(event string, respRoot map[string]any, respBody []byte) (*Usage, int, error) {
+		reqRoot := requestRootFromMeta(meta)
+		derivedRoot := derivedRootFromMeta(meta)
+		return extractUsageFromRootsWithEvent(meta, event, compiled, reqRoot, respRoot, derivedRoot, respBody)
 	}
 }
 
@@ -378,6 +392,9 @@ func mergeUsageDebugFactsPreferNonZero(dst *Usage, src *Usage) {
 func usageFactDebugMergeKey(fact UsageFact) string {
 	key := normalizeUsageFactKey(fact.Dimension, fact.Unit)
 	parts := []string{key.Dimension, key.Unit}
+	if strings.TrimSpace(fact.Event) != "" {
+		parts = append(parts, strings.TrimSpace(fact.Event))
+	}
 	if len(fact.Attributes) == 0 {
 		return strings.Join(parts, "|")
 	}

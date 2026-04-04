@@ -250,6 +250,11 @@ func validateUsageFactConfig(path, providerName, scope string, idx int, fact usa
 			return fmt.Errorf("provider %q in %q: %s usage_fact[%d] type/status requires count_path", providerName, path, scope, idx)
 		}
 	}
+	if strings.TrimSpace(fact.Event) == "" {
+		// ok
+	} else if strings.ContainsAny(strings.TrimSpace(fact.Event), " \t\r\n") {
+		return fmt.Errorf("provider %q in %q: %s usage_fact[%d] event must not contain whitespace", providerName, path, scope, idx)
+	}
 	if len(fact.Attrs) > 0 {
 		for k, v := range fact.Attrs {
 			if strings.TrimSpace(k) == "" {

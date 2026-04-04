@@ -1516,10 +1516,36 @@ provider "invalid-request-source" {
     upstream_config {
       base_url = "https://api.example.com";
     }
+	    metrics {
+	      usage_extract custom;
+	      usage_fact input token source="stream_event" path="$.n";
+	      usage_fact output token path="$.usage.output_tokens";
+	    }
+	  }
+	}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if _, err := ValidateProviderFile(path); err == nil || !strings.Contains(err.Error(), "unsupported source") {
+		t.Fatalf("ValidateProviderFile err=%v, want unsupported source", err)
+	}
+}
+
+func TestValidateProviderFile_UsageFactEventOption(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "event-option.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "event-option" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
     metrics {
-      usage_extract custom;
-      usage_fact input token source="stream_event" path="$.n";
-      usage_fact output token path="$.usage.output_tokens";
+      usage_fact input token path="$.message.usage.input_tokens" event="message_start";
+      usage_fact output token path="$.usage.output_tokens" event="message_delta";
     }
   }
 }
@@ -1527,8 +1553,70 @@ provider "invalid-request-source" {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	if _, err := ValidateProviderFile(path); err == nil || !strings.Contains(err.Error(), "unsupported source") {
-		t.Fatalf("ValidateProviderFile err=%v, want unsupported source", err)
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+	facts := pf.Usage.Defaults.CompiledFacts(nil)
+	if len(facts) != 2 {
+		t.Fatalf("compiled facts len=%d want=2", len(facts))
+	}
+	if got, want := facts[0].Event, "message_start"; got != want {
+		t.Fatalf("facts[0].Event=%q want=%q", got, want)
+	}
+	if got, want := facts[1].Event, "message_delta"; got != want {
+		t.Fatalf("facts[1].Event=%q want=%q", got, want)
+	}
+}
+
+func TestExtractUsage_UsageFactEventFilter(t *testing.T) {
+	cfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		facts: []usageFactConfig{
+			{Dimension: "input", Unit: "token", Path: "$.message.usage.input_tokens", Event: "message_start"},
+			{Dimension: "output", Unit: "token", Path: "$.usage.output_tokens", Event: "message_delta"},
+		},
+	}
+	root := map[string]any{
+		"message": map[string]any{
+			"usage": map[string]any{
+				"input_tokens": 3,
+			},
+		},
+		"usage": map[string]any{
+			"output_tokens": 7,
+		},
+	}
+
+	usage, cached, err := extractUsageFromRootsWithEvent(nil, "message_start", cfg, nil, root, nil, nil)
+	if err != nil {
+		t.Fatalf("extractUsageFromRootsWithEvent message_start: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage for message_start")
+	}
+	if got, want := usage.InputTokens, 3; got != want {
+		t.Fatalf("InputTokens got %d want %d", got, want)
+	}
+	if got := usage.OutputTokens; got != 0 {
+		t.Fatalf("OutputTokens got %d want 0", got)
+	}
+	if got := cached; got != 0 {
+		t.Fatalf("cached got %d want 0", got)
+	}
+
+	usage, _, err = extractUsageFromRootsWithEvent(nil, "message_delta", cfg, nil, root, nil, nil)
+	if err != nil {
+		t.Fatalf("extractUsageFromRootsWithEvent message_delta: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage for message_delta")
+	}
+	if got := usage.InputTokens; got != 0 {
+		t.Fatalf("InputTokens got %d want 0", got)
+	}
+	if got, want := usage.OutputTokens, 7; got != want {
+		t.Fatalf("OutputTokens got %d want %d", got, want)
 	}
 }
 

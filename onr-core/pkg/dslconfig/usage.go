@@ -96,15 +96,19 @@ func extractUsageFromResponseRoot(meta *dslmeta.Meta, cfg UsageExtractConfig, re
 	}
 	reqRoot := requestRootFromMeta(meta)
 	derivedRoot := derivedRootFromMeta(meta)
-	return extractUsageFromRoots(meta, cfg, reqRoot, respRoot, derivedRoot, respBody)
+	return extractUsageFromRootsWithEvent(meta, "", cfg, reqRoot, respRoot, derivedRoot, respBody)
 }
 
 func extractUsageFromRoots(meta *dslmeta.Meta, cfg UsageExtractConfig, reqRoot, respRoot, derivedRoot map[string]any, respBody []byte) (*Usage, int, error) {
+	return extractUsageFromRootsWithEvent(meta, "", cfg, reqRoot, respRoot, derivedRoot, respBody)
+}
+
+func extractUsageFromRootsWithEvent(meta *dslmeta.Meta, event string, cfg UsageExtractConfig, reqRoot, respRoot, derivedRoot map[string]any, respBody []byte) (*Usage, int, error) {
 	cfg = compileUsageExtractConfig(meta, cfg)
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	switch mode {
 	case usageModeCustom:
-		usage, cachedTokens, err := extractCustomUsage(reqRoot, respRoot, derivedRoot, cfg)
+		usage, cachedTokens, err := extractCustomUsageWithEvent(event, reqRoot, respRoot, derivedRoot, cfg)
 		if err != nil {
 			return nil, 0, err
 		}

@@ -22,6 +22,7 @@ type usageFactConfig struct {
 
 	Type   string
 	Status string
+	Event  string
 
 	Attrs    map[string]string
 	Fallback bool
@@ -228,7 +229,7 @@ func newUsageFactSet(facts []usageFactConfig) usageFactSet {
 }
 
 func evaluateUsageFactConfigs(reqRoot, respRoot, derivedRoot map[string]any, facts []usageFactConfig) []usageFactEval {
-	return evaluateUsageFactConfigGroups(reqRoot, respRoot, derivedRoot, groupUsageFactConfigs(facts), len(facts))
+	return evaluateUsageFactConfigGroupsWithEvent("", reqRoot, respRoot, derivedRoot, groupUsageFactConfigs(facts), len(facts))
 }
 
 func groupUsageFactConfigs(facts []usageFactConfig) map[usageFactKey][]usageFactConfig {
@@ -249,14 +250,22 @@ func usageFactExplicitKeys(facts []usageFactConfig) map[usageFactKey]struct{} {
 }
 
 func evaluateUsageFactConfigGroups(reqRoot, respRoot, derivedRoot map[string]any, grouped map[usageFactKey][]usageFactConfig, totalFacts int) []usageFactEval {
+	return evaluateUsageFactConfigGroupsWithEvent("", reqRoot, respRoot, derivedRoot, grouped, totalFacts)
+}
+
+func evaluateUsageFactConfigGroupsWithEvent(event string, reqRoot, respRoot, derivedRoot map[string]any, grouped map[usageFactKey][]usageFactConfig, totalFacts int) []usageFactEval {
 	out := make([]usageFactEval, 0, totalFacts)
 	for _, group := range grouped {
-		out = append(out, evaluateUsageFactGroup(reqRoot, respRoot, derivedRoot, group)...)
+		out = append(out, evaluateUsageFactGroupWithEvent(event, reqRoot, respRoot, derivedRoot, group)...)
 	}
 	return out
 }
 
 func evaluateUsageFactGroup(reqRoot, respRoot, derivedRoot map[string]any, facts []usageFactConfig) []usageFactEval {
+	return evaluateUsageFactGroupWithEvent("", reqRoot, respRoot, derivedRoot, facts)
+}
+
+func evaluateUsageFactGroupWithEvent(event string, reqRoot, respRoot, derivedRoot map[string]any, facts []usageFactConfig) []usageFactEval {
 	out := make([]usageFactEval, 0, len(facts))
 	var specificMatched bool
 	// Ordering rule for the same dimension+unit:
@@ -266,7 +275,7 @@ func evaluateUsageFactGroup(reqRoot, respRoot, derivedRoot map[string]any, facts
 		if fact.Fallback {
 			continue
 		}
-		q, matched := evaluateUsageFact(reqRoot, respRoot, derivedRoot, fact)
+		q, matched := evaluateUsageFactWithEvent(event, reqRoot, respRoot, derivedRoot, fact)
 		if matched {
 			specificMatched = true
 		}
@@ -279,15 +288,22 @@ func evaluateUsageFactGroup(reqRoot, respRoot, derivedRoot map[string]any, facts
 		if !fact.Fallback {
 			continue
 		}
-		q, matched := evaluateUsageFact(reqRoot, respRoot, derivedRoot, fact)
+		q, matched := evaluateUsageFactWithEvent(event, reqRoot, respRoot, derivedRoot, fact)
 		out = append(out, usageFactEval{cfg: fact, quantity: q, matched: matched})
 	}
 	return out
 }
 
 func evaluateUsageFact(reqRoot, respRoot, derivedRoot map[string]any, fact usageFactConfig) (quantity float64, matched bool) {
+	return evaluateUsageFactWithEvent("", reqRoot, respRoot, derivedRoot, fact)
+}
+
+func evaluateUsageFactWithEvent(event string, reqRoot, respRoot, derivedRoot map[string]any, fact usageFactConfig) (quantity float64, matched bool) {
 	root := usageFactSourceRoot(reqRoot, respRoot, derivedRoot, fact.Source)
 	if len(root) == 0 {
+		return 0, false
+	}
+	if strings.TrimSpace(fact.Event) != "" && !strings.EqualFold(strings.TrimSpace(fact.Event), strings.TrimSpace(event)) {
 		return 0, false
 	}
 	switch {
@@ -388,8 +404,12 @@ func projectUsageFromFacts(facts []usageFactEval) (*Usage, int, error) {
 }
 
 func extractCustomUsage(reqRoot, respRoot, derivedRoot map[string]any, cfg UsageExtractConfig) (*Usage, int, error) {
+	return extractCustomUsageWithEvent("", reqRoot, respRoot, derivedRoot, cfg)
+}
+
+func extractCustomUsageWithEvent(event string, reqRoot, respRoot, derivedRoot map[string]any, cfg UsageExtractConfig) (*Usage, int, error) {
 	evals := make([]usageFactEval, 0, len(cfg.facts))
-	evals = append(evals, evaluateUsageFactConfigGroups(reqRoot, respRoot, derivedRoot, cfg.factGroups, len(cfg.facts))...)
+	evals = append(evals, evaluateUsageFactConfigGroupsWithEvent(event, reqRoot, respRoot, derivedRoot, cfg.factGroups, len(cfg.facts))...)
 
 	usage, cachedTokens, err := projectUsageFromFacts(evals)
 	if err != nil {
@@ -445,6 +465,7 @@ func buildUsageDebugFacts(facts []usageFactEval) []UsageFact {
 			Quantity:  fact.quantity,
 			Source:    normalizeUsageFactSource(fact.cfg.Source),
 			Fallback:  fact.cfg.Fallback,
+			Event:     fact.cfg.Event,
 			Path:      fact.cfg.Path,
 			CountPath: fact.cfg.CountPath,
 			SumPath:   fact.cfg.SumPath,
