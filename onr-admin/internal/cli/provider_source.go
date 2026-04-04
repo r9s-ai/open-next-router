@@ -7,8 +7,6 @@ import (
 	cfgpkg "github.com/r9s-ai/open-next-router/pkg/config"
 )
 
-const defaultProvidersDir = cfgpkg.DefaultProvidersDir
-
 func resolveProviderSourcePath(cfg *cfgpkg.Config, override string) string {
 	if v := strings.TrimSpace(override); v != "" {
 		return v

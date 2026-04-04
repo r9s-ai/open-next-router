@@ -61,6 +61,19 @@ type LoadResult struct {
 	Warnings        []ValidationWarning
 }
 
+type registryDirCandidate struct {
+	entryName string
+	path      string
+	content   string
+}
+
+type modeFileIndex struct {
+	usage        map[string][]string
+	finishReason map[string][]string
+	models       map[string][]string
+	balance      map[string][]string
+}
+
 const providerConfExt = ".conf"
 
 func normalizeProviderName(s string) string {
@@ -89,340 +102,20 @@ func (r *Registry) ReloadFromDir(providersDir string) (LoadResult, error) {
 		}
 		return LoadResult{}, fmt.Errorf("read providers dir %q: %w", dir, err)
 	}
-
-	type candidate struct {
-		entryName string
-		path      string
-		content   string
-	}
 	next := map[string]ProviderFile{}
 	loaded := make([]string, 0)
 	skipped := make([]string, 0)
 	skippedReasons := make(map[string]string)
-	candidates := make([]candidate, 0)
-	rawModes, modePaths, _, err := loadGlobalUsageModesFromFile(globalConfigPathForProvidersDir(dir))
+	modeState, _, err := loadGlobalModeRegistryState(globalConfigPathForProvidersDir(dir))
 	if err != nil {
 		return LoadResult{}, err
 	}
-	rawFinishReasonModes, finishReasonModePaths, _, err := loadGlobalFinishReasonModesFromFile(globalConfigPathForProvidersDir(dir))
+	modeState, candidates, modeFiles, skipped, skippedReasons := collectRegistryDirCandidates(dir, entries, modeState, skipped, skippedReasons)
+	resolvedState, candidates, skipped, skippedReasons, err := resolveRegistryDirModeState(modeState, candidates, modeFiles, skipped, skippedReasons)
 	if err != nil {
 		return LoadResult{}, err
 	}
-	rawModelsModes, modelsModePaths, _, err := loadGlobalModelsModesFromFile(globalConfigPathForProvidersDir(dir))
-	if err != nil {
-		return LoadResult{}, err
-	}
-	rawBalanceModes, balanceModePaths, _, err := loadGlobalBalanceModesFromFile(globalConfigPathForProvidersDir(dir))
-	if err != nil {
-		return LoadResult{}, err
-	}
-	if rawModes == nil {
-		rawModes = usageModeRegistry{}
-	}
-	if modePaths == nil {
-		modePaths = map[string]string{}
-	}
-	if rawFinishReasonModes == nil {
-		rawFinishReasonModes = finishReasonModeRegistry{}
-	}
-	if finishReasonModePaths == nil {
-		finishReasonModePaths = map[string]string{}
-	}
-	if rawModelsModes == nil {
-		rawModelsModes = modelsModeRegistry{}
-	}
-	if modelsModePaths == nil {
-		modelsModePaths = map[string]string{}
-	}
-	if rawBalanceModes == nil {
-		rawBalanceModes = balanceModeRegistry{}
-	}
-	if balanceModePaths == nil {
-		balanceModePaths = map[string]string{}
-	}
-	modeFiles := map[string][]string{}
-	finishReasonModeFiles := map[string][]string{}
-	modelModeFiles := map[string][]string{}
-	balanceModeFiles := map[string][]string{}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		if filepath.Ext(entry.Name()) != providerConfExt {
-			continue
-		}
-		path := filepath.Join(dir, entry.Name())
-		// #nosec G304 -- provider files are loaded from a configured directory; filenames come from ReadDir of that directory.
-		contentBytes, err := os.ReadFile(path)
-		if err != nil {
-			skipped = append(skipped, entry.Name())
-			skippedReasons[entry.Name()] = err.Error()
-			continue
-		}
-		content, err := preprocessIncludes(path, string(contentBytes))
-		if err != nil {
-			skipped = append(skipped, entry.Name())
-			skippedReasons[entry.Name()] = err.Error()
-			continue
-		}
-		defs, err := parseGlobalUsageModes(path, content)
-		if err != nil {
-			skipped = append(skipped, entry.Name())
-			skippedReasons[entry.Name()] = err.Error()
-			continue
-		}
-		finishDefs, err := parseGlobalFinishReasonModes(path, content)
-		if err != nil {
-			skipped = append(skipped, entry.Name())
-			skippedReasons[entry.Name()] = err.Error()
-			continue
-		}
-		modelDefs, err := parseGlobalModelsModes(path, content)
-		if err != nil {
-			skipped = append(skipped, entry.Name())
-			skippedReasons[entry.Name()] = err.Error()
-			continue
-		}
-		balanceDefs, err := parseGlobalBalanceModes(path, content)
-		if err != nil {
-			skipped = append(skipped, entry.Name())
-			skippedReasons[entry.Name()] = err.Error()
-			continue
-		}
-		duplicateMode := ""
-		duplicateModePath := ""
-		for name := range defs {
-			if prev, exists := modePaths[name]; exists {
-				duplicateMode = name
-				duplicateModePath = prev
-				break
-			}
-		}
-		if duplicateMode != "" {
-			skipped = append(skipped, entry.Name())
-			skippedReasons[entry.Name()] = fmt.Sprintf("duplicate usage_mode %q (already in %q)", duplicateMode, duplicateModePath)
-			continue
-		}
-		duplicateFinishReasonMode := ""
-		duplicateFinishReasonModePath := ""
-		for name := range finishDefs {
-			if prev, exists := finishReasonModePaths[name]; exists {
-				duplicateFinishReasonMode = name
-				duplicateFinishReasonModePath = prev
-				break
-			}
-		}
-		if duplicateFinishReasonMode != "" {
-			skipped = append(skipped, entry.Name())
-			skippedReasons[entry.Name()] = fmt.Sprintf("duplicate finish_reason_mode %q (already in %q)", duplicateFinishReasonMode, duplicateFinishReasonModePath)
-			continue
-		}
-		duplicateModelMode := ""
-		duplicateModelModePath := ""
-		for name := range modelDefs {
-			if prev, exists := modelsModePaths[name]; exists {
-				duplicateModelMode = name
-				duplicateModelModePath = prev
-				break
-			}
-		}
-		if duplicateModelMode != "" {
-			skipped = append(skipped, entry.Name())
-			skippedReasons[entry.Name()] = fmt.Sprintf("duplicate models_mode %q (already in %q)", duplicateModelMode, duplicateModelModePath)
-			continue
-		}
-		duplicateBalanceMode := ""
-		duplicateBalanceModePath := ""
-		for name := range balanceDefs {
-			if prev, exists := balanceModePaths[name]; exists {
-				duplicateBalanceMode = name
-				duplicateBalanceModePath = prev
-				break
-			}
-		}
-		if duplicateBalanceMode != "" {
-			skipped = append(skipped, entry.Name())
-			skippedReasons[entry.Name()] = fmt.Sprintf("duplicate balance_mode %q (already in %q)", duplicateBalanceMode, duplicateBalanceModePath)
-			continue
-		}
-		for name, cfg := range defs {
-			modePaths[name] = path
-			modeFiles[path] = append(modeFiles[path], name)
-			rawModes[name] = cfg
-		}
-		for name, cfg := range finishDefs {
-			finishReasonModePaths[name] = path
-			finishReasonModeFiles[path] = append(finishReasonModeFiles[path], name)
-			rawFinishReasonModes[name] = cfg
-		}
-		for name, cfg := range modelDefs {
-			modelsModePaths[name] = path
-			modelModeFiles[path] = append(modelModeFiles[path], name)
-			rawModelsModes[name] = cfg
-		}
-		for name, cfg := range balanceDefs {
-			balanceModePaths[name] = path
-			balanceModeFiles[path] = append(balanceModeFiles[path], name)
-			rawBalanceModes[name] = cfg
-		}
-		candidates = append(candidates, candidate{entryName: entry.Name(), path: path, content: content})
-	}
-
-	resolvedModes := usageModeRegistry{}
-	remainingModes := rawModes
-	remainingPaths := modePaths
-	remainingModeFiles := modeFiles
-	resolvedFinishReasonModes := finishReasonModeRegistry{}
-	remainingFinishReasonModes := rawFinishReasonModes
-	remainingFinishReasonModePaths := finishReasonModePaths
-	remainingFinishReasonModeFiles := finishReasonModeFiles
-	resolvedModelsModes := modelsModeRegistry{}
-	remainingModelsModes := rawModelsModes
-	remainingModelsModePaths := modelsModePaths
-	remainingModelsModeFiles := modelModeFiles
-	resolvedBalanceModes := balanceModeRegistry{}
-	remainingBalanceModes := rawBalanceModes
-	remainingBalanceModePaths := balanceModePaths
-	remainingBalanceModeFiles := balanceModeFiles
-	for {
-		var err error
-		resolvedModes, err = resolveUsageModeRegistry(remainingPaths, remainingModes)
-		if err == nil {
-			break
-		}
-		skippedFile := usageModeFileFromError(err.Error(), remainingModeFiles)
-		if skippedFile == "" {
-			return LoadResult{}, err
-		}
-		if _, exists := skippedReasons[filepath.Base(skippedFile)]; exists {
-			return LoadResult{}, err
-		}
-		entryName := filepath.Base(skippedFile)
-		skipped = append(skipped, entryName)
-		skippedReasons[entryName] = err.Error()
-		for _, modeName := range remainingModeFiles[skippedFile] {
-			delete(remainingModes, modeName)
-			delete(remainingPaths, modeName)
-		}
-		delete(remainingModeFiles, skippedFile)
-		filtered := candidates[:0]
-		for _, candidate := range candidates {
-			if candidate.path == skippedFile {
-				continue
-			}
-			filtered = append(filtered, candidate)
-		}
-		candidates = filtered
-	}
-	for {
-		var err error
-		resolvedFinishReasonModes, err = resolveFinishReasonModeRegistry(remainingFinishReasonModePaths, remainingFinishReasonModes)
-		if err == nil {
-			break
-		}
-		skippedFile := usageModeFileFromError(err.Error(), remainingFinishReasonModeFiles)
-		if skippedFile == "" {
-			return LoadResult{}, err
-		}
-		if _, exists := skippedReasons[filepath.Base(skippedFile)]; exists {
-			return LoadResult{}, err
-		}
-		entryName := filepath.Base(skippedFile)
-		skipped = append(skipped, entryName)
-		skippedReasons[entryName] = err.Error()
-		for _, modeName := range remainingFinishReasonModeFiles[skippedFile] {
-			delete(remainingFinishReasonModes, modeName)
-			delete(remainingFinishReasonModePaths, modeName)
-		}
-		delete(remainingFinishReasonModeFiles, skippedFile)
-		filtered := candidates[:0]
-		for _, candidate := range candidates {
-			if candidate.path == skippedFile {
-				continue
-			}
-			filtered = append(filtered, candidate)
-		}
-		candidates = filtered
-	}
-	for {
-		var err error
-		resolvedModelsModes, err = resolveModelsModeRegistry(remainingModelsModePaths, remainingModelsModes)
-		if err == nil {
-			break
-		}
-		skippedFile := usageModeFileFromError(err.Error(), remainingModelsModeFiles)
-		if skippedFile == "" {
-			return LoadResult{}, err
-		}
-		if _, exists := skippedReasons[filepath.Base(skippedFile)]; exists {
-			return LoadResult{}, err
-		}
-		entryName := filepath.Base(skippedFile)
-		skipped = append(skipped, entryName)
-		skippedReasons[entryName] = err.Error()
-		for _, modeName := range remainingModelsModeFiles[skippedFile] {
-			delete(remainingModelsModes, modeName)
-			delete(remainingModelsModePaths, modeName)
-		}
-		delete(remainingModelsModeFiles, skippedFile)
-		filtered := candidates[:0]
-		for _, candidate := range candidates {
-			if candidate.path == skippedFile {
-				continue
-			}
-			filtered = append(filtered, candidate)
-		}
-		candidates = filtered
-	}
-	for {
-		var err error
-		resolvedBalanceModes, err = resolveBalanceModeRegistry(remainingBalanceModePaths, remainingBalanceModes)
-		if err == nil {
-			break
-		}
-		skippedFile := usageModeFileFromError(err.Error(), remainingBalanceModeFiles)
-		if skippedFile == "" {
-			return LoadResult{}, err
-		}
-		if _, exists := skippedReasons[filepath.Base(skippedFile)]; exists {
-			return LoadResult{}, err
-		}
-		entryName := filepath.Base(skippedFile)
-		skipped = append(skipped, entryName)
-		skippedReasons[entryName] = err.Error()
-		for _, modeName := range remainingBalanceModeFiles[skippedFile] {
-			delete(remainingBalanceModes, modeName)
-			delete(remainingBalanceModePaths, modeName)
-		}
-		delete(remainingBalanceModeFiles, skippedFile)
-		filtered := candidates[:0]
-		for _, candidate := range candidates {
-			if candidate.path == skippedFile {
-				continue
-			}
-			filtered = append(filtered, candidate)
-		}
-		candidates = filtered
-	}
-
-	for _, candidate := range candidates {
-		pf, hasProvider, err := validateAndBuildProviderFile(candidate.path, candidate.content, resolvedModes, resolvedFinishReasonModes, resolvedModelsModes, resolvedBalanceModes)
-		if err != nil {
-			skipped = append(skipped, candidate.entryName)
-			skippedReasons[candidate.entryName] = err.Error()
-			continue
-		}
-		if !hasProvider {
-			continue
-		}
-		if _, exists := next[pf.Name]; exists {
-			skipped = append(skipped, candidate.entryName)
-			skippedReasons[candidate.entryName] = fmt.Sprintf("duplicate provider name %q", pf.Name)
-			continue
-		}
-		next[pf.Name] = pf
-		loaded = append(loaded, pf.Name)
-	}
+	loadProvidersFromRegistryDirCandidates(next, &loaded, &skipped, skippedReasons, candidates, resolvedState)
 
 	sort.Strings(loaded)
 	sort.Strings(skipped)
@@ -432,6 +125,153 @@ func (r *Registry) ReloadFromDir(providersDir string) (LoadResult, error) {
 	r.mu.Unlock()
 
 	return LoadResult{LoadedProviders: loaded, SkippedFiles: skipped, SkippedReasons: skippedReasons}, nil
+}
+
+func newModeFileIndex() modeFileIndex {
+	return modeFileIndex{
+		usage:        map[string][]string{},
+		finishReason: map[string][]string{},
+		models:       map[string][]string{},
+		balance:      map[string][]string{},
+	}
+}
+
+func (idx *modeFileIndex) record(path string, local modeRegistryState) {
+	for name := range local.usage {
+		idx.usage[path] = append(idx.usage[path], name)
+	}
+	for name := range local.finishReason {
+		idx.finishReason[path] = append(idx.finishReason[path], name)
+	}
+	for name := range local.models {
+		idx.models[path] = append(idx.models[path], name)
+	}
+	for name := range local.balance {
+		idx.balance[path] = append(idx.balance[path], name)
+	}
+}
+
+func collectRegistryDirCandidates(dir string, entries []os.DirEntry, modeState modeRegistryState, skipped []string, skippedReasons map[string]string) (modeRegistryState, []registryDirCandidate, modeFileIndex, []string, map[string]string) {
+	candidates := make([]registryDirCandidate, 0)
+	modeFiles := newModeFileIndex()
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != providerConfExt {
+			continue
+		}
+		candidate, localModes, err := loadRegistryDirCandidate(dir, entry)
+		if err != nil {
+			skipped = append(skipped, entry.Name())
+			skippedReasons[entry.Name()] = err.Error()
+			continue
+		}
+		if err := modeState.merge(candidate.path, localModes); err != nil {
+			skipped = append(skipped, entry.Name())
+			skippedReasons[entry.Name()] = err.Error()
+			continue
+		}
+		modeFiles.record(candidate.path, localModes)
+		candidates = append(candidates, candidate)
+	}
+	return modeState, candidates, modeFiles, skipped, skippedReasons
+}
+
+func loadRegistryDirCandidate(dir string, entry os.DirEntry) (registryDirCandidate, modeRegistryState, error) {
+	path := filepath.Join(dir, entry.Name())
+	// #nosec G304 -- provider files are loaded from a configured directory; filenames come from ReadDir of that directory.
+	contentBytes, err := os.ReadFile(path)
+	if err != nil {
+		return registryDirCandidate{}, modeRegistryState{}, err
+	}
+	content, err := preprocessIncludes(path, string(contentBytes))
+	if err != nil {
+		return registryDirCandidate{}, modeRegistryState{}, err
+	}
+	localModes, err := parseLocalModeRegistryState(path, content)
+	if err != nil {
+		return registryDirCandidate{}, modeRegistryState{}, err
+	}
+	return registryDirCandidate{entryName: entry.Name(), path: path, content: content}, localModes, nil
+}
+
+func resolveRegistryDirModeState(modeState modeRegistryState, candidates []registryDirCandidate, modeFiles modeFileIndex, skipped []string, skippedReasons map[string]string) (modeRegistryState, []registryDirCandidate, []string, map[string]string, error) {
+	state := modeState.clone()
+	var err error
+	state.usage, candidates, skipped, skippedReasons, err = resolveModeRegistryWithSkips(candidates, skipped, skippedReasons, state.usagePaths, state.usage, modeFiles.usage, resolveUsageModeRegistry)
+	if err != nil {
+		return modeRegistryState{}, nil, skipped, skippedReasons, err
+	}
+	state.finishReason, candidates, skipped, skippedReasons, err = resolveModeRegistryWithSkips(candidates, skipped, skippedReasons, state.finishReasonPaths, state.finishReason, modeFiles.finishReason, resolveFinishReasonModeRegistry)
+	if err != nil {
+		return modeRegistryState{}, nil, skipped, skippedReasons, err
+	}
+	state.models, candidates, skipped, skippedReasons, err = resolveModeRegistryWithSkips(candidates, skipped, skippedReasons, state.modelsPaths, state.models, modeFiles.models, resolveModelsModeRegistry)
+	if err != nil {
+		return modeRegistryState{}, nil, skipped, skippedReasons, err
+	}
+	state.balance, candidates, skipped, skippedReasons, err = resolveModeRegistryWithSkips(candidates, skipped, skippedReasons, state.balancePaths, state.balance, modeFiles.balance, resolveBalanceModeRegistry)
+	if err != nil {
+		return modeRegistryState{}, nil, skipped, skippedReasons, err
+	}
+	return state, candidates, skipped, skippedReasons, nil
+}
+
+func resolveModeRegistryWithSkips[T any, M ~map[string]T](candidates []registryDirCandidate, skipped []string, skippedReasons map[string]string, paths map[string]string, registry M, files map[string][]string, resolve func(map[string]string, M) (M, error)) (M, []registryDirCandidate, []string, map[string]string, error) {
+	for {
+		resolved, err := resolve(paths, registry)
+		if err == nil {
+			return resolved, candidates, skipped, skippedReasons, nil
+		}
+		skippedFile := usageModeFileFromError(err.Error(), files)
+		if skippedFile == "" {
+			var zero M
+			return zero, candidates, skipped, skippedReasons, err
+		}
+		entryName := filepath.Base(skippedFile)
+		if _, exists := skippedReasons[entryName]; exists {
+			var zero M
+			return zero, candidates, skipped, skippedReasons, err
+		}
+		skipped = append(skipped, entryName)
+		skippedReasons[entryName] = err.Error()
+		for _, modeName := range files[skippedFile] {
+			delete(registry, modeName)
+			delete(paths, modeName)
+		}
+		delete(files, skippedFile)
+		candidates = filterRegistryDirCandidates(candidates, skippedFile)
+	}
+}
+
+func filterRegistryDirCandidates(candidates []registryDirCandidate, skippedFile string) []registryDirCandidate {
+	filtered := candidates[:0]
+	for _, candidate := range candidates {
+		if candidate.path == skippedFile {
+			continue
+		}
+		filtered = append(filtered, candidate)
+	}
+	return filtered
+}
+
+func loadProvidersFromRegistryDirCandidates(next map[string]ProviderFile, loaded, skipped *[]string, skippedReasons map[string]string, candidates []registryDirCandidate, resolvedState modeRegistryState) {
+	for _, candidate := range candidates {
+		pf, hasProvider, err := validateAndBuildProviderFile(candidate.path, candidate.content, resolvedState.usage, resolvedState.finishReason, resolvedState.models, resolvedState.balance)
+		if err != nil {
+			*skipped = append(*skipped, candidate.entryName)
+			skippedReasons[candidate.entryName] = err.Error()
+			continue
+		}
+		if !hasProvider {
+			continue
+		}
+		if _, exists := next[pf.Name]; exists {
+			*skipped = append(*skipped, candidate.entryName)
+			skippedReasons[candidate.entryName] = fmt.Sprintf("duplicate provider name %q", pf.Name)
+			continue
+		}
+		next[pf.Name] = pf
+		*loaded = append(*loaded, pf.Name)
+	}
 }
 
 func (r *Registry) ReloadFromPath(path string) (LoadResult, error) {

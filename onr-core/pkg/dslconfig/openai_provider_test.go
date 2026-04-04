@@ -7,14 +7,20 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
 )
 
-func TestValidateProviderFile_OpenAIIncludesImageAndAudioRoutes(t *testing.T) {
-	t.Parallel()
-
+func loadOpenAIProviderFile(t *testing.T) ProviderFile {
+	t.Helper()
 	path := filepath.Join("..", "..", "..", "config", "providers", "openai.conf")
 	pf, err := ValidateProviderFile(path)
 	if err != nil {
 		t.Fatalf("ValidateProviderFile(%q): %v", path, err)
 	}
+	return pf
+}
+
+func TestValidateProviderFile_OpenAIRoutes(t *testing.T) {
+	t.Parallel()
+
+	pf := loadOpenAIProviderFile(t)
 
 	cases := map[string]string{
 		"completions":          "/v1/completions",
@@ -34,6 +40,12 @@ func TestValidateProviderFile_OpenAIIncludesImageAndAudioRoutes(t *testing.T) {
 			t.Fatalf("api=%q set_path=%q want=%q", api, match.SetPath, `"`+wantPath+`"`)
 		}
 	}
+}
+
+func TestValidateProviderFile_OpenAIUsageFacts(t *testing.T) {
+	t.Parallel()
+
+	pf := loadOpenAIProviderFile(t)
 
 	usageCases := map[string]struct {
 		dimension string
@@ -128,6 +140,12 @@ func TestValidateProviderFile_OpenAIIncludesImageAndAudioRoutes(t *testing.T) {
 			t.Fatalf("%s compiled facts missing expected fact: %#v", api, facts)
 		}
 	}
+}
+
+func TestValidateProviderFile_OpenAIChatCompletionsWebSearchFact(t *testing.T) {
+	t.Parallel()
+
+	pf := loadOpenAIProviderFile(t)
 
 	chatUsageCfg, ok := pf.Usage.Select(&dslmeta.Meta{API: "chat.completions", IsStream: false})
 	if !ok {
@@ -144,6 +162,12 @@ func TestValidateProviderFile_OpenAIIncludesImageAndAudioRoutes(t *testing.T) {
 	if !foundWebSearch {
 		t.Fatalf("chat.completions compiled facts missing web search annotation fact: %#v", chatFacts)
 	}
+}
+
+func TestValidateProviderFile_OpenAIResponsesStreamUsageFacts(t *testing.T) {
+	t.Parallel()
+
+	pf := loadOpenAIProviderFile(t)
 
 	responsesStreamUsageCfg, ok := pf.Usage.Select(&dslmeta.Meta{API: "responses", IsStream: true})
 	if !ok {
@@ -171,11 +195,7 @@ func TestValidateProviderFile_OpenAIIncludesImageAndAudioRoutes(t *testing.T) {
 func TestValidateProviderFile_OpenAIUsesPathSpecificFinishReasonModes(t *testing.T) {
 	t.Parallel()
 
-	path := filepath.Join("..", "..", "..", "config", "providers", "openai.conf")
-	pf, err := ValidateProviderFile(path)
-	if err != nil {
-		t.Fatalf("ValidateProviderFile(%q): %v", path, err)
-	}
+	pf := loadOpenAIProviderFile(t)
 
 	cases := []struct {
 		api      string

@@ -29,23 +29,11 @@ func (r *Registry) ReloadFromFile(path string) (LoadResult, error) {
 	if err != nil {
 		return LoadResult{}, err
 	}
-	globalModes, globalModePaths, _, err := loadGlobalUsageModesFromFile(globalConfigPathForMergedProvidersFile(p))
+	globalState, _, err := loadGlobalModeRegistryState(globalConfigPathForMergedProvidersFile(p))
 	if err != nil {
 		return LoadResult{}, err
 	}
-	globalFinishReasonModes, globalFinishReasonModePaths, _, err := loadGlobalFinishReasonModesFromFile(globalConfigPathForMergedProvidersFile(p))
-	if err != nil {
-		return LoadResult{}, err
-	}
-	globalModelsModes, globalModelsModePaths, _, err := loadGlobalModelsModesFromFile(globalConfigPathForMergedProvidersFile(p))
-	if err != nil {
-		return LoadResult{}, err
-	}
-	globalBalanceModes, globalBalanceModePaths, _, err := loadGlobalBalanceModesFromFile(globalConfigPathForMergedProvidersFile(p))
-	if err != nil {
-		return LoadResult{}, err
-	}
-	next, loaded, err := parseProvidersFromMergedFile(p, content, globalModes, globalModePaths, globalFinishReasonModes, globalFinishReasonModePaths, globalModelsModes, globalModelsModePaths, globalBalanceModes, globalBalanceModePaths)
+	next, loaded, err := parseProvidersFromMergedFile(p, content, globalState)
 	if err != nil {
 		return LoadResult{}, err
 	}
@@ -73,143 +61,27 @@ func ValidateProvidersFile(path string) (LoadResult, error) {
 	if err != nil {
 		return LoadResult{}, err
 	}
-	globalModes, globalModePaths, _, err := loadGlobalUsageModesFromFile(globalConfigPathForMergedProvidersFile(p))
+	globalState, _, err := loadGlobalModeRegistryState(globalConfigPathForMergedProvidersFile(p))
 	if err != nil {
 		return LoadResult{}, err
 	}
-	globalFinishReasonModes, globalFinishReasonModePaths, _, err := loadGlobalFinishReasonModesFromFile(globalConfigPathForMergedProvidersFile(p))
-	if err != nil {
-		return LoadResult{}, err
-	}
-	globalModelsModes, globalModelsModePaths, _, err := loadGlobalModelsModesFromFile(globalConfigPathForMergedProvidersFile(p))
-	if err != nil {
-		return LoadResult{}, err
-	}
-	globalBalanceModes, globalBalanceModePaths, _, err := loadGlobalBalanceModesFromFile(globalConfigPathForMergedProvidersFile(p))
-	if err != nil {
-		return LoadResult{}, err
-	}
-	_, loaded, err := parseProvidersFromMergedFile(p, content, globalModes, globalModePaths, globalFinishReasonModes, globalFinishReasonModePaths, globalModelsModes, globalModelsModePaths, globalBalanceModes, globalBalanceModePaths)
+	_, loaded, err := parseProvidersFromMergedFile(p, content, globalState)
 	if err != nil {
 		return LoadResult{}, err
 	}
 	return LoadResult{LoadedProviders: loaded, SkippedFiles: nil, SkippedReasons: nil}, nil
 }
 
-func parseProvidersFromMergedFile(path string, content string, inheritedModes usageModeRegistry, inheritedModePaths map[string]string, inheritedFinishReasonModes finishReasonModeRegistry, inheritedFinishReasonModePaths map[string]string, inheritedModelsModes modelsModeRegistry, inheritedModelsModePaths map[string]string, inheritedBalanceModes balanceModeRegistry, inheritedBalanceModePaths map[string]string) (map[string]ProviderFile, []string, error) {
-	rawModes, err := parseGlobalUsageModes(path, content)
+func parseProvidersFromMergedFile(path string, content string, inherited modeRegistryState) (map[string]ProviderFile, []string, error) {
+	local, err := parseLocalModeRegistryState(path, content)
 	if err != nil {
 		return nil, nil, err
 	}
-	rawFinishReasonModes, err := parseGlobalFinishReasonModes(path, content)
-	if err != nil {
+	merged := inherited.clone()
+	if err := merged.merge(path, local); err != nil {
 		return nil, nil, err
 	}
-	rawModelsModes, err := parseGlobalModelsModes(path, content)
-	if err != nil {
-		return nil, nil, err
-	}
-	rawBalanceModes, err := parseGlobalBalanceModes(path, content)
-	if err != nil {
-		return nil, nil, err
-	}
-	if inheritedModes == nil {
-		inheritedModes = usageModeRegistry{}
-	}
-	if inheritedModePaths == nil {
-		inheritedModePaths = map[string]string{}
-	}
-	if inheritedFinishReasonModes == nil {
-		inheritedFinishReasonModes = finishReasonModeRegistry{}
-	}
-	if inheritedFinishReasonModePaths == nil {
-		inheritedFinishReasonModePaths = map[string]string{}
-	}
-	if inheritedModelsModes == nil {
-		inheritedModelsModes = modelsModeRegistry{}
-	}
-	if inheritedModelsModePaths == nil {
-		inheritedModelsModePaths = map[string]string{}
-	}
-	if inheritedBalanceModes == nil {
-		inheritedBalanceModes = balanceModeRegistry{}
-	}
-	if inheritedBalanceModePaths == nil {
-		inheritedBalanceModePaths = map[string]string{}
-	}
-	mergedModes := usageModeRegistry{}
-	mergedModePaths := map[string]string{}
-	mergedFinishReasonModes := finishReasonModeRegistry{}
-	mergedFinishReasonModePaths := map[string]string{}
-	mergedModelsModes := modelsModeRegistry{}
-	mergedModelsModePaths := map[string]string{}
-	mergedBalanceModes := balanceModeRegistry{}
-	mergedBalanceModePaths := map[string]string{}
-	for name, cfg := range inheritedModes {
-		mergedModes[name] = cfg
-	}
-	for name, modePath := range inheritedModePaths {
-		mergedModePaths[name] = modePath
-	}
-	for name, cfg := range inheritedFinishReasonModes {
-		mergedFinishReasonModes[name] = cfg
-	}
-	for name, modePath := range inheritedFinishReasonModePaths {
-		mergedFinishReasonModePaths[name] = modePath
-	}
-	for name, cfg := range inheritedModelsModes {
-		mergedModelsModes[name] = cfg
-	}
-	for name, modePath := range inheritedModelsModePaths {
-		mergedModelsModePaths[name] = modePath
-	}
-	for name, cfg := range inheritedBalanceModes {
-		mergedBalanceModes[name] = cfg
-	}
-	for name, modePath := range inheritedBalanceModePaths {
-		mergedBalanceModePaths[name] = modePath
-	}
-	for name, cfg := range rawModes {
-		if prev, ok := mergedModePaths[name]; ok {
-			return nil, nil, fmt.Errorf("duplicate usage_mode %q in %q (already in %q)", name, path, prev)
-		}
-		mergedModes[name] = cfg
-		mergedModePaths[name] = path
-	}
-	for name, cfg := range rawFinishReasonModes {
-		if prev, ok := mergedFinishReasonModePaths[name]; ok {
-			return nil, nil, fmt.Errorf("duplicate finish_reason_mode %q in %q (already in %q)", name, path, prev)
-		}
-		mergedFinishReasonModes[name] = cfg
-		mergedFinishReasonModePaths[name] = path
-	}
-	for name, cfg := range rawModelsModes {
-		if prev, ok := mergedModelsModePaths[name]; ok {
-			return nil, nil, fmt.Errorf("duplicate models_mode %q in %q (already in %q)", name, path, prev)
-		}
-		mergedModelsModes[name] = cfg
-		mergedModelsModePaths[name] = path
-	}
-	for name, cfg := range rawBalanceModes {
-		if prev, ok := mergedBalanceModePaths[name]; ok {
-			return nil, nil, fmt.Errorf("duplicate balance_mode %q in %q (already in %q)", name, path, prev)
-		}
-		mergedBalanceModes[name] = cfg
-		mergedBalanceModePaths[name] = path
-	}
-	resolvedModes, err := resolveUsageModeRegistry(mergedModePaths, mergedModes)
-	if err != nil {
-		return nil, nil, err
-	}
-	resolvedFinishReasonModes, err := resolveFinishReasonModeRegistry(mergedFinishReasonModePaths, mergedFinishReasonModes)
-	if err != nil {
-		return nil, nil, err
-	}
-	resolvedModelsModes, err := resolveModelsModeRegistry(mergedModelsModePaths, mergedModelsModes)
-	if err != nil {
-		return nil, nil, err
-	}
-	resolvedBalanceModes, err := resolveBalanceModeRegistry(mergedBalanceModePaths, mergedBalanceModes)
+	resolved, err := merged.resolve()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -265,46 +137,11 @@ func parseProvidersFromMergedFile(path string, content string, inheritedModes us
 			if err != nil {
 				return nil, nil, err
 			}
-			if err := validateProviderBaseURL(path, providerName, routing); err != nil {
-				return nil, nil, err
-			}
-			if err := validateProviderMatchAPIs(path, providerName, routing); err != nil {
-				return nil, nil, err
-			}
-			if err := validateProviderHeaders(path, providerName, headers); err != nil {
-				return nil, nil, err
-			}
-			resolvedUsage, err := validateProviderUsage(path, providerName, usage, resolvedModes)
+			pf, err := buildMergedProviderFile(path, providerName, routing, headers, req, response, perr, usage, finish, balance, models, resolved)
 			if err != nil {
 				return nil, nil, err
 			}
-			resolvedFinish, err := validateProviderFinishReason(path, providerName, finish, resolvedFinishReasonModes)
-			if err != nil {
-				return nil, nil, err
-			}
-			resolvedBalance, err := validateProviderBalance(path, providerName, balance, resolvedBalanceModes)
-			if err != nil {
-				return nil, nil, err
-			}
-			resolvedModels, err := validateProviderModels(path, providerName, models, resolvedModelsModes)
-			if err != nil {
-				return nil, nil, err
-			}
-
-			next[providerName] = ProviderFile{
-				Name:     providerName,
-				Path:     path,
-				Content:  "", // merged file; avoid duplicating large content per provider
-				Routing:  routing,
-				Headers:  headers,
-				Request:  req,
-				Response: response,
-				Error:    perr,
-				Usage:    resolvedUsage,
-				Finish:   resolvedFinish,
-				Balance:  resolvedBalance,
-				Models:   resolvedModels,
-			}
+			next[providerName] = pf
 			loaded = append(loaded, providerName)
 		default:
 			// ignore unknown top-level directives for forward compatibility
@@ -313,4 +150,46 @@ func parseProvidersFromMergedFile(path string, content string, inheritedModes us
 
 	sort.Strings(loaded)
 	return next, loaded, nil
+}
+
+func buildMergedProviderFile(path, providerName string, routing ProviderRouting, headers ProviderHeaders, req ProviderRequestTransform, response ProviderResponse, perr ProviderError, usage ProviderUsage, finish ProviderFinishReason, balance ProviderBalance, models ProviderModels, resolved modeRegistryState) (ProviderFile, error) {
+	if err := validateProviderBaseURL(path, providerName, routing); err != nil {
+		return ProviderFile{}, err
+	}
+	if err := validateProviderMatchAPIs(path, providerName, routing); err != nil {
+		return ProviderFile{}, err
+	}
+	if err := validateProviderHeaders(path, providerName, headers); err != nil {
+		return ProviderFile{}, err
+	}
+	resolvedUsage, err := validateProviderUsage(path, providerName, usage, resolved.usage)
+	if err != nil {
+		return ProviderFile{}, err
+	}
+	resolvedFinish, err := validateProviderFinishReason(path, providerName, finish, resolved.finishReason)
+	if err != nil {
+		return ProviderFile{}, err
+	}
+	resolvedBalance, err := validateProviderBalance(path, providerName, balance, resolved.balance)
+	if err != nil {
+		return ProviderFile{}, err
+	}
+	resolvedModels, err := validateProviderModels(path, providerName, models, resolved.models)
+	if err != nil {
+		return ProviderFile{}, err
+	}
+	return ProviderFile{
+		Name:     providerName,
+		Path:     path,
+		Content:  "",
+		Routing:  routing,
+		Headers:  headers,
+		Request:  req,
+		Response: response,
+		Error:    perr,
+		Usage:    resolvedUsage,
+		Finish:   resolvedFinish,
+		Balance:  resolvedBalance,
+		Models:   resolvedModels,
+	}, nil
 }
