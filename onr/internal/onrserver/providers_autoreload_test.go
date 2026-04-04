@@ -62,12 +62,16 @@ func TestReloadProvidersRuntime_GlobalUsageModeChangeMarksProviderChanged(t *tes
 	if err := os.WriteFile(filepath.Join(configDir, "onr.conf"), []byte(`
 syntax "next-router/0.1";
 
-include usage_modes.conf;
+include modes/*.conf;
 include providers/*.conf;
 `), 0o600); err != nil {
 		t.Fatalf("WriteFile onr.conf: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "usage_modes.conf"), []byte(`
+	modesDir := filepath.Join(configDir, "modes")
+	if err := os.MkdirAll(modesDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll modes: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(modesDir, "usage_modes.conf"), []byte(`
 syntax "next-router/0.1";
 
 usage_mode "shared_tokens" {
@@ -103,7 +107,7 @@ provider "demo" {
 		t.Fatalf("compiled input path=%q want=%q", got, want)
 	}
 
-	if err := os.WriteFile(filepath.Join(configDir, "usage_modes.conf"), []byte(`
+	if err := os.WriteFile(filepath.Join(modesDir, "usage_modes.conf"), []byte(`
 syntax "next-router/0.1";
 
 usage_mode "shared_tokens" {

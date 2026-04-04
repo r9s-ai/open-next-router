@@ -2,7 +2,7 @@
 
 This document describes the provider configuration DSL used by **onr** (open-next-router).
 The main DSL entry point is usually `config/onr.conf` in this repository, and that file typically includes `config/providers/*.conf`.
-By default ONR loads `config/onr.conf`, and that file can `include "usage_modes.conf";`, `include "finish_reason_modes.conf";`, `include "models_modes.conf";`, `include "balance_modes.conf";`, plus `include "providers";` to compose the full DSL config set.
+By default ONR loads `config/onr.conf`, and that file can `include "modes/*.conf";` plus `include "providers";` to compose the full DSL config set.
 You can still force directory mode via `providers.dir` (config) or `ONR_PROVIDERS_DIR` (env).
 
 ## Table of Contents
@@ -505,12 +505,12 @@ usage_mode "shared_openai" {
 ```
 
 - `usage_mode` is a top-level directive. It defines a reusable global usage preset for the whole providers config set.
-- The recommended location for global DSL presets is a separate file such as `config/usage_modes.conf`, then let `config/onr.conf` include it before `include providers;`.
+- The recommended location for global DSL presets is a separate file under `config/modes/`, such as `config/modes/usage_modes.conf`, then let `config/onr.conf` include `modes/*.conf` before `include providers;`.
 - It may appear in a dedicated `.conf` file that contains no `provider {}` block; such files are valid in `config/providers/` and are ignored by provider listing.
 - Inside the block, you can use the same usage directives supported by `metrics`: `usage_extract`, `usage_fact`, `*_tokens_path`, and `*_tokens_expr`.
 - Another `usage_mode` may be referenced from inside the block via `usage_extract <other_mode>;`, so larger presets can be composed. Recursive references are rejected.
 - Names are global within a providers directory or merged providers file. Duplicate `usage_mode` names are validation errors.
-- This repository's default `config/usage_modes.conf` defines API-specific presets such as `openai_chat_completions`, `openai_prompt_completion`, `openai_responses`, `anthropic_messages`, `anthropic_messages_stream`, `gemini_generate_content`, and `gemini_generate_content_stream`. Defining the same name in DSL overrides that preset.
+- This repository's default `config/modes/usage_modes.conf` defines API-specific presets such as `openai_chat_completions`, `openai_prompt_completion`, `openai_responses`, `anthropic_messages`, `anthropic_messages_stream`, `gemini_generate_content`, and `gemini_generate_content_stream`. Defining the same name in DSL overrides that preset.
 - At execution time, `usage_extract <custom_name>;` is resolved to the referenced preset and compiled into the same final usage plan as builtin modes.
 
 #### finish_reason_mode (global reusable finish_reason preset)
@@ -523,12 +523,12 @@ finish_reason_mode "anthropic_messages_stream" {
 ```
 
 - `finish_reason_mode` is a top-level directive for reusable global finish reason presets.
-- The recommended location is a separate file such as `config/finish_reason_modes.conf`, then let `config/onr.conf` include it before `include providers;`.
+- The recommended location is a separate file under `config/modes/`, such as `config/modes/finish_reason_modes.conf`, then let `config/onr.conf` include `modes/*.conf` before `include providers;`.
 - It may appear in a dedicated `.conf` file that contains no `provider {}` block.
 - Inside the block, you can use the same finish-reason directives supported by `metrics`: `finish_reason_extract` and `finish_reason_path`.
 - Another `finish_reason_mode` may be referenced from inside the block via `finish_reason_extract <other_mode>;`. Recursive references are rejected.
 - Names are global within a providers directory or merged providers file. Duplicate `finish_reason_mode` names are validation errors.
-- This repository's default `config/finish_reason_modes.conf` defines API-specific presets such as `openai_chat_completions`, `openai_completions`, `openai_responses`, `anthropic_messages`, `anthropic_messages_stream`, `gemini_generate_content`, and `gemini_generate_content_stream`. Defining the same name in DSL overrides that preset.
+- This repository's default `config/modes/finish_reason_modes.conf` defines API-specific presets such as `openai_chat_completions`, `openai_completions`, `openai_responses`, `anthropic_messages`, `anthropic_messages_stream`, `gemini_generate_content`, and `gemini_generate_content_stream`. Defining the same name in DSL overrides that preset.
 
 #### models_mode (global reusable models preset)
 
@@ -539,12 +539,12 @@ models_mode "openai" {
 ```
 
 - `models_mode` is also available as a top-level directive for reusable global model-list presets.
-- The recommended location is a separate file such as `config/models_modes.conf`, then let `config/onr.conf` include it before `include providers;`.
+- The recommended location is a separate file under `config/modes/`, such as `config/modes/models_modes.conf`, then let `config/onr.conf` include `modes/*.conf` before `include providers;`.
 - It may appear in a dedicated `.conf` file that contains no `provider {}` block.
 - Inside the block, you can use the same directives supported by `models`: `models_mode`, `method`, `path`, `id_path`, `id_regex`, `id_allow_regex`, `set_header`, and `del_header`.
 - Another `models_mode` may be referenced from inside the block via `models_mode <other_mode>;`. Recursive references are rejected.
 - Names are global within a providers directory or merged providers file. Duplicate `models_mode` names are validation errors.
-- This repository's default `config/models_modes.conf` defines `openai` and `gemini` as global `models_mode` presets. Defining the same name in DSL overrides that preset.
+- This repository's default `config/modes/models_modes.conf` defines `openai` and `gemini` as global `models_mode` presets. Defining the same name in DSL overrides that preset.
 
 #### balance_mode (global reusable balance preset)
 
@@ -555,12 +555,12 @@ balance_mode "openai" {
 ```
 
 - `balance_mode` is also available as a top-level directive for reusable global balance presets.
-- The recommended location is a separate file such as `config/balance_modes.conf`, then let `config/onr.conf` include it before `include providers;`.
+- The recommended location is a separate file under `config/modes/`, such as `config/modes/balance_modes.conf`, then let `config/onr.conf` include `modes/*.conf` before `include providers;`.
 - It may appear in a dedicated `.conf` file that contains no `provider {}` block.
 - Inside the block, you can use the same directives supported by `balance`: `balance_mode`, `method`, `path`, `balance_path`, `balance_expr`, `used_path`, `used_expr`, `balance_unit`, `subscription_path`, `usage_path`, `set_header`, and `del_header`.
 - Another `balance_mode` may be referenced from inside the block via `balance_mode <other_mode>;`. Recursive references are rejected.
 - Names are global within a providers directory or merged providers file. Duplicate `balance_mode` names are validation errors.
-- This repository's default `config/balance_modes.conf` defines `openai` as a global `balance_mode` preset. Defining the same name in DSL overrides that preset.
+- This repository's default `config/modes/balance_modes.conf` defines `openai` as a global `balance_mode` preset. Defining the same name in DSL overrides that preset.
 
 #### usage_extract
 
@@ -1043,7 +1043,7 @@ Multiple: yes
 ```
 
 - Top-level reusable preset blocks for `metrics` and `models`.
-- Recommended locations: `config/usage_modes.conf`, `config/finish_reason_modes.conf`, and `config/models_modes.conf`.
+- Recommended locations: `config/modes/usage_modes.conf`, `config/modes/finish_reason_modes.conf`, and `config/modes/models_modes.conf`.
 
 #### balance_mode
 
@@ -1055,7 +1055,7 @@ Multiple: yes
 ```
 
 - Top-level reusable preset blocks for `balance`.
-- Recommended location: `config/balance_modes.conf`.
+- Recommended location: `config/modes/balance_modes.conf`.
 
 ### 7.2 provider (structure blocks)
 

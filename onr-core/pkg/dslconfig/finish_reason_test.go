@@ -278,12 +278,16 @@ func TestValidateProviderFile_GlobalFinishReasonModePreset(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(rootDir, "onr.conf"), []byte(`
 syntax "next-router/0.1";
 
-include finish_reason_modes.conf;
+include modes/*.conf;
 include providers/*.conf;
 `), 0o600); err != nil {
 		t.Fatalf("WriteFile onr.conf: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(rootDir, "finish_reason_modes.conf"), []byte(`
+	modesDir := filepath.Join(rootDir, "modes")
+	if err := os.MkdirAll(modesDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll modes: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(modesDir, "finish_reason_modes.conf"), []byte(`
 syntax "next-router/0.1";
 
 finish_reason_mode "shared_finish" {

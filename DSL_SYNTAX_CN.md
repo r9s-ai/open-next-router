@@ -2,7 +2,7 @@
 
 本文档描述 **onr**（open-next-router）使用的 Provider 配置 DSL。
 本仓库的 DSL 主入口通常是 `config/onr.conf`，而这个文件一般会再 `include` 进 `config/providers/*.conf`。
-默认情况下 ONR 会加载 `config/onr.conf`，而这个文件通常会先 `include usage_modes.conf;`、`include finish_reason_modes.conf;`、`include models_modes.conf;`、`include balance_modes.conf;`，再 `include providers;`，把全局预设和 provider 配置一起纳入进来。
+默认情况下 ONR 会加载 `config/onr.conf`，而这个文件通常会先 `include modes/*.conf;`，再 `include providers;`，把全局预设和 provider 配置一起纳入进来。
 如果需要，也仍然可以通过配置项 `providers.dir` 或环境变量 `ONR_PROVIDERS_DIR` 强制走目录模式。
 
 ## 目录
@@ -529,12 +529,12 @@ usage_mode "shared_openai" {
 说明：
 
 - `usage_mode` 是顶层指令，用来给整个 providers 配置集合声明一个可复用的全局 usage 预设。
-- 推荐把这类全局 DSL 预设单独放在 `config/usage_modes.conf` 这类文件里，再由 `config/onr.conf` 在 `include providers;` 之前先引入。
+- 推荐把这类全局 DSL 预设单独放在 `config/modes/usage_modes.conf` 这类文件里，再由 `config/onr.conf` 通过 `include modes/*.conf;` 在 `include providers;` 之前先引入。
 - 它可以单独放在一个没有 `provider {}` 的 `.conf` 文件里；这类文件在 `config/providers/` 中是合法的，但不会出现在 provider 列表里。
 - `usage_mode` 块内支持和 `metrics` 相同的 usage 指令：`usage_extract`、`usage_fact`、`*_tokens_path`、`*_tokens_expr`。
 - `usage_mode` 内部也可以继续通过 `usage_extract <other_mode>;` 引用另一个 `usage_mode`，用于组合更大的预设；递归引用会报错。
 - 在同一个 providers 目录或合并后的 providers 文件中，`usage_mode` 名字是全局唯一的；重名会在校验期报错。
-- 本仓库默认的 `config/usage_modes.conf` 会定义 `openai`、`anthropic`、`gemini`，以及 `openai_chat_completions`、`openai_prompt_completion`、`openai_responses`、`anthropic_messages`、`anthropic_messages_stream`、`gemini_generate_content`、`gemini_generate_content_stream` 这类按 API / 路径拆分的全局 `usage_mode` 预设；如果你在 DSL 里声明同名 `usage_mode`，就会覆盖这份默认预设。
+- 本仓库默认的 `config/modes/usage_modes.conf` 会定义 `openai_chat_completions`、`openai_prompt_completion`、`openai_responses`、`anthropic_messages`、`anthropic_messages_stream`、`gemini_generate_content`、`gemini_generate_content_stream` 这类按 API / 路径拆分的全局 `usage_mode` 预设；如果你在 DSL 里声明同名 `usage_mode`，就会覆盖这份默认预设。
 - 执行时，`usage_extract <custom_name>;` 会先解析到对应的 `usage_mode`，再编译成与 builtin mode 相同的最终 usage plan。
 
 #### finish_reason_mode（全局可复用 finish_reason 预设）
@@ -549,12 +549,12 @@ finish_reason_mode "anthropic_messages_stream" {
 说明：
 
 - `finish_reason_mode` 是顶层指令，用来给整个 providers 配置集合声明一个可复用的全局 finish_reason 预设。
-- 推荐把这类全局 DSL 预设单独放在 `config/finish_reason_modes.conf` 这类文件里，再由 `config/onr.conf` 在 `include providers;` 之前先引入。
+- 推荐把这类全局 DSL 预设单独放在 `config/modes/finish_reason_modes.conf` 这类文件里，再由 `config/onr.conf` 通过 `include modes/*.conf;` 在 `include providers;` 之前先引入。
 - 它也可以单独放在一个没有 `provider {}` 的 `.conf` 文件里。
 - `finish_reason_mode` 块内支持和 `metrics` 中 finish reason 提取相同的指令：`finish_reason_extract`、`finish_reason_path`。
 - `finish_reason_mode` 内部也可以继续通过 `finish_reason_extract <other_mode>;` 引用另一个 `finish_reason_mode`，用于组合更大的预设；递归引用会报错。
 - 在同一个 providers 目录或合并后的 providers 文件中，`finish_reason_mode` 名字是全局唯一的；重名会在校验期报错。
-- 本仓库默认的 `config/finish_reason_modes.conf` 会定义 `openai_chat_completions`、`openai_completions`、`openai_responses`、`anthropic_messages`、`anthropic_messages_stream`、`gemini_generate_content`、`gemini_generate_content_stream` 这类更具体的全局 `finish_reason_mode` 预设；如果你在 DSL 里声明同名 `finish_reason_mode`，就会覆盖这份默认预设。
+- 本仓库默认的 `config/modes/finish_reason_modes.conf` 会定义 `openai_chat_completions`、`openai_completions`、`openai_responses`、`anthropic_messages`、`anthropic_messages_stream`、`gemini_generate_content`、`gemini_generate_content_stream` 这类更具体的全局 `finish_reason_mode` 预设；如果你在 DSL 里声明同名 `finish_reason_mode`，就会覆盖这份默认预设。
 
 #### models_mode（全局可复用 models 预设）
 
@@ -567,12 +567,12 @@ models_mode "openai" {
 说明：
 
 - `models_mode` 也可以作为顶层指令，用来给整个 providers 配置集合声明一个可复用的全局 models 预设。
-- 推荐把这类全局 DSL 预设单独放在 `config/models_modes.conf` 这类文件里，再由 `config/onr.conf` 在 `include providers;` 之前先引入。
+- 推荐把这类全局 DSL 预设单独放在 `config/modes/models_modes.conf` 这类文件里，再由 `config/onr.conf` 通过 `include modes/*.conf;` 在 `include providers;` 之前先引入。
 - 它也可以单独放在一个没有 `provider {}` 的 `.conf` 文件里。
 - `models_mode` 块内支持和 `models` phase 相同的指令：`models_mode`、`method`、`path`、`id_path`、`id_regex`、`id_allow_regex`、`set_header`、`del_header`。
 - `models_mode` 内部也可以继续通过 `models_mode <other_mode>;` 引用另一个 `models_mode`，用于组合更大的预设；递归引用会报错。
 - 在同一个 providers 目录或合并后的 providers 文件中，`models_mode` 名字是全局唯一的；重名会在校验期报错。
-- 本仓库默认的 `config/models_modes.conf` 会定义 `openai` 和 `gemini` 这几个全局 `models_mode` 预设；如果你在 DSL 里声明同名 `models_mode`，就会覆盖这份默认预设。
+- 本仓库默认的 `config/modes/models_modes.conf` 会定义 `openai` 和 `gemini` 这几个全局 `models_mode` 预设；如果你在 DSL 里声明同名 `models_mode`，就会覆盖这份默认预设。
 
 #### balance_mode（全局可复用 balance 预设）
 
@@ -585,12 +585,12 @@ balance_mode "openai" {
 说明：
 
 - `balance_mode` 也可以作为顶层指令，用来给整个 providers 配置集合声明一个可复用的全局 balance 预设。
-- 推荐把这类全局 DSL 预设单独放在 `config/balance_modes.conf` 这类文件里，再由 `config/onr.conf` 在 `include providers;` 之前先引入。
+- 推荐把这类全局 DSL 预设单独放在 `config/modes/balance_modes.conf` 这类文件里，再由 `config/onr.conf` 通过 `include modes/*.conf;` 在 `include providers;` 之前先引入。
 - 它也可以单独放在一个没有 `provider {}` 的 `.conf` 文件里。
 - `balance_mode` 块内支持和 `balance` phase 相同的指令：`balance_mode`、`method`、`path`、`balance_path`、`balance_expr`、`used_path`、`used_expr`、`balance_unit`、`subscription_path`、`usage_path`、`set_header`、`del_header`。
 - `balance_mode` 内部也可以继续通过 `balance_mode <other_mode>;` 引用另一个 `balance_mode`，用于组合更大的预设；递归引用会报错。
 - 在同一个 providers 目录或合并后的 providers 文件中，`balance_mode` 名字是全局唯一的；重名会在校验期报错。
-- 本仓库默认的 `config/balance_modes.conf` 会定义 `openai` 这个全局 `balance_mode` 预设；如果你在 DSL 里声明同名 `balance_mode`，就会覆盖这份默认预设。
+- 本仓库默认的 `config/modes/balance_modes.conf` 会定义 `openai` 这个全局 `balance_mode` 预设；如果你在 DSL 里声明同名 `balance_mode`，就会覆盖这份默认预设。
 
 #### usage_extract
 
@@ -1085,7 +1085,7 @@ Multiple: yes
 ```
 
 - 用于声明可复用的顶层 `metrics` / `models` / `balance` 预设块。
-- 推荐分别放在 `config/usage_modes.conf`、`config/finish_reason_modes.conf`、`config/models_modes.conf` 与 `config/balance_modes.conf`。
+- 推荐分别放在 `config/modes/usage_modes.conf`、`config/modes/finish_reason_modes.conf`、`config/modes/models_modes.conf` 与 `config/modes/balance_modes.conf`。
 
 ### 7.2 provider（结构块）
 
