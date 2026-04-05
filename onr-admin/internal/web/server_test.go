@@ -472,6 +472,42 @@ include providers/*.conf;
 	}
 }
 
+func TestProviderEndpoints_MissingMergedFileSource(t *testing.T) {
+	root := t.TempDir()
+	sourcePath := filepath.Join(root, "providers.conf")
+
+	srv, err := NewServer(sourcePath)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	httpSrv := httptest.NewServer(srv.Handler())
+	defer httpSrv.Close()
+
+	status, body := postJSON(t, httpSrv.URL+"/api/providers/validate", providerRequest{
+		Provider: "openai",
+		Content:  validOpenAIConf,
+	})
+	if status != http.StatusOK {
+		t.Fatalf("validate status=%d body=%+v", status, body)
+	}
+
+	status, body = postJSON(t, httpSrv.URL+"/api/providers/save", providerRequest{
+		Provider: "openai",
+		Content:  validOpenAIConf,
+	})
+	if status != http.StatusOK {
+		t.Fatalf("save status=%d body=%+v", status, body)
+	}
+
+	got, err := os.ReadFile(sourcePath)
+	if err != nil {
+		t.Fatalf("read merged source: %v", err)
+	}
+	if !strings.Contains(string(got), `provider "openai"`) {
+		t.Fatalf("unexpected merged source content: %s", string(got))
+	}
+}
+
 func TestResolveDefaultAPIBaseURL_FromEnv(t *testing.T) {
 	t.Setenv(envAPIBaseURL, "https://example.internal:3344/")
 	got := resolveDefaultAPIBaseURL()

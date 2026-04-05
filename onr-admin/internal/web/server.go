@@ -428,7 +428,7 @@ func (s *Server) validateCandidate(provider string, content string) (dslconfig.L
 	if s.providerSource.SourceIsFile && target.Path == s.providerSource.SourcePath {
 		// #nosec G304 -- temp source path is derived from a trusted temp root and source layout.
 		body, err := os.ReadFile(tmpSourcePath)
-		if err != nil {
+		if err != nil && !os.IsNotExist(err) {
 			return dslconfig.LoadResult{}, "", err
 		}
 		updated, err := dslconfig.UpsertProviderBlock(tmpSourcePath, string(body), name, content)
