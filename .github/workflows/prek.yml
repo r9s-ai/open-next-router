@@ -10,8 +10,6 @@ jobs:
   prek:
     name: Run prek
     runs-on: ubuntu-latest
-    env:
-      GOWORK: off
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
