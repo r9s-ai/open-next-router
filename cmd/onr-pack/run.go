@@ -21,6 +21,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&opts.providersPath, "providers", "", "provider DSL source path (dir or merged file)")
 	fs.StringVar(&opts.outPath, "out", "providers.conf", "output merged providers file")
 	fs.StringVar(&opts.outPath, "o", "providers.conf", "output merged providers file (alias of --out)")
+	fs.BoolVar(&opts.checkOnly, "check-only", false, "validate provider DSL only; do not write bundled output")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -34,15 +35,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, "error: "+err.Error())
 		return 1
 	}
-	outputPath := strings.TrimSpace(opts.outPath)
-	if outputPath == "" {
-		_, _ = fmt.Fprintln(stderr, "error: output path is empty")
-		return 1
-	}
-	if samePath(sourcePath, outputPath) {
-		_, _ = fmt.Fprintln(stderr, "error: output path must differ from provider source path")
-		return 1
-	}
 
 	res, err := dslconfig.ValidateProvidersPath(sourcePath)
 	if err != nil {
@@ -51,6 +43,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	for _, w := range res.Warnings {
 		_, _ = fmt.Fprintln(stdout, "warn: "+w.String())
+	}
+	if opts.checkOnly {
+		_, _ = fmt.Fprintf(stdout, "validate providers: source=%s providers=%d\n", sourcePath, len(res.LoadedProviders))
+		return 0
+	}
+
+	outputPath := strings.TrimSpace(opts.outPath)
+	if outputPath == "" {
+		_, _ = fmt.Fprintln(stderr, "error: output path is empty")
+		return 1
+	}
+	if samePath(sourcePath, outputPath) {
+		_, _ = fmt.Fprintln(stderr, "error: output path must differ from provider source path")
+		return 1
 	}
 
 	content, err := dslconfig.BundleProvidersPath(sourcePath)
@@ -80,6 +86,7 @@ type packOptions struct {
 	cfgPath       string
 	providersPath string
 	outPath       string
+	checkOnly     bool
 }
 
 func resolveProviderSource(opts packOptions) (string, error) {

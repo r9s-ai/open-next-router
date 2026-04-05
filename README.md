@@ -196,9 +196,12 @@ go run ./cmd/onr-pack -c ./onr.yaml -o ./dist/providers.conf
 
 # or bundle a specific DSL source directly
 go run ./cmd/onr-pack --providers ./config/onr.conf --out ./dist/providers.conf
+
+# validate only; do not write output
+go run ./cmd/onr-pack --providers ./config/onr.conf --check-only
 ```
 
-The command validates the provider DSL before writing. If validation fails, no output file is generated.
+The command validates the provider DSL before writing. If validation fails, no output file is generated. Use `--check-only` to validate only and print the validation result without writing a bundled file.
 
 6) Setup Git hooks with prek
 
