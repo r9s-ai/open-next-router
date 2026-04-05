@@ -186,7 +186,21 @@ go run ./cmd/onr -t -c ./onr.yaml
 go run ./cmd/onr -t ./onr.yaml
 ```
 
-5) Setup Git hooks with prek
+5) Bundle provider DSL into a single file
+
+Validate the provider DSL source first, then write a self-contained merged file:
+
+```bash
+# resolve provider source from onr.yaml and write providers.conf
+go run ./cmd/onr-pack -c ./onr.yaml -o ./dist/providers.conf
+
+# or bundle a specific DSL source directly
+go run ./cmd/onr-pack --providers ./config/onr.conf --out ./dist/providers.conf
+```
+
+The command validates the provider DSL before writing. If validation fails, no output file is generated.
+
+6) Setup Git hooks with prek
 
 ```bash
 # install git hooks (force-replace if pre-commit hooks already exist)
