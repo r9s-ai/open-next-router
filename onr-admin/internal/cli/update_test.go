@@ -241,6 +241,20 @@ include providers/*.conf;
 	}
 }
 
+func TestResolveUpdateProvidersSource_AllowsMissingOverrideDirectory(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	dir := filepath.Join(root, "providers")
+	got, err := resolveUpdateProvidersSource(updateOptions{providersDir: dir})
+	if err != nil {
+		t.Fatalf("resolveUpdateProvidersSource: %v", err)
+	}
+	if got.SourcePath != dir || got.EditablePath != dir || got.SourceIsFile || got.EditableIsFile {
+		t.Fatalf("unexpected source info: %+v", got)
+	}
+}
+
 func TestUpdateMergedProviderSource(t *testing.T) {
 	t.Parallel()
 
@@ -291,6 +305,94 @@ provider "openai" {
 	}
 	if !strings.Contains(string(body), `https://api.openai.com/v2`) {
 		t.Fatalf("updated source missing new base_url: %s", string(body))
+	}
+}
+
+func TestUpdateCompositeProviderSource_MixedInlineAndIncludedDir(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	providersDir := filepath.Join(root, "providers")
+	if err := os.MkdirAll(providersDir, 0o750); err != nil {
+		t.Fatalf("mkdir providers: %v", err)
+	}
+	sourcePath := filepath.Join(root, "onr.conf")
+	if err := os.WriteFile(sourcePath, []byte(`
+syntax "next-router/0.1";
+
+provider "openai" {
+  defaults { upstream_config { base_url = "https://old.example.com"; } }
+}
+
+include providers/*.conf;
+`), 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(providersDir, "anthropic.conf"), []byte(`
+syntax "next-router/0.1";
+
+provider "anthropic" {
+  defaults { upstream_config { base_url = "https://old.anthropic.example.com"; } }
+}
+`), 0o600); err != nil {
+		t.Fatalf("write anthropic source: %v", err)
+	}
+
+	files := map[string][]byte{
+		"openai.conf": []byte(`
+syntax "next-router/0.1";
+
+provider "openai" {
+  defaults { upstream_config { base_url = "https://api.openai.com"; } }
+}
+`),
+		"anthropic.conf": []byte(`
+syntax "next-router/0.1";
+
+provider "anthropic" {
+  defaults { upstream_config { base_url = "https://api.anthropic.com"; } }
+}
+`),
+		"gemini.conf": []byte(`
+syntax "next-router/0.1";
+
+provider "gemini" {
+  defaults { upstream_config { base_url = "https://generativelanguage.googleapis.com"; } }
+}
+`),
+	}
+	changed, unchanged, err := updateCompositeProviderSource(providersource.Info{
+		SourcePath:     sourcePath,
+		SourceIsFile:   true,
+		EditablePath:   "",
+		EditableIsFile: false,
+	}, []string{"openai.conf", "anthropic.conf", "gemini.conf"}, files, false, func() time.Time { return time.Unix(0, 0) })
+	if err != nil {
+		t.Fatalf("updateCompositeProviderSource: %v", err)
+	}
+	if changed != 3 || unchanged != 0 {
+		t.Fatalf("changed=%d unchanged=%d", changed, unchanged)
+	}
+	body, err := os.ReadFile(sourcePath)
+	if err != nil {
+		t.Fatalf("read source: %v", err)
+	}
+	if !strings.Contains(string(body), `https://api.openai.com`) {
+		t.Fatalf("openai not updated in merged source: %s", string(body))
+	}
+	anthropicBody, err := os.ReadFile(filepath.Join(providersDir, "anthropic.conf"))
+	if err != nil {
+		t.Fatalf("read anthropic source: %v", err)
+	}
+	if !strings.Contains(string(anthropicBody), `https://api.anthropic.com`) {
+		t.Fatalf("anthropic not updated in providers dir: %s", string(anthropicBody))
+	}
+	geminiBody, err := os.ReadFile(filepath.Join(providersDir, "gemini.conf"))
+	if err != nil {
+		t.Fatalf("read gemini source: %v", err)
+	}
+	if !strings.Contains(string(geminiBody), `https://generativelanguage.googleapis.com`) {
+		t.Fatalf("gemini not created in providers dir: %s", string(geminiBody))
 	}
 }
 

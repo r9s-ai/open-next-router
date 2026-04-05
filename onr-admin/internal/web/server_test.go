@@ -293,6 +293,110 @@ provider "openai" {
 	}
 }
 
+func TestNewServer_AllowsMissingProvidersDirectorySource(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "providers")
+
+	srv, err := NewServer(dir)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	httpSrv := httptest.NewServer(srv.Handler())
+	defer httpSrv.Close()
+
+	listResp, err := http.Get(httpSrv.URL + "/api/providers")
+	if err != nil {
+		t.Fatalf("list providers: %v", err)
+	}
+	defer func() { _ = listResp.Body.Close() }()
+	if listResp.StatusCode != http.StatusOK {
+		t.Fatalf("list status=%d", listResp.StatusCode)
+	}
+	var listBody providerResponse
+	if err := json.NewDecoder(listResp.Body).Decode(&listBody); err != nil {
+		t.Fatalf("decode list body: %v", err)
+	}
+	if !listBody.OK || len(listBody.Providers) != 0 {
+		t.Fatalf("unexpected list body: %+v", listBody)
+	}
+}
+
+func TestProviderEndpoints_MixedInlineAndIncludedDirSource(t *testing.T) {
+	root := t.TempDir()
+	providersDir := filepath.Join(root, "providers")
+	if err := os.MkdirAll(providersDir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(providersDir, "anthropic.conf"), []byte(`
+syntax "next-router/0.1";
+
+provider "anthropic" {
+  defaults {
+    upstream_config { base_url = "https://api.anthropic.com"; }
+    auth { auth_header_key "x-api-key"; }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("write provider conf: %v", err)
+	}
+	sourcePath := filepath.Join(root, "onr.conf")
+	if err := os.WriteFile(sourcePath, []byte(`
+syntax "next-router/0.1";
+
+provider "openai" {
+  defaults {
+    upstream_config { base_url = "https://api.openai.com"; }
+    auth { auth_bearer; }
+  }
+}
+
+include providers/*.conf;
+`), 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	srv, err := NewServer(sourcePath)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	httpSrv := httptest.NewServer(srv.Handler())
+	defer httpSrv.Close()
+
+	listResp, err := http.Get(httpSrv.URL + "/api/providers")
+	if err != nil {
+		t.Fatalf("list providers: %v", err)
+	}
+	defer func() { _ = listResp.Body.Close() }()
+	if listResp.StatusCode != http.StatusOK {
+		t.Fatalf("list status=%d", listResp.StatusCode)
+	}
+	var listBody providerResponse
+	if err := json.NewDecoder(listResp.Body).Decode(&listBody); err != nil {
+		t.Fatalf("decode list body: %v", err)
+	}
+	if !listBody.OK || len(listBody.Providers) != 2 {
+		t.Fatalf("unexpected list body: %+v", listBody)
+	}
+
+	getResp, err := http.Get(httpSrv.URL + "/api/provider?name=openai")
+	if err != nil {
+		t.Fatalf("get openai: %v", err)
+	}
+	defer func() { _ = getResp.Body.Close() }()
+	if getResp.StatusCode != http.StatusOK {
+		t.Fatalf("get openai status=%d", getResp.StatusCode)
+	}
+
+	getResp2, err := http.Get(httpSrv.URL + "/api/provider?name=anthropic")
+	if err != nil {
+		t.Fatalf("get anthropic: %v", err)
+	}
+	defer func() { _ = getResp2.Body.Close() }()
+	if getResp2.StatusCode != http.StatusOK {
+		t.Fatalf("get anthropic status=%d", getResp2.StatusCode)
+	}
+}
+
 func TestProviderEndpoints_FileSourceWithIncludedProvidersDir(t *testing.T) {
 	root := t.TempDir()
 	configDir := filepath.Join(root, "config")

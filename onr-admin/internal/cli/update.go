@@ -285,16 +285,16 @@ func runUpdateProviders(ctx context.Context, releaseTag string, opts updateOptio
 	}
 	sort.Strings(names)
 	var changed, unchanged int
-	if source.EditableIsFile {
+	switch {
+	case source.EditableIsFile:
 		changed, unchanged, err = updateMergedProviderSource(source, names, files, opts.backup, deps.now)
-		if err != nil {
-			return updateResult{}, err
-		}
-	} else {
+	case strings.TrimSpace(source.EditablePath) != "":
 		changed, unchanged, err = updateProviderDirectorySource(source, names, files, opts.backup, deps.now)
-		if err != nil {
-			return updateResult{}, err
-		}
+	default:
+		changed, unchanged, err = updateCompositeProviderSource(source, names, files, opts.backup, deps.now)
+	}
+	if err != nil {
+		return updateResult{}, err
 	}
 	if _, err := dslconfig.ValidateProvidersPath(source.SourcePath); err != nil {
 		return updateResult{}, fmt.Errorf("validate provider source %s failed after update: %w", source.SourcePath, err)
@@ -369,8 +369,77 @@ func updateMergedProviderSource(source providersource.Info, names []string, file
 	return changed, unchanged, nil
 }
 
+func updateCompositeProviderSource(source providersource.Info, names []string, files map[string][]byte, backup bool, nowFn func() time.Time) (int, int, error) {
+	configRoot := sourceConfigRoot(source)
+	tmpRoot, err := os.MkdirTemp("", "onr-admin-update-providers-*")
+	if err != nil {
+		return 0, 0, err
+	}
+	defer func() { _ = os.RemoveAll(tmpRoot) }()
+
+	if err := copyDirectory(configRoot, tmpRoot); err != nil {
+		return 0, 0, err
+	}
+	tmpSource := source
+	if source.SourceIsFile {
+		tmpSource.SourcePath = filepath.Join(tmpRoot, filepath.Base(source.SourcePath))
+	} else {
+		tmpSource.SourcePath = tmpRoot
+	}
+	tmpSource.EditablePath = ""
+	tmpSource.EditableIsFile = false
+
+	type pendingWrite struct {
+		target       providersource.Target
+		providerName string
+		content      []byte
+	}
+	pending := make([]pendingWrite, 0, len(names))
+	changed := 0
+	unchanged := 0
+
+	for _, name := range names {
+		block, err := dslconfig.ProviderBlockFromFileContent(name, string(files[name]))
+		if err != nil {
+			return 0, 0, err
+		}
+		actualTarget, err := providersource.ResolveProviderTarget(source, block.Name)
+		if err != nil {
+			return 0, 0, err
+		}
+		tmpTarget, err := providersource.ResolveProviderTarget(tmpSource, block.Name)
+		if err != nil {
+			return 0, 0, err
+		}
+		didChange, err := applyProviderTargetContent(tmpSource, tmpTarget, block.Name, files[name], false, nowFn, nil)
+		if err != nil {
+			return 0, 0, err
+		}
+		if didChange {
+			changed++
+			pending = append(pending, pendingWrite{
+				target:       actualTarget,
+				providerName: block.Name,
+				content:      files[name],
+			})
+		} else {
+			unchanged++
+		}
+	}
+	if _, err := dslconfig.ValidateProvidersPath(tmpSource.SourcePath); err != nil {
+		return 0, 0, err
+	}
+	backedUp := make(map[string]struct{})
+	for _, item := range pending {
+		if _, err := applyProviderTargetContent(source, item.target, item.providerName, item.content, backup, nowFn, backedUp); err != nil {
+			return 0, 0, err
+		}
+	}
+	return changed, unchanged, nil
+}
+
 func validateMergedProviderSourceCandidate(source providersource.Info, content string) error {
-	configRoot := filepath.Dir(source.SourcePath)
+	configRoot := sourceConfigRoot(source)
 	tmpRoot, err := os.MkdirTemp("", "onr-admin-update-providers-*")
 	if err != nil {
 		return err
@@ -386,6 +455,68 @@ func validateMergedProviderSourceCandidate(source providersource.Info, content s
 	}
 	_, err = dslconfig.ValidateProvidersPath(tmpSourcePath)
 	return err
+}
+
+func applyProviderTargetContent(source providersource.Info, target providersource.Target, providerName string, content []byte, backup bool, nowFn func() time.Time, backedUp map[string]struct{}) (bool, error) {
+	if source.SourceIsFile && target.Path == source.SourcePath {
+		// #nosec G304 -- source path is configured by the user.
+		body, err := os.ReadFile(source.SourcePath)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return false, err
+		}
+		updated, err := dslconfig.UpsertProviderBlock(source.SourcePath, string(body), providerName, string(content))
+		if err != nil {
+			return false, err
+		}
+		if bytes.Equal(body, []byte(updated)) {
+			return false, nil
+		}
+		if backup {
+			if err := backupOnce(source.SourcePath, backedUp, nowFn); err != nil {
+				return false, err
+			}
+		}
+		if err := os.MkdirAll(filepath.Dir(source.SourcePath), 0o750); err != nil {
+			return false, err
+		}
+		if err := store.WriteAtomic(source.SourcePath, []byte(updated), false); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(target.Path), 0o750); err != nil {
+		return false, err
+	}
+	if backup {
+		if err := backupOnce(target.Path, backedUp, nowFn); err != nil {
+			return false, err
+		}
+	}
+	return writeProviderFileIfChanged(target.Path, content, false, nowFn)
+}
+
+func backupOnce(path string, backedUp map[string]struct{}, nowFn func() time.Time) error {
+	if backedUp == nil {
+		if _, err := backupFile(path, nowFn); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	if _, ok := backedUp[path]; ok {
+		return nil
+	}
+	if _, err := backupFile(path, nowFn); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	backedUp[path] = struct{}{}
+	return nil
+}
+
+func sourceConfigRoot(source providersource.Info) string {
+	if source.SourceIsFile {
+		return filepath.Dir(source.SourcePath)
+	}
+	return source.SourcePath
 }
 
 func copyDirectory(src, dst string) error {

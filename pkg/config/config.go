@@ -195,7 +195,8 @@ func ResolveProvidersDir(cfg *Config) string {
 
 func ResolveProviderDSLSource(cfg *Config) (string, bool) {
 	if cfg != nil && strings.TrimSpace(cfg.Providers.Dir) != "" {
-		return strings.TrimSpace(cfg.Providers.Dir), false
+		p := strings.TrimSpace(cfg.Providers.Dir)
+		return p, providerDSLSourceLooksLikeFile(p)
 	}
 	if _, err := os.Stat(DefaultProvidersDSLFile); err == nil {
 		return DefaultProvidersDSLFile, true
@@ -225,6 +226,17 @@ func normalizeProviderDSLWatchDir(path string) string {
 		return filepath.Dir(p)
 	}
 	return p
+}
+
+func providerDSLSourceLooksLikeFile(path string) bool {
+	p := strings.TrimSpace(path)
+	if p == "" {
+		return false
+	}
+	if info, err := os.Stat(p); err == nil {
+		return !info.IsDir()
+	}
+	return strings.EqualFold(filepath.Ext(p), ".conf")
 }
 
 func applyDefaults(cfg *Config) {

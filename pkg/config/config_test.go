@@ -127,6 +127,15 @@ func TestResolveProviderDSLWatchDir_ExplicitFileUsesParentDir(t *testing.T) {
 	}
 }
 
+func TestResolveProviderDSLSource_ExplicitFilePathMarkedAsFile(t *testing.T) {
+	cfg := &Config{}
+	cfg.Providers.Dir = "./config/onr.conf"
+	path, isFile := ResolveProviderDSLSource(cfg)
+	if path != "./config/onr.conf" || !isFile {
+		t.Fatalf("ResolveProviderDSLSource got (%q,%v), want (./config/onr.conf,true)", path, isFile)
+	}
+}
+
 func TestLoad_EnvOverrides(t *testing.T) {
 	path := writeConfigFile(t, `
 auth:
