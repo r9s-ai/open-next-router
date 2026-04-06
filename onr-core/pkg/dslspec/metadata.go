@@ -10,11 +10,12 @@ import (
 // - "top" for file-level statements.
 // - other values match block names in DSL (provider/defaults/auth/request/...).
 type DirectiveMetadata struct {
-	Name  string
-	Block string
-	Hover string
-	Modes []string
-	Args  []DirectiveArg
+	Name              string
+	Block             string
+	Hover             string
+	Modes             []string
+	ModeRegistryBlock string
+	Args              []DirectiveArg
 }
 
 // DirectiveArg describes one positional argument for a directive.
@@ -54,7 +55,7 @@ var directiveMetadata = []DirectiveMetadata{
 	{Name: "error", Block: "match", Hover: "`error { error_map <mode>; }`\n\nNormalize upstream error payloads."},
 	{Name: "metrics", Block: "match", Hover: "`metrics { ... }`\n\nToken usage and finish reason extraction rules."},
 
-	{Name: "usage_extract", Block: "usage_mode", Hover: "`usage_extract <mode>;`\n\nSelects `custom` or inherits another reusable `usage_mode` preset.", Modes: []string{"custom"}},
+	{Name: "usage_extract", Block: "usage_mode", Hover: "`usage_extract <mode>;`\n\nSelects `custom` or inherits another reusable `usage_mode` preset.", Modes: []string{"custom"}, ModeRegistryBlock: "usage_mode"},
 	{Name: "usage_fact", Block: "usage_mode", Hover: "`usage_fact <dimension> <unit> path=\"$.path\"|count_path=\"$.path\"|sum_path=\"$.path\"|expr=\"<expr>\" ...;`\n\nAdds one usage fact extraction rule to a reusable `usage_mode` preset.\n\nCurrent `source` values: `response`, `request`, `derived`.\nRestricted filter JSONPath is supported, for example `$.usageMetadata.promptTokensDetails[?(@.modality==\\\"AUDIO\\\")].tokenCount`."},
 	{Name: "input_tokens_expr", Block: "usage_mode", Hover: "`input_tokens_expr = <expr>;`\n\nCustom extraction expression for input/prompt tokens in a reusable `usage_mode` preset."},
 	{Name: "output_tokens_expr", Block: "usage_mode", Hover: "`output_tokens_expr = <expr>;`\n\nCustom extraction expression for output/completion tokens in a reusable `usage_mode` preset."},
@@ -66,10 +67,10 @@ var directiveMetadata = []DirectiveMetadata{
 	{Name: "cache_read_tokens_path", Block: "usage_mode", Hover: "`cache_read_tokens_path \"$.path\";`\n\nPath override for cache-read token extraction in a reusable `usage_mode` preset."},
 	{Name: "cache_write_tokens_path", Block: "usage_mode", Hover: "`cache_write_tokens_path \"$.path\";`\n\nPath override for cache-write token extraction in a reusable `usage_mode` preset."},
 
-	{Name: "finish_reason_extract", Block: "finish_reason_mode", Hover: "`finish_reason_extract <mode>;`\n\nSelects `custom` or inherits another reusable `finish_reason_mode` preset.", Modes: []string{"custom"}},
+	{Name: "finish_reason_extract", Block: "finish_reason_mode", Hover: "`finish_reason_extract <mode>;`\n\nSelects `custom` or inherits another reusable `finish_reason_mode` preset.", Modes: []string{"custom"}, ModeRegistryBlock: "finish_reason_mode"},
 	{Name: "finish_reason_path", Block: "finish_reason_mode", Hover: "`finish_reason_path \"$.path\";`\n\nPath override for finish_reason extraction in a reusable `finish_reason_mode` preset."},
 
-	{Name: "models_mode", Block: "models_mode", Hover: "`models_mode <mode>;`\n\nSelects `openai`, `gemini`, `custom`, or another reusable `models_mode` preset.", Modes: []string{"openai", "gemini", "custom"}},
+	{Name: "models_mode", Block: "models_mode", Hover: "`models_mode <mode>;`\n\nSelects `openai`, `gemini`, `custom`, or another reusable `models_mode` preset.", Modes: []string{"openai", "gemini", "custom"}, ModeRegistryBlock: "models_mode"},
 	{Name: "method", Block: "models_mode", Hover: "`method GET|POST;`\n\nHTTP method used by models query endpoint.", Args: []DirectiveArg{{Name: "method", Kind: "enum", Enum: []string{"GET", "POST"}}}},
 	{Name: "path", Block: "models_mode", Hover: "`path <expr>;`\n\nPath for models query endpoint."},
 	{Name: "id_path", Block: "models_mode", Hover: "`id_path \"$.path\";`\n\nJSON path to extract model id(s) from models response."},
@@ -78,7 +79,7 @@ var directiveMetadata = []DirectiveMetadata{
 	{Name: "set_header", Block: "models_mode", Hover: "`set_header <Header-Name> <expr>;`\n\nSets header for models query request."},
 	{Name: "del_header", Block: "models_mode", Hover: "`del_header <Header-Name>;`\n\nDeletes header for models query request."},
 
-	{Name: "balance_mode", Block: "balance_mode", Hover: "`balance_mode <mode>;`\n\nSelects `openai`, `custom`, or another reusable `balance_mode` preset.", Modes: []string{"openai", "custom"}},
+	{Name: "balance_mode", Block: "balance_mode", Hover: "`balance_mode <mode>;`\n\nSelects `openai`, `custom`, or another reusable `balance_mode` preset.", Modes: []string{"openai", "custom"}, ModeRegistryBlock: "balance_mode"},
 	{Name: "method", Block: "balance_mode", Hover: "`method GET|POST;`\n\nHTTP method used by balance query endpoint.", Args: []DirectiveArg{{Name: "method", Kind: "enum", Enum: []string{"GET", "POST"}}}},
 	{Name: "path", Block: "balance_mode", Hover: "`path <expr>;`\n\nPath for balance query endpoint (required in custom mode)."},
 	{Name: "balance_path", Block: "balance_mode", Hover: "`balance_path \"$.path\";`\n\nJSON path used to read balance amount from response."},
@@ -139,7 +140,7 @@ var directiveMetadata = []DirectiveMetadata{
 
 	{Name: "error_map", Block: "error", Hover: "`error_map <mode>;`\n\nNormalize upstream error payload into target error schema.", Modes: []string{"openai", "common", "passthrough"}},
 
-	{Name: "usage_extract", Block: "metrics", Hover: "`usage_extract <mode>;`\n\nExtract usage token fields from response/SSE payload. Supports `custom` and user-defined global `usage_mode` presets.", Modes: []string{"custom"}},
+	{Name: "usage_extract", Block: "metrics", Hover: "`usage_extract <mode>;`\n\nExtract usage token fields from response/SSE payload. Supports `custom` and user-defined global `usage_mode` presets.", Modes: []string{"custom"}, ModeRegistryBlock: "usage_mode"},
 	{Name: "usage_fact", Block: "metrics", Hover: "`usage_fact <dimension> <unit> path=\"$.path\"|count_path=\"$.path\"|sum_path=\"$.path\"|expr=\"<expr>\" ...;`\n\nCustom usage fact extraction rule with optional `attr.*` and `fallback=true`.\n\nCurrent `source` values: `response`, `request`, `derived`.\nRestricted filter JSONPath is supported, for example `$.usageMetadata.promptTokensDetails[?(@.modality==\\\"AUDIO\\\")].tokenCount`."},
 	{Name: "input_tokens_expr", Block: "metrics", Hover: "`input_tokens_expr = <expr>;`\n\nCustom extraction expression for input/prompt tokens."},
 	{Name: "output_tokens_expr", Block: "metrics", Hover: "`output_tokens_expr = <expr>;`\n\nCustom extraction expression for output/completion tokens."},
@@ -150,10 +151,10 @@ var directiveMetadata = []DirectiveMetadata{
 	{Name: "output_tokens_path", Block: "metrics", Hover: "`output_tokens_path \"$.path\";`\n\nPath override for output token extraction (custom mode)."},
 	{Name: "cache_read_tokens_path", Block: "metrics", Hover: "`cache_read_tokens_path \"$.path\";`\n\nPath override for cache-read token extraction (custom mode)."},
 	{Name: "cache_write_tokens_path", Block: "metrics", Hover: "`cache_write_tokens_path \"$.path\";`\n\nPath override for cache-write token extraction (custom mode)."},
-	{Name: "finish_reason_extract", Block: "metrics", Hover: "`finish_reason_extract <mode>;`\n\nExtract finish_reason from response/SSE payload. Supports `custom` and user-defined global `finish_reason_mode` presets.", Modes: []string{"custom"}},
+	{Name: "finish_reason_extract", Block: "metrics", Hover: "`finish_reason_extract <mode>;`\n\nExtract finish_reason from response/SSE payload. Supports `custom` and user-defined global `finish_reason_mode` presets.", Modes: []string{"custom"}, ModeRegistryBlock: "finish_reason_mode"},
 	{Name: "finish_reason_path", Block: "metrics", Hover: "`finish_reason_path \"$.path\";`\n\nPath override for finish_reason extraction (custom mode)."},
 
-	{Name: "balance_mode", Block: "balance", Hover: "`balance_mode <mode>;`\n\nSelects `openai`, `custom`, or a user-defined global `balance_mode` preset.", Modes: []string{"openai", "custom"}},
+	{Name: "balance_mode", Block: "balance", Hover: "`balance_mode <mode>;`\n\nSelects `openai`, `custom`, or a user-defined global `balance_mode` preset.", Modes: []string{"openai", "custom"}, ModeRegistryBlock: "balance_mode"},
 	{Name: "method", Block: "balance", Hover: "`method GET|POST;`\n\nHTTP method used by balance query endpoint.", Args: []DirectiveArg{{Name: "method", Kind: "enum", Enum: []string{"GET", "POST"}}}},
 	{Name: "path", Block: "balance", Hover: "`path <expr>;`\n\nPath for balance query endpoint (required in custom mode)."},
 	{Name: "balance_path", Block: "balance", Hover: "`balance_path \"$.path\";`\n\nJSON path used to read balance amount from response."},
@@ -166,7 +167,7 @@ var directiveMetadata = []DirectiveMetadata{
 	{Name: "set_header", Block: "balance", Hover: "`set_header <Header-Name> <expr>;`\n\nSets header for balance query request."},
 	{Name: "del_header", Block: "balance", Hover: "`del_header <Header-Name>;`\n\nDeletes header for balance query request."},
 
-	{Name: "models_mode", Block: "models", Hover: "`models_mode <mode>;`\n\nSelects `openai`, `gemini`, `custom`, or a user-defined global `models_mode` preset.", Modes: []string{"openai", "gemini", "custom"}},
+	{Name: "models_mode", Block: "models", Hover: "`models_mode <mode>;`\n\nSelects `openai`, `gemini`, `custom`, or a user-defined global `models_mode` preset.", Modes: []string{"openai", "gemini", "custom"}, ModeRegistryBlock: "models_mode"},
 	{Name: "method", Block: "models", Hover: "`method GET|POST;`\n\nHTTP method used by models query endpoint.", Args: []DirectiveArg{{Name: "method", Kind: "enum", Enum: []string{"GET", "POST"}}}},
 	{Name: "path", Block: "models", Hover: "`path <expr>;`\n\nPath for models query endpoint."},
 	{Name: "id_path", Block: "models", Hover: "`id_path \"$.path\";`\n\nJSON path to extract model id(s) from models response."},
@@ -279,6 +280,36 @@ func ModeDirectiveNames() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// DirectiveModeRegistryBlock returns the top-level preset block name used to
+// resolve user-defined mode values for a directive in one block.
+func DirectiveModeRegistryBlock(name, block string) string {
+	key := strings.TrimSpace(name)
+	if key == "" {
+		return ""
+	}
+	b := normalizeMetaBlock(block)
+	if out := directiveModeRegistryBlock(key, b, true); out != "" {
+		return out
+	}
+	return directiveModeRegistryBlock(key, b, false)
+}
+
+// DirectiveHasDynamicModeRegistry reports whether this directive can resolve
+// additional mode names from top-level reusable preset blocks.
+func DirectiveHasDynamicModeRegistry(name string) bool {
+	key := strings.TrimSpace(name)
+	if key == "" {
+		return false
+	}
+	for _, d := range directiveMetadata {
+		if d.Name != key || strings.TrimSpace(d.ModeRegistryBlock) == "" {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // DirectiveAllowedBlocks returns block names where this directive is allowed.
@@ -398,6 +429,23 @@ func directiveArgEnumValues(name, block string, argIndex int, matchBlock bool) [
 		}
 	}
 	return out
+}
+
+func directiveModeRegistryBlock(name, block string, matchBlock bool) string {
+	for _, d := range directiveMetadata {
+		if d.Name != name {
+			continue
+		}
+		if matchBlock && normalizeMetaBlock(d.Block) != block {
+			continue
+		}
+		registryBlock := normalizeMetaBlock(d.ModeRegistryBlock)
+		if registryBlock == "" {
+			continue
+		}
+		return registryBlock
+	}
+	return ""
 }
 
 // DirectiveMetadataList returns a copy of all directive metadata entries.

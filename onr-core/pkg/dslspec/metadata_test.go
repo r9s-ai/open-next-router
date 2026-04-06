@@ -212,6 +212,37 @@ func TestModeDirectiveNames(t *testing.T) {
 	}
 }
 
+func TestDirectiveModeRegistryBlock(t *testing.T) {
+	if got := DirectiveModeRegistryBlock("usage_extract", "metrics"); got != "usage_mode" {
+		t.Fatalf("expected usage_extract.metrics registry block usage_mode, got %q", got)
+	}
+	if got := DirectiveModeRegistryBlock("finish_reason_extract", "metrics"); got != "finish_reason_mode" {
+		t.Fatalf("expected finish_reason_extract.metrics registry block finish_reason_mode, got %q", got)
+	}
+	if got := DirectiveModeRegistryBlock("models_mode", "models"); got != "models_mode" {
+		t.Fatalf("expected models.models_mode registry block models_mode, got %q", got)
+	}
+	if got := DirectiveModeRegistryBlock("balance_mode", "balance_mode"); got != "balance_mode" {
+		t.Fatalf("expected balance_mode.balance_mode registry block balance_mode, got %q", got)
+	}
+	if got := DirectiveModeRegistryBlock("req_map", "request"); got != "" {
+		t.Fatalf("expected req_map.request to have no registry block, got %q", got)
+	}
+}
+
+func TestDirectiveHasDynamicModeRegistry(t *testing.T) {
+	for _, name := range []string{"usage_extract", "finish_reason_extract", "models_mode", "balance_mode"} {
+		if !DirectiveHasDynamicModeRegistry(name) {
+			t.Fatalf("expected %s to support dynamic mode registry", name)
+		}
+	}
+	for _, name := range []string{"req_map", "resp_map", "sse_parse", "oauth_mode"} {
+		if DirectiveHasDynamicModeRegistry(name) {
+			t.Fatalf("did not expect %s to support dynamic mode registry", name)
+		}
+	}
+}
+
 func TestDirectiveAllowedBlocks(t *testing.T) {
 	assertSetEqual(t, "set_header", DirectiveAllowedBlocks("set_header"), []string{"request", "balance", "models", "balance_mode", "models_mode"})
 	assertSetEqual(t, "pass_header", DirectiveAllowedBlocks("pass_header"), []string{"request"})
