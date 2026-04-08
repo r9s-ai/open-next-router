@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/ssemetrics"
 )
 
 // StreamMetricsAggregator aggregates best-effort metrics from SSE "data:" JSON payloads.
@@ -119,34 +120,12 @@ func (a *StreamMetricsAggregator) OnSSETail(sse []byte) {
 	if a == nil {
 		return
 	}
-	lines := bytes.Split(sse, []byte{'\n'})
-	var curEvent string
-	var curData [][]byte
-	flush := func() {
-		if len(curData) == 0 {
-			curEvent = ""
-			return
-		}
-		payload := bytes.TrimSpace(bytes.Join(curData, []byte{'\n'}))
-		curData = curData[:0]
-		_ = a.OnSSEEventDataJSON(curEvent, payload)
-		curEvent = ""
+	tap := ssemetrics.NewTap(a)
+	if tap == nil {
+		return
 	}
-	for _, raw := range lines {
-		line := bytes.TrimRight(raw, "\r")
-		if len(bytes.TrimSpace(line)) == 0 {
-			flush()
-			continue
-		}
-		if bytes.HasPrefix(line, []byte("event:")) {
-			curEvent = string(bytes.TrimSpace(bytes.TrimPrefix(line, []byte("event:"))))
-			continue
-		}
-		if bytes.HasPrefix(line, []byte("data:")) {
-			curData = append(curData, bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:"))))
-		}
-	}
-	flush()
+	_, _ = tap.Write(sse)
+	tap.Finish()
 }
 
 // Result returns aggregated metrics.
