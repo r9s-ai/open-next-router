@@ -286,6 +286,25 @@ func TestStreamMetricsAggregator_OpenAIResponsesStreamUsageUsesSSEEventFilter(t 
 	}
 }
 
+func TestStreamMetricsAggregator_FinishReasonUsesSSEEventFilter(t *testing.T) {
+	meta := &dslmeta.Meta{API: "responses", IsStream: true}
+	finishCfg := FinishReasonExtractConfig{Mode: usageModeCustom}
+	finishCfg.addFinishReasonPathRule("$.response.incomplete_details.reason", false, "response.incomplete", true)
+	finishCfg.addFinishReasonPathRule("$.response.status", true, "response.completed", true)
+	agg := NewStreamMetricsAggregator(meta, UsageExtractConfig{}, finishCfg)
+
+	_ = agg.OnSSEEventDataJSON("response.output_text.delta", []byte(`{"response":{"status":"completed","incomplete_details":{"reason":"max_output_tokens"}}}`))
+	_ = agg.OnSSEEventDataJSON("response.completed", []byte(`{"response":{"status":"completed"}}`))
+
+	_, _, fr, ok := agg.Result()
+	if ok {
+		t.Fatalf("did not expect usage ok for finish_reason-only events")
+	}
+	if fr != "completed" {
+		t.Fatalf("unexpected finish_reason: %q", fr)
+	}
+}
+
 func TestStreamMetricsAggregator_OpenAIResponsesStreamUsageFallsBackWithoutEvent(t *testing.T) {
 	meta := &dslmeta.Meta{API: "responses", IsStream: true}
 	usageCfg := UsageExtractConfig{

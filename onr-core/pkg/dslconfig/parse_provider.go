@@ -386,7 +386,7 @@ func parseFinishReasonExtractStmt(s *scanner, cfg *FinishReasonExtractConfig) er
 }
 
 func parseFinishReasonPathStmt(s *scanner, cfg *FinishReasonExtractConfig) error {
-	// finish_reason_path <jsonpath> [fallback=true|false];
+	// finish_reason_path <jsonpath> [fallback=true|false] [event="<name>"] [event_optional=true|false];
 	peek := s.nextNonTrivia()
 	if peek.kind == tokOther && peek.text == "=" {
 		return s.errAt(peek, "finish_reason_path does not use '='; use: finish_reason_path <jsonpath>;")
@@ -396,11 +396,13 @@ func parseFinishReasonPathStmt(s *scanner, cfg *FinishReasonExtractConfig) error
 		return err
 	}
 	fallback := false
+	event := ""
+	eventOptional := false
 	for {
 		tok := s.nextNonTrivia()
 		switch tok.kind {
 		case tokSemicolon:
-			cfg.addFinishReasonPath(strings.TrimSpace(path), fallback)
+			cfg.addFinishReasonPathRule(strings.TrimSpace(path), fallback, event, eventOptional)
 			return nil
 		case tokIdent:
 			key := strings.ToLower(strings.TrimSpace(tok.text))
@@ -416,6 +418,18 @@ func parseFinishReasonPathStmt(s *scanner, cfg *FinishReasonExtractConfig) error
 					return err
 				}
 				fallback = val
+			case "event":
+				val, err := parseUsageFactStringValue(s, valTok, "event")
+				if err != nil {
+					return err
+				}
+				event = val
+			case "event_optional":
+				val, err := parseUsageFactBoolValue(s, valTok)
+				if err != nil {
+					return s.errAt(valTok, "event_optional expects true or false")
+				}
+				eventOptional = val
 			default:
 				return s.errAt(tok, "unsupported finish_reason_path option "+key)
 			}

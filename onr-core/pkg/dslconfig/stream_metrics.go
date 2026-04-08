@@ -74,7 +74,7 @@ func (a *StreamMetricsAggregator) OnSSEEventDataJSON(event string, payload []byt
 
 	// finish_reason: first non-empty
 	if strings.TrimSpace(a.finishReason) == "" && (strings.TrimSpace(a.finishCfg.Mode) != "" || a.finishCfg.hasFinishReasonPath()) {
-		if v, err := extractFinishReasonFromRoot(a.meta, a.finishCfg, root); err == nil {
+		if v, err := extractFinishReasonFromRootWithEvent(a.meta, a.finishCfg, event, root); err == nil {
 			if s := strings.TrimSpace(v); s != "" {
 				a.finishReason = s
 			}

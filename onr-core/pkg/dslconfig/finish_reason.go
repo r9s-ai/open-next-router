@@ -16,8 +16,10 @@ type FinishReasonExtractConfig struct {
 }
 
 type finishReasonPathConfig struct {
-	Path     string
-	Fallback bool
+	Path          string
+	Fallback      bool
+	Event         string
+	EventOptional bool
 }
 
 type ProviderFinishReason struct {
@@ -76,13 +78,19 @@ func mergeFinishReasonConfig(base, override FinishReasonExtractConfig) FinishRea
 }
 
 func (cfg *FinishReasonExtractConfig) addFinishReasonPath(path string, fallback bool) {
+	cfg.addFinishReasonPathRule(path, fallback, "", false)
+}
+
+func (cfg *FinishReasonExtractConfig) addFinishReasonPathRule(path string, fallback bool, event string, eventOptional bool) {
 	if cfg == nil {
 		return
 	}
 	cfg.FinishReasonPath = path
 	cfg.paths = append(cfg.paths, finishReasonPathConfig{
-		Path:     path,
-		Fallback: fallback,
+		Path:          path,
+		Fallback:      fallback,
+		Event:         strings.TrimSpace(event),
+		EventOptional: eventOptional,
 	})
 }
 
@@ -116,6 +124,10 @@ func ExtractFinishReason(meta *dslmeta.Meta, cfg FinishReasonExtractConfig, resp
 }
 
 func extractFinishReasonFromRoot(meta *dslmeta.Meta, cfg FinishReasonExtractConfig, root map[string]any) (string, error) {
+	return extractFinishReasonFromRootWithEvent(meta, cfg, "", root)
+}
+
+func extractFinishReasonFromRootWithEvent(meta *dslmeta.Meta, cfg FinishReasonExtractConfig, event string, root map[string]any) (string, error) {
 	_ = meta
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	hasPaths := cfg.hasFinishReasonPath()
@@ -128,18 +140,21 @@ func extractFinishReasonFromRoot(meta *dslmeta.Meta, cfg FinishReasonExtractConf
 		if !hasPaths {
 			return "", nil
 		}
-		return extractFinishReasonByConfiguredPaths(root, cfg), nil
+		return extractFinishReasonByConfiguredPaths(root, cfg, event), nil
 	}
 	return "", fmt.Errorf("unsupported finish_reason_extract mode %q", cfg.Mode)
 }
 
-func extractFinishReasonByConfiguredPaths(root map[string]any, cfg FinishReasonExtractConfig) string {
+func extractFinishReasonByConfiguredPaths(root map[string]any, cfg FinishReasonExtractConfig, event string) string {
 	paths := cfg.finishReasonPathConfigs()
 	if len(paths) == 0 {
 		return ""
 	}
 	var fallback []finishReasonPathConfig
 	for _, rule := range paths {
+		if !finishReasonRuleMatchesEvent(rule, event) {
+			continue
+		}
 		if rule.Fallback {
 			fallback = append(fallback, rule)
 			continue
@@ -154,4 +169,20 @@ func extractFinishReasonByConfiguredPaths(root map[string]any, cfg FinishReasonE
 		}
 	}
 	return ""
+}
+
+func finishReasonRuleMatchesEvent(rule finishReasonPathConfig, event string) bool {
+	expectedEvent := strings.TrimSpace(rule.Event)
+	if expectedEvent == "" {
+		return true
+	}
+	currentEvent := strings.TrimSpace(event)
+	switch {
+	case currentEvent == "" && rule.EventOptional:
+		return true
+	case !strings.EqualFold(expectedEvent, currentEvent):
+		return false
+	default:
+		return true
+	}
 }

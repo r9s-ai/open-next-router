@@ -1010,14 +1010,16 @@ metrics {
 - 作为兜底：当某些 provider 把 finish_reason 暴露在自定义位置时，可用该字段覆盖提取路径。
 - 允许声明多条 `finish_reason_path`。
 - `fallback=true` 表示只有在前面的非 fallback 路径都没有提取到非空值时，这条路径才会生效。
+- `event="<name>"` 可把某条路径限定在特定 SSE event 上，例如 `response.completed` 或 `message_delta`。
+- `event_optional=true` 允许这条带事件的规则在“没有 event 上下文”的普通 JSON 提取场景继续作为回退规则生效。
 
 示例：
 
 ```conf
 metrics {
   finish_reason_extract custom;
-  finish_reason_path "$.delta.stop_reason";
-  finish_reason_path "$.message.stop_reason" fallback=true;
+  finish_reason_path "$.delta.stop_reason" event="message_delta" event_optional=true;
+  finish_reason_path "$.message.stop_reason" event="message_start" event_optional=true fallback=true;
 }
 ```
 
@@ -1531,14 +1533,16 @@ Multiple: no
 #### finish_reason_path
 
 ```text
-Syntax:  finish_reason_path <jsonpath>;
+Syntax:  finish_reason_path <jsonpath> [fallback=true|false] [event="<name>"] [event_optional=true|false];
 Default: —
 Context: metrics
 Multiple: yes
 ```
 
 - 可选覆盖项；当使用 `finish_reason_extract custom;` 时为必填。
-- 支持在路径后追加 `fallback=true|false` 元数据。
+- 支持在路径后追加 `fallback=true|false`、`event="<name>"`、`event_optional=true|false` 元数据。
+- `event` 适用于 SSE 按事件名筛选的场景；命中事件时才会尝试这条 `finish_reason_path`。
+- `event_optional=true` 仅可和 `event` 一起使用，表示当运行时没有提供事件名上下文时，仍允许这条规则按普通 JSON 匹配回退执行。
 - JSONPath 子集：`$.a.b.c` / `$.items[0].x` / `$.items[*].x` / `$.items[?(@.field=="VALUE")].x`（`[*]` 或 filter 命中多项时取第一个非空字符串）。
 
 #### input_tokens_expr

@@ -127,6 +127,13 @@ func validateResolvedFinishReasonExtractConfig(path, providerName, scope string,
 		if !strings.HasPrefix(p, "$.") {
 			return fmt.Errorf("provider %q in %q: %s finish_reason_path[%d] must start with $. ", providerName, path, scope, i)
 		}
+		if strings.TrimSpace(pathRule.Event) == "" {
+			if pathRule.EventOptional {
+				return fmt.Errorf("provider %q in %q: %s finish_reason_path[%d] event_optional requires event", providerName, path, scope, i)
+			}
+		} else if strings.ContainsAny(strings.TrimSpace(pathRule.Event), " \t\r\n") {
+			return fmt.Errorf("provider %q in %q: %s finish_reason_path[%d] event must not contain whitespace", providerName, path, scope, i)
+		}
 	}
 	return nil
 }

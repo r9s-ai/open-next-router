@@ -922,14 +922,16 @@ metrics {
 - Optional escape hatch for providers that expose finish reason in a custom location.
 - Multiple `finish_reason_path` directives are allowed.
 - `fallback=true` means this path is only attempted when no earlier non-fallback path produced a non-empty finish reason.
+- `event="<name>"` restricts a path to a specific SSE event such as `response.completed` or `message_delta`.
+- `event_optional=true` lets an event-scoped rule fall back to normal matching when no event name is available.
 
 Example:
 
 ```conf
 metrics {
   finish_reason_extract custom;
-  finish_reason_path "$.delta.stop_reason";
-  finish_reason_path "$.message.stop_reason" fallback=true;
+  finish_reason_path "$.delta.stop_reason" event="message_delta" event_optional=true;
+  finish_reason_path "$.message.stop_reason" event="message_start" event_optional=true fallback=true;
 }
 ```
 
@@ -1437,14 +1439,16 @@ Multiple: no
 #### finish_reason_path
 
 ```text
-Syntax:  finish_reason_path <jsonpath>;
+Syntax:  finish_reason_path <jsonpath> [fallback=true|false] [event="<name>"] [event_optional=true|false];
 Default: —
 Context: metrics
 Multiple: yes
 ```
 
 - Optional override / required for `finish_reason_extract custom;`.
-- Supports optional `fallback=true|false` metadata after the path.
+- Supports optional `fallback=true|false`, `event="<name>"`, and `event_optional=true|false` metadata after the path.
+- `event` is useful for SSE extraction where a rule should only run on a specific event name.
+- `event_optional=true` may only be used together with `event`; it keeps the rule eligible when runtime extraction has no event context.
 - JSONPath subset: `$.a.b.c` / `$.items[0].x` / `$.items[*].x` (returns first non-empty string with `[*]`).
 
 #### input_tokens_expr

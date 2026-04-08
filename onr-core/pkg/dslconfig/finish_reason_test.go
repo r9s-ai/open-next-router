@@ -1,8 +1,10 @@
 package dslconfig
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
@@ -198,6 +200,34 @@ func TestExtractFinishReason_CustomPathPrimaryTakesPrecedenceOverFallback(t *tes
 	}
 }
 
+func TestExtractFinishReason_CustomPathEventFilter(t *testing.T) {
+	meta := &dslmeta.Meta{API: "responses", IsStream: true}
+	cfg := FinishReasonExtractConfig{Mode: "custom"}
+	cfg.addFinishReasonPathRule("$.response.incomplete_details.reason", false, "response.incomplete", true)
+	cfg.addFinishReasonPathRule("$.response.status", true, "response.completed", true)
+
+	body := []byte(`{"type":"response.completed","response":{"status":"completed","incomplete_details":{"reason":"max_output_tokens"}}}`)
+	v, err := ExtractFinishReason(meta, cfg, body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if v != "max_output_tokens" {
+		t.Fatalf("unexpected finish_reason without event context: %q", v)
+	}
+
+	var root map[string]any
+	if err := json.Unmarshal(body, &root); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	v, err = extractFinishReasonFromRootWithEvent(meta, cfg, "response.completed", root)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if v != "completed" {
+		t.Fatalf("unexpected finish_reason with event context: %q", v)
+	}
+}
+
 func TestExtractFinishReason_CustomWithoutPathReturnsEmpty(t *testing.T) {
 	meta := &dslmeta.Meta{API: "chat.completions"}
 	body := []byte(`{"choices":[{"finish_reason":"stop"}]}`)
@@ -252,6 +282,43 @@ provider "custom_finish" {
 	}
 }
 
+func TestValidateProviderFile_FinishReasonPathEventOptions(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "custom_finish_event.conf")
+	content := []byte(`
+syntax "next-router/0.1";
+
+provider "custom_finish_event" {
+  defaults {
+    upstream_config { base_url = "https://example.com"; }
+    metrics {
+      finish_reason_path "$.response.status" event="response.completed" event_optional=true;
+    }
+  }
+}
+`)
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatalf("write provider file: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile(%q): %v", path, err)
+	}
+
+	cfg, ok := pf.Finish.Select(&dslmeta.Meta{API: "chat.completions"})
+	if !ok {
+		t.Fatalf("expected finish_reason config selected")
+	}
+	rules := cfg.finishReasonPathConfigs()
+	if got, want := len(rules), 1; got != want {
+		t.Fatalf("path rules len=%d want=%d", got, want)
+	}
+	if rules[0].Event != "response.completed" || !rules[0].EventOptional {
+		t.Fatalf("unexpected event options: %+v", rules[0])
+	}
+}
+
 func TestValidateProviderFile_FinishReasonPathFallbackRejectsInvalidPath(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "invalid_finish.conf")
@@ -274,6 +341,30 @@ provider "invalid_finish" {
 
 	if _, err := ValidateProviderFile(path); err == nil {
 		t.Fatalf("expected invalid finish_reason_path to be rejected")
+	}
+}
+
+func TestValidateProviderFile_FinishReasonPathEventOptionalRequiresEvent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "invalid_finish_event.conf")
+	content := []byte(`
+syntax "next-router/0.1";
+
+provider "invalid_finish_event" {
+  defaults {
+    upstream_config { base_url = "https://example.com"; }
+    metrics {
+      finish_reason_path "$.response.status" event_optional=true;
+    }
+  }
+}
+`)
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatalf("write provider file: %v", err)
+	}
+
+	if _, err := ValidateProviderFile(path); err == nil || !strings.Contains(err.Error(), "event_optional requires event") {
+		t.Fatalf("ValidateProviderFile err=%v, want event_optional requires event", err)
 	}
 }
 
