@@ -43,11 +43,7 @@ func streamToDownstream(
 	needSSEOps := len(respDir.JSONOps) > 0 || len(respDir.SSEJSONDelIf) > 0
 	mode := strings.ToLower(strings.TrimSpace(respDir.Mode))
 	useStrategyTransform := strings.TrimSpace(respDir.Op) == "sse_parse" &&
-		(mode == "openai_responses_to_openai_chat_chunks" ||
-			mode == "anthropic_to_openai_chunks" ||
-			mode == "openai_to_anthropic_chunks" ||
-			mode == "openai_to_gemini_chunks" ||
-			mode == "gemini_to_openai_chat_chunks")
+		apitransform.SupportsSSETransformMode(mode)
 
 	var upstreamDump *limitedBuffer
 	var proxyDump *limitedBuffer
@@ -141,7 +137,7 @@ func buildStrategyTransformSource(
 	gc.Status(resp.StatusCode)
 
 	go func() {
-		err := runSSEStrategyTransform(mode, rawMode, upSrc, pw)
+		err := apitransform.TransformSSEByMode(rawMode, upSrc, pw)
 		_ = pw.CloseWithError(err)
 	}()
 	return pr, nil
@@ -181,23 +177,6 @@ func decodeUpstreamIfNeeded(resp *http.Response, forceDecode bool) (io.Reader, f
 		return nil, nil, fmt.Errorf("cannot transform encoded upstream response (Content-Encoding=%q)", resp.Header.Get("Content-Encoding"))
 	}
 	return resp.Body, nil, nil
-}
-
-func runSSEStrategyTransform(mode, rawMode string, src io.Reader, dst io.Writer) error {
-	switch mode {
-	case "openai_responses_to_openai_chat_chunks":
-		return apitransform.TransformOpenAIResponsesSSEToChatCompletionsSSE(src, dst)
-	case "anthropic_to_openai_chunks":
-		return apitransform.TransformClaudeMessagesSSEToOpenAIChatCompletionsSSE(src, dst)
-	case "openai_to_anthropic_chunks":
-		return apitransform.TransformOpenAIChatCompletionsSSEToClaudeMessagesSSE(src, dst)
-	case "openai_to_gemini_chunks":
-		return apitransform.TransformOpenAIChatCompletionsSSEToGeminiSSE(src, dst)
-	case "gemini_to_openai_chat_chunks":
-		return apitransform.TransformGeminiSSEToOpenAIChatCompletionsSSE(src, dst)
-	default:
-		return fmt.Errorf("unsupported sse_parse mode %q", rawMode)
-	}
 }
 
 type readCloserReader struct {
