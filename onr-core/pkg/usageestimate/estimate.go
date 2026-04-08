@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/streamtext"
 )
 
 const (
@@ -329,75 +330,7 @@ func extractResponseText(api string, body []byte, limit int) string {
 }
 
 func extractStreamText(api string, sse []byte, limit int) string {
-	sse = clampBytes(sse, limit)
-	if len(bytes.TrimSpace(sse)) == 0 {
-		return ""
-	}
-	events := bytes.Split(sse, []byte("\n\n"))
-	var out strings.Builder
-	for _, ev := range events {
-		lines := bytes.Split(ev, []byte("\n"))
-		var dataLines [][]byte
-		for _, raw := range lines {
-			line := bytes.TrimRight(raw, "\r")
-			if bytes.HasPrefix(line, []byte("data:")) {
-				dataLines = append(dataLines, bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:"))))
-			}
-		}
-		if len(dataLines) == 0 {
-			continue
-		}
-		payload := bytes.TrimSpace(bytes.Join(dataLines, []byte("\n")))
-		if len(payload) == 0 || bytes.Equal(payload, []byte("[DONE]")) {
-			continue
-		}
-		var obj any
-		if err := json.Unmarshal(payload, &obj); err != nil {
-			continue
-		}
-		m, _ := obj.(map[string]any)
-		if m == nil {
-			continue
-		}
-
-		switch strings.ToLower(strings.TrimSpace(api)) {
-		case "chat.completions":
-			if v, ok := m["choices"].([]any); ok {
-				for _, it := range v {
-					cm, _ := it.(map[string]any)
-					if cm == nil {
-						continue
-					}
-					if d, ok := cm["delta"].(map[string]any); ok {
-						if s, ok := d["content"].(string); ok && s != "" {
-							out.WriteString(s)
-						}
-					}
-					if s, ok := cm["text"].(string); ok && s != "" {
-						out.WriteString(s)
-					}
-				}
-				continue
-			}
-		case "responses":
-			// OpenAI Responses SSE uses various event types; best-effort pick "delta".
-			if s, ok := m["delta"].(string); ok && s != "" {
-				out.WriteString(s)
-				continue
-			}
-		case "claude.messages":
-			// Anthropic SSE commonly contains delta.text.
-			if d, ok := m["delta"].(map[string]any); ok {
-				if s, ok := d["text"].(string); ok && s != "" {
-					out.WriteString(s)
-					continue
-				}
-			}
-		}
-
-		collectTextFields(&out, obj, 0, 6)
-	}
-	return out.String()
+	return streamtext.ExtractFromSSE(api, sse, limit)
 }
 
 func collectTextFields(out *strings.Builder, v any, depth, maxDepth int) {

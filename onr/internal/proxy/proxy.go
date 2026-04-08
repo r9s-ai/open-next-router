@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -239,31 +238,19 @@ func mapNonStreamResponse(respBody []byte, resp *http.Response, respDir dslconfi
 	if resp != nil {
 		outCT = resp.Header.Get("Content-Type")
 	}
-	didTransform := false
-
 	if strings.TrimSpace(respDir.Op) != "resp_map" {
-		return respOutBody, outCT, didTransform, nil
+		return respOutBody, outCT, false, nil
 	}
-	if resp != nil && resp.StatusCode >= http.StatusBadRequest {
-		return respOutBody, outCT, didTransform, nil
+	if resp == nil {
+		return respOutBody, outCT, false, nil
 	}
-
-	decoded, err := maybeDecodeUpstreamBody(respBody, resp.Header.Get("Content-Encoding"))
-	if err != nil {
-		return nil, "", false, err
-	}
-	srcBody := respBody
-	if decoded != nil {
-		srcBody = decoded
-	}
-	if !apitransform.SupportsResponseMapMode(respDir.Mode) {
-		return respOutBody, outCT, didTransform, nil
-	}
-	respOutBody, outCT, err = apitransform.MapResponseBodyByMode(respDir.Mode, srcBody)
-	if err != nil {
-		return nil, "", false, err
-	}
-	return respOutBody, outCT, true, nil
+	return apitransform.TransformNonStreamResponseBody(
+		resp.StatusCode,
+		respDir.Mode,
+		respBody,
+		outCT,
+		resp.Header.Get("Content-Encoding"),
+	)
 }
 
 func estimateNonStreamUsage(
@@ -310,14 +297,16 @@ func populateNonStreamDerivedUsage(meta *dslmeta.Meta, pf dslconfig.ProviderFile
 	if !ok || !dslconfig.UsesDerivedUsagePath(meta, usageCfg, "$.audio_duration_seconds") {
 		return
 	}
-	seconds, err := onraudio.DurationFromBytes(respBody)
-	if err != nil || seconds <= 0 {
+	derived := onraudio.BuildSpeechDerivedUsage(respBody, 0)
+	if len(derived) == 0 {
 		return
 	}
 	if meta.DerivedUsage == nil {
 		meta.DerivedUsage = map[string]any{}
 	}
-	meta.DerivedUsage["audio_duration_seconds"] = seconds
+	for k, v := range derived {
+		meta.DerivedUsage[k] = v
+	}
 }
 
 func extractNonStreamFinishReason(pf dslconfig.ProviderFile, meta *dslmeta.Meta, metricsBody []byte) string {
@@ -343,44 +332,27 @@ func applyNonStreamResponseJSONOps(
 	}
 
 	ctLower := strings.ToLower(strings.TrimSpace(outCT))
-	ceLower := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Encoding")))
-	trim := bytes.TrimSpace(respOutBody)
-	looksJSON := strings.Contains(ctLower, "json") || (len(trim) > 0 && trim[0] == '{')
-	if strings.Contains(ctLower, "json") && ceLower == contentEncodingGzip {
-		looksJSON = true
-	}
-	if !looksJSON {
+	if !apitransform.ResponseBodyLooksLikeJSON(outCT, respOutBody) {
 		return respOutBody, outCT, didTransform, nil
 	}
 
 	bodyForOps := respOutBody
-	var root any
-	if err := json.Unmarshal(bodyForOps, &root); err != nil {
-		decoded, derr := maybeDecodeUpstreamBody(respOutBody, resp.Header.Get("Content-Encoding"))
-		if derr != nil {
-			return nil, "", false, derr
-		}
-		if decoded == nil {
-			return nil, "", false, fmt.Errorf("invalid json response for response json ops: %w", err)
-		}
+	decoded, changed, err := apitransform.DecodeResponseBody(respOutBody, resp.Header.Get("Content-Encoding"))
+	if err != nil {
+		return nil, "", false, err
+	}
+	if changed {
 		bodyForOps = decoded
-		if err := json.Unmarshal(bodyForOps, &root); err != nil {
-			return nil, "", false, fmt.Errorf("invalid json response for response json ops: %w", err)
-		}
 		didTransform = true
 	}
-
-	obj, ok := root.(map[string]any)
-	if !ok || obj == nil {
+	outBytes, applied, err := apitransform.ApplyResponseJSONOpsBody(bodyForOps, outCT, func(obj map[string]any) (any, error) {
+		return dslconfig.ApplyJSONOps(meta, obj, ops)
+	})
+	if err != nil {
+		return nil, "", false, err
+	}
+	if !applied {
 		return respOutBody, outCT, didTransform, nil
-	}
-	outAny, err := dslconfig.ApplyJSONOps(meta, obj, ops)
-	if err != nil {
-		return nil, "", false, err
-	}
-	outBytes, err := json.Marshal(outAny)
-	if err != nil {
-		return nil, "", false, err
 	}
 	respOutBody = outBytes
 	if strings.TrimSpace(outCT) == "" || !strings.Contains(ctLower, "json") {
@@ -841,29 +813,6 @@ func isEffectiveStream(clientStream bool, resp *http.Response) bool {
 	}
 	upstreamCT := strings.ToLower(resp.Header.Get("Content-Type"))
 	return strings.Contains(upstreamCT, "text/event-stream")
-}
-
-func maybeDecodeUpstreamBody(body []byte, contentEncoding string) ([]byte, error) {
-	ce := strings.ToLower(strings.TrimSpace(contentEncoding))
-	switch ce {
-	case "", contentEncodingIdentity:
-		return nil, nil
-	case contentEncodingGzip:
-		gr, err := gzip.NewReader(bytes.NewReader(body))
-		if err != nil {
-			return nil, err
-		}
-		defer func() {
-			_ = gr.Close()
-		}()
-		decoded, err := io.ReadAll(gr)
-		if err != nil {
-			return nil, err
-		}
-		return decoded, nil
-	default:
-		return nil, fmt.Errorf("cannot decode upstream response (Content-Encoding=%q)", contentEncoding)
-	}
 }
 
 func (c *Client) httpClientForProvider(provider string) (*http.Client, error) {

@@ -1,6 +1,9 @@
 package apitransform
 
-import "strings"
+import (
+	"net/http"
+	"strings"
+)
 
 const contentTypeJSON = "application/json"
 
@@ -48,4 +51,31 @@ func MapResponseBodyByMode(mode string, body []byte) ([]byte, string, error) {
 	default:
 		return nil, "", unsupportedModeError("resp_map", mode)
 	}
+}
+
+// TransformNonStreamResponseBody applies the shared non-stream resp_map flow:
+// skip on upstream errors, decode the upstream body when needed, dispatch by
+// mode, and return whether a transform was actually applied.
+func TransformNonStreamResponseBody(
+	statusCode int,
+	mode string,
+	body []byte,
+	contentType string,
+	contentEncoding string,
+) ([]byte, string, bool, error) {
+	if statusCode >= http.StatusBadRequest {
+		return body, contentType, false, nil
+	}
+	decoded, _, err := DecodeResponseBody(body, contentEncoding)
+	if err != nil {
+		return nil, "", false, err
+	}
+	if !SupportsResponseMapMode(mode) {
+		return body, contentType, false, nil
+	}
+	out, outCT, err := MapResponseBodyByMode(mode, decoded)
+	if err != nil {
+		return nil, "", false, err
+	}
+	return out, outCT, true, nil
 }
