@@ -1,4 +1,4 @@
-.PHONY: run build build-all test version release-dry release-snapshot clean help bench-dsl bench-dslconfig bench-dsl-pprof prek prek-install
+.PHONY: run build build-all test version release-dry release-snapshot clean help bench-dsl bench-dslconfig bench-dsl-pprof prek prek-install sync-onr-core-version
 
 # Get version from root release tags only (ignore submodule tags like onr-core/v*)
 VERSION ?= $(shell git describe --tags --match 'v*' --always --dirty 2>/dev/null || echo "dev")
@@ -6,6 +6,8 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 ENV_FILE ?= ./.env
 GO_BUILD_CACHE ?= /tmp/go-build-cache
+GO ?= go
+ONR_CORE_MODULE := github.com/r9s-ai/open-next-router/onr-core
 BENCH_COUNT ?= 1
 BENCHTIME ?=
 BENCHMEM ?= -benchmem
@@ -96,6 +98,18 @@ prek-install: ## 安装/更新 prek
 
 prek: ## 执行 prek 全量检查
 	prek run --all-files
+
+sync-onr-core-version: ## Sync onr-core to the latest local onr-core/v* tag and run go mod tidy
+	@set -e; \
+	tag=$$(git tag -l 'onr-core/v*' | sort -V | tail -n 1); \
+	if [ -z "$$tag" ]; then \
+		echo "No local onr-core/v* tag found"; \
+		exit 1; \
+	fi; \
+	version=$${tag#onr-core/}; \
+	echo "Syncing $(ONR_CORE_MODULE) to $$version"; \
+	GOWORK=off $(GO) get $(ONR_CORE_MODULE)@$$version; \
+	GOWORK=off $(GO) mod tidy
 
 .PHONY: install-tools
 install-tools: ## Install development tools

@@ -9,7 +9,7 @@ require (
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gin-gonic/gin v1.10.0
 	github.com/mattn/go-isatty v0.0.20
-	github.com/r9s-ai/open-next-router/onr-core v1.7.1
+	github.com/r9s-ai/open-next-router/onr-core v1.7.5
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/net v0.48.0
 	gopkg.in/yaml.v3 v3.0.1
