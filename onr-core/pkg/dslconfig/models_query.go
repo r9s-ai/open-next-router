@@ -34,7 +34,7 @@ type ProviderModels struct {
 }
 
 func (p ProviderModels) Select(_ *dslmeta.Meta) (ModelsQueryConfig, bool) {
-	cfg := normalizeModelsQueryConfig(p.Defaults)
+	cfg := inferImplicitCustomModelsQueryConfig(p.Defaults)
 	if strings.TrimSpace(cfg.Mode) == "" {
 		return ModelsQueryConfig{}, false
 	}
@@ -69,6 +69,22 @@ func normalizeModelsQueryConfig(in ModelsQueryConfig) ModelsQueryConfig {
 		}
 	}
 	return out
+}
+
+func inferImplicitCustomModelsQueryConfig(in ModelsQueryConfig) ModelsQueryConfig {
+	out := normalizeModelsQueryConfig(in)
+	if out.Mode == "" && hasAnyModelsQueryRule(in) {
+		out.Mode = modelsModeCustom
+	}
+	return out
+}
+
+func hasAnyModelsQueryRule(cfg ModelsQueryConfig) bool {
+	return strings.TrimSpace(cfg.Path) != "" ||
+		len(cfg.IDPaths) > 0 ||
+		strings.TrimSpace(cfg.IDRegex) != "" ||
+		strings.TrimSpace(cfg.IDAllowRegex) != "" ||
+		len(cfg.Headers) > 0
 }
 
 func mergeModelsQueryConfig(base ModelsQueryConfig, override ModelsQueryConfig) ModelsQueryConfig {

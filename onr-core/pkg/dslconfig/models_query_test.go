@@ -80,6 +80,43 @@ provider "demo" {
 	}
 }
 
+func TestValidateProviderFile_ModelsBlock_ImplicitCustom(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "demo" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    models {
+      path "/v1/my-models";
+      id_path "$.items[*].name";
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+	cfg, ok := pf.Models.Select(nil)
+	if !ok {
+		t.Fatalf("expected models config selected")
+	}
+	if got, want := cfg.Mode, modelsModeCustom; got != want {
+		t.Fatalf("models mode=%q want=%q", got, want)
+	}
+	if got, want := cfg.Method, "GET"; got != want {
+		t.Fatalf("method=%q want=%q", got, want)
+	}
+}
+
 func TestExtractModelIDs_GeminiRewriteAndAllow(t *testing.T) {
 	cfg := ModelsQueryConfig{
 		Mode:         modelsModeGemini,
@@ -151,6 +188,59 @@ provider "demo" {
 		t.Fatalf("models path=%q want=%q", got, want)
 	}
 	if !reflect.DeepEqual(cfg.IDPaths, []string{"$.data[*].id"}) {
+		t.Fatalf("id paths=%v", cfg.IDPaths)
+	}
+}
+
+func TestValidateProviderFile_LoadsSiblingOnrConfigModelsModeImplicitCustom(t *testing.T) {
+	root := t.TempDir()
+	providersDir := filepath.Join(root, "providers")
+	if err := os.MkdirAll(providersDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "onr.conf"), []byte(`
+syntax "next-router/0.1";
+
+models_mode "shared_custom_models" {
+  path "/v2/models";
+  id_path "$.items[*].name";
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile onr.conf: %v", err)
+	}
+	path := filepath.Join(providersDir, "demo.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "demo" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    models {
+      models_mode shared_custom_models;
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile provider: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+	cfg, ok := pf.Models.Select(nil)
+	if !ok {
+		t.Fatalf("expected models config selected")
+	}
+	if got, want := cfg.Mode, modelsModeCustom; got != want {
+		t.Fatalf("models mode=%q want=%q", got, want)
+	}
+	if got, want := cfg.Path, "/v2/models"; got != want {
+		t.Fatalf("models path=%q want=%q", got, want)
+	}
+	if !reflect.DeepEqual(cfg.IDPaths, []string{"$.items[*].name"}) {
 		t.Fatalf("id paths=%v", cfg.IDPaths)
 	}
 }

@@ -115,6 +115,46 @@ func TestProviderFinishReasonSelect_MergeAndEmpty(t *testing.T) {
 	}
 }
 
+func TestProviderBalanceSelect_ImplicitCustom(t *testing.T) {
+	p := ProviderBalance{
+		Defaults: BalanceQueryConfig{
+			Path:        "/v1/credits",
+			BalancePath: "$.data.balance",
+		},
+	}
+
+	cfg, ok := p.Select(&dslmeta.Meta{API: "chat.completions"})
+	if !ok {
+		t.Fatalf("expected balance config selected")
+	}
+	if cfg.Mode != balanceModeCustom {
+		t.Fatalf("mode=%q want=%q", cfg.Mode, balanceModeCustom)
+	}
+	if cfg.Method != "GET" {
+		t.Fatalf("method=%q want=GET", cfg.Method)
+	}
+}
+
+func TestProviderModelsSelect_ImplicitCustom(t *testing.T) {
+	p := ProviderModels{
+		Defaults: ModelsQueryConfig{
+			Path:    "/v1/models",
+			IDPaths: []string{"$.items[*].name"},
+		},
+	}
+
+	cfg, ok := p.Select(nil)
+	if !ok {
+		t.Fatalf("expected models config selected")
+	}
+	if cfg.Mode != modelsModeCustom {
+		t.Fatalf("mode=%q want=%q", cfg.Mode, modelsModeCustom)
+	}
+	if cfg.Method != "GET" {
+		t.Fatalf("method=%q want=GET", cfg.Method)
+	}
+}
+
 func TestProviderFinishReasonSelect_PathRulesOverrideDefaults(t *testing.T) {
 	streamTrue := true
 	defaults := FinishReasonExtractConfig{Mode: "custom"}

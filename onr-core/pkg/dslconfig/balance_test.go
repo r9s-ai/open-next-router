@@ -90,6 +90,43 @@ provider "demo" {
 	}
 }
 
+func TestValidateProviderFile_BalanceBlock_ImplicitCustom(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "demo" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    balance {
+      path "/v1/credits";
+      balance_path "$.data.balance";
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+	cfg, ok := pf.Balance.Select(&dslmeta.Meta{API: "chat.completions"})
+	if !ok {
+		t.Fatalf("expected balance config selected")
+	}
+	if got, want := cfg.Mode, balanceModeCustom; got != want {
+		t.Fatalf("balance mode=%q want=%q", got, want)
+	}
+	if got, want := cfg.Method, "GET"; got != want {
+		t.Fatalf("method=%q want=%q", got, want)
+	}
+}
+
 func TestValidateProviderFile_RejectsLegacyUsedAlias(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "demo.conf")
@@ -204,6 +241,56 @@ provider "demo" {
 	}
 	if got, want := cfg.UsagePath, "/v9/dashboard/billing/usage"; got != want {
 		t.Fatalf("usage_path=%q want=%q", got, want)
+	}
+}
+
+func TestValidateProviderFile_LoadsSiblingOnrConfigBalanceModeImplicitCustom(t *testing.T) {
+	root := t.TempDir()
+	providersDir := filepath.Join(root, "providers")
+	if err := os.MkdirAll(providersDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "onr.conf"), []byte(`
+syntax "next-router/0.1";
+
+balance_mode "shared_custom_balance" {
+  path "/v9/credits";
+  balance_path "$.data.balance";
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile onr.conf: %v", err)
+	}
+	path := filepath.Join(providersDir, "demo.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "demo" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    balance {
+      balance_mode shared_custom_balance;
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile provider: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+	cfg, ok := pf.Balance.Select(&dslmeta.Meta{API: "chat.completions"})
+	if !ok {
+		t.Fatalf("expected balance config selected")
+	}
+	if got, want := cfg.Mode, balanceModeCustom; got != want {
+		t.Fatalf("balance mode=%q want=%q", got, want)
+	}
+	if got, want := cfg.Path, "/v9/credits"; got != want {
+		t.Fatalf("path=%q want=%q", got, want)
 	}
 }
 

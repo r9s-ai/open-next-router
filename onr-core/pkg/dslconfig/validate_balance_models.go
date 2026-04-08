@@ -44,6 +44,7 @@ func validateBalanceQueryConfig(path, providerName, scope string, cfg BalanceQue
 }
 
 func validateResolvedBalanceQueryConfig(path, providerName, scope string, cfg BalanceQueryConfig) error {
+	cfg = inferImplicitCustomBalanceQueryConfig(cfg)
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	if mode == "" {
 		return nil
@@ -185,6 +186,7 @@ func validateModelsQueryConfig(path, providerName, scope string, cfg ModelsQuery
 }
 
 func validateResolvedModelsQueryConfig(path, providerName, scope string, cfg ModelsQueryConfig) error {
+	cfg = inferImplicitCustomModelsQueryConfig(cfg)
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	if mode == "" {
 		return nil

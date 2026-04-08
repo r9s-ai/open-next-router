@@ -130,8 +130,10 @@ func resolveModelsModeRegistry(pathByMode map[string]string, raw modelsModeRegis
 		if strings.TrimSpace(cfg.Mode) == "" {
 			if builtin := builtinModelsPresetName(name); builtin != "" {
 				cfg.Mode = builtin
-				merged[name] = cfg
+			} else if hasAnyModelsQueryRule(cfg) {
+				cfg.Mode = modelsModeCustom
 			}
+			merged[name] = normalizeModelsQueryConfig(cfg)
 		}
 	}
 	resolved := modelsModeRegistry{}
@@ -156,7 +158,9 @@ func resolveModelsModeRegistry(pathByMode map[string]string, raw modelsModeRegis
 func resolveModelsQueryConfig(path, providerName, scope string, cfg ModelsQueryConfig, registry modelsModeRegistry, stack []string) (ModelsQueryConfig, error) {
 	mode := normalizeUsageMode(cfg.Mode)
 	switch mode {
-	case "", modelsModeCustom:
+	case "":
+		return inferImplicitCustomModelsQueryConfig(cfg), nil
+	case modelsModeCustom:
 		return normalizeModelsQueryConfig(cfg), nil
 	}
 	if builtinModelsPresetName(mode) != "" && len(stack) > 0 && stack[len(stack)-1] == mode {

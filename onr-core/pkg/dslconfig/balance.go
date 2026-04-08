@@ -53,9 +53,9 @@ func (p ProviderBalance) Select(meta *dslmeta.Meta) (BalanceQueryConfig, bool) {
 	if api == "" {
 		return BalanceQueryConfig{}, false
 	}
-	cfg := p.Defaults
+	cfg := inferImplicitCustomBalanceQueryConfig(p.Defaults)
 	if m, ok := p.selectMatch(api, meta.IsStream); ok {
-		cfg = mergeBalanceConfig(cfg, m.Query)
+		cfg = inferImplicitCustomBalanceQueryConfig(mergeBalanceConfig(cfg, m.Query))
 	}
 	if strings.TrimSpace(cfg.Mode) == "" {
 		return BalanceQueryConfig{}, false
@@ -111,11 +111,41 @@ func mergeBalanceConfig(base BalanceQueryConfig, override BalanceQueryConfig) Ba
 	if len(override.Headers) > 0 {
 		out.Headers = append([]HeaderOp(nil), override.Headers...)
 	}
+	return normalizeBalanceQueryConfig(out)
+}
+
+func normalizeBalanceQueryConfig(in BalanceQueryConfig) BalanceQueryConfig {
+	out := in
+	out.Mode = strings.ToLower(strings.TrimSpace(out.Mode))
+	if strings.TrimSpace(out.Method) == "" {
+		out.Method = "GET"
+	}
 	return out
+}
+
+func inferImplicitCustomBalanceQueryConfig(in BalanceQueryConfig) BalanceQueryConfig {
+	out := normalizeBalanceQueryConfig(in)
+	if out.Mode == "" && hasAnyBalanceQueryRule(in) {
+		out.Mode = balanceModeCustom
+	}
+	return out
+}
+
+func hasAnyBalanceQueryRule(cfg BalanceQueryConfig) bool {
+	return strings.TrimSpace(cfg.Path) != "" ||
+		strings.TrimSpace(cfg.BalancePath) != "" ||
+		strings.TrimSpace(cfg.BalanceExpr) != "" ||
+		strings.TrimSpace(cfg.UsedPath) != "" ||
+		strings.TrimSpace(cfg.UsedExpr) != "" ||
+		strings.TrimSpace(cfg.Unit) != "" ||
+		strings.TrimSpace(cfg.SubscriptionPath) != "" ||
+		strings.TrimSpace(cfg.UsagePath) != "" ||
+		len(cfg.Headers) > 0
 }
 
 // ExtractBalance parses custom balance response and extracts balance/used values.
 func ExtractBalance(cfg BalanceQueryConfig, respBody []byte) (float64, *float64, error) {
+	cfg = inferImplicitCustomBalanceQueryConfig(cfg)
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	if mode != balanceModeCustom {
 		return 0, nil, fmt.Errorf("unsupported balance mode %q", cfg.Mode)

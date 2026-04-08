@@ -1668,6 +1668,7 @@ Multiple: no
 
 - 支持：`openai` / `custom`。
 - 其他任意 mode 名：会先解析为顶层全局 `balance_mode` 预设，再统一执行。
+- 在 `balance` 里，如果省略 `balance_mode`，但已经声明了 `path`、`balance_path`、`balance_expr`、`used_path`、`used_expr` 等自定义查询字段，ONR 会自动按 `balance_mode custom;` 处理。
 
 #### method
 
@@ -1782,6 +1783,7 @@ Multiple: yes
 - `models_mode openai`：默认 `/v1/models`
 - `models_mode gemini`：默认 `/v1beta/models`
 - `models_mode custom`：必填
+- 如果省略 `models_mode`，但已经声明了 `path`、`id_path`、`id_regex`、`id_allow_regex` 等自定义查询字段，ONR 会自动按 `models_mode custom;` 处理。
 
 #### id_path
 

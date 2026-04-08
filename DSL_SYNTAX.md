@@ -1615,6 +1615,7 @@ Multiple: no
 
 - Supported: `openai` / `custom`.
 - Any other mode name is resolved as a global top-level `balance_mode` preset before execution.
+- Inside `balance`, if `balance_mode` is omitted but custom query fields such as `path`, `balance_path`, `balance_expr`, `used_path`, or `used_expr` are present, ONR treats the block as `balance_mode custom;`.
 
 #### method
 
@@ -1729,6 +1730,7 @@ Multiple: yes
 - `models_mode openai`: default `/v1/models`
 - `models_mode gemini`: default `/v1beta/models`
 - `models_mode custom`: required
+- If `models_mode` is omitted but custom query fields such as `path`, `id_path`, `id_regex`, or `id_allow_regex` are present, ONR treats the block as `models_mode custom;`.
 
 #### id_path
 

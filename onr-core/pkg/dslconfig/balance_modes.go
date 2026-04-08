@@ -141,8 +141,10 @@ func resolveBalanceModeRegistry(pathByMode map[string]string, raw balanceModeReg
 		if strings.TrimSpace(cfg.Mode) == "" {
 			if builtin := builtinBalancePresetName(name); builtin != "" {
 				cfg.Mode = builtin
-				merged[name] = cfg
+			} else if hasAnyBalanceQueryRule(cfg) {
+				cfg.Mode = balanceModeCustom
 			}
+			merged[name] = normalizeBalanceQueryConfig(cfg)
 		}
 	}
 	resolved := balanceModeRegistry{}
@@ -167,11 +169,13 @@ func resolveBalanceModeRegistry(pathByMode map[string]string, raw balanceModeReg
 func resolveBalanceQueryConfig(path, providerName, scope string, cfg BalanceQueryConfig, registry balanceModeRegistry, stack []string) (BalanceQueryConfig, error) {
 	mode := normalizeUsageMode(cfg.Mode)
 	switch mode {
-	case "", balanceModeCustom:
-		return cfg, nil
+	case "":
+		return inferImplicitCustomBalanceQueryConfig(cfg), nil
+	case balanceModeCustom:
+		return normalizeBalanceQueryConfig(cfg), nil
 	}
 	if builtinBalancePresetName(mode) != "" && len(stack) > 0 && stack[len(stack)-1] == mode {
-		return cfg, nil
+		return normalizeBalanceQueryConfig(cfg), nil
 	}
 	if baseCfg, ok := registry[mode]; ok {
 		for _, item := range stack {
@@ -188,7 +192,7 @@ func resolveBalanceQueryConfig(path, providerName, scope string, cfg BalanceQuer
 		return mergeBalanceConfig(base, override), nil
 	}
 	if (providerName == "" || len(stack) > 0) && builtinBalancePresetName(mode) != "" {
-		return cfg, nil
+		return normalizeBalanceQueryConfig(cfg), nil
 	}
 	return BalanceQueryConfig{}, validationIssue(
 		fmt.Errorf("provider %q in %q: %s unsupported balance_mode %q", providerName, path, scope, cfg.Mode),
