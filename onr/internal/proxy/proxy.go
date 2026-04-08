@@ -256,40 +256,14 @@ func mapNonStreamResponse(respBody []byte, resp *http.Response, respDir dslconfi
 	if decoded != nil {
 		srcBody = decoded
 	}
-	switch strings.ToLower(strings.TrimSpace(respDir.Mode)) {
-	case "openai_responses_to_openai_chat":
-		respOutBody, err = apitransform.MapOpenAIResponsesToChatCompletions(srcBody)
-		if err != nil {
-			return nil, "", false, err
-		}
-		return respOutBody, contentTypeJSON, true, nil
-	case "anthropic_to_openai_chat":
-		respOutBody, err = apitransform.MapClaudeMessagesResponseToOpenAIChatCompletions(srcBody)
-		if err != nil {
-			return nil, "", false, err
-		}
-		return respOutBody, contentTypeJSON, true, nil
-	case "gemini_to_openai_chat":
-		respOutBody, err = apitransform.MapGeminiGenerateContentToOpenAIChatCompletionsResponse(srcBody)
-		if err != nil {
-			return nil, "", false, err
-		}
-		return respOutBody, contentTypeJSON, true, nil
-	case "openai_to_anthropic_messages":
-		respOutBody, err = apitransform.MapOpenAIChatCompletionsToClaudeMessagesResponse(srcBody)
-		if err != nil {
-			return nil, "", false, err
-		}
-		return respOutBody, contentTypeJSON, true, nil
-	case "openai_to_gemini_chat", "openai_to_gemini_generate_content":
-		respOutBody, err = apitransform.MapOpenAIChatCompletionsToGeminiGenerateContentResponse(srcBody)
-		if err != nil {
-			return nil, "", false, err
-		}
-		return respOutBody, contentTypeJSON, true, nil
-	default:
+	if !apitransform.SupportsResponseMapMode(respDir.Mode) {
 		return respOutBody, outCT, didTransform, nil
 	}
+	respOutBody, outCT, err = apitransform.MapResponseBodyByMode(respDir.Mode, srcBody)
+	if err != nil {
+		return nil, "", false, err
+	}
+	return respOutBody, outCT, true, nil
 }
 
 func estimateNonStreamUsage(

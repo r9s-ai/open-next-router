@@ -1,7 +1,6 @@
 package apitransform
 
 import (
-	"fmt"
 	"io"
 	"strings"
 )
@@ -41,6 +40,6 @@ func TransformSSEByMode(mode string, src io.Reader, dst io.Writer) error {
 	case "gemini_to_openai_chat_chunks":
 		return TransformGeminiSSEToOpenAIChatCompletionsSSE(src, dst)
 	default:
-		return fmt.Errorf("unsupported sse_parse mode %q", strings.TrimSpace(mode))
+		return unsupportedModeError("sse_parse", mode)
 	}
 }
