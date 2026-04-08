@@ -1,7 +1,6 @@
 package apitransform
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/apitypes"
@@ -25,7 +24,10 @@ func MapOpenAIChatCompletionsChunkToClaudeEvents(body []byte) ([]byte, error) {
 func MapOpenAIChatCompletionsChunkToClaudeEventsObject(root apitypes.JSONObject) ([]apitypes.JSONObject, error) {
 	choices, _ := root["choices"].([]any)
 	if len(choices) == 0 {
-		return nil, fmt.Errorf("choices is required")
+		// OpenAI may emit a terminal usage-only chunk with choices=[].
+		// That chunk carries no downstream Anthropic event, but it is still
+		// valid upstream input and must not break stream transforms.
+		return nil, nil
 	}
 
 	events := make([]apitypes.JSONObject, 0, 4)
