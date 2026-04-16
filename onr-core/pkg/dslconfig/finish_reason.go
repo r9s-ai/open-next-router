@@ -1,12 +1,14 @@
 package dslconfig
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/jsonutil"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/ssemetrics"
 )
 
 type FinishReasonExtractConfig struct {
@@ -112,6 +114,12 @@ func (cfg FinishReasonExtractConfig) finishReasonPathConfigs() []finishReasonPat
 // ExtractFinishReason extracts finish_reason from a JSON response (best-effort).
 // Returns empty string when it cannot be extracted.
 func ExtractFinishReason(meta *dslmeta.Meta, cfg FinishReasonExtractConfig, respBody []byte) (string, error) {
+	if cfg.hasEventScopedPath() {
+		if v, ok := extractFinishReasonFromSSE(meta, cfg, respBody); ok {
+			return v, nil
+		}
+	}
+
 	var obj any
 	if err := json.Unmarshal(respBody, &obj); err != nil {
 		return "", fmt.Errorf("invalid json: %w", err)
@@ -121,6 +129,73 @@ func ExtractFinishReason(meta *dslmeta.Meta, cfg FinishReasonExtractConfig, resp
 		return "", nil
 	}
 	return extractFinishReasonFromRoot(meta, cfg, root)
+}
+
+func (cfg FinishReasonExtractConfig) hasEventScopedPath() bool {
+	for _, rule := range cfg.finishReasonPathConfigs() {
+		if strings.TrimSpace(rule.Event) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func extractFinishReasonFromSSE(meta *dslmeta.Meta, cfg FinishReasonExtractConfig, respBody []byte) (string, bool) {
+	if !looksLikeSSE(respBody) {
+		return "", false
+	}
+	handler := &finishReasonSSEHandler{
+		meta: meta,
+		cfg:  cfg,
+	}
+	tap := ssemetrics.NewTap(handler)
+	if tap == nil {
+		return "", false
+	}
+	_, _ = tap.Write(respBody)
+	tap.Finish()
+	if !handler.seenEvent {
+		return "", false
+	}
+	return handler.finishReason, true
+}
+
+func looksLikeSSE(body []byte) bool {
+	trimmed := bytes.TrimSpace(body)
+	return bytes.HasPrefix(trimmed, []byte("event:")) || bytes.HasPrefix(trimmed, []byte("data:"))
+}
+
+type finishReasonSSEHandler struct {
+	meta         *dslmeta.Meta
+	cfg          FinishReasonExtractConfig
+	finishReason string
+	seenEvent    bool
+}
+
+func (h *finishReasonSSEHandler) OnSSEEventDataJSON(event string, payload []byte) error {
+	if h == nil {
+		return nil
+	}
+	h.seenEvent = true
+	if strings.TrimSpace(h.finishReason) != "" {
+		return nil
+	}
+
+	var obj any
+	if err := json.Unmarshal(payload, &obj); err != nil {
+		return nil
+	}
+	root, _ := obj.(map[string]any)
+	if root == nil {
+		return nil
+	}
+
+	v, err := extractFinishReasonFromRootWithEvent(h.meta, h.cfg, event, root)
+	if err != nil {
+		return nil
+	}
+	h.finishReason = strings.TrimSpace(v)
+	return nil
 }
 
 func extractFinishReasonFromRoot(meta *dslmeta.Meta, cfg FinishReasonExtractConfig, root map[string]any) (string, error) {

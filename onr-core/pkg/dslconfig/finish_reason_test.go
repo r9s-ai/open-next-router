@@ -228,6 +228,36 @@ func TestExtractFinishReason_CustomPathEventFilter(t *testing.T) {
 	}
 }
 
+func TestExtractFinishReason_CustomPathEventFilter_SSEFramedBodyPrefersEvent(t *testing.T) {
+	meta := &dslmeta.Meta{API: "responses", IsStream: true}
+	cfg := FinishReasonExtractConfig{Mode: "custom"}
+	cfg.addFinishReasonPathRule("$.response.incomplete_details.reason", false, "response.incomplete", true)
+	cfg.addFinishReasonPathRule("$.response.status", true, "response.completed", true)
+
+	body := []byte(
+		"event: response.completed\n" +
+			`data: {"type":"response.completed","response":{"status":"completed","incomplete_details":{"reason":"max_output_tokens"}}}` + "\n\n",
+	)
+	v, err := ExtractFinishReason(meta, cfg, body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if v != "completed" {
+		t.Fatalf("unexpected finish_reason from SSE body: %q", v)
+	}
+}
+
+func TestExtractFinishReason_CustomPathEventFilter_InvalidJSONStillErrors(t *testing.T) {
+	meta := &dslmeta.Meta{API: "responses", IsStream: true}
+	cfg := FinishReasonExtractConfig{Mode: "custom"}
+	cfg.addFinishReasonPathRule("$.response.status", false, "response.completed", true)
+
+	_, err := ExtractFinishReason(meta, cfg, []byte("eventish but not json"))
+	if err == nil || !strings.Contains(err.Error(), "invalid json") {
+		t.Fatalf("err=%v, want invalid json", err)
+	}
+}
+
 func TestExtractFinishReason_CustomWithoutPathReturnsEmpty(t *testing.T) {
 	meta := &dslmeta.Meta{API: "chat.completions"}
 	body := []byte(`{"choices":[{"finish_reason":"stop"}]}`)
