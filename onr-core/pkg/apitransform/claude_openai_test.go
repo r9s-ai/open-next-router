@@ -1,6 +1,9 @@
 package apitransform
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestMapClaudeMessagesToOpenAIChatCompletions_Basic(t *testing.T) {
 	in := []byte(`{
@@ -8,9 +11,17 @@ func TestMapClaudeMessagesToOpenAIChatCompletions_Basic(t *testing.T) {
   "system":"You are helpful",
   "messages":[{"role":"user","content":[{"type":"text","text":"hi"}]}]
 }`)
-	out, err := MapClaudeMessagesToOpenAIChatCompletions(in)
+	var obj map[string]any
+	if err := json.Unmarshal(in, &obj); err != nil {
+		t.Fatalf("unexpected unmarshal error: %v", err)
+	}
+	outObj, err := MapClaudeMessagesToOpenAIChatCompletionsObject(obj)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	out, err := json.Marshal(outObj)
+	if err != nil {
+		t.Fatalf("unexpected marshal error: %v", err)
 	}
 	s := string(out)
 	if !containsAll(s, `"model":"claude-3-5-sonnet"`, `"role":"system"`, `"You are helpful"`, `"role":"user"`) {
@@ -41,9 +52,17 @@ func TestMapOpenAIChatCompletionsToClaudeMessagesRequest_Basic(t *testing.T) {
   "messages":[{"role":"system","content":"be concise"},{"role":"user","content":"hi"}],
   "max_tokens":128
 }`)
-	out, err := MapOpenAIChatCompletionsToClaudeMessagesRequest(in)
+	var obj map[string]any
+	if err := json.Unmarshal(in, &obj); err != nil {
+		t.Fatalf("unexpected unmarshal error: %v", err)
+	}
+	outObj, err := MapOpenAIChatCompletionsToClaudeMessagesRequestObject(obj)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	out, err := json.Marshal(outObj)
+	if err != nil {
+		t.Fatalf("unexpected marshal error: %v", err)
 	}
 	s := string(out)
 	if !containsAll(s, `"model":"claude-3-5-sonnet-20240620"`, `"system":"be concise"`, `"messages"`, `"max_tokens":128`) {

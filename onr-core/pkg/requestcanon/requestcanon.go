@@ -25,10 +25,10 @@ type Snapshot struct {
 	ContentType string
 }
 
-func Inspect(body []byte, contentType string, opts InspectOptions) (Snapshot, error) {
-	snapshot := Snapshot{
+func Inspect(body []byte, contentType string, opts InspectOptions) (*Snapshot, error) {
+	snapshot := &Snapshot{
 		Body:        body,
-		ContentType: strings.TrimSpace(contentType),
+		ContentType: contentType,
 	}
 	if len(bytes.TrimSpace(body)) == 0 {
 		return snapshot, nil
@@ -57,7 +57,7 @@ func Inspect(body []byte, contentType string, opts InspectOptions) (Snapshot, er
 	snapshot.Root = root
 	if root != nil {
 		if v, ok := root["model"].(string); ok {
-			snapshot.Model = strings.TrimSpace(v)
+			snapshot.Model = v
 		}
 		if v, ok := root["stream"].(bool); ok {
 			snapshot.Stream = v

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/apitransform"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/apitypes"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/requestcanon"
@@ -24,6 +25,8 @@ type Result struct {
 	ContentType string
 }
 
+// Apply transforms a request body and request value using request transform rules.
+// meta must be non-nil.
 func Apply(meta *dslmeta.Meta, contentType string, body []byte, value any, t dslconfig.RequestTransform, opts ApplyOptions) (Result, error) {
 	result := Result{
 		Body:        body,
@@ -32,21 +35,28 @@ func Apply(meta *dslmeta.Meta, contentType string, body []byte, value any, t dsl
 	}
 
 	out := value
+	changedByModelRewrite := false
+	modelMapped := strings.TrimSpace(meta.DSLModelMapped)
 	if root, ok := out.(map[string]any); ok && root != nil {
-		if meta != nil && strings.TrimSpace(meta.DSLModelMapped) != "" {
+		if modelMapped != "" {
 			if _, exists := root["model"]; exists {
-				root["model"] = strings.TrimSpace(meta.DSLModelMapped)
+				if current, ok := root["model"].(string); !ok || current != modelMapped {
+					root["model"] = modelMapped
+					changedByModelRewrite = true
+				}
 			}
 		}
 		result.Root = root
 	}
 
+	changedByJSONOps := false
 	if out != nil && len(t.JSONOps) > 0 {
 		var err error
 		out, err = dslconfig.ApplyJSONOps(meta, out, t.JSONOps)
 		if err != nil {
 			return Result{}, err
 		}
+		changedByJSONOps = true
 		result.Value = out
 		if root, ok := out.(map[string]any); ok {
 			result.Root = root
@@ -55,26 +65,26 @@ func Apply(meta *dslmeta.Meta, contentType string, body []byte, value any, t dsl
 		}
 	}
 
-	reqBody, err := marshalBody(result.Body, result.Root, result.ContentType, out)
-	if err != nil {
-		return Result{}, err
+	reqBody := result.Body
+	if changedByModelRewrite || changedByJSONOps || (reqBody == nil && out != nil) {
+		var err error
+		reqBody, err = marshalBody(result.Body, result.Root, result.ContentType, out)
+		if err != nil {
+			return Result{}, err
+		}
+		result.Body = reqBody
 	}
-	result.Body = reqBody
 
 	if strings.TrimSpace(t.ReqMapMode) == "" {
 		return result, nil
 	}
 
-	mappedBody, err := ApplyReqMap(t.ReqMapMode, reqBody, opts)
+	mappedBody, mappedAny, err := ApplyReqMap(t.ReqMapMode, reqBody, out, opts)
 	if err != nil {
 		return Result{}, err
 	}
 	result.Body = mappedBody
 
-	var mappedAny any
-	if err := json.Unmarshal(mappedBody, &mappedAny); err != nil {
-		return Result{}, err
-	}
 	result.Value = mappedAny
 	if root, ok := mappedAny.(map[string]any); ok {
 		result.Root = root
@@ -84,25 +94,67 @@ func Apply(meta *dslmeta.Meta, contentType string, body []byte, value any, t dsl
 	return result, nil
 }
 
-func ApplyReqMap(mode string, raw []byte, opts ApplyOptions) ([]byte, error) {
+func ApplyReqMap(mode string, raw []byte, out any, opts ApplyOptions) ([]byte, any, error) {
 	ce := strings.ToLower(strings.TrimSpace(opts.ContentEncoding))
 	if ce != "" && ce != contentEncodingIdentity {
-		return nil, fmt.Errorf("cannot transform encoded client request (Content-Encoding=%q)", opts.ContentEncoding)
+		return nil, nil, fmt.Errorf("cannot transform encoded client request (Content-Encoding=%q)", opts.ContentEncoding)
 	}
+	if root, ok := out.(map[string]any); ok && root != nil {
+		return applyReqMapObject(mode, apitypes.JSONObject(root))
+	}
+	root, err := parseReqMapInputObject(mode, raw)
+	if err != nil {
+		return nil, nil, err
+	}
+	return applyReqMapObject(mode, root)
+}
+
+func applyReqMapObject(mode string, root apitypes.JSONObject) ([]byte, any, error) {
+	var (
+		mappedObj apitypes.JSONObject
+		err       error
+	)
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case "openai_chat_to_openai_responses":
-		return apitransform.MapOpenAIChatCompletionsToResponsesRequest(raw)
+		mappedObj, err = apitransform.MapOpenAIChatCompletionsToResponsesObject(root)
 	case "openai_chat_to_anthropic_messages":
-		return apitransform.MapOpenAIChatCompletionsToClaudeMessagesRequest(raw)
+		mappedObj, err = apitransform.MapOpenAIChatCompletionsToClaudeMessagesRequestObject(root)
 	case "openai_chat_to_gemini_generate_content":
-		return apitransform.MapOpenAIChatCompletionsToGeminiGenerateContentRequest(raw)
+		mappedObj, err = apitransform.MapOpenAIChatCompletionsToGeminiGenerateContentRequestObject(root)
 	case "anthropic_to_openai_chat":
-		return apitransform.MapClaudeMessagesToOpenAIChatCompletions(raw)
+		mappedObj, err = apitransform.MapClaudeMessagesToOpenAIChatCompletionsObject(root)
 	case "gemini_to_openai_chat":
-		return apitransform.MapGeminiGenerateContentToOpenAIChatCompletions(raw)
+		mappedObj, err = apitransform.MapGeminiGenerateContentToOpenAIChatCompletionsObject(root)
+	default:
+		return nil, nil, fmt.Errorf("unsupported req_map mode %q", mode)
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	mappedBody, err := json.Marshal(mappedObj)
+	if err != nil {
+		return nil, nil, err
+	}
+	return mappedBody, map[string]any(mappedObj), nil
+}
+
+func parseReqMapInputObject(mode string, raw []byte) (apitypes.JSONObject, error) {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "openai_chat_to_openai_responses", "openai_chat_to_anthropic_messages", "openai_chat_to_gemini_generate_content":
+	case "anthropic_to_openai_chat":
+	case "gemini_to_openai_chat":
 	default:
 		return nil, fmt.Errorf("unsupported req_map mode %q", mode)
 	}
+	var obj any
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil, fmt.Errorf("parse json object: %w", err)
+	}
+	root, _ := obj.(map[string]any)
+	if root == nil {
+		return nil, fmt.Errorf("json is not an object")
+	}
+	return apitypes.JSONObject(root), nil
 }
 
 func marshalBody(originalBody []byte, root map[string]any, contentType string, value any) ([]byte, error) {

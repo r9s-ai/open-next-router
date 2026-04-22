@@ -50,7 +50,7 @@ func TestApply_ReqMapOnRawBodyWithoutParsedValue(t *testing.T) {
 	t.Parallel()
 
 	body := []byte(`{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello"}]}`)
-	result, err := Apply(nil, "application/json", body, nil, dslconfig.RequestTransform{
+	result, err := Apply(&dslmeta.Meta{}, "application/json", body, nil, dslconfig.RequestTransform{
 		ReqMapMode: "openai_chat_to_openai_responses",
 	}, ApplyOptions{})
 	if err != nil {
@@ -67,7 +67,7 @@ func TestApply_ReqMapOnRawBodyWithoutParsedValue(t *testing.T) {
 func TestApplyReqMap_RejectsEncodedClientRequest(t *testing.T) {
 	t.Parallel()
 
-	_, err := ApplyReqMap("openai_chat_to_openai_responses", []byte(`{}`), ApplyOptions{
+	_, _, err := ApplyReqMap("openai_chat_to_openai_responses", []byte(`{}`), nil, ApplyOptions{
 		ContentEncoding: "gzip",
 	})
 	if err == nil {

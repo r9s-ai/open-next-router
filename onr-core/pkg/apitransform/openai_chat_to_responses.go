@@ -23,21 +23,20 @@ const (
 // - This function only transforms the JSON payload; it does not alter headers or URL.
 // - It is intentionally permissive and keeps unknown fields out (to avoid surprising upstream behavior).
 func MapOpenAIChatCompletionsToResponsesRequest(reqBody []byte) ([]byte, error) {
-	root, err := apitypes.ParseJSONObject(reqBody, "chat request")
-	if err != nil {
-		return nil, err
+	var obj map[string]any
+	if err := json.Unmarshal(reqBody, &obj); err != nil {
+		return nil, fmt.Errorf("parse json object: %w", err)
 	}
-
 	// If it already looks like a Responses request, do not re-map.
-	if _, ok := root["input"]; ok && root["messages"] == nil {
+	if _, ok := obj["input"]; ok && obj["messages"] == nil {
 		return reqBody, nil
 	}
 
-	out, err := MapOpenAIChatCompletionsToResponsesObject(root)
+	out, err := MapOpenAIChatCompletionsToResponsesObject(obj)
 	if err != nil {
 		return nil, err
 	}
-	return out.Marshal()
+	return json.Marshal(out)
 }
 
 // MapOpenAIChatCompletionsToResponsesObject converts chat object payload to responses object payload.

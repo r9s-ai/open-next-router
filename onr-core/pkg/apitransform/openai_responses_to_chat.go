@@ -1,6 +1,7 @@
 package apitransform
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -17,15 +18,15 @@ const finishReasonLength = "length"
 // This is primarily meant for "legacy client -> /v1/chat/completions" compatibility when the upstream only
 // supports "/v1/responses" (or Azure "/openai/responses").
 func MapOpenAIResponsesToChatCompletions(respBody []byte) ([]byte, error) {
-	root, err := apitypes.ParseJSONObject(respBody, "responses")
+	var obj map[string]any
+	if err := json.Unmarshal(respBody, &obj); err != nil {
+		return nil, fmt.Errorf("parse json object: %w", err)
+	}
+	out, err := MapOpenAIResponsesToChatCompletionsObject(obj)
 	if err != nil {
 		return nil, err
 	}
-	out, err := MapOpenAIResponsesToChatCompletionsObject(root)
-	if err != nil {
-		return nil, err
-	}
-	return out.Marshal()
+	return json.Marshal(out)
 }
 
 // MapOpenAIResponsesToChatCompletionsObject maps responses object payload to chat.completions object payload.

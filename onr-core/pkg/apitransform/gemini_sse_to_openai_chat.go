@@ -3,6 +3,7 @@ package apitransform
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strconv"
@@ -73,9 +74,9 @@ type geminiSSEToChatState struct {
 }
 
 func (s *geminiSSEToChatState) handlePayload(payload []byte) error {
-	root, err := apitypes.ParseJSONObject(payload, "gemini stream event")
-	if err != nil {
-		return nil
+	var root map[string]any
+	if err := json.Unmarshal(payload, &root); err != nil {
+		return fmt.Errorf("parse json object: %w", err)
 	}
 	if m := strings.TrimSpace(jsonutil.CoerceString(root["modelVersion"])); m != "" {
 		s.model = m

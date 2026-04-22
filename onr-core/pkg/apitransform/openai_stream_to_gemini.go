@@ -7,21 +7,6 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/jsonutil"
 )
 
-// MapOpenAIChatCompletionsChunkToGeminiResponse maps one OpenAI chat chunk JSON to one Gemini-style response JSON.
-// The returned bool indicates whether this chunk has meaningful payload and should be emitted.
-func MapOpenAIChatCompletionsChunkToGeminiResponse(body []byte) ([]byte, bool, error) {
-	root, err := apitypes.ParseJSONObject(body, "openai chat chunk")
-	if err != nil {
-		return nil, false, err
-	}
-	out, emit, err := MapOpenAIChatCompletionsChunkToGeminiResponseObject(root)
-	if err != nil || !emit {
-		return nil, emit, err
-	}
-	b, err := out.Marshal()
-	return b, true, err
-}
-
 // MapOpenAIChatCompletionsChunkToGeminiResponseObject maps one OpenAI chat chunk object to one Gemini response object.
 func MapOpenAIChatCompletionsChunkToGeminiResponseObject(root apitypes.JSONObject) (apitypes.JSONObject, bool, error) {
 	choices, _ := root["choices"].([]any)

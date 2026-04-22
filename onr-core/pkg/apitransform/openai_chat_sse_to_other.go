@@ -3,9 +3,8 @@ package apitransform
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"io"
-
-	"github.com/r9s-ai/open-next-router/onr-core/pkg/apitypes"
 )
 
 // TransformOpenAIChatCompletionsSSEToClaudeMessagesSSE converts OpenAI chat SSE chunks into Claude-style SSE events.
@@ -17,7 +16,7 @@ func TransformOpenAIChatCompletionsSSEToClaudeMessagesSSE(r io.Reader, w io.Writ
 		}
 		out := make([][]byte, 0, len(events))
 		for _, ev := range events {
-			b, err := ev.Marshal()
+			b, err := json.Marshal(ev)
 			if err != nil {
 				return nil, err
 			}
@@ -34,7 +33,7 @@ func TransformOpenAIChatCompletionsSSEToGeminiSSE(r io.Reader, w io.Writer) erro
 		if err != nil || !emit {
 			return nil, err
 		}
-		b, err := obj.Marshal()
+		b, err := json.Marshal(obj)
 		if err != nil {
 			return nil, err
 		}
@@ -101,9 +100,9 @@ func transformOpenAIChatSSE(r io.Reader, mapper ssePayloadMapper, w io.Writer) e
 }
 
 func bytesToObject(payload []byte) map[string]any {
-	root, err := apitypes.ParseJSONObject(payload, "openai chat chunk")
-	if err != nil {
+	var obj map[string]any
+	if err := json.Unmarshal(payload, &obj); err != nil {
 		return nil
 	}
-	return root
+	return obj
 }

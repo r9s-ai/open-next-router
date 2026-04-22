@@ -11,6 +11,9 @@ func TestApplyJSONOps_TableDriven(t *testing.T) {
 	t.Parallel()
 
 	meta := &dslmeta.Meta{API: "chat.completions"}
+	type request struct {
+		A int `json:"a"`
+	}
 
 	cases := []struct {
 		name    string
@@ -25,7 +28,7 @@ func TestApplyJSONOps_TableDriven(t *testing.T) {
 			ops: []JSONOp{
 				{Op: "json_set", Path: "$.stream_options.include_usage", ValueExpr: "true"},
 			},
-			want: map[string]any{"a": float64(1), "stream_options": map[string]any{"include_usage": true}},
+			want: map[string]any{"a": 1, "stream_options": map[string]any{"include_usage": true}},
 		},
 		{
 			name: "json_set_if_absent_sets_when_missing",
@@ -33,7 +36,7 @@ func TestApplyJSONOps_TableDriven(t *testing.T) {
 			ops: []JSONOp{
 				{Op: "json_set_if_absent", Path: "$.instructions", ValueExpr: "\"\""},
 			},
-			want: map[string]any{"a": float64(1), "instructions": ""},
+			want: map[string]any{"a": 1, "instructions": ""},
 		},
 		{
 			name: "json_set_if_absent_skips_when_present",
@@ -47,13 +50,21 @@ func TestApplyJSONOps_TableDriven(t *testing.T) {
 			name: "json_del_missing_is_ok",
 			in:   map[string]any{"a": 1},
 			ops:  []JSONOp{{Op: "json_del", Path: "$.nope"}},
-			want: map[string]any{"a": float64(1)},
+			want: map[string]any{"a": 1},
 		},
 		{
 			name: "json_rename_moves_value",
 			in:   map[string]any{"a": map[string]any{"b": 2}},
 			ops:  []JSONOp{{Op: "json_rename", FromPath: "$.a.b", ToPath: "$.x.y"}},
-			want: map[string]any{"a": map[string]any{}, "x": map[string]any{"y": float64(2)}},
+			want: map[string]any{"a": map[string]any{}, "x": map[string]any{"y": 2}},
+		},
+		{
+			name: "struct_input_still_converts_to_json_object",
+			in:   request{A: 1},
+			ops: []JSONOp{
+				{Op: "json_set", Path: "$.stream_options.include_usage", ValueExpr: "true"},
+			},
+			want: map[string]any{"a": float64(1), "stream_options": map[string]any{"include_usage": true}},
 		},
 		{
 			name:    "invalid_path_prefix",

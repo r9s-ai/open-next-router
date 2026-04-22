@@ -7,19 +7,6 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/jsonutil"
 )
 
-// MapOpenAIChatCompletionsChunkToClaudeEvents maps one OpenAI chat chunk JSON to Claude-style stream events (JSON array).
-func MapOpenAIChatCompletionsChunkToClaudeEvents(body []byte) ([]byte, error) {
-	root, err := apitypes.ParseJSONObject(body, "openai chat chunk")
-	if err != nil {
-		return nil, err
-	}
-	events, err := MapOpenAIChatCompletionsChunkToClaudeEventsObject(root)
-	if err != nil {
-		return nil, err
-	}
-	return apitypes.JSONObject{"events": events}.Marshal()
-}
-
 // MapOpenAIChatCompletionsChunkToClaudeEventsObject maps one OpenAI chat chunk object to Claude-style stream events.
 func MapOpenAIChatCompletionsChunkToClaudeEventsObject(root apitypes.JSONObject) ([]apitypes.JSONObject, error) {
 	choices, _ := root["choices"].([]any)
