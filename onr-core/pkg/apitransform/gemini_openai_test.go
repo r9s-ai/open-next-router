@@ -1,6 +1,9 @@
 package apitransform
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestMapGeminiGenerateContentToOpenAIChatCompletions_Basic(t *testing.T) {
 	in := []byte(`{
@@ -8,9 +11,17 @@ func TestMapGeminiGenerateContentToOpenAIChatCompletions_Basic(t *testing.T) {
   "contents":[{"role":"user","parts":[{"text":"hi"}]}],
   "generation_config":{"temperature":0.2,"topP":0.9,"maxOutputTokens":128,"candidateCount":1}
 }`)
-	out, err := MapGeminiGenerateContentToOpenAIChatCompletions(in)
+	var obj map[string]any
+	if err := json.Unmarshal(in, &obj); err != nil {
+		t.Fatalf("unexpected unmarshal error: %v", err)
+	}
+	outObj, err := MapGeminiGenerateContentToOpenAIChatCompletionsObject(obj)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	out, err := json.Marshal(outObj)
+	if err != nil {
+		t.Fatalf("unexpected marshal error: %v", err)
 	}
 	s := string(out)
 	if !containsAll(s, `"role":"system"`, `"content":"sys"`, `"role":"user"`, `"content":"hi"`, `"max_tokens":128`) {
@@ -26,9 +37,17 @@ func TestMapGeminiGenerateContentToOpenAIChatCompletions_ModelAndStream(t *testi
   "contents":[{"role":"user","parts":[{"text":"hi"}]}],
   "generationConfig":{"maxOutputTokens":32}
 }`)
-	out, err := MapGeminiGenerateContentToOpenAIChatCompletions(in)
+	var obj map[string]any
+	if err := json.Unmarshal(in, &obj); err != nil {
+		t.Fatalf("unexpected unmarshal error: %v", err)
+	}
+	outObj, err := MapGeminiGenerateContentToOpenAIChatCompletionsObject(obj)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	out, err := json.Marshal(outObj)
+	if err != nil {
+		t.Fatalf("unexpected marshal error: %v", err)
 	}
 	s := string(out)
 	if !containsAll(s, `"model":"gpt-4o-mini"`, `"stream":true`, `"include_usage":true`, `"max_tokens":32`) {
@@ -62,9 +81,17 @@ func TestMapOpenAIChatCompletionsToGeminiGenerateContentRequest_Basic(t *testing
   "temperature":0.2,
   "top_p":0.9
 }`)
-	out, err := MapOpenAIChatCompletionsToGeminiGenerateContentRequest(in)
+	var obj map[string]any
+	if err := json.Unmarshal(in, &obj); err != nil {
+		t.Fatalf("unexpected unmarshal error: %v", err)
+	}
+	outObj, err := MapOpenAIChatCompletionsToGeminiGenerateContentRequestObject(obj)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	out, err := json.Marshal(outObj)
+	if err != nil {
+		t.Fatalf("unexpected marshal error: %v", err)
 	}
 	s := string(out)
 	if !containsAll(s, `"model":"gemini-2.0-flash"`, `"system_instruction"`, `"contents"`, `"maxOutputTokens":32`) {

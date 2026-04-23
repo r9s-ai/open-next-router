@@ -17,19 +17,6 @@ const (
 	claudeStopReasonMax      = "max_tokens"
 )
 
-// MapOpenAIChatCompletionsToClaudeMessagesRequest maps OpenAI chat request JSON to Claude messages request JSON.
-func MapOpenAIChatCompletionsToClaudeMessagesRequest(body []byte) ([]byte, error) {
-	root, err := apitypes.ParseJSONObject(body, "openai request")
-	if err != nil {
-		return nil, err
-	}
-	out, err := MapOpenAIChatCompletionsToClaudeMessagesRequestObject(root)
-	if err != nil {
-		return nil, err
-	}
-	return out.Marshal()
-}
-
 // MapOpenAIChatCompletionsToClaudeMessagesRequestObject maps OpenAI chat request object to Claude messages request object.
 func MapOpenAIChatCompletionsToClaudeMessagesRequestObject(root apitypes.JSONObject) (apitypes.JSONObject, error) {
 	model := strings.TrimSpace(jsonutil.CoerceString(root["model"]))
@@ -182,15 +169,15 @@ func mapOpenAIToolsToClaude(rawTools any) ([]any, bool) {
 // MapClaudeMessagesResponseToOpenAIChatCompletions maps Claude messages response JSON
 // to OpenAI chat.completions response JSON.
 func MapClaudeMessagesResponseToOpenAIChatCompletions(body []byte) ([]byte, error) {
-	root, err := apitypes.ParseJSONObject(body, "claude response")
+	var obj map[string]any
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return nil, fmt.Errorf("parse json object: %w", err)
+	}
+	out, err := MapClaudeMessagesResponseToOpenAIChatCompletionsObject(obj)
 	if err != nil {
 		return nil, err
 	}
-	out, err := MapClaudeMessagesResponseToOpenAIChatCompletionsObject(root)
-	if err != nil {
-		return nil, err
-	}
-	return out.Marshal()
+	return json.Marshal(out)
 }
 
 // MapClaudeMessagesResponseToOpenAIChatCompletionsObject maps Claude messages response object
@@ -289,19 +276,6 @@ func normalizeChatCompletionID(id string) string {
 		return id
 	}
 	return "chatcmpl_" + id
-}
-
-// MapClaudeMessagesToOpenAIChatCompletions maps Claude messages request JSON to OpenAI chat request JSON.
-func MapClaudeMessagesToOpenAIChatCompletions(body []byte) ([]byte, error) {
-	root, err := apitypes.ParseJSONObject(body, "claude request")
-	if err != nil {
-		return nil, err
-	}
-	out, err := MapClaudeMessagesToOpenAIChatCompletionsObject(root)
-	if err != nil {
-		return nil, err
-	}
-	return out.Marshal()
 }
 
 // MapClaudeMessagesToOpenAIChatCompletionsObject maps Claude messages object to OpenAI chat request object.
@@ -461,15 +435,15 @@ func prependClaudeSystemMessages(rawSystem any, openAIMessages []any) []any {
 
 // MapOpenAIChatCompletionsToClaudeMessagesResponse maps OpenAI chat response JSON to Claude response JSON.
 func MapOpenAIChatCompletionsToClaudeMessagesResponse(body []byte) ([]byte, error) {
-	root, err := apitypes.ParseJSONObject(body, "openai response")
+	var obj map[string]any
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return nil, fmt.Errorf("parse json object: %w", err)
+	}
+	out, err := MapOpenAIChatCompletionsToClaudeMessagesResponseObject(obj)
 	if err != nil {
 		return nil, err
 	}
-	out, err := MapOpenAIChatCompletionsToClaudeMessagesResponseObject(root)
-	if err != nil {
-		return nil, err
-	}
-	return out.Marshal()
+	return json.Marshal(out)
 }
 
 // MapOpenAIChatCompletionsToClaudeMessagesResponseObject maps OpenAI chat response object to Claude response object.

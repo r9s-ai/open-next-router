@@ -13,18 +13,21 @@ func ApplyJSONOps(meta *dslmeta.Meta, in any, ops []JSONOp) (any, error) {
 	if len(ops) == 0 {
 		return in, nil
 	}
-	// Convert to a mutable map representation.
-	b, err := json.Marshal(in)
-	if err != nil {
-		return nil, fmt.Errorf("marshal request json: %w", err)
-	}
-	var root any
-	if err := json.Unmarshal(b, &root); err != nil {
-		return nil, fmt.Errorf("unmarshal request json: %w", err)
-	}
-	obj, ok := root.(map[string]any)
+	obj, ok := in.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("request json root is not an object")
+		// Convert non-map inputs to a mutable JSON object representation.
+		b, err := json.Marshal(in)
+		if err != nil {
+			return nil, fmt.Errorf("marshal request json: %w", err)
+		}
+		var root any
+		if err := json.Unmarshal(b, &root); err != nil {
+			return nil, fmt.Errorf("unmarshal request json: %w", err)
+		}
+		obj, ok = root.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("request json root is not an object")
+		}
 	}
 
 	for _, op := range ops {

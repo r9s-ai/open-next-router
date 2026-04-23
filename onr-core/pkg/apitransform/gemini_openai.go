@@ -17,20 +17,6 @@ const (
 	finishContentFilter = "content_filter"
 )
 
-// MapOpenAIChatCompletionsToGeminiGenerateContentRequest maps OpenAI chat request JSON
-// to Gemini generateContent request JSON.
-func MapOpenAIChatCompletionsToGeminiGenerateContentRequest(body []byte) ([]byte, error) {
-	root, err := apitypes.ParseJSONObject(body, "openai request")
-	if err != nil {
-		return nil, err
-	}
-	out, err := MapOpenAIChatCompletionsToGeminiGenerateContentRequestObject(root)
-	if err != nil {
-		return nil, err
-	}
-	return out.Marshal()
-}
-
 // MapOpenAIChatCompletionsToGeminiGenerateContentRequestObject maps OpenAI chat request
 // object to Gemini generateContent request object.
 func MapOpenAIChatCompletionsToGeminiGenerateContentRequestObject(root apitypes.JSONObject) (apitypes.JSONObject, error) {
@@ -134,19 +120,6 @@ func openAIMessageToGeminiParts(msg map[string]any) []any {
 		out = append(out, apitypes.JSONObject{"text": c})
 	}
 	return out
-}
-
-// MapGeminiGenerateContentToOpenAIChatCompletions maps Gemini request JSON to OpenAI chat request JSON.
-func MapGeminiGenerateContentToOpenAIChatCompletions(body []byte) ([]byte, error) {
-	root, err := apitypes.ParseJSONObject(body, "gemini request")
-	if err != nil {
-		return nil, err
-	}
-	out, err := MapGeminiGenerateContentToOpenAIChatCompletionsObject(root)
-	if err != nil {
-		return nil, err
-	}
-	return out.Marshal()
 }
 
 // MapGeminiGenerateContentToOpenAIChatCompletionsObject maps Gemini request object to OpenAI chat request object.
@@ -338,8 +311,6 @@ func textPartFromAny(v any) (partType string, partText string) {
 	switch m0 := v.(type) {
 	case map[string]any:
 		return jsonutil.CoerceString(m0["type"]), jsonutil.CoerceString(m0["text"])
-	case apitypes.JSONObject:
-		return jsonutil.CoerceString(m0["type"]), jsonutil.CoerceString(m0["text"])
 	default:
 		return "", ""
 	}
@@ -347,15 +318,15 @@ func textPartFromAny(v any) (partType string, partText string) {
 
 // MapGeminiGenerateContentToOpenAIChatCompletionsResponse maps Gemini response JSON to OpenAI chat response JSON.
 func MapGeminiGenerateContentToOpenAIChatCompletionsResponse(body []byte) ([]byte, error) {
-	root, err := apitypes.ParseJSONObject(body, "gemini response")
+	var obj map[string]any
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return nil, fmt.Errorf("parse json object: %w", err)
+	}
+	out, err := MapGeminiGenerateContentToOpenAIChatCompletionsResponseObject(obj)
 	if err != nil {
 		return nil, err
 	}
-	out, err := MapGeminiGenerateContentToOpenAIChatCompletionsResponseObject(root)
-	if err != nil {
-		return nil, err
-	}
-	return out.Marshal()
+	return json.Marshal(out)
 }
 
 // MapGeminiGenerateContentToOpenAIChatCompletionsResponseObject maps Gemini response object to OpenAI chat response object.
@@ -475,15 +446,15 @@ func mapGeminiFinishToOpenAI(finish string) string {
 
 // MapOpenAIChatCompletionsToGeminiGenerateContentResponse maps OpenAI chat response JSON to Gemini response JSON.
 func MapOpenAIChatCompletionsToGeminiGenerateContentResponse(body []byte) ([]byte, error) {
-	root, err := apitypes.ParseJSONObject(body, "openai response")
+	var obj map[string]any
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return nil, fmt.Errorf("parse json object: %w", err)
+	}
+	out, err := MapOpenAIChatCompletionsToGeminiGenerateContentResponseObject(obj)
 	if err != nil {
 		return nil, err
 	}
-	out, err := MapOpenAIChatCompletionsToGeminiGenerateContentResponseObject(root)
-	if err != nil {
-		return nil, err
-	}
-	return out.Marshal()
+	return json.Marshal(out)
 }
 
 // MapOpenAIChatCompletionsToGeminiGenerateContentResponseObject maps OpenAI chat response object to Gemini response object.
