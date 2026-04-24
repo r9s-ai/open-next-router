@@ -32,7 +32,7 @@ func TestExtractBalance_CustomJSON(t *testing.T) {
 		UsedPath:    "$.data.used",
 	}
 	body := []byte(`{"data": {"total": 100.5, "used": 12.25}}`)
-	balance, used, err := ExtractBalance(cfg, body)
+	balance, used, err := ExtractBalance(&cfg, body)
 	if err != nil {
 		t.Fatalf("ExtractBalance: %v", err)
 	}

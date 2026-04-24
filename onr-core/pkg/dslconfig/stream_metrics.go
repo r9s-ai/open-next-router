@@ -23,8 +23,8 @@ import (
 // This is a pure pkg utility (no HTTP/Gin dependency) and can be shared by ONR and next-router.
 type StreamMetricsAggregator struct {
 	meta      *dslmeta.Meta
-	usageCfg  UsageExtractConfig
-	finishCfg FinishReasonExtractConfig
+	usageCfg  *UsageExtractConfig
+	finishCfg *FinishReasonExtractConfig
 	extract   streamUsageExtractFunc
 
 	inputIncludesCache  bool
@@ -40,8 +40,12 @@ type StreamMetricsAggregator struct {
 
 type streamUsageExtractFunc func(event string, respRoot map[string]any, respBody []byte) (*Usage, int, error)
 
-func NewStreamMetricsAggregator(meta *dslmeta.Meta, usageCfg UsageExtractConfig, finishCfg FinishReasonExtractConfig) *StreamMetricsAggregator {
-	usageCfg = prepareUsageExtractConfig(usageCfg)
+// NewStreamMetricsAggregator returns a non-nil aggregator.
+func NewStreamMetricsAggregator(meta *dslmeta.Meta, usageCfg *UsageExtractConfig, finishCfg *FinishReasonExtractConfig) *StreamMetricsAggregator {
+	if usageCfg != nil {
+		compiled := prepareUsageExtractConfig(*usageCfg)
+		usageCfg = &compiled
+	}
 	return &StreamMetricsAggregator{
 		meta:               meta,
 		usageCfg:           usageCfg,
@@ -51,37 +55,35 @@ func NewStreamMetricsAggregator(meta *dslmeta.Meta, usageCfg UsageExtractConfig,
 	}
 }
 
+// OnSSEDataJSON requires a valid StreamMetricsAggregator receiver.
 func (a *StreamMetricsAggregator) OnSSEDataJSON(payload []byte) error {
 	return a.OnSSEEventDataJSON("", payload)
 }
 
+// OnSSEEventDataJSON requires a valid StreamMetricsAggregator receiver.
 func (a *StreamMetricsAggregator) OnSSEEventDataJSON(event string, payload []byte) error {
-	if a == nil {
-		return nil
-	}
 	payload = bytes.TrimSpace(payload)
 	if len(payload) == 0 || bytes.Equal(payload, []byte("[DONE]")) {
 		return nil
 	}
 
-	var obj any
-	if err := json.Unmarshal(payload, &obj); err != nil {
-		return nil
-	}
-	root, _ := obj.(map[string]any)
-	if root == nil {
+	var root map[string]any
+	if err := json.Unmarshal(payload, &root); err != nil || root == nil {
 		return nil
 	}
 
 	// finish_reason: first non-empty
-	if strings.TrimSpace(a.finishReason) == "" && (strings.TrimSpace(a.finishCfg.Mode) != "" || a.finishCfg.hasFinishReasonPath()) {
+	if a.finishReason == "" && a.finishCfg != nil && (strings.TrimSpace(a.finishCfg.Mode) != "" || a.finishCfg.hasFinishReasonPath()) {
 		if v, err := extractFinishReasonFromRootWithEvent(a.meta, a.finishCfg, event, root); err == nil {
-			if s := strings.TrimSpace(v); s != "" {
-				a.finishReason = s
+			if v != "" {
+				a.finishReason = v
 			}
 		}
 	}
 
+	if a.usageCfg == nil {
+		return nil
+	}
 	mode := strings.ToLower(strings.TrimSpace(a.usageCfg.Mode))
 	if mode == "" {
 		return nil
@@ -108,7 +110,7 @@ func (a *StreamMetricsAggregator) OnSSEEventDataJSON(event string, payload []byt
 	}
 	// For anthropic/custom split-stream usage, recompute total from the merged fields unless
 	// custom mode explicitly provides TotalTokensExpr.
-	if shouldRecomputeMergedTotal(a.usageCfg) && a.lastUsage != nil {
+	if shouldRecomputeMergedTotal(*a.usageCfg) && a.lastUsage != nil {
 		normalizeUsageFields(a.lastUsage)
 		a.lastUsage.TotalTokens = a.lastUsage.InputTokens + a.lastUsage.OutputTokens
 	}
@@ -116,10 +118,8 @@ func (a *StreamMetricsAggregator) OnSSEEventDataJSON(event string, payload []byt
 }
 
 // OnSSETail parses a text/event-stream buffer and feeds each "data:" JSON payload into the aggregator.
+// OnSSETail requires a valid StreamMetricsAggregator receiver.
 func (a *StreamMetricsAggregator) OnSSETail(sse []byte) {
-	if a == nil {
-		return
-	}
 	tap := ssemetrics.NewTap(a)
 	if tap == nil {
 		return
@@ -132,10 +132,8 @@ func (a *StreamMetricsAggregator) OnSSETail(sse []byte) {
 //
 // - usageOk: true when non-zero upstream usage is available.
 // - cachedTokens: only meaningful when usageOk is true.
+// Result requires a valid StreamMetricsAggregator receiver.
 func (a *StreamMetricsAggregator) Result() (usage *Usage, cachedTokens int, finishReason string, usageOk bool) {
-	if a == nil {
-		return nil, 0, "", false
-	}
 	finishReason = strings.TrimSpace(a.finishReason)
 
 	if a.lastUsage == nil || isAllZeroUsage(a.lastUsage) {
@@ -143,7 +141,7 @@ func (a *StreamMetricsAggregator) Result() (usage *Usage, cachedTokens int, fini
 	}
 	a.recomputeMergedInputTokens()
 	normalizeUsageFields(a.lastUsage)
-	if shouldRecomputeMergedTotal(a.usageCfg) {
+	if a.usageCfg != nil && shouldRecomputeMergedTotal(*a.usageCfg) {
 		a.lastUsage.TotalTokens = a.lastUsage.InputTokens + a.lastUsage.OutputTokens
 	}
 	return a.lastUsage, a.lastCachedTokens, finishReason, true
@@ -211,7 +209,7 @@ func mergeUsagePreferNonZero(dst *Usage, src *Usage) {
 }
 
 func (a *StreamMetricsAggregator) recordFreshInputTokens(u *Usage) {
-	if a == nil || !a.inputIncludesCache || u == nil {
+	if !a.inputIncludesCache || u == nil {
 		return
 	}
 	fresh := u.InputTokens
@@ -225,7 +223,7 @@ func (a *StreamMetricsAggregator) recordFreshInputTokens(u *Usage) {
 }
 
 func (a *StreamMetricsAggregator) recomputeMergedInputTokens() {
-	if a == nil || !a.inputIncludesCache || a.lastUsage == nil {
+	if !a.inputIncludesCache || a.lastUsage == nil {
 		return
 	}
 	total := a.maxFreshInputTokens
@@ -239,8 +237,11 @@ func (a *StreamMetricsAggregator) recomputeMergedInputTokens() {
 	}
 }
 
-func usageConfigInputIncludesCache(meta *dslmeta.Meta, cfg UsageExtractConfig) bool {
-	compiled := compileUsageExtractConfig(meta, cfg)
+func usageConfigInputIncludesCache(meta *dslmeta.Meta, cfg *UsageExtractConfig) bool {
+	if cfg == nil {
+		return false
+	}
+	compiled := compileUsageExtractConfig(meta, *cfg)
 	if normalizeUsageMode(compiled.Mode) != usageModeCustom {
 		return false
 	}
@@ -288,8 +289,13 @@ func shouldRecomputeMergedTotal(cfg UsageExtractConfig) bool {
 	return strings.EqualFold(strings.TrimSpace(cfg.Mode), usageModeCustom) && cfg.TotalTokensExpr == nil
 }
 
-func newStreamUsageExtractFunc(meta *dslmeta.Meta, cfg UsageExtractConfig) streamUsageExtractFunc {
-	compiled := compileUsageExtractConfig(meta, cfg)
+func newStreamUsageExtractFunc(meta *dslmeta.Meta, cfg *UsageExtractConfig) streamUsageExtractFunc {
+	if cfg == nil {
+		return func(string, map[string]any, []byte) (*Usage, int, error) {
+			return nil, 0, nil
+		}
+	}
+	compiled := compileUsageExtractConfig(meta, *cfg)
 	return func(event string, respRoot map[string]any, respBody []byte) (*Usage, int, error) {
 		reqRoot := requestRootFromMeta(meta)
 		derivedRoot := derivedRootFromMeta(meta)

@@ -303,7 +303,7 @@ func evaluateUsageFactGroupWithEvent(event string, reqRoot, respRoot, derivedRoo
 }
 
 func shouldSkipDuplicateEventOptionalFallback(event string, fact usageFactConfig, seen map[string]struct{}) bool {
-	if strings.TrimSpace(event) != "" || !fact.EventOptional || strings.TrimSpace(fact.Event) == "" {
+	if strings.TrimSpace(event) != "" || !fact.EventOptional || fact.Event == "" {
 		return false
 	}
 	key := usageFactEventOptionalFallbackKey(fact)
@@ -328,13 +328,13 @@ func usageFactEventOptionalFallbackKey(fact usageFactConfig) string {
 		}
 	}
 	return strings.Join([]string{
-		strings.TrimSpace(fact.Source),
-		strings.TrimSpace(fact.Path),
-		strings.TrimSpace(fact.CountPath),
-		strings.TrimSpace(fact.SumPath),
-		strings.TrimSpace(fact.Expr.String()),
-		strings.TrimSpace(fact.Type),
-		strings.TrimSpace(fact.Status),
+		fact.Source,
+		fact.Path,
+		fact.CountPath,
+		fact.SumPath,
+		fact.Expr.String(),
+		fact.Type,
+		fact.Status,
 		strings.Join(attrs, ","),
 	}, "\x1f")
 }
@@ -348,7 +348,7 @@ func evaluateUsageFactWithEvent(event string, reqRoot, respRoot, derivedRoot map
 	if len(root) == 0 {
 		return 0, false
 	}
-	if expectedEvent := strings.TrimSpace(fact.Event); expectedEvent != "" {
+	if expectedEvent := fact.Event; expectedEvent != "" {
 		currentEvent := strings.TrimSpace(event)
 		switch {
 		case currentEvent == "" && fact.EventOptional:
@@ -372,7 +372,7 @@ func evaluateUsageFactWithEvent(event string, reqRoot, respRoot, derivedRoot map
 }
 
 func usageFactSourceRoot(reqRoot, respRoot, derivedRoot map[string]any, source string) map[string]any {
-	switch strings.ToLower(strings.TrimSpace(source)) {
+	switch strings.ToLower(source) {
 	case "", "response":
 		return respRoot
 	case "request":
@@ -408,10 +408,10 @@ func matchesUsageFactFilter(v any, typ, status string) bool {
 	if !ok {
 		return false
 	}
-	if typ != "" && !strings.EqualFold(strings.TrimSpace(jsonutil.CoerceString(m["type"])), strings.TrimSpace(typ)) {
+	if typ != "" && !strings.EqualFold(strings.TrimSpace(jsonutil.CoerceString(m["type"])), typ) {
 		return false
 	}
-	if status != "" && !strings.EqualFold(strings.TrimSpace(jsonutil.CoerceString(m["status"])), strings.TrimSpace(status)) {
+	if status != "" && !strings.EqualFold(strings.TrimSpace(jsonutil.CoerceString(m["status"])), status) {
 		return false
 	}
 	return true

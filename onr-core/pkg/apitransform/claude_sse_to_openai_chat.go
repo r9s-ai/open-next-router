@@ -68,20 +68,14 @@ type claudeStreamToolCall struct {
 	name string
 }
 
+// handleEvent requires a non-nil transform state and non-nil parsed SSE event.
 func (s *claudeSSEToChatState) handleEvent(ev *sseEvent) error {
-	if s == nil || ev == nil {
-		return nil
-	}
-	var anyRoot any
-	if err := json.Unmarshal(ev.Data, &anyRoot); err != nil {
-		return nil
-	}
-	root, _ := anyRoot.(map[string]any)
-	if root == nil {
+	var root map[string]any
+	if err := json.Unmarshal(ev.Data, &root); err != nil || root == nil {
 		return nil
 	}
 
-	eventName := strings.ToLower(strings.TrimSpace(ev.Event))
+	eventName := strings.ToLower(ev.Event)
 	if eventName == "" {
 		eventName = strings.ToLower(strings.TrimSpace(jsonutil.CoerceString(root["type"])))
 	}

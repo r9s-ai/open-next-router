@@ -33,10 +33,12 @@ type Result struct {
 	IDs      []string
 }
 
-func Query(ctx context.Context, p Params) (Result, error) {
+// Query requires a non-nil ctx and p.Meta.
+// It returns a non-nil Result on success.
+func Query(ctx context.Context, p Params) (*Result, error) {
 	provider := strings.ToLower(strings.TrimSpace(p.Provider))
 	if provider == "" {
-		return Result{}, errors.New("provider is empty")
+		return nil, errors.New("provider is empty")
 	}
 
 	meta := cloneMetaForQuery(p.Meta)
@@ -48,9 +50,9 @@ func Query(ctx context.Context, p Params) (Result, error) {
 		meta.APIKey = strings.TrimSpace(p.APIKey)
 	}
 
-	cfg, ok := p.File.Models.Select(&meta)
+	cfg, ok := p.File.Models.Select(meta)
 	if !ok {
-		return Result{}, fmt.Errorf("provider %q has no models config", provider)
+		return nil, fmt.Errorf("provider %q has no models config", provider)
 	}
 
 	baseURL := strings.TrimSpace(p.BaseURL)
@@ -58,20 +60,17 @@ func Query(ctx context.Context, p Params) (Result, error) {
 		baseURL = resolveBaseURLFromExpr(p.File.Routing.BaseURLExpr)
 	}
 	if baseURL == "" {
-		return Result{}, errors.New("base url is empty")
+		return nil, errors.New("base url is empty")
 	}
 	meta.BaseURL = baseURL
 
 	headers := make(http.Header)
-	p.File.Headers.Apply(&meta, nil, headers)
-	applyHeaderOps(headers, cfg.Headers, &meta)
+	p.File.Headers.Apply(meta, nil, headers)
+	applyHeaderOps(headers, cfg.Headers, meta)
 
 	client := p.HTTPClient
 	if client == nil {
 		client = http.DefaultClient
-	}
-	if ctx == nil {
-		ctx = context.Background()
 	}
 
 	method := strings.ToUpper(strings.TrimSpace(cfg.Method))
@@ -80,27 +79,25 @@ func Query(ctx context.Context, p Params) (Result, error) {
 	}
 	reqURL, err := buildModelsRequestURL(baseURL, cfg.Path)
 	if err != nil {
-		return Result{}, err
+		return nil, err
 	}
 	body, err := getResponseBody(ctx, client, method, reqURL, headers, p.DebugOut)
 	if err != nil {
-		return Result{}, err
+		return nil, err
 	}
 	ids, err := dslconfig.ExtractModelIDs(cfg, body)
 	if err != nil {
-		return Result{}, err
+		return nil, err
 	}
-	return Result{
+	return &Result{
 		Provider: provider,
 		IDs:      ids,
 	}, nil
 }
 
-func cloneMetaForQuery(src *dslmeta.Meta) dslmeta.Meta {
-	if src == nil {
-		return dslmeta.Meta{}
-	}
-	return dslmeta.Meta{
+// cloneMetaForQuery requires a non-nil source meta.
+func cloneMetaForQuery(src *dslmeta.Meta) *dslmeta.Meta {
+	return &dslmeta.Meta{
 		API:              src.API,
 		IsStream:         src.IsStream,
 		BaseURL:          src.BaseURL,

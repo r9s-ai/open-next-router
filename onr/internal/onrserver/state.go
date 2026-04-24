@@ -14,6 +14,7 @@ type state struct {
 	startedAt   int64
 }
 
+// Keys returns the current key store and may return nil before one is configured.
 func (s *state) Keys() *keystore.Store {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -26,6 +27,7 @@ func (s *state) SetKeys(keys *keystore.Store) {
 	s.keys = keys
 }
 
+// ModelRouter returns the current model router and may return nil before one is configured.
 func (s *state) ModelRouter() *models.Router {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

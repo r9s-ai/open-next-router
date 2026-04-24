@@ -18,6 +18,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// newBalanceCmd returns a non-nil balance command.
 func newBalanceCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "balance",
@@ -44,6 +45,7 @@ type balanceGetOptions struct {
 	debug       bool
 }
 
+// newBalanceGetCmd returns a non-nil balance get command.
 func newBalanceGetCmd() *cobra.Command {
 	opts := balanceGetOptions{
 		cfgPath: "onr.yaml",

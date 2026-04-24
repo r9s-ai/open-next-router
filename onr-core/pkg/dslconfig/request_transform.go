@@ -33,22 +33,28 @@ type MatchRequestTransform struct {
 	Transform RequestTransform
 }
 
-func (p ProviderRequestTransform) Select(meta *dslmeta.Meta) (RequestTransform, bool) {
-	if meta == nil {
-		return RequestTransform{}, false
-	}
+func normalizedReqMapMode(value string) string {
+	return strings.TrimSpace(value)
+}
+
+// Select requires a non-nil meta and a valid ProviderRequestTransform receiver.
+// It returns a request-scoped copy assembled from defaults and the matched override.
+// Callers may treat the returned transform as mutable for the current request, but
+// must not rely on any mutation being written back to the shared provider config.
+func (p *ProviderRequestTransform) Select(meta *dslmeta.Meta) (*RequestTransform, bool) {
 	api := strings.TrimSpace(meta.API)
 	if api == "" {
-		return RequestTransform{}, false
+		return nil, false
 	}
 	out := p.Defaults
 	if m, ok := p.selectMatch(api, meta.IsStream); ok {
 		out = mergeRequestTransform(out, m.Transform)
 	}
-	if out.ModelMap.Map == nil && strings.TrimSpace(out.ModelMap.DefaultExpr) == "" && len(out.JSONOps) == 0 && strings.TrimSpace(out.ReqMapMode) == "" {
-		return RequestTransform{}, false
+	out.ReqMapMode = normalizedReqMapMode(out.ReqMapMode)
+	if out.ModelMap.Map == nil && strings.TrimSpace(out.ModelMap.DefaultExpr) == "" && len(out.JSONOps) == 0 && out.ReqMapMode == "" {
+		return nil, false
 	}
-	return out, true
+	return &out, true
 }
 
 func (p ProviderRequestTransform) selectMatch(api string, stream bool) (MatchRequestTransform, bool) {
@@ -66,6 +72,16 @@ func (p ProviderRequestTransform) selectMatch(api string, stream bool) (MatchReq
 
 func mergeRequestTransform(base, override RequestTransform) RequestTransform {
 	out := base
+	if len(base.ModelMap.Map) > 0 {
+		cloned := make(map[string]string, len(base.ModelMap.Map))
+		for k, v := range base.ModelMap.Map {
+			cloned[k] = v
+		}
+		out.ModelMap.Map = cloned
+	}
+	if len(base.JSONOps) > 0 {
+		out.JSONOps = append([]JSONOp(nil), base.JSONOps...)
+	}
 	if len(override.ModelMap.Map) > 0 {
 		if out.ModelMap.Map == nil {
 			out.ModelMap.Map = map[string]string{}
@@ -80,16 +96,16 @@ func mergeRequestTransform(base, override RequestTransform) RequestTransform {
 	if len(override.JSONOps) > 0 {
 		out.JSONOps = append(out.JSONOps, override.JSONOps...)
 	}
-	if strings.TrimSpace(override.ReqMapMode) != "" {
-		out.ReqMapMode = override.ReqMapMode
+	if reqMapMode := normalizedReqMapMode(override.ReqMapMode); reqMapMode != "" {
+		out.ReqMapMode = reqMapMode
 	}
 	return out
 }
 
-func (t RequestTransform) Apply(meta *dslmeta.Meta) {
-	if meta == nil {
-		return
-	}
+// Apply requires a non-nil meta and a selected RequestTransform.
+// It mutates only the request meta derived from the current request and does not
+// write back into the shared provider config or registry state.
+func (t *RequestTransform) Apply(meta *dslmeta.Meta) {
 	if meta.DSLModelMapped == "" {
 		meta.DSLModelMapped = meta.ActualModelName
 	}

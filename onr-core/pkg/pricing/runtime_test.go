@@ -59,7 +59,7 @@ channels:
 		"cache_read_tokens":  100,
 		"cache_write_tokens": 50,
 	})
-	if !ok {
+	if !ok || c == nil {
 		t.Fatalf("Compute failed")
 	}
 	// input override 0.2, output override 0.7, then multiplier 2 * 1.5 = 3
@@ -114,7 +114,7 @@ entries:
 		"audio_tts_seconds": 1.32,
 		"total_tokens":      0,
 	})
-	if !ok {
+	if !ok || c == nil {
 		t.Fatalf("Compute failed")
 	}
 	if math.Abs(c.TotalCost-0.0198) > 1e-9 {
@@ -166,7 +166,7 @@ providers:
 	c, ok := r.Compute("openai", "key1", "gpt-4o-mini-tts", map[string]any{
 		"audio_tts_seconds": 1.608,
 	})
-	if !ok {
+	if !ok || c == nil {
 		t.Fatalf("Compute failed")
 	}
 	if math.Abs(c.TotalCost-0.02412) > 1e-9 {

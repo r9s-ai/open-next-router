@@ -159,10 +159,8 @@ func peekJSONBody(c *gin.Context) ([]byte, bool, string, error) {
 	return b, info.Stream, strings.TrimSpace(info.Model), nil
 }
 
+// cacheRequestInspection requires a non-nil Gin context from the request handler path.
 func cacheRequestInspection(c *gin.Context, body []byte, root map[string]any, model, contentType string) {
-	if c == nil {
-		return
-	}
 	c.Set(ctxKeyRequestBody, body)
 	c.Set(ctxKeyRequestRoot, root)
 	c.Set(ctxKeyRequestModel, model)

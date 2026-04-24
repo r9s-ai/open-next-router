@@ -27,7 +27,7 @@ func BenchmarkExtractUsage_OpenAI_FromRoot(b *testing.B) {
 
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		u, cached, err := extractUsageFromResponseRoot(meta, cfg, root, respBody)
+		u, cached, err := extractUsageFromResponseRoot(meta, *cfg, root, respBody)
 		if err != nil || u == nil || cached != 11 {
 			b.Fatalf("unexpected result usage=%+v cached=%d err=%v", u, cached, err)
 		}
@@ -51,7 +51,7 @@ func BenchmarkExtractUsage_CustomFacts_FromRoot(b *testing.B) {
 
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		u, cached, err := extractUsageFromResponseRoot(meta, cfg, root, respBody)
+		u, cached, err := extractUsageFromResponseRoot(meta, *cfg, root, respBody)
 		if err != nil || u == nil || cached != 23 {
 			b.Fatalf("unexpected result usage=%+v cached=%d err=%v", u, cached, err)
 		}
@@ -157,7 +157,7 @@ func benchmarkOpenAIUsagePayload() ([]byte, map[string]any) {
 	return body, root
 }
 
-func benchmarkCustomFactsUsageCase() (*dslmeta.Meta, UsageExtractConfig, []byte, map[string]any) {
+func benchmarkCustomFactsUsageCase() (*dslmeta.Meta, *UsageExtractConfig, []byte, map[string]any) {
 	inExpr, err := ParseUsageExpr("$.usage.input_tokens + $.request_usage.text_tokens")
 	if err != nil {
 		panic(err)
@@ -227,5 +227,5 @@ func benchmarkCustomFactsUsageCase() (*dslmeta.Meta, UsageExtractConfig, []byte,
 		],
 		"summary":{"extra_total":9}
 	}`)
-	return meta, cfg, body, root
+	return meta, &cfg, body, root
 }

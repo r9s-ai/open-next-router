@@ -76,6 +76,7 @@ func defaultUpdateDeps() updateDeps {
 	}
 }
 
+// newUpdateCmd returns a non-nil update command.
 func newUpdateCmd() *cobra.Command {
 	opts := updateOptions{
 		repo:    defaultUpdateRepo,
@@ -107,6 +108,7 @@ func newUpdateCmd() *cobra.Command {
 	return cmd
 }
 
+// newUpdateTargetCmd returns a non-nil target-specific update command.
 func newUpdateTargetCmd(target string, opts *updateOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   target,
@@ -131,10 +133,8 @@ func setUpdateFlagErrorFunc(cmd *cobra.Command) {
 	})
 }
 
+// runUpdateTarget requires a non-nil context from the command or caller.
 func runUpdateTarget(ctx context.Context, target string, opts updateOptions, deps updateDeps, out io.Writer) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	target = strings.TrimSpace(target)
 	if target == "" {
 		return errors.New("missing update target")
@@ -604,9 +604,6 @@ type githubRelease struct {
 }
 
 func resolveUpdateReleaseTag(ctx context.Context, version string, repo string, client *http.Client) (string, error) {
-	if client == nil {
-		return "", errors.New("nil http client")
-	}
 	normalizedRepo := strings.TrimSpace(repo)
 	if normalizedRepo == "" {
 		normalizedRepo = defaultUpdateRepo

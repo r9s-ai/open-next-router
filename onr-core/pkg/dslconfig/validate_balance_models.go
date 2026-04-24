@@ -44,7 +44,8 @@ func validateBalanceQueryConfig(path, providerName, scope string, cfg BalanceQue
 }
 
 func validateResolvedBalanceQueryConfig(path, providerName, scope string, cfg BalanceQueryConfig) error {
-	cfg = inferImplicitCustomBalanceQueryConfig(cfg)
+	cfgp := inferImplicitCustomBalanceQueryConfig(&cfg)
+	cfg = *cfgp
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	if mode == "" {
 		return nil

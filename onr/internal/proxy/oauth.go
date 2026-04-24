@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"strings"
 	"time"
 
@@ -13,11 +12,8 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/oauthclient"
 )
 
+// prepareOAuthForUpstream requires a non-nil Client receiver and meta.
 func (c *Client) prepareOAuthForUpstream(ctx context.Context, provider string, pf dslconfig.ProviderFile, meta *dslmeta.Meta) error {
-	if c == nil || meta == nil {
-		return nil
-	}
-
 	phase, ok := pf.Headers.Effective(meta)
 	if !ok {
 		return nil
@@ -33,9 +29,6 @@ func (c *Client) prepareOAuthForUpstream(ctx context.Context, provider string, p
 	meta.OAuthCacheKey = cacheKey
 
 	client := c.oauthTokenClient()
-	if client == nil {
-		return fmt.Errorf("oauth client is nil")
-	}
 	tok, err := client.GetToken(ctx, oauthclient.AcquireInput{
 		CacheKey:          cacheKey,
 		TokenURL:          resolved.TokenURL,
@@ -58,10 +51,8 @@ func (c *Client) prepareOAuthForUpstream(ctx context.Context, provider string, p
 	return nil
 }
 
+// oauthTokenClient requires a non-nil Client receiver and returns the cached OAuth client.
 func (c *Client) oauthTokenClient() *oauthclient.Client {
-	if c == nil {
-		return nil
-	}
 	c.oauthMu.Lock()
 	defer c.oauthMu.Unlock()
 	if c.oauthClient == nil {
@@ -70,19 +61,14 @@ func (c *Client) oauthTokenClient() *oauthclient.Client {
 	return c.oauthClient
 }
 
+// invalidateOAuthCache requires a non-nil Client receiver.
 func (c *Client) invalidateOAuthCache(cacheKey string) {
-	if c == nil {
-		return
-	}
-	client := c.oauthTokenClient()
-	if client == nil {
-		return
-	}
-	client.Invalidate(cacheKey)
+	c.oauthTokenClient().Invalidate(cacheKey)
 }
 
+// buildOAuthCacheKey expects provider to be pre-normalized without leading or trailing spaces.
 func buildOAuthCacheKey(provider string, identity string, apiKey string) string {
-	p := strings.ToLower(strings.TrimSpace(provider))
+	p := strings.ToLower(provider)
 	id := strings.TrimSpace(identity)
 	h := sha256.Sum256([]byte(strings.TrimSpace(apiKey)))
 	return p + "|" + id + "|" + hex.EncodeToString(h[:])

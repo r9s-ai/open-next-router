@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// newTokenCmd returns a non-nil token command.
 func newTokenCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "token",
@@ -20,6 +21,7 @@ func newTokenCmd() *cobra.Command {
 	return cmd
 }
 
+// newTokenCreateCmd returns a non-nil token create command.
 func newTokenCreateCmd() *cobra.Command {
 	opts := tokenCreateOptions{
 		cfgPath: "onr.yaml",
@@ -41,6 +43,7 @@ func newTokenCreateCmd() *cobra.Command {
 	return cmd
 }
 
+// newTokenCreatePhaseCmd returns a non-nil phase subcommand.
 func newTokenCreatePhaseCmd() *cobra.Command {
 	opts := tokenCreateOptions{
 		cfgPath: "onr.yaml",

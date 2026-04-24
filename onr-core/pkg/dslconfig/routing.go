@@ -22,10 +22,8 @@ type RoutingMatch struct {
 	QueryDels  []string
 }
 
-func (p ProviderRouting) Apply(meta *dslmeta.Meta) error {
-	if meta == nil {
-		return fmt.Errorf("meta is nil")
-	}
+// Apply requires a non-nil meta and a valid ProviderRouting receiver.
+func (p *ProviderRouting) Apply(meta *dslmeta.Meta) error {
 	api := strings.TrimSpace(meta.API)
 	if api == "" {
 		return nil
@@ -65,7 +63,8 @@ func (p ProviderRouting) Apply(meta *dslmeta.Meta) error {
 	return nil
 }
 
-func (p ProviderRouting) HasMatchAPI(api string) bool {
+// HasMatchAPI requires a valid ProviderRouting receiver.
+func (p *ProviderRouting) HasMatchAPI(api string) bool {
 	for _, m := range p.Matches {
 		if m.API != "" && m.API != api {
 			continue
@@ -75,10 +74,9 @@ func (p ProviderRouting) HasMatchAPI(api string) bool {
 	return false
 }
 
-func (p ProviderRouting) HasMatch(meta *dslmeta.Meta) bool {
-	if meta == nil {
-		return false
-	}
+// HasMatch requires a non-nil meta and reports whether it matches any configured routing rule.
+// It returns false when meta.API is empty.
+func (p *ProviderRouting) HasMatch(meta *dslmeta.Meta) bool {
 	api := strings.TrimSpace(meta.API)
 	if api == "" {
 		return false
@@ -87,7 +85,7 @@ func (p ProviderRouting) HasMatch(meta *dslmeta.Meta) bool {
 	return ok
 }
 
-func (p ProviderRouting) selectMatch(api string, stream bool) (RoutingMatch, bool) {
+func (p *ProviderRouting) selectMatch(api string, stream bool) (RoutingMatch, bool) {
 	for _, m := range p.Matches {
 		if m.API != "" && m.API != api {
 			continue

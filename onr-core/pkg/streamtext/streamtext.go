@@ -123,7 +123,7 @@ func extractAnthropicDeltaText(payload []byte) string {
 }
 
 func collectTextFields(out *strings.Builder, v any, depth, maxDepth int) {
-	if out == nil || depth > maxDepth || v == nil {
+	if depth > maxDepth || v == nil {
 		return
 	}
 	switch t := v.(type) {

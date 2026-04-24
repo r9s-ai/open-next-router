@@ -79,7 +79,7 @@ func TestExtractFinishReason_OpenAIPathOverrideTakesPrecedence(t *testing.T) {
 	meta := &dslmeta.Meta{API: "responses"}
 	body := []byte(`{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"meta":{"finish":"tool_calls"}}`)
 	cfg := FinishReasonExtractConfig{Mode: "custom", FinishReasonPath: "$.meta.finish"}
-	v, err := ExtractFinishReason(meta, cfg, body)
+	v, err := ExtractFinishReason(meta, &cfg, body)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestExtractFinishReason_GeminiSnakeCaseFallback(t *testing.T) {
 func TestExtractFinishReason_CustomPath(t *testing.T) {
 	meta := &dslmeta.Meta{API: "chat.completions"}
 	body := []byte(`{"x":{"y":[{"z":"length"}]}}`)
-	v, err := ExtractFinishReason(meta, FinishReasonExtractConfig{Mode: "custom", FinishReasonPath: "$.x.y[0].z"}, body)
+	v, err := ExtractFinishReason(meta, &FinishReasonExtractConfig{Mode: "custom", FinishReasonPath: "$.x.y[0].z"}, body)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestExtractFinishReason_CustomPathFallback(t *testing.T) {
 	cfg.addFinishReasonPath("$.message.stop_reason", true)
 
 	body := []byte(`{"type":"message_start","message":{"stop_reason":"max_tokens"}}`)
-	v, err := ExtractFinishReason(meta, cfg, body)
+	v, err := ExtractFinishReason(meta, &cfg, body)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestExtractFinishReason_CustomPathPrimaryTakesPrecedenceOverFallback(t *tes
 	cfg.addFinishReasonPath("$.message.stop_reason", true)
 
 	body := []byte(`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"message":{"stop_reason":"max_tokens"}}`)
-	v, err := ExtractFinishReason(meta, cfg, body)
+	v, err := ExtractFinishReason(meta, &cfg, body)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestExtractFinishReason_CustomPathEventFilter(t *testing.T) {
 	cfg.addFinishReasonPathRule("$.response.status", true, "response.completed", true)
 
 	body := []byte(`{"type":"response.completed","response":{"status":"completed","incomplete_details":{"reason":"max_output_tokens"}}}`)
-	v, err := ExtractFinishReason(meta, cfg, body)
+	v, err := ExtractFinishReason(meta, &cfg, body)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestExtractFinishReason_CustomPathEventFilter(t *testing.T) {
 	if err := json.Unmarshal(body, &root); err != nil {
 		t.Fatalf("json.Unmarshal: %v", err)
 	}
-	v, err = extractFinishReasonFromRootWithEvent(meta, cfg, "response.completed", root)
+	v, err = extractFinishReasonFromRootWithEvent(meta, &cfg, "response.completed", root)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestExtractFinishReason_CustomPathEventFilter_SSEFramedBodyPrefersEvent(t *
 		"event: response.completed\n" +
 			`data: {"type":"response.completed","response":{"status":"completed","incomplete_details":{"reason":"max_output_tokens"}}}` + "\n\n",
 	)
-	v, err := ExtractFinishReason(meta, cfg, body)
+	v, err := ExtractFinishReason(meta, &cfg, body)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -252,7 +252,7 @@ func TestExtractFinishReason_CustomPathEventFilter_InvalidJSONStillErrors(t *tes
 	cfg := FinishReasonExtractConfig{Mode: "custom"}
 	cfg.addFinishReasonPathRule("$.response.status", false, "response.completed", true)
 
-	_, err := ExtractFinishReason(meta, cfg, []byte("eventish but not json"))
+	_, err := ExtractFinishReason(meta, &cfg, []byte("eventish but not json"))
 	if err == nil || !strings.Contains(err.Error(), "invalid json") {
 		t.Fatalf("err=%v, want invalid json", err)
 	}
@@ -261,7 +261,7 @@ func TestExtractFinishReason_CustomPathEventFilter_InvalidJSONStillErrors(t *tes
 func TestExtractFinishReason_CustomWithoutPathReturnsEmpty(t *testing.T) {
 	meta := &dslmeta.Meta{API: "chat.completions"}
 	body := []byte(`{"choices":[{"finish_reason":"stop"}]}`)
-	v, err := ExtractFinishReason(meta, FinishReasonExtractConfig{Mode: "custom"}, body)
+	v, err := ExtractFinishReason(meta, &FinishReasonExtractConfig{Mode: "custom"}, body)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

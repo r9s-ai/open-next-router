@@ -36,29 +36,28 @@ type MatchFinishReason struct {
 	Extract FinishReasonExtractConfig
 }
 
-func (p ProviderFinishReason) Select(meta *dslmeta.Meta) (FinishReasonExtractConfig, bool) {
-	if meta == nil {
-		return FinishReasonExtractConfig{}, false
-	}
+// Select requires a non-nil meta and a valid ProviderFinishReason receiver.
+func (p *ProviderFinishReason) Select(meta *dslmeta.Meta) (*FinishReasonExtractConfig, bool) {
 	// match overrides
 	for _, m := range p.Matches {
-		if strings.TrimSpace(m.API) != "" && strings.TrimSpace(m.API) != strings.TrimSpace(meta.API) {
+		if m.API != "" && m.API != strings.TrimSpace(meta.API) {
 			continue
 		}
 		if m.Stream != nil && *m.Stream != meta.IsStream {
 			continue
 		}
 		cfg := mergeFinishReasonConfig(p.Defaults, m.Extract)
-		if strings.TrimSpace(cfg.Mode) == "" && !cfg.hasFinishReasonPath() {
-			return FinishReasonExtractConfig{}, false
+		if cfg.Mode == "" && !cfg.hasFinishReasonPath() {
+			return nil, false
 		}
-		return cfg, true
+		return &cfg, true
 	}
 	// defaults
-	if strings.TrimSpace(p.Defaults.Mode) == "" && !p.Defaults.hasFinishReasonPath() {
-		return FinishReasonExtractConfig{}, false
+	if p.Defaults.Mode == "" && !p.Defaults.hasFinishReasonPath() {
+		return nil, false
 	}
-	return p.Defaults, true
+	cfg := p.Defaults
+	return &cfg, true
 }
 
 func mergeFinishReasonConfig(base, override FinishReasonExtractConfig) FinishReasonExtractConfig {
@@ -66,27 +65,26 @@ func mergeFinishReasonConfig(base, override FinishReasonExtractConfig) FinishRea
 	if len(base.paths) > 0 {
 		out.paths = append([]finishReasonPathConfig(nil), base.paths...)
 	}
-	if strings.TrimSpace(override.Mode) != "" {
+	if override.Mode != "" {
 		out.Mode = override.Mode
 	}
 	if len(override.paths) > 0 {
 		out.paths = append([]finishReasonPathConfig(nil), override.paths...)
 		out.FinishReasonPath = override.paths[len(override.paths)-1].Path
-	} else if strings.TrimSpace(override.FinishReasonPath) != "" {
+	} else if override.FinishReasonPath != "" {
 		out.paths = nil
 		out.FinishReasonPath = override.FinishReasonPath
 	}
 	return out
 }
 
+// addFinishReasonPath requires a valid FinishReasonExtractConfig receiver.
 func (cfg *FinishReasonExtractConfig) addFinishReasonPath(path string, fallback bool) {
 	cfg.addFinishReasonPathRule(path, fallback, "", false)
 }
 
+// addFinishReasonPathRule requires a valid FinishReasonExtractConfig receiver.
 func (cfg *FinishReasonExtractConfig) addFinishReasonPathRule(path string, fallback bool, event string, eventOptional bool) {
-	if cfg == nil {
-		return
-	}
 	cfg.FinishReasonPath = path
 	cfg.paths = append(cfg.paths, finishReasonPathConfig{
 		Path:          path,
@@ -96,11 +94,13 @@ func (cfg *FinishReasonExtractConfig) addFinishReasonPathRule(path string, fallb
 	})
 }
 
-func (cfg FinishReasonExtractConfig) hasFinishReasonPath() bool {
+// hasFinishReasonPath requires a valid FinishReasonExtractConfig receiver.
+func (cfg *FinishReasonExtractConfig) hasFinishReasonPath() bool {
 	return len(cfg.finishReasonPathConfigs()) > 0
 }
 
-func (cfg FinishReasonExtractConfig) finishReasonPathConfigs() []finishReasonPathConfig {
+// finishReasonPathConfigs requires a valid FinishReasonExtractConfig receiver.
+func (cfg *FinishReasonExtractConfig) finishReasonPathConfigs() []finishReasonPathConfig {
 	if len(cfg.paths) > 0 {
 		return append([]finishReasonPathConfig(nil), cfg.paths...)
 	}
@@ -113,7 +113,8 @@ func (cfg FinishReasonExtractConfig) finishReasonPathConfigs() []finishReasonPat
 
 // ExtractFinishReason extracts finish_reason from a JSON response (best-effort).
 // Returns empty string when it cannot be extracted.
-func ExtractFinishReason(meta *dslmeta.Meta, cfg FinishReasonExtractConfig, respBody []byte) (string, error) {
+// ExtractFinishReason requires a selected FinishReasonExtractConfig.
+func ExtractFinishReason(meta *dslmeta.Meta, cfg *FinishReasonExtractConfig, respBody []byte) (string, error) {
 	if cfg.hasEventScopedPath() {
 		if v, ok := extractFinishReasonFromSSE(meta, cfg, respBody); ok {
 			return v, nil
@@ -131,16 +132,17 @@ func ExtractFinishReason(meta *dslmeta.Meta, cfg FinishReasonExtractConfig, resp
 	return extractFinishReasonFromRoot(meta, cfg, root)
 }
 
-func (cfg FinishReasonExtractConfig) hasEventScopedPath() bool {
+// hasEventScopedPath requires a valid FinishReasonExtractConfig receiver.
+func (cfg *FinishReasonExtractConfig) hasEventScopedPath() bool {
 	for _, rule := range cfg.finishReasonPathConfigs() {
-		if strings.TrimSpace(rule.Event) != "" {
+		if rule.Event != "" {
 			return true
 		}
 	}
 	return false
 }
 
-func extractFinishReasonFromSSE(meta *dslmeta.Meta, cfg FinishReasonExtractConfig, respBody []byte) (string, bool) {
+func extractFinishReasonFromSSE(meta *dslmeta.Meta, cfg *FinishReasonExtractConfig, respBody []byte) (string, bool) {
 	if !looksLikeSSE(respBody) {
 		return "", false
 	}
@@ -167,26 +169,20 @@ func looksLikeSSE(body []byte) bool {
 
 type finishReasonSSEHandler struct {
 	meta         *dslmeta.Meta
-	cfg          FinishReasonExtractConfig
+	cfg          *FinishReasonExtractConfig
 	finishReason string
 	seenEvent    bool
 }
 
+// OnSSEEventDataJSON requires a valid finishReasonSSEHandler receiver.
 func (h *finishReasonSSEHandler) OnSSEEventDataJSON(event string, payload []byte) error {
-	if h == nil {
-		return nil
-	}
 	h.seenEvent = true
-	if strings.TrimSpace(h.finishReason) != "" {
+	if h.finishReason != "" {
 		return nil
 	}
 
-	var obj any
-	if err := json.Unmarshal(payload, &obj); err != nil {
-		return nil
-	}
-	root, _ := obj.(map[string]any)
-	if root == nil {
+	var root map[string]any
+	if err := json.Unmarshal(payload, &root); err != nil || root == nil {
 		return nil
 	}
 
@@ -198,13 +194,14 @@ func (h *finishReasonSSEHandler) OnSSEEventDataJSON(event string, payload []byte
 	return nil
 }
 
-func extractFinishReasonFromRoot(meta *dslmeta.Meta, cfg FinishReasonExtractConfig, root map[string]any) (string, error) {
+func extractFinishReasonFromRoot(meta *dslmeta.Meta, cfg *FinishReasonExtractConfig, root map[string]any) (string, error) {
 	return extractFinishReasonFromRootWithEvent(meta, cfg, "", root)
 }
 
-func extractFinishReasonFromRootWithEvent(meta *dslmeta.Meta, cfg FinishReasonExtractConfig, event string, root map[string]any) (string, error) {
+// extractFinishReasonFromRootWithEvent requires a selected FinishReasonExtractConfig.
+func extractFinishReasonFromRootWithEvent(meta *dslmeta.Meta, cfg *FinishReasonExtractConfig, event string, root map[string]any) (string, error) {
 	_ = meta
-	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
+	mode := normalizeFinishReasonMode(cfg.Mode)
 	hasPaths := cfg.hasFinishReasonPath()
 
 	if mode == "" && !hasPaths {
@@ -220,7 +217,7 @@ func extractFinishReasonFromRootWithEvent(meta *dslmeta.Meta, cfg FinishReasonEx
 	return "", fmt.Errorf("unsupported finish_reason_extract mode %q", cfg.Mode)
 }
 
-func extractFinishReasonByConfiguredPaths(root map[string]any, cfg FinishReasonExtractConfig, event string) string {
+func extractFinishReasonByConfiguredPaths(root map[string]any, cfg *FinishReasonExtractConfig, event string) string {
 	paths := cfg.finishReasonPathConfigs()
 	if len(paths) == 0 {
 		return ""
@@ -247,7 +244,7 @@ func extractFinishReasonByConfiguredPaths(root map[string]any, cfg FinishReasonE
 }
 
 func finishReasonRuleMatchesEvent(rule finishReasonPathConfig, event string) bool {
-	expectedEvent := strings.TrimSpace(rule.Event)
+	expectedEvent := rule.Event
 	if expectedEvent == "" {
 		return true
 	}

@@ -21,7 +21,7 @@ func TestApply_JSONOpsThenReqMap(t *testing.T) {
 		"metadata": map[string]any{"trace_id": "req-transform"},
 	}
 
-	result, err := Apply(meta, "application/json", body, value, dslconfig.RequestTransform{
+	result, err := Apply(meta, "application/json", body, value, &dslconfig.RequestTransform{
 		JSONOps: []dslconfig.JSONOp{
 			{Op: "json_set", Path: "$.metadata.origin", ValueExpr: `"dsl"`},
 		},
@@ -50,7 +50,7 @@ func TestApply_ReqMapOnRawBodyWithoutParsedValue(t *testing.T) {
 	t.Parallel()
 
 	body := []byte(`{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello"}]}`)
-	result, err := Apply(&dslmeta.Meta{}, "application/json", body, nil, dslconfig.RequestTransform{
+	result, err := Apply(&dslmeta.Meta{}, "application/json", body, nil, &dslconfig.RequestTransform{
 		ReqMapMode: "openai_chat_to_openai_responses",
 	}, ApplyOptions{})
 	if err != nil {
@@ -80,7 +80,7 @@ func TestApply_MultipartPreservesOriginalBody(t *testing.T) {
 
 	original := []byte("--boundary\r\n...")
 	value := map[string]any{"model": "gpt-image-1", "n": "2"}
-	result, err := Apply(&dslmeta.Meta{}, "multipart/form-data; boundary=boundary", original, value, dslconfig.RequestTransform{}, ApplyOptions{})
+	result, err := Apply(&dslmeta.Meta{}, "multipart/form-data; boundary=boundary", original, value, &dslconfig.RequestTransform{}, ApplyOptions{})
 	if err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}

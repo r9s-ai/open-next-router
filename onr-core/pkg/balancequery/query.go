@@ -47,6 +47,8 @@ type openAIUsageResponse struct {
 	TotalUsage float64 `json:"total_usage"`
 }
 
+// Query requires a non-nil ctx and a non-empty p.Meta.API.
+// It returns a populated Result on success.
 func Query(ctx context.Context, p Params) (Result, error) {
 	provider := strings.ToLower(strings.TrimSpace(p.Provider))
 	if provider == "" {
@@ -85,9 +87,6 @@ func Query(ctx context.Context, p Params) (Result, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	mode := strings.ToLower(strings.TrimSpace(cfgBalance.Mode))
 	var (
@@ -120,7 +119,7 @@ func Query(ctx context.Context, p Params) (Result, error) {
 	}, nil
 }
 
-func queryCustomBalance(ctx context.Context, client httpclient.HTTPDoer, baseURL string, cfg dslconfig.BalanceQueryConfig, headers http.Header, debugOut io.Writer) (float64, *float64, error) {
+func queryCustomBalance(ctx context.Context, client httpclient.HTTPDoer, baseURL string, cfg *dslconfig.BalanceQueryConfig, headers http.Header, debugOut io.Writer) (float64, *float64, error) {
 	method := strings.ToUpper(strings.TrimSpace(cfg.Method))
 	if method == "" {
 		method = http.MethodGet

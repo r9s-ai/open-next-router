@@ -36,6 +36,7 @@ const (
 	oauthFlowDeviceCode = "device_code"
 )
 
+// newOAuthCmd returns a non-nil OAuth command.
 func newOAuthCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "oauth",
@@ -62,6 +63,7 @@ type oauthRefreshTokenOptions struct {
 	noPKCE       bool
 }
 
+// newOAuthRefreshTokenCmd returns a non-nil refresh-token command.
 func newOAuthRefreshTokenCmd() *cobra.Command {
 	opts := oauthRefreshTokenOptions{
 		callbackPort: 2468,

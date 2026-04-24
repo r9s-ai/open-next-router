@@ -34,15 +34,23 @@ func (w *countingWriter) Write(p []byte) (int, error) {
 func streamToDownstream(
 	gc *gin.Context,
 	meta *dslmeta.Meta,
-	respDir dslconfig.ResponseDirective,
+	respDir *dslconfig.ResponseDirective,
 	resp *http.Response,
 	usageTail *tailBuffer,
 	metricsTap *sseMetricsTap,
 	dump *streamDumpState,
 ) (int64, time.Time, error) {
-	needSSEOps := len(respDir.JSONOps) > 0 || len(respDir.SSEJSONDelIf) > 0
-	mode := strings.ToLower(strings.TrimSpace(respDir.Mode))
-	useStrategyTransform := strings.TrimSpace(respDir.Op) == "sse_parse" &&
+	var (
+		needSSEOps bool
+		mode       string
+		rawMode    string
+	)
+	if respDir != nil {
+		needSSEOps = len(respDir.JSONOps) > 0 || len(respDir.SSEJSONDelIf) > 0
+		mode = strings.ToLower(strings.TrimSpace(respDir.Mode))
+		rawMode = respDir.Mode
+	}
+	useStrategyTransform := respDir != nil && strings.TrimSpace(respDir.Op) == "sse_parse" &&
 		apitransform.SupportsSSETransformMode(mode)
 
 	var upstreamDump *limitedBuffer
@@ -54,7 +62,7 @@ func streamToDownstream(
 		proxyDump = &limitedBuffer{limit: rec.MaxBytes()}
 	}
 
-	src, err := buildStreamSource(gc, resp, mode, respDir.Mode, needSSEOps, useStrategyTransform, upstreamDump)
+	src, err := buildStreamSource(gc, resp, mode, rawMode, needSSEOps, useStrategyTransform, upstreamDump)
 	if err != nil {
 		return 0, time.Time{}, err
 	}

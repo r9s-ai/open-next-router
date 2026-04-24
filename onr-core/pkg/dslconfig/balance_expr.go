@@ -32,10 +32,8 @@ const (
 	balanceExprSub
 )
 
+// Eval requires a non-nil BalanceExpr receiver.
 func (e *BalanceExpr) Eval(root map[string]any) float64 {
-	if e == nil {
-		return 0
-	}
 	switch e.kind {
 	case balanceExprNumber:
 		return e.value

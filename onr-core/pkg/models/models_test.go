@@ -60,13 +60,13 @@ func TestRouter_UnknownStrategyFallback(t *testing.T) {
 	}
 }
 
-func TestRouter_NilReceiver(t *testing.T) {
-	var r *Router
-	if got := r.Models(); got != nil {
-		t.Fatalf("nil router models=%v", got)
+func TestRouter_EmptyRouter(t *testing.T) {
+	r := NewRouter(nil)
+	if got := r.Models(); len(got) != 0 {
+		t.Fatalf("empty router models=%v", got)
 	}
 	if _, ok := r.NextProvider("x"); ok {
-		t.Fatalf("nil router should not match")
+		t.Fatalf("empty router should not match")
 	}
 }
 

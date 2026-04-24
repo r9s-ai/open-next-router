@@ -44,7 +44,7 @@ func TestFetchCatalogAndExtractPrices(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	out, err := FetchCatalog(context.Background(), nil, srv.URL)
+	out, err := FetchCatalog(context.Background(), srv.Client(), srv.URL)
 	if err != nil {
 		t.Fatalf("FetchCatalog error: %v", err)
 	}
@@ -78,6 +78,22 @@ func TestFetchCatalogAndExtractPrices(t *testing.T) {
 	}
 	if prices[0].Cost["output"] != 2.5 {
 		t.Fatalf("output cost=%v want=2.5", prices[0].Cost["output"])
+	}
+}
+
+func TestFetchCatalog_NilClientFallsBackToDefault(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"openai":{"id":"openai","models":{}}}`))
+	}))
+	defer srv.Close()
+
+	out, err := FetchCatalog(context.Background(), nil, srv.URL)
+	if err != nil {
+		t.Fatalf("FetchCatalog error: %v", err)
+	}
+	if out == nil {
+		t.Fatalf("expected non-nil fetch result")
 	}
 }
 

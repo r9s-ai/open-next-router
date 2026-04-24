@@ -9,6 +9,7 @@ import (
 	"strings"
 )
 
+// DecodeResponseBody decodes an upstream response body based on Content-Encoding.
 func DecodeResponseBody(body []byte, contentEncoding string) ([]byte, bool, error) {
 	switch strings.ToLower(strings.TrimSpace(contentEncoding)) {
 	case "", "identity":
@@ -29,6 +30,7 @@ func DecodeResponseBody(body []byte, contentEncoding string) ([]byte, bool, erro
 	}
 }
 
+// ResponseBodyLooksLikeJSON reports whether the response body should be treated as a JSON object body.
 func ResponseBodyLooksLikeJSON(contentType string, body []byte) bool {
 	ctLower := strings.ToLower(strings.TrimSpace(contentType))
 	trim := bytes.TrimSpace(body)
@@ -38,12 +40,13 @@ func ResponseBodyLooksLikeJSON(contentType string, body []byte) bool {
 	return len(trim) > 0 && trim[0] == '{'
 }
 
+// ApplyResponseJSONOpsBody unmarshals a JSON object response body, applies a transform, and re-marshals the result.
 func ApplyResponseJSONOpsBody(
 	body []byte,
 	contentType string,
 	apply func(map[string]any) (any, error),
 ) ([]byte, bool, error) {
-	if apply == nil || !ResponseBodyLooksLikeJSON(contentType, body) {
+	if !ResponseBodyLooksLikeJSON(contentType, body) {
 		return body, false, nil
 	}
 

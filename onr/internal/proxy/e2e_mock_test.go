@@ -21,6 +21,7 @@ import (
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/pricing"
+	"github.com/r9s-ai/open-next-router/onr/internal/logx"
 )
 
 func TestE2EMock_ChatCompletions_AnthropicMessages_NonStream(t *testing.T) {
@@ -1048,12 +1049,22 @@ func newMockE2EClient(t *testing.T, confByFile map[string]string) *Client {
 	if _, err := reg.ReloadFromDir(dir); err != nil {
 		t.Fatalf("reload registry: %v", err)
 	}
+	color := false
+	logger, err := logx.NewSystemLoggerWithOptions(logx.SystemLoggerOptions{
+		Writer: io.Discard,
+		Level:  "debug",
+		Color:  &color,
+	})
+	if err != nil {
+		t.Fatalf("new test system logger: %v", err)
+	}
 
 	return &Client{
 		HTTP:         &http.Client{Timeout: 5 * time.Second},
 		WriteTimeout: 10 * time.Second,
 		ReadTimeout:  10 * time.Second,
 		Registry:     reg,
+		SystemLogger: logger,
 	}
 }
 

@@ -37,25 +37,25 @@ type MatchResponse struct {
 	Response ResponseDirective
 }
 
-func (p ProviderResponse) Select(meta *dslmeta.Meta) (ResponseDirective, bool) {
-	if meta == nil {
-		return ResponseDirective{}, false
-	}
+// Select requires a non-nil meta and a valid ProviderResponse receiver.
+// It returns a request-scoped copy assembled from defaults and the matched override.
+// Callers must treat the shared provider config as read-only across requests.
+func (p *ProviderResponse) Select(meta *dslmeta.Meta) (*ResponseDirective, bool) {
 	api := strings.TrimSpace(meta.API)
 	if api == "" {
-		return ResponseDirective{}, false
+		return nil, false
 	}
 	out := p.Defaults
 	if m, ok := p.selectMatch(api, meta.IsStream); ok {
 		out = mergeResponseDirective(out, m.Response)
 	}
 	if strings.TrimSpace(out.Op) == "" && len(out.JSONOps) == 0 && len(out.SSEJSONDelIf) == 0 {
-		return ResponseDirective{}, false
+		return nil, false
 	}
-	return out, true
+	return &out, true
 }
 
-func (p ProviderResponse) selectMatch(api string, stream bool) (MatchResponse, bool) {
+func (p *ProviderResponse) selectMatch(api string, stream bool) (MatchResponse, bool) {
 	for _, m := range p.Matches {
 		if m.API != "" && m.API != api {
 			continue
@@ -70,6 +70,12 @@ func (p ProviderResponse) selectMatch(api string, stream bool) (MatchResponse, b
 
 func mergeResponseDirective(base ResponseDirective, override ResponseDirective) ResponseDirective {
 	out := base
+	if len(base.SSEJSONDelIf) > 0 {
+		out.SSEJSONDelIf = append([]SSEJSONDelIfRule(nil), base.SSEJSONDelIf...)
+	}
+	if len(base.JSONOps) > 0 {
+		out.JSONOps = append([]JSONOp(nil), base.JSONOps...)
+	}
 	if strings.TrimSpace(override.Op) != "" {
 		out.Op = override.Op
 		out.Mode = override.Mode

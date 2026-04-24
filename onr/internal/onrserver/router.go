@@ -16,6 +16,7 @@ import (
 	"github.com/r9s-ai/open-next-router/pkg/config"
 )
 
+// NewRouter returns a non-nil Gin engine.
 func NewRouter(
 	cfg *config.Config,
 	st *state,
@@ -57,7 +58,7 @@ func NewRouter(
 				return "", false
 			}
 			ak, ok := ks.MatchAccessKey(accessKey)
-			if !ok {
+			if !ok || ak == nil {
 				return "", false
 			}
 			return strings.TrimSpace(ak.Name), true

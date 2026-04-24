@@ -46,10 +46,12 @@ var (
 	geminiMultimodalChatFunc = geminiprovider.StreamChatMultimodal
 )
 
+// NewRootCommand returns a non-nil root command.
 func NewRootCommand() *cobra.Command {
 	return NewRootCommandWithWriters(os.Stdout, os.Stderr)
 }
 
+// NewRootCommandWithWriters returns a non-nil root command.
 func NewRootCommandWithWriters(stdout, stderr io.Writer) *cobra.Command {
 	s := streams{stdout: stdout, stderr: stderr}
 	root := &cobra.Command{
@@ -68,6 +70,7 @@ func NewRootCommandWithWriters(stdout, stderr io.Writer) *cobra.Command {
 	return root
 }
 
+// newCompletionCommand returns a non-nil completion subcommand.
 func newCompletionCommand(root *cobra.Command) *cobra.Command {
 	var shell string
 	cmd := &cobra.Command{
@@ -91,6 +94,7 @@ func newCompletionCommand(root *cobra.Command) *cobra.Command {
 	return cmd
 }
 
+// newOpenAICommand returns a non-nil OpenAI subcommand.
 func newOpenAICommand(s streams) *cobra.Command {
 	cmd := &cobra.Command{Use: "openai", Short: "OpenAI API"}
 	cmd.AddCommand(newOpenAIChatCommand(s))
@@ -99,6 +103,7 @@ func newOpenAICommand(s streams) *cobra.Command {
 	return cmd
 }
 
+// newOpenAIChatCommand returns a non-nil chat subcommand.
 func newOpenAIChatCommand(s streams) *cobra.Command {
 	var model string
 	var stream bool
@@ -166,6 +171,7 @@ func newOpenAIChatCommand(s streams) *cobra.Command {
 	return cmd
 }
 
+// newOpenAIResponsesCommand returns a non-nil responses subcommand.
 func newOpenAIResponsesCommand(s streams) *cobra.Command {
 	var model string
 	var stream bool
@@ -233,6 +239,7 @@ func newOpenAIResponsesCommand(s streams) *cobra.Command {
 	return cmd
 }
 
+// newOpenAIEmbeddingsCommand returns a non-nil embeddings subcommand.
 func newOpenAIEmbeddingsCommand(s streams) *cobra.Command {
 	var model string
 	var verbose bool
@@ -290,12 +297,14 @@ func newOpenAIEmbeddingsCommand(s streams) *cobra.Command {
 	return cmd
 }
 
+// newAnthropicCommand returns a non-nil Anthropic subcommand.
 func newAnthropicCommand(s streams) *cobra.Command {
 	cmd := &cobra.Command{Use: "anthropic", Short: "Anthropic API"}
 	cmd.AddCommand(newAnthropicMessagesCommand(s))
 	return cmd
 }
 
+// newAnthropicMessagesCommand returns a non-nil messages subcommand.
 func newAnthropicMessagesCommand(s streams) *cobra.Command {
 	var model string
 	var stream bool
@@ -361,6 +370,7 @@ func newAnthropicMessagesCommand(s streams) *cobra.Command {
 	return cmd
 }
 
+// newGeminiCommand returns a non-nil Gemini subcommand.
 func newGeminiCommand(s streams) *cobra.Command {
 	cmd := &cobra.Command{Use: "gemini", Short: "Google Gemini API"}
 	cmd.AddCommand(newGeminiModelsCommand(s))
@@ -368,6 +378,7 @@ func newGeminiCommand(s streams) *cobra.Command {
 	return cmd
 }
 
+// newGeminiModelsCommand returns a non-nil models subcommand.
 func newGeminiModelsCommand(s streams) *cobra.Command {
 	var model string
 	var stream bool
@@ -432,6 +443,7 @@ func newGeminiModelsCommand(s streams) *cobra.Command {
 	return cmd
 }
 
+// newGeminiChatsCommand returns a non-nil chats subcommand.
 func newGeminiChatsCommand(s streams) *cobra.Command {
 	var model string
 	var modalities string

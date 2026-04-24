@@ -15,10 +15,8 @@ import (
 	"github.com/r9s-ai/open-next-router/pkg/config"
 )
 
+// installProvidersAutoReload requires non-nil config, registry, and mutex from Run.
 func installProvidersAutoReload(cfg *config.Config, reg *dslconfig.Registry, mu *sync.Mutex, logger *logx.SystemLogger) (io.Closer, error) {
-	if cfg == nil || reg == nil || mu == nil {
-		return nil, nil
-	}
 	if !cfg.Providers.AutoReload.Enabled {
 		return nil, nil
 	}

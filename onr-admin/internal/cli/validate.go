@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// newValidateCmd returns a non-nil validate command.
 func newValidateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "validate",
@@ -38,6 +39,7 @@ type validateOptions struct {
 	stdout        io.Writer
 }
 
+// newValidateTargetCmd returns a non-nil target-specific validate command.
 func newValidateTargetCmd(target string) *cobra.Command {
 	opts := validateOptions{cfgPath: "onr.yaml", stdout: os.Stdout}
 	cmd := &cobra.Command{

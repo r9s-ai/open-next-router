@@ -110,7 +110,7 @@ func TestProviderFinishReasonSelect_MergeAndEmpty(t *testing.T) {
 		t.Fatalf("path should keep default when not overridden, got %q", cfg.FinishReasonPath)
 	}
 
-	if _, ok := (ProviderFinishReason{}).Select(&dslmeta.Meta{API: "chat.completions"}); ok {
+	if _, ok := (&ProviderFinishReason{}).Select(&dslmeta.Meta{API: "chat.completions"}); ok {
 		t.Fatalf("expected empty config not selected")
 	}
 }
@@ -230,6 +230,102 @@ func TestProviderResponseSelect_MergeDirective(t *testing.T) {
 	}
 }
 
+func TestProviderRequestTransformSelect_DoesNotMutateDefaults(t *testing.T) {
+	streamFalse := false
+	p := ProviderRequestTransform{
+		Defaults: RequestTransform{
+			ModelMap: ModelMapConfig{
+				Map: map[string]string{
+					"gpt-4o-mini": `"defaults"`,
+				},
+			},
+			JSONOps: []JSONOp{
+				{Op: "json_set", Path: "$.defaults", ValueExpr: "\"1\""},
+			},
+		},
+		Matches: []MatchRequestTransform{
+			{
+				API:    "chat.completions",
+				Stream: &streamFalse,
+				Transform: RequestTransform{
+					ModelMap: ModelMapConfig{
+						Map: map[string]string{
+							"gpt-4.1": `"override"`,
+						},
+					},
+					JSONOps: []JSONOp{
+						{Op: "json_del", Path: "$.override"},
+					},
+				},
+			},
+		},
+	}
+
+	cfg, ok := p.Select(&dslmeta.Meta{API: "chat.completions", IsStream: false})
+	if !ok {
+		t.Fatalf("expected request transform selected")
+	}
+	if got, want := len(cfg.ModelMap.Map), 2; got != want {
+		t.Fatalf("merged model map len=%d want=%d", got, want)
+	}
+	if got, want := len(cfg.JSONOps), 2; got != want {
+		t.Fatalf("merged json ops len=%d want=%d", got, want)
+	}
+	if got, want := len(p.Defaults.ModelMap.Map), 1; got != want {
+		t.Fatalf("defaults model map len=%d want=%d", got, want)
+	}
+	if _, ok := p.Defaults.ModelMap.Map["gpt-4.1"]; ok {
+		t.Fatalf("defaults model map unexpectedly mutated: %#v", p.Defaults.ModelMap.Map)
+	}
+	if got, want := len(p.Defaults.JSONOps), 1; got != want {
+		t.Fatalf("defaults json ops len=%d want=%d", got, want)
+	}
+}
+
+func TestProviderResponseSelect_DoesNotMutateDefaults(t *testing.T) {
+	streamFalse := false
+	p := ProviderResponse{
+		Defaults: ResponseDirective{
+			Op:   "resp_map",
+			Mode: "openai_responses_to_openai_chat",
+			JSONOps: []JSONOp{
+				{Op: "json_set", Path: "$.defaults", ValueExpr: "\"1\""},
+			},
+		},
+		Matches: []MatchResponse{
+			{
+				API:    "chat.completions",
+				Stream: &streamFalse,
+				Response: ResponseDirective{
+					JSONOps: []JSONOp{
+						{Op: "json_del", Path: "$.override"},
+					},
+					SSEJSONDelIf: []SSEJSONDelIfRule{
+						{CondPath: "$.type", Equals: "x", DelPath: "$.delta"},
+					},
+				},
+			},
+		},
+	}
+
+	cfg, ok := p.Select(&dslmeta.Meta{API: "chat.completions", IsStream: false})
+	if !ok {
+		t.Fatalf("expected response directive selected")
+	}
+	if got, want := len(cfg.JSONOps), 2; got != want {
+		t.Fatalf("merged json ops len=%d want=%d", got, want)
+	}
+	if got, want := len(cfg.SSEJSONDelIf), 1; got != want {
+		t.Fatalf("merged sse rules len=%d want=%d", got, want)
+	}
+	if got, want := len(p.Defaults.JSONOps), 1; got != want {
+		t.Fatalf("defaults json ops len=%d want=%d", got, want)
+	}
+	if got, want := len(p.Defaults.SSEJSONDelIf), 0; got != want {
+		t.Fatalf("defaults sse rules len=%d want=%d", got, want)
+	}
+}
+
 func TestProviderBalanceSelect_MergeMatch(t *testing.T) {
 	streamTrue := true
 	p := ProviderBalance{
@@ -283,7 +379,7 @@ func TestProviderRoutingHasMatchHelpers(t *testing.T) {
 	if p.HasMatch(&dslmeta.Meta{API: "chat.completions", IsStream: false}) {
 		t.Fatalf("HasMatch should be false for stream mismatch")
 	}
-	if p.HasMatch(nil) {
-		t.Fatalf("HasMatch should be false for nil meta")
+	if p.HasMatch(&dslmeta.Meta{}) {
+		t.Fatalf("HasMatch should be false for empty api")
 	}
 }

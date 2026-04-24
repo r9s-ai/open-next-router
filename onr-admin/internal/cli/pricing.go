@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"sort"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// newPricingCmd returns a non-nil pricing command.
 func newPricingCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "pricing",
@@ -39,6 +41,7 @@ type pricingProvidersOptions struct {
 	search string
 }
 
+// newPricingSyncCmd returns a non-nil pricing sync command.
 func newPricingSyncCmd() *cobra.Command {
 	opts := pricingSyncOptions{
 		cfgPath: "onr.yaml",
@@ -74,7 +77,7 @@ func runPricingSyncWithOptions(opts pricingSyncOptions) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	fetch, err := pricing.FetchCatalog(ctx, nil, strings.TrimSpace(opts.url))
+	fetch, err := pricing.FetchCatalog(ctx, &http.Client{Timeout: 20 * time.Second}, strings.TrimSpace(opts.url))
 	if err != nil {
 		return err
 	}
@@ -140,6 +143,7 @@ func resolvePricingSyncProviders(opts pricingSyncOptions) ([]string, error) {
 	return providers, nil
 }
 
+// newPricingProvidersCmd returns a non-nil pricing providers command.
 func newPricingProvidersCmd() *cobra.Command {
 	opts := pricingProvidersOptions{
 		url: pricing.DefaultCatalogURL,
@@ -161,7 +165,7 @@ func runPricingProvidersWithOptions(opts pricingProvidersOptions) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	fetch, err := pricing.FetchCatalog(ctx, nil, strings.TrimSpace(opts.url))
+	fetch, err := pricing.FetchCatalog(ctx, &http.Client{Timeout: 20 * time.Second}, strings.TrimSpace(opts.url))
 	if err != nil {
 		return err
 	}

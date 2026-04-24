@@ -30,6 +30,7 @@ type Registry struct {
 	providers map[string]ProviderFile
 }
 
+// NewRegistry returns a non-nil registry.
 func NewRegistry() *Registry {
 	return &Registry{
 		providers: map[string]ProviderFile{},

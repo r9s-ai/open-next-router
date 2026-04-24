@@ -139,8 +139,9 @@ func Run(cfgPath string) error {
 	return nil
 }
 
+// openAccessLogger requires a non-nil config loaded by Run.
 func openAccessLogger(cfg *config.Config) (*log.Logger, io.Closer, bool, error) {
-	if cfg == nil || !cfg.Logging.AccessLog {
+	if !cfg.Logging.AccessLog {
 		return nil, nil, false, nil
 	}
 
@@ -184,10 +185,8 @@ type closerFunc func() error
 
 func (c closerFunc) Close() error { return c() }
 
+// writePIDFile requires a non-nil config loaded by Run.
 func writePIDFile(cfg *config.Config) (io.Closer, error) {
-	if cfg == nil {
-		return nil, nil
-	}
 	path := strings.TrimSpace(cfg.Server.PidFile)
 	if path == "" {
 		return nil, nil
@@ -212,10 +211,8 @@ func writePIDFile(cfg *config.Config) (io.Closer, error) {
 	return closerFunc(func() error { return os.Remove(path) }), nil
 }
 
+// installReloadSignalHandler requires non-nil config, state, registry, proxy client, and mutex from Run.
 func installReloadSignalHandler(cfg *config.Config, st *state, reg *dslconfig.Registry, pclient *proxy.Client, mu *sync.Mutex, logger *logx.SystemLogger) {
-	if cfg == nil || st == nil || reg == nil || mu == nil {
-		return
-	}
 	ch := make(chan os.Signal, 2)
 	signal.Notify(ch, syscall.SIGHUP)
 	go func() {
@@ -232,10 +229,8 @@ func installReloadSignalHandler(cfg *config.Config, st *state, reg *dslconfig.Re
 	}()
 }
 
+// reloadProvidersRuntime requires non-nil config and registry from the server runtime.
 func reloadProvidersRuntime(cfg *config.Config, reg *dslconfig.Registry, logger *logx.SystemLogger) (providersReloadResult, error) {
-	if cfg == nil || reg == nil {
-		return providersReloadResult{}, errors.New("reload providers: nil cfg/registry")
-	}
 	before := snapshotProviderFingerprints(reg)
 	providersPath, _ := config.ResolveProviderDSLSource(cfg)
 	loadRes, err := reg.ReloadFromPath(providersPath)
@@ -250,10 +245,8 @@ func reloadProvidersRuntime(cfg *config.Config, reg *dslconfig.Registry, logger 
 	}, nil
 }
 
+// reloadRuntime requires non-nil config, state, registry, and proxy client from the server runtime.
 func reloadRuntime(cfg *config.Config, st *state, reg *dslconfig.Registry, pclient *proxy.Client, logger *logx.SystemLogger) (providersReloadResult, error) {
-	if cfg == nil || st == nil || reg == nil || pclient == nil {
-		return providersReloadResult{}, errors.New("reload: nil cfg/state/registry/pclient")
-	}
 	providersRes, err := reloadProvidersRuntime(cfg, reg, logger)
 	if err != nil {
 		return providersReloadResult{}, err
@@ -303,10 +296,8 @@ func logSkippedProviders(logger *logx.SystemLogger, providersPath string, skippe
 	})
 }
 
+// logStartupSummary requires a non-nil config loaded by Run.
 func logStartupSummary(logger *logx.SystemLogger, cfg *config.Config, cfgPath string) {
-	if cfg == nil {
-		return
-	}
 	providersPath, providersFromFile := config.ResolveProviderDSLSource(cfg)
 	logger.Info(logx.SystemCategoryStartup, "startup config loaded", map[string]any{
 		"config_path":              strings.TrimSpace(cfgPath),
@@ -336,10 +327,8 @@ func logReloadFailed(logger *logx.SystemLogger, source string, err error) {
 	})
 }
 
+// logReloadOK requires a non-nil config loaded by Run.
 func logReloadOK(logger *logx.SystemLogger, source string, cfg *config.Config, providersRes providersReloadResult) {
-	if cfg == nil {
-		return
-	}
 	providersPath, providersFromFile := config.ResolveProviderDSLSource(cfg)
 	logger.Info(logx.SystemCategoryReload, "reload ok", map[string]any{
 		"source":                   source,
@@ -353,8 +342,9 @@ func logReloadOK(logger *logx.SystemLogger, source string, cfg *config.Config, p
 	})
 }
 
+// accessLogTarget requires a non-nil config loaded by Run.
 func accessLogTarget(cfg *config.Config) string {
-	if cfg == nil || !cfg.Logging.AccessLog {
+	if !cfg.Logging.AccessLog {
 		return "disabled"
 	}
 	if strings.TrimSpace(cfg.Logging.AccessLogPath) == "" {
@@ -396,10 +386,8 @@ func providerNamesForLog(names []string) string {
 	return strings.Join(names, ",")
 }
 
+// snapshotProviderFingerprints requires a non-nil registry from the server runtime.
 func snapshotProviderFingerprints(reg *dslconfig.Registry) map[string]string {
-	if reg == nil {
-		return map[string]string{}
-	}
 	names := reg.ListProviderNames()
 	out := make(map[string]string, len(names))
 	for _, name := range names {

@@ -291,7 +291,7 @@ func TestStreamMetricsAggregator_FinishReasonUsesSSEEventFilter(t *testing.T) {
 	finishCfg := FinishReasonExtractConfig{Mode: usageModeCustom}
 	finishCfg.addFinishReasonPathRule("$.response.incomplete_details.reason", false, "response.incomplete", true)
 	finishCfg.addFinishReasonPathRule("$.response.status", true, "response.completed", true)
-	agg := NewStreamMetricsAggregator(meta, UsageExtractConfig{}, finishCfg)
+	agg := NewStreamMetricsAggregator(meta, &UsageExtractConfig{}, &finishCfg)
 
 	_ = agg.OnSSEEventDataJSON("response.output_text.delta", []byte(`{"response":{"status":"completed","incomplete_details":{"reason":"max_output_tokens"}}}`))
 	_ = agg.OnSSEEventDataJSON("response.completed", []byte(`{"response":{"status":"completed"}}`))
@@ -317,7 +317,7 @@ func TestStreamMetricsAggregator_OpenAIResponsesStreamUsageFallsBackWithoutEvent
 		},
 	}
 	finishCfg := FinishReasonExtractConfig{Mode: usageModeCustom}
-	agg := NewStreamMetricsAggregator(meta, usageCfg, finishCfg)
+	agg := NewStreamMetricsAggregator(meta, &usageCfg, &finishCfg)
 
 	_ = agg.OnSSEDataJSON([]byte(`{
 	  "response":{
@@ -385,7 +385,7 @@ func TestStreamMetricsAggregator_AnthropicStreamUsageFallsBackWithoutEvent(t *te
 		},
 	}
 	finishCfg := FinishReasonExtractConfig{Mode: usageModeCustom}
-	agg := NewStreamMetricsAggregator(meta, usageCfg, finishCfg)
+	agg := NewStreamMetricsAggregator(meta, &usageCfg, &finishCfg)
 
 	_ = agg.OnSSEDataJSON([]byte(`{"message":{"usage":{"input_tokens":8,"cache_read_input_tokens":2,"cache_creation_input_tokens":3,"server_tool_use":{"web_search_requests":1}}},"usage":{"output_tokens":5}}`))
 
@@ -417,12 +417,12 @@ func TestStreamMetricsAggregator_CustomMerge_DoesNotOverrideWithZero(t *testing.
 	}
 
 	agg := NewStreamMetricsAggregator(meta,
-		UsageExtractConfig{
+		&UsageExtractConfig{
 			Mode:             "custom",
 			InputTokensExpr:  inExpr,
 			OutputTokensExpr: outExpr,
 		},
-		func() FinishReasonExtractConfig {
+		func() *FinishReasonExtractConfig {
 			_, cfg := mustLoadProviderMatchConfigs(t, "anthropic.conf", meta.API, meta.IsStream)
 			return cfg
 		}(),
@@ -445,7 +445,7 @@ func TestStreamMetricsAggregator_CustomMerge_DoesNotOverrideWithZero(t *testing.
 func TestStreamMetricsAggregator_CustomUsageFactMerge_CacheFirstOutputLater(t *testing.T) {
 	meta := &dslmeta.Meta{API: "claude.messages", IsStream: true}
 	agg := NewStreamMetricsAggregator(meta,
-		UsageExtractConfig{
+		&UsageExtractConfig{
 			Mode: "custom",
 			facts: []usageFactConfig{
 				{Dimension: "input", Unit: "token", Path: "$.usage.input_tokens"},
@@ -456,7 +456,7 @@ func TestStreamMetricsAggregator_CustomUsageFactMerge_CacheFirstOutputLater(t *t
 				{Dimension: "cache_write", Unit: "token", Path: "$.usage.cache_creation_input_tokens", Fallback: true},
 			},
 		},
-		func() FinishReasonExtractConfig {
+		func() *FinishReasonExtractConfig {
 			_, cfg := mustLoadProviderMatchConfigs(t, "anthropic.conf", meta.API, meta.IsStream)
 			return cfg
 		}(),

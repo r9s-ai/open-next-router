@@ -34,10 +34,8 @@ const (
 	usageExprSub
 )
 
+// Eval requires a non-nil UsageExpr receiver.
 func (e *UsageExpr) Eval(root map[string]any) int {
-	if e == nil {
-		return 0
-	}
 	switch e.kind {
 	case usageExprInt:
 		return e.value
@@ -70,6 +68,7 @@ func (e *UsageExpr) String() string {
 	}
 }
 
+// ParseUsageExpr returns a non-nil expression on success.
 func ParseUsageExpr(s string) (*UsageExpr, error) {
 	p := &usageExprParser{src: strings.TrimSpace(s)}
 	expr, err := p.parseExpr()
@@ -83,6 +82,7 @@ func ParseUsageExpr(s string) (*UsageExpr, error) {
 	return expr, nil
 }
 
+// MustParseUsageExpr returns a non-nil expression or panics.
 func MustParseUsageExpr(s string) *UsageExpr {
 	expr, err := ParseUsageExpr(s)
 	if err != nil {

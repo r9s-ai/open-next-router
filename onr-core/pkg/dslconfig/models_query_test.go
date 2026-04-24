@@ -129,7 +129,7 @@ func TestExtractModelIDs_GeminiRewriteAndAllow(t *testing.T) {
     {"name": "models/text-embedding-004"}
   ]
 }`)
-	ids, err := ExtractModelIDs(cfg, body)
+	ids, err := ExtractModelIDs(&cfg, body)
 	if err != nil {
 		t.Fatalf("ExtractModelIDs: %v", err)
 	}

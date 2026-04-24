@@ -66,10 +66,8 @@ func RequestID(c *gin.Context) string {
 	return RequestIDWithHeaderKey(c, "")
 }
 
+// RequestIDWithHeaderKey requires a non-nil Gin context from the request handling path.
 func RequestIDWithHeaderKey(c *gin.Context, headerKey string) string {
-	if c == nil {
-		return ""
-	}
 	headerKey = requestid.ResolveHeaderKey(headerKey)
 	if v := strings.TrimSpace(c.GetString(headerKey)); v != "" {
 		return v
@@ -83,14 +81,20 @@ func RequestIDWithHeaderKey(c *gin.Context, headerKey string) string {
 	return id
 }
 
+// Start returns a non-nil recorder on success.
+// It requires a non-nil Gin context from the request handling path.
 func Start(c *gin.Context, cfg Config) (*Recorder, error) {
 	return StartWithHeaderKey(c, cfg, "")
 }
 
+// StartWithHeaderKey returns a non-nil recorder on success.
+// It requires a non-nil Gin context from the request handling path.
 func StartWithHeaderKey(c *gin.Context, cfg Config, headerKey string) (*Recorder, error) {
 	return StartWithHeaderKeyAndRequestID(c, cfg, headerKey, "")
 }
 
+// StartWithHeaderKeyAndRequestID returns a non-nil recorder on success.
+// It requires a non-nil Gin context from the request handling path.
 func StartWithHeaderKeyAndRequestID(c *gin.Context, cfg Config, headerKey string, requestID string) (*Recorder, error) {
 	return startWithRequestIDAndHeaderKey(c, cfg, requestID, headerKey)
 }
@@ -102,14 +106,16 @@ func StartWithHeaderKeyAndRequestID(c *gin.Context, cfg Config, headerKey string
 //
 // Template variables for cfg.FilePath:
 //   - {{.request_id}} (recommended)
+//
+// StartWithRequestID returns a non-nil recorder on success.
+// It requires a non-nil Gin context from the request handling path.
 func StartWithRequestID(c *gin.Context, cfg Config, requestID string) (*Recorder, error) {
 	return startWithRequestIDAndHeaderKey(c, cfg, requestID, "")
 }
 
+// startWithRequestIDAndHeaderKey requires a non-nil Gin context from the request handling path.
+// It returns a non-nil recorder on success.
 func startWithRequestIDAndHeaderKey(c *gin.Context, cfg Config, requestID string, headerKey string) (*Recorder, error) {
-	if c == nil {
-		return nil, errors.New("context is nil")
-	}
 	if strings.TrimSpace(cfg.Dir) == "" {
 		return nil, errors.New("traffic_dump.dir is empty")
 	}
@@ -186,10 +192,9 @@ func startWithRequestIDAndHeaderKey(c *gin.Context, cfg Config, requestID string
 	return r, nil
 }
 
+// FromContext requires a non-nil Gin context from the request handling path.
+// It returns nil when no recorder is attached to c.
 func FromContext(c *gin.Context) *Recorder {
-	if c == nil {
-		return nil
-	}
 	v, ok := c.Get(ctxKeyRecorder)
 	if !ok {
 		return nil
@@ -210,19 +215,15 @@ func (r *Recorder) Close() {
 	}
 }
 
+// MaxBytes requires a non-nil Recorder receiver.
 func (r *Recorder) MaxBytes() int {
-	if r == nil {
-		return 0
-	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.maxBytes
 }
 
+// Err requires a non-nil Recorder receiver.
 func (r *Recorder) Err() error {
-	if r == nil {
-		return nil
-	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.err
@@ -301,10 +302,8 @@ func (r *Recorder) setErrLocked(err error) {
 	r.err = err
 }
 
+// sectionEnabled requires a non-nil Recorder receiver.
 func (r *Recorder) sectionEnabled(section string) bool {
-	if r == nil {
-		return false
-	}
 	if len(r.enabledSections) == 0 {
 		return true
 	}

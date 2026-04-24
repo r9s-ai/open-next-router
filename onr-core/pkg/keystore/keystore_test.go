@@ -25,7 +25,7 @@ providers: {}
 	if err != nil {
 		t.Fatalf("Load err=%v", err)
 	}
-	if _, ok := st.MatchAccessKey("ak-xxx"); !ok {
+	if ak, ok := st.MatchAccessKey("ak-xxx"); !ok || ak == nil {
 		t.Fatalf("expected match")
 	}
 }
@@ -71,15 +71,15 @@ access_keys:
 	}
 
 	k1, ok := st.NextKey("openai")
-	if !ok || k1.Value != "v1" {
+	if !ok || k1 == nil || k1.Value != "v1" {
 		t.Fatalf("next #1: %#v %v", k1, ok)
 	}
 	k2, ok := st.NextKey("openai")
-	if !ok || k2.Value != "v2" {
+	if !ok || k2 == nil || k2.Value != "v2" {
 		t.Fatalf("next #2: %#v %v", k2, ok)
 	}
 	k3, ok := st.NextKey("openai")
-	if !ok || k3.Value != "v1" {
+	if !ok || k3 == nil || k3.Value != "v1" {
 		t.Fatalf("next #3: %#v %v", k3, ok)
 	}
 	if _, ok := st.NextKey("none"); ok {
@@ -221,10 +221,10 @@ access_keys:
 		t.Fatalf("Load err=%v", err)
 	}
 	k, ok := st.NextKey("openai")
-	if !ok || k.Value != "upstream-secret" {
+	if !ok || k == nil || k.Value != "upstream-secret" {
 		t.Fatalf("unexpected upstream key: %#v %v", k, ok)
 	}
-	if _, ok := st.MatchAccessKey("access-secret"); !ok {
+	if ak, ok := st.MatchAccessKey("access-secret"); !ok || ak == nil {
 		t.Fatalf("expected access key match")
 	}
 }

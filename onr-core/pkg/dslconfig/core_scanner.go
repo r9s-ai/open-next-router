@@ -33,6 +33,7 @@ type scanner struct {
 	lastPos int
 }
 
+// newScanner returns a non-nil scanner.
 func newScanner(path, input string) *scanner {
 	return &scanner{path: path, input: input}
 }

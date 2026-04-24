@@ -56,24 +56,19 @@ type Meta struct {
 	requestRoot     map[string]any
 }
 
-// RequestRoot lazily parses and caches the request body as a request-side root object.
+// RequestRoot requires a non-nil Meta receiver.
+// It lazily parses and caches the request body as a request-side root object.
 // It supports JSON objects and multipart form values.
 func (m *Meta) RequestRoot() map[string]any {
-	if m == nil {
-		return nil
-	}
 	m.requestRootOnce.Do(func() {
 		m.requestRoot = parseRequestRoot(m.RequestBody, m.RequestContentType)
 	})
 	return m.requestRoot
 }
 
-// SetRequestRoot preloads the cached request-side root when it has already been
-// parsed by an upstream caller.
+// SetRequestRoot requires a non-nil Meta receiver.
+// It preloads the cached request-side root when it has already been parsed by an upstream caller.
 func (m *Meta) SetRequestRoot(root map[string]any) {
-	if m == nil {
-		return
-	}
 	m.requestRoot = root
 	m.requestRootOnce.Do(func() {})
 }

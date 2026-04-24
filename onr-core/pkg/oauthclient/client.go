@@ -62,6 +62,7 @@ type flight struct {
 	err   error
 }
 
+// New returns a non-nil OAuth client.
 func New(httpClient *http.Client, persistEnabled bool, persistDir string) *Client {
 	if httpClient == nil {
 		httpClient = http.DefaultClient

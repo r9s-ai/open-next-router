@@ -2,7 +2,6 @@ package onrserver
 
 import (
 	"log"
-	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -12,12 +11,10 @@ import (
 	"github.com/r9s-ai/open-next-router/onr/internal/onrserver/accesslog"
 )
 
+// requestLoggerWithColor requires a non-nil logger created during server startup.
 func requestLoggerWithColor(l *log.Logger, color bool, requestIDHeaderKey string, appnameInferEnabled bool, appnameInferUnknown string, accessFormatter *logx.AccessLogFormatter) gin.HandlerFunc {
 	requestIDHeaderKey = requestid.ResolveHeaderKey(requestIDHeaderKey)
 	collector := accesslog.NewCollector(requestIDHeaderKey, appnameInferEnabled, appnameInferUnknown)
-	if l == nil {
-		l = log.New(os.Stdout, "", 0)
-	}
 	return func(c *gin.Context) {
 		start := time.Now()
 		c.Next()
