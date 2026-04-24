@@ -45,6 +45,8 @@ type MatchUsage struct {
 }
 
 // Select requires a non-nil meta and a valid ProviderUsage receiver.
+// It returns a request-scoped copy assembled from defaults and the matched override.
+// Callers must treat the shared provider config as read-only across requests.
 func (p *ProviderUsage) Select(meta *dslmeta.Meta) (*UsageExtractConfig, bool) {
 	api := strings.TrimSpace(meta.API)
 	if api == "" {

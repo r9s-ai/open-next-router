@@ -38,6 +38,8 @@ type MatchResponse struct {
 }
 
 // Select requires a non-nil meta and a valid ProviderResponse receiver.
+// It returns a request-scoped copy assembled from defaults and the matched override.
+// Callers must treat the shared provider config as read-only across requests.
 func (p *ProviderResponse) Select(meta *dslmeta.Meta) (*ResponseDirective, bool) {
 	api := strings.TrimSpace(meta.API)
 	if api == "" {
@@ -68,6 +70,12 @@ func (p *ProviderResponse) selectMatch(api string, stream bool) (MatchResponse, 
 
 func mergeResponseDirective(base ResponseDirective, override ResponseDirective) ResponseDirective {
 	out := base
+	if len(base.SSEJSONDelIf) > 0 {
+		out.SSEJSONDelIf = append([]SSEJSONDelIfRule(nil), base.SSEJSONDelIf...)
+	}
+	if len(base.JSONOps) > 0 {
+		out.JSONOps = append([]JSONOp(nil), base.JSONOps...)
+	}
 	if strings.TrimSpace(override.Op) != "" {
 		out.Op = override.Op
 		out.Mode = override.Mode
