@@ -81,6 +81,22 @@ func TestFetchCatalogAndExtractPrices(t *testing.T) {
 	}
 }
 
+func TestFetchCatalog_NilClientFallsBackToDefault(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"openai":{"id":"openai","models":{}}}`))
+	}))
+	defer srv.Close()
+
+	out, err := FetchCatalog(context.Background(), nil, srv.URL)
+	if err != nil {
+		t.Fatalf("FetchCatalog error: %v", err)
+	}
+	if out == nil {
+		t.Fatalf("expected non-nil fetch result")
+	}
+}
+
 func TestExtractPricesModelNotFound(t *testing.T) {
 	c := Catalog{
 		Providers: map[string]Provider{

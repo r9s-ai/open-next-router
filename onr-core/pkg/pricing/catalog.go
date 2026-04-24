@@ -63,12 +63,16 @@ var providerAliases = map[string]string{
 	"azure-response": "azure",
 }
 
-// FetchCatalog requires a non-nil ctx and client.
+// FetchCatalog requires a non-nil ctx.
+// When client is nil it uses a default HTTP client with a timeout.
 // It returns a non-nil FetchResult on success.
 func FetchCatalog(ctx context.Context, client *http.Client, url string) (*FetchResult, error) {
 	rawURL := strings.TrimSpace(url)
 	if rawURL == "" {
 		rawURL = DefaultCatalogURL
+	}
+	if client == nil {
+		client = &http.Client{Timeout: 20 * time.Second}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {

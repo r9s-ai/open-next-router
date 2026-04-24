@@ -67,6 +67,17 @@ func TestHTTPClientForProvider_NilProxyMapReturnsBase(t *testing.T) {
 	}
 }
 
+func TestHTTPClientForProvider_NilHTTPReturnsDefaultClient(t *testing.T) {
+	c := &Client{}
+	hc, err := c.httpClientForProvider("openai")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if hc != http.DefaultClient {
+		t.Fatalf("expected default client, got %p want %p", hc, http.DefaultClient)
+	}
+}
+
 func TestHTTPClientForProvider_InvalidProxyURL(t *testing.T) {
 	c := &Client{
 		HTTP: &http.Client{Timeout: 3 * time.Second},
