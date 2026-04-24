@@ -51,10 +51,8 @@ type SystemLogger struct {
 }
 
 // SetNowFunc is intended for tests to override timestamp generation.
+// It requires a non-nil logger receiver and non-nil clock function.
 func (l *SystemLogger) SetNowFunc(now func() time.Time) {
-	if l == nil || now == nil {
-		return
-	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.now = now

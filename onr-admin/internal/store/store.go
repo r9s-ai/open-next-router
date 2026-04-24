@@ -15,6 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// loadConfigIfExists returns nil, nil when path is empty; otherwise it returns a non-nil config on success.
 func loadConfigIfExists(path string) (*config.Config, error) {
 	p := strings.TrimSpace(path)
 	if p == "" {
@@ -26,6 +27,7 @@ func loadConfigIfExists(path string) (*config.Config, error) {
 	return config.Load(p)
 }
 
+// loadOrInitKeysDoc returns a non-nil YAML document on success.
 func loadOrInitKeysDoc(path string) (*yaml.Node, error) {
 	p := strings.TrimSpace(path)
 	if p == "" {
@@ -49,6 +51,7 @@ func loadOrInitKeysDoc(path string) (*yaml.Node, error) {
 	return &doc, nil
 }
 
+// loadOrInitModelsDoc returns a non-nil YAML document on success.
 func loadOrInitModelsDoc(path string) (*yaml.Node, error) {
 	p := strings.TrimSpace(path)
 	if p == "" {
@@ -72,6 +75,7 @@ func loadOrInitModelsDoc(path string) (*yaml.Node, error) {
 	return &doc, nil
 }
 
+// initEmptyKeysDoc returns a non-nil empty keys document.
 func initEmptyKeysDoc() *yaml.Node {
 	doc := &yaml.Node{Kind: yaml.DocumentNode}
 	m := &yaml.Node{Kind: yaml.MappingNode}
@@ -83,6 +87,7 @@ func initEmptyKeysDoc() *yaml.Node {
 	return doc
 }
 
+// initEmptyModelsDoc returns a non-nil empty models document.
 func initEmptyModelsDoc() *yaml.Node {
 	doc := &yaml.Node{Kind: yaml.DocumentNode}
 	m := &yaml.Node{Kind: yaml.MappingNode}
@@ -153,6 +158,7 @@ type modelUpdate struct {
 	OwnedBy   *string
 }
 
+// ptr returns a non-nil pointer to v.
 func ptr[T any](v T) *T { return &v }
 
 func parseProviders(s string) []string {
@@ -359,6 +365,7 @@ func listModelIDs(doc *yaml.Node) []string {
 	return out
 }
 
+// getProviderNode returns nil, false when the provider node does not exist.
 func getProviderNode(doc *yaml.Node, provider string) (*yaml.Node, bool) {
 	pm, err := providersMap(doc)
 	if err != nil {
@@ -375,6 +382,7 @@ func getProviderNode(doc *yaml.Node, provider string) (*yaml.Node, bool) {
 	return nil, false
 }
 
+// getModelNode returns nil, false when the model node does not exist.
 func getModelNode(doc *yaml.Node, modelID string) (*yaml.Node, bool) {
 	mm, err := modelsMap(doc)
 	if err != nil {
@@ -391,6 +399,7 @@ func getModelNode(doc *yaml.Node, modelID string) (*yaml.Node, bool) {
 	return nil, false
 }
 
+// ensureProviderNode returns nil when provider is empty; otherwise it returns a non-nil provider node.
 func ensureProviderNode(doc *yaml.Node, provider string) *yaml.Node {
 	pm, _ := providersMap(doc)
 	p := strings.TrimSpace(provider)
@@ -411,6 +420,7 @@ func ensureProviderNode(doc *yaml.Node, provider string) *yaml.Node {
 	return provNode
 }
 
+// ensureModelNode returns nil when modelID is empty; otherwise it returns a non-nil model node.
 func ensureModelNode(doc *yaml.Node, modelID string) *yaml.Node {
 	mm, _ := modelsMap(doc)
 	id := strings.TrimSpace(modelID)

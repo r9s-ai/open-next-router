@@ -28,7 +28,10 @@ func TestDoUpstreamRequest_DoesNotCancelBodyImmediately(t *testing.T) {
 	gc, _ := gin.CreateTestContext(w)
 	gc.Request = httptest.NewRequest(http.MethodPost, "/v1/test", strings.NewReader(`{"x":1}`))
 
-	c := &Client{WriteTimeout: 10 * time.Second}
+	c := &Client{
+		HTTP:         &http.Client{Timeout: 3 * time.Second},
+		WriteTimeout: 10 * time.Second,
+	}
 	meta := &dslmeta.Meta{
 		API:            "chat.completions",
 		IsStream:       true,
@@ -36,7 +39,7 @@ func TestDoUpstreamRequest_DoesNotCancelBodyImmediately(t *testing.T) {
 		RequestURLPath: "/",
 	}
 
-	resp, cancel, err := c.doUpstreamRequest(gc, "openai", dslconfig.ProviderFile{}, meta, []byte(`{"x":1}`))
+	resp, cancel, err := c.doUpstreamRequest(gc, "openai", &dslconfig.ProviderFile{}, meta, []byte(`{"x":1}`))
 	if err != nil {
 		t.Fatalf("doUpstreamRequest error: %v", err)
 	}
@@ -70,7 +73,10 @@ func TestDoUpstreamRequest_AppliesFilterHeaderValuesAfterSetHeader(t *testing.T)
 	gc, _ := gin.CreateTestContext(w)
 	gc.Request = httptest.NewRequest(http.MethodPost, "/v1/test", strings.NewReader(`{"x":1}`))
 
-	c := &Client{WriteTimeout: 10 * time.Second}
+	c := &Client{
+		HTTP:         &http.Client{Timeout: 3 * time.Second},
+		WriteTimeout: 10 * time.Second,
+	}
 	pf := dslconfig.ProviderFile{
 		Headers: dslconfig.ProviderHeaders{
 			Defaults: dslconfig.PhaseHeaders{
@@ -98,7 +104,7 @@ func TestDoUpstreamRequest_AppliesFilterHeaderValuesAfterSetHeader(t *testing.T)
 		RequestURLPath: "/",
 	}
 
-	resp, cancel, err := c.doUpstreamRequest(gc, "openai", pf, meta, []byte(`{"x":1}`))
+	resp, cancel, err := c.doUpstreamRequest(gc, "openai", &pf, meta, []byte(`{"x":1}`))
 	if err != nil {
 		t.Fatalf("doUpstreamRequest error: %v", err)
 	}
@@ -135,7 +141,10 @@ func TestDoUpstreamRequest_AppliesFilterHeaderValuesAcrossRepeatedHeaderLines(t 
 	gc.Request.Header.Add("X-Feature-Flags", "exp-a; keep")
 	gc.Request.Header.Add("X-Feature-Flags", "debug; stay")
 
-	c := &Client{WriteTimeout: 10 * time.Second}
+	c := &Client{
+		HTTP:         &http.Client{Timeout: 3 * time.Second},
+		WriteTimeout: 10 * time.Second,
+	}
 	pf := dslconfig.ProviderFile{
 		Headers: dslconfig.ProviderHeaders{
 			Matches: []dslconfig.MatchHeaders{
@@ -159,7 +168,7 @@ func TestDoUpstreamRequest_AppliesFilterHeaderValuesAcrossRepeatedHeaderLines(t 
 		RequestURLPath: "/",
 	}
 
-	resp, cancel, err := c.doUpstreamRequest(gc, "openai", pf, meta, []byte(`{"x":1}`))
+	resp, cancel, err := c.doUpstreamRequest(gc, "openai", &pf, meta, []byte(`{"x":1}`))
 	if err != nil {
 		t.Fatalf("doUpstreamRequest error: %v", err)
 	}
@@ -195,7 +204,10 @@ func TestDoUpstreamRequest_PassesHeaderFromOriginRequest(t *testing.T) {
 	gc.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"x":1}`))
 	gc.Request.Header.Set("Anthropic-Beta", "context-1m-123213, asdb")
 
-	c := &Client{WriteTimeout: 10 * time.Second}
+	c := &Client{
+		HTTP:         &http.Client{Timeout: 3 * time.Second},
+		WriteTimeout: 10 * time.Second,
+	}
 	pf := dslconfig.ProviderFile{
 		Headers: dslconfig.ProviderHeaders{
 			Matches: []dslconfig.MatchHeaders{
@@ -218,7 +230,7 @@ func TestDoUpstreamRequest_PassesHeaderFromOriginRequest(t *testing.T) {
 		RequestURLPath: "/",
 	}
 
-	resp, cancel, err := c.doUpstreamRequest(gc, "anthropic", pf, meta, []byte(`{"x":1}`))
+	resp, cancel, err := c.doUpstreamRequest(gc, "anthropic", &pf, meta, []byte(`{"x":1}`))
 	if err != nil {
 		t.Fatalf("doUpstreamRequest error: %v", err)
 	}

@@ -44,25 +44,23 @@ type MatchUsage struct {
 	Extract UsageExtractConfig
 }
 
-func (p ProviderUsage) Select(meta *dslmeta.Meta) (UsageExtractConfig, bool) {
-	if meta == nil {
-		return UsageExtractConfig{}, false
-	}
+// Select requires a non-nil meta and a valid ProviderUsage receiver.
+func (p *ProviderUsage) Select(meta *dslmeta.Meta) (*UsageExtractConfig, bool) {
 	api := strings.TrimSpace(meta.API)
 	if api == "" {
-		return UsageExtractConfig{}, false
+		return nil, false
 	}
 	cfg := p.Defaults
 	if m, ok := p.selectMatch(api, meta.IsStream); ok {
 		cfg = mergeUsageConfig(cfg, m.Extract)
 	}
-	if strings.TrimSpace(cfg.Mode) == "" {
-		return UsageExtractConfig{}, false
+	if cfg.Mode == "" {
+		return nil, false
 	}
-	return cfg, true
+	return &cfg, true
 }
 
-func (p ProviderUsage) selectMatch(api string, stream bool) (MatchUsage, bool) {
+func (p *ProviderUsage) selectMatch(api string, stream bool) (MatchUsage, bool) {
 	for _, m := range p.Matches {
 		if m.API != "" && m.API != api {
 			continue
@@ -75,22 +73,24 @@ func (p ProviderUsage) selectMatch(api string, stream bool) (MatchUsage, bool) {
 	return MatchUsage{}, false
 }
 
-func ExtractUsage(meta *dslmeta.Meta, cfg UsageExtractConfig, respBody []byte) (*Usage, int, error) {
-	cfg = prepareUsageExtractConfig(cfg)
-	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
+// ExtractUsage requires a selected UsageExtractConfig and non-nil meta; cfg is never nil in the current call paths.
+// It returns the extracted usage, the configured sample rate, and any extraction error.
+func ExtractUsage(meta *dslmeta.Meta, cfg *UsageExtractConfig, respBody []byte) (*Usage, int, error) {
+	compiledCfg := prepareUsageExtractConfig(*cfg)
+	mode := normalizeUsageMode(compiledCfg.Mode)
 	if mode == "" {
 		return nil, 0, nil
 	}
-	respRoot, err := responseRootFromBody(meta, cfg, respBody)
+	respRoot, err := responseRootFromBody(meta, compiledCfg, respBody)
 	if err != nil {
 		return nil, 0, err
 	}
-	return extractUsageFromResponseRoot(meta, cfg, respRoot, respBody)
+	return extractUsageFromResponseRoot(meta, compiledCfg, respRoot, respBody)
 }
 
 func extractUsageFromResponseRoot(meta *dslmeta.Meta, cfg UsageExtractConfig, respRoot map[string]any, respBody []byte) (*Usage, int, error) {
 	cfg = prepareUsageExtractConfig(cfg)
-	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
+	mode := normalizeUsageMode(cfg.Mode)
 	if mode == "" {
 		return nil, 0, nil
 	}
@@ -105,7 +105,7 @@ func extractUsageFromRoots(meta *dslmeta.Meta, cfg UsageExtractConfig, reqRoot, 
 
 func extractUsageFromRootsWithEvent(meta *dslmeta.Meta, event string, cfg UsageExtractConfig, reqRoot, respRoot, derivedRoot map[string]any, respBody []byte) (*Usage, int, error) {
 	cfg = compileUsageExtractConfig(meta, cfg)
-	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
+	mode := normalizeUsageMode(cfg.Mode)
 	switch mode {
 	case usageModeCustom:
 		usage, cachedTokens, err := extractCustomUsageWithEvent(event, reqRoot, respRoot, derivedRoot, cfg)
@@ -135,7 +135,7 @@ func responseRootFromBody(meta *dslmeta.Meta, cfg UsageExtractConfig, respBody [
 
 func usageConfigAllowsNonJSONResponse(meta *dslmeta.Meta, cfg UsageExtractConfig) bool {
 	for _, fact := range cfg.facts {
-		switch strings.ToLower(strings.TrimSpace(fact.Source)) {
+		switch strings.ToLower(fact.Source) {
 		case "request", "derived":
 			return true
 		}
@@ -144,10 +144,8 @@ func usageConfigAllowsNonJSONResponse(meta *dslmeta.Meta, cfg UsageExtractConfig
 	return false
 }
 
+// requestRootFromMeta requires a non-nil meta.
 func requestRootFromMeta(meta *dslmeta.Meta) map[string]any {
-	if meta == nil {
-		return nil
-	}
 	return meta.RequestRoot()
 }
 
@@ -186,8 +184,9 @@ func compileUsageExtractConfig(meta *dslmeta.Meta, cfg UsageExtractConfig) Usage
 	}
 }
 
+// derivedRootFromMeta requires a non-nil meta.
 func derivedRootFromMeta(meta *dslmeta.Meta) map[string]any {
-	if meta == nil || len(meta.DerivedUsage) == 0 {
+	if len(meta.DerivedUsage) == 0 {
 		return nil
 	}
 	return meta.DerivedUsage
@@ -197,7 +196,7 @@ func evalUsageField(root map[string]any, expr *UsageExpr, fallbackPath string) i
 	if expr != nil {
 		return expr.Eval(root)
 	}
-	return jsonutil.GetIntByPath(root, strings.TrimSpace(fallbackPath))
+	return jsonutil.GetIntByPath(root, fallbackPath)
 }
 
 func mergeUsageConfig(base UsageExtractConfig, override UsageExtractConfig) UsageExtractConfig {
@@ -245,17 +244,18 @@ func mergeUsageConfig(base UsageExtractConfig, override UsageExtractConfig) Usag
 
 // UsesDerivedUsagePath reports whether the config explicitly references a
 // derived-source usage_fact at the given JSON path.
-func UsesDerivedUsagePath(meta *dslmeta.Meta, cfg UsageExtractConfig, path string) bool {
-	cfg = compileUsageExtractConfig(meta, cfg)
+// UsesDerivedUsagePath requires a selected UsageExtractConfig.
+func UsesDerivedUsagePath(meta *dslmeta.Meta, cfg *UsageExtractConfig, path string) bool {
+	compiledCfg := compileUsageExtractConfig(meta, *cfg)
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return false
 	}
-	for _, fact := range cfg.facts {
-		if !strings.EqualFold(strings.TrimSpace(fact.Source), "derived") {
+	for _, fact := range compiledCfg.facts {
+		if !strings.EqualFold(fact.Source, "derived") {
 			continue
 		}
-		if strings.TrimSpace(fact.Path) == path {
+		if fact.Path == path {
 			return true
 		}
 	}

@@ -464,10 +464,8 @@ func normalizeProviderName(raw string) (string, error) {
 	return name, nil
 }
 
+// decodeProviderRequest requires a non-nil server request with a non-nil body.
 func decodeProviderRequest(r *http.Request) (providerRequest, error) {
-	if r == nil || r.Body == nil {
-		return providerRequest{}, errors.New("empty request body")
-	}
 	defer func() { _ = r.Body.Close() }()
 
 	dec := json.NewDecoder(r.Body)
@@ -498,10 +496,8 @@ func formatWarnings(warnings []dslconfig.ValidationWarning) []string {
 	return out
 }
 
+// decodeTestRequest requires a non-nil server request with a non-nil body.
 func decodeTestRequest(r *http.Request) (testRequest, error) {
-	if r == nil || r.Body == nil {
-		return testRequest{}, errors.New("empty request body")
-	}
 	defer func() { _ = r.Body.Close() }()
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
@@ -541,30 +537,24 @@ func decodeTestRequest(r *http.Request) (testRequest, error) {
 	return in, nil
 }
 
+// writeJSON requires a non-nil response writer from an HTTP handler.
 func writeJSON(w http.ResponseWriter, status int, body providerResponse) {
-	if w == nil {
-		return
-	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	enc := json.NewEncoder(w)
 	_ = enc.Encode(body)
 }
 
+// writeJSONAny requires a non-nil response writer from an HTTP handler.
 func writeJSONAny(w http.ResponseWriter, status int, body any) {
-	if w == nil {
-		return
-	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	enc := json.NewEncoder(w)
 	_ = enc.Encode(body)
 }
 
+// writeMethodNotAllowed requires a non-nil response writer from an HTTP handler.
 func writeMethodNotAllowed(w http.ResponseWriter, allowed string) {
-	if w == nil {
-		return
-	}
 	if strings.TrimSpace(allowed) != "" {
 		w.Header().Set("Allow", allowed)
 	}
@@ -779,10 +769,8 @@ func copyDirectory(src, dst string) error {
 	})
 }
 
+// readBodyLimit requires a non-nil reader and returns whether the body was truncated.
 func readBodyLimit(rc io.Reader, limit int64) ([]byte, bool, error) {
-	if rc == nil {
-		return nil, false, nil
-	}
 	r := io.LimitReader(rc, limit+1)
 	b, err := io.ReadAll(r)
 	if err != nil {

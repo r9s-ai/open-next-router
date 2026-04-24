@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// newCryptoCmd returns a non-nil crypto command.
 func newCryptoCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "crypto",
@@ -29,6 +30,7 @@ func newCryptoCmd() *cobra.Command {
 	return cmd
 }
 
+// newCryptoEncryptCmd returns a non-nil encrypt command.
 func newCryptoEncryptCmd() *cobra.Command {
 	var text string
 	cmd := &cobra.Command{
@@ -54,6 +56,7 @@ func newCryptoEncryptCmd() *cobra.Command {
 	return cmd
 }
 
+// newCryptoDecryptCmd returns a non-nil decrypt command.
 func newCryptoDecryptCmd() *cobra.Command {
 	var text string
 	cmd := &cobra.Command{
@@ -113,6 +116,7 @@ func isTerminalReader(r io.Reader) bool {
 	return fi.Mode()&os.ModeCharDevice != 0
 }
 
+// newCryptoGenMasterKeyCmd returns a non-nil master-key command.
 func newCryptoGenMasterKeyCmd() *cobra.Command {
 	var format string
 	var exportLine bool
@@ -149,6 +153,7 @@ func newCryptoGenMasterKeyCmd() *cobra.Command {
 	return cmd
 }
 
+// newCryptoEncryptKeysCmd returns a non-nil encrypt-keys command.
 func newCryptoEncryptKeysCmd() *cobra.Command {
 	opts := cryptoEncryptKeysOptions{cfgPath: "onr.yaml", backup: true}
 	cmd := &cobra.Command{

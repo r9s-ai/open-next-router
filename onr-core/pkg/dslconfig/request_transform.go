@@ -33,22 +33,25 @@ type MatchRequestTransform struct {
 	Transform RequestTransform
 }
 
-func (p ProviderRequestTransform) Select(meta *dslmeta.Meta) (RequestTransform, bool) {
-	if meta == nil {
-		return RequestTransform{}, false
-	}
+func normalizedReqMapMode(value string) string {
+	return strings.TrimSpace(value)
+}
+
+// Select requires a non-nil meta and a valid ProviderRequestTransform receiver.
+func (p *ProviderRequestTransform) Select(meta *dslmeta.Meta) (*RequestTransform, bool) {
 	api := strings.TrimSpace(meta.API)
 	if api == "" {
-		return RequestTransform{}, false
+		return nil, false
 	}
 	out := p.Defaults
 	if m, ok := p.selectMatch(api, meta.IsStream); ok {
 		out = mergeRequestTransform(out, m.Transform)
 	}
-	if out.ModelMap.Map == nil && strings.TrimSpace(out.ModelMap.DefaultExpr) == "" && len(out.JSONOps) == 0 && strings.TrimSpace(out.ReqMapMode) == "" {
-		return RequestTransform{}, false
+	out.ReqMapMode = normalizedReqMapMode(out.ReqMapMode)
+	if out.ModelMap.Map == nil && strings.TrimSpace(out.ModelMap.DefaultExpr) == "" && len(out.JSONOps) == 0 && out.ReqMapMode == "" {
+		return nil, false
 	}
-	return out, true
+	return &out, true
 }
 
 func (p ProviderRequestTransform) selectMatch(api string, stream bool) (MatchRequestTransform, bool) {
@@ -80,16 +83,14 @@ func mergeRequestTransform(base, override RequestTransform) RequestTransform {
 	if len(override.JSONOps) > 0 {
 		out.JSONOps = append(out.JSONOps, override.JSONOps...)
 	}
-	if strings.TrimSpace(override.ReqMapMode) != "" {
-		out.ReqMapMode = override.ReqMapMode
+	if reqMapMode := normalizedReqMapMode(override.ReqMapMode); reqMapMode != "" {
+		out.ReqMapMode = reqMapMode
 	}
 	return out
 }
 
-func (t RequestTransform) Apply(meta *dslmeta.Meta) {
-	if meta == nil {
-		return
-	}
+// Apply requires a non-nil meta and a selected RequestTransform.
+func (t *RequestTransform) Apply(meta *dslmeta.Meta) {
 	if meta.DSLModelMapped == "" {
 		meta.DSLModelMapped = meta.ActualModelName
 	}

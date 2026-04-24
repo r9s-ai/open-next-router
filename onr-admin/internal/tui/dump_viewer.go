@@ -152,6 +152,7 @@ type dumpFileMsg struct {
 	err     error
 }
 
+// newDumpViewerProgram returns a non-nil Bubble Tea program.
 func newDumpViewerProgram(dumpsDir string, in io.Reader, out io.Writer) *tea.Program {
 	m := newDumpViewerModel(dumpsDir)
 	p := tea.NewProgram(m, tea.WithInput(in), tea.WithOutput(out), tea.WithAltScreen())

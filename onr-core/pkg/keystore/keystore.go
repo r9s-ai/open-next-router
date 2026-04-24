@@ -122,44 +122,45 @@ func Load(path string) (*Store, error) {
 	return out, nil
 }
 
-func (s *Store) NextKey(provider string) (Key, bool) {
+// NextKey returns the next provider key in round-robin order.
+// It returns nil, false when the store is nil or the provider has no keys.
+func (s *Store) NextKey(provider string) (*Key, bool) {
 	if s == nil {
-		return Key{}, false
+		return nil, false
 	}
 	p := normalizeProvider(provider)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	keys := s.byProv[p]
 	if len(keys) == 0 {
-		return Key{}, false
+		return nil, false
 	}
 	i := s.nextIdx[p] % len(keys)
 	s.nextIdx[p] = (i + 1) % len(keys)
-	return keys[i], true
+	return &keys[i], true
 }
 
-func (s *Store) MatchAccessKey(value string) (AccessKey, bool) {
-	if s == nil {
-		return AccessKey{}, false
-	}
+// MatchAccessKey requires a non-nil Store receiver.
+// It returns nil, false when value is empty or no access key matches.
+func (s *Store) MatchAccessKey(value string) (*AccessKey, bool) {
 	v := strings.TrimSpace(value)
 	if v == "" {
-		return AccessKey{}, false
+		return nil, false
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, ak := range s.accessKeys {
+	for i := range s.accessKeys {
+		ak := &s.accessKeys[i]
 		if subtle.ConstantTimeCompare([]byte(v), []byte(ak.Value)) == 1 {
 			return ak, true
 		}
 	}
-	return AccessKey{}, false
+	return nil, false
 }
 
+// AccessKeys requires a non-nil Store receiver.
+// It returns a copy of the configured access keys.
 func (s *Store) AccessKeys() []AccessKey {
-	if s == nil {
-		return nil
-	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := make([]AccessKey, len(s.accessKeys))
@@ -167,10 +168,8 @@ func (s *Store) AccessKeys() []AccessKey {
 	return out
 }
 
+// HasProvider requires a non-nil Store receiver.
 func (s *Store) HasProvider(provider string) bool {
-	if s == nil {
-		return false
-	}
 	p := normalizeProvider(provider)
 	s.mu.Lock()
 	defer s.mu.Unlock()

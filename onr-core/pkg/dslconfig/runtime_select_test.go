@@ -110,7 +110,7 @@ func TestProviderFinishReasonSelect_MergeAndEmpty(t *testing.T) {
 		t.Fatalf("path should keep default when not overridden, got %q", cfg.FinishReasonPath)
 	}
 
-	if _, ok := (ProviderFinishReason{}).Select(&dslmeta.Meta{API: "chat.completions"}); ok {
+	if _, ok := (&ProviderFinishReason{}).Select(&dslmeta.Meta{API: "chat.completions"}); ok {
 		t.Fatalf("expected empty config not selected")
 	}
 }
@@ -283,7 +283,7 @@ func TestProviderRoutingHasMatchHelpers(t *testing.T) {
 	if p.HasMatch(&dslmeta.Meta{API: "chat.completions", IsStream: false}) {
 		t.Fatalf("HasMatch should be false for stream mismatch")
 	}
-	if p.HasMatch(nil) {
-		t.Fatalf("HasMatch should be false for nil meta")
+	if p.HasMatch(&dslmeta.Meta{}) {
+		t.Fatalf("HasMatch should be false for empty api")
 	}
 }

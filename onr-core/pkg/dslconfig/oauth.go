@@ -68,7 +68,8 @@ type ResolvedOAuthConfig struct {
 	FallbackTTLSec int
 }
 
-func (c OAuthConfig) IsEmpty() bool {
+// IsEmpty requires a valid OAuthConfig receiver.
+func (c *OAuthConfig) IsEmpty() bool {
 	return strings.TrimSpace(c.Mode) == "" &&
 		strings.TrimSpace(c.TokenURLExpr) == "" &&
 		strings.TrimSpace(c.ClientIDExpr) == "" &&
@@ -87,8 +88,9 @@ func (c OAuthConfig) IsEmpty() bool {
 		len(c.Form) == 0
 }
 
-func (c OAuthConfig) Merge(override OAuthConfig) OAuthConfig {
-	out := c
+// Merge requires a valid OAuthConfig receiver.
+func (c *OAuthConfig) Merge(override OAuthConfig) OAuthConfig {
+	out := *c
 	if strings.TrimSpace(override.Mode) != "" {
 		out.Mode = override.Mode
 	}
@@ -143,10 +145,11 @@ func (c OAuthConfig) Merge(override OAuthConfig) OAuthConfig {
 	return out
 }
 
-func (c OAuthConfig) Resolve(meta *dslmeta.Meta) (ResolvedOAuthConfig, bool) {
+// Resolve requires a valid OAuthConfig receiver.
+func (c *OAuthConfig) Resolve(meta *dslmeta.Meta) (*ResolvedOAuthConfig, bool) {
 	mode := strings.ToLower(strings.TrimSpace(c.Mode))
 	if mode == "" {
-		return ResolvedOAuthConfig{}, false
+		return nil, false
 	}
 
 	tpl, ok := oauthBuiltinTemplates[mode]
@@ -214,10 +217,11 @@ func (c OAuthConfig) Resolve(meta *dslmeta.Meta) (ResolvedOAuthConfig, bool) {
 		res.Form[k] = strings.TrimSpace(evalStringExpr(f.ValueExpr, meta))
 	}
 
-	return res, true
+	return &res, true
 }
 
-func (r ResolvedOAuthConfig) CacheIdentity() string {
+// CacheIdentity requires a resolved OAuth config produced by Resolve.
+func (r *ResolvedOAuthConfig) CacheIdentity() string {
 	keys := make([]string, 0, len(r.Form))
 	for k := range r.Form {
 		keys = append(keys, k)
@@ -225,23 +229,23 @@ func (r ResolvedOAuthConfig) CacheIdentity() string {
 	sort.Strings(keys)
 
 	var b strings.Builder
-	b.WriteString(strings.ToLower(strings.TrimSpace(r.Mode)))
+	b.WriteString(strings.ToLower(r.Mode))
 	b.WriteByte('|')
-	b.WriteString(strings.ToUpper(strings.TrimSpace(r.Method)))
+	b.WriteString(strings.ToUpper(r.Method))
 	b.WriteByte('|')
-	b.WriteString(strings.ToLower(strings.TrimSpace(r.ContentType)))
+	b.WriteString(strings.ToLower(r.ContentType))
 	b.WriteByte('|')
-	b.WriteString(strings.TrimSpace(r.TokenURL))
+	b.WriteString(r.TokenURL)
 	b.WriteByte('|')
-	b.WriteString(strings.TrimSpace(r.BasicAuthUsername))
+	b.WriteString(r.BasicAuthUsername)
 	b.WriteByte('|')
-	b.WriteString(strings.TrimSpace(r.BasicAuthPassword))
+	b.WriteString(r.BasicAuthPassword)
 	b.WriteByte('|')
-	b.WriteString(strings.TrimSpace(r.TokenPath))
+	b.WriteString(r.TokenPath)
 	b.WriteByte('|')
-	b.WriteString(strings.TrimSpace(r.ExpiresInPath))
+	b.WriteString(r.ExpiresInPath)
 	b.WriteByte('|')
-	b.WriteString(strings.TrimSpace(r.TokenTypePath))
+	b.WriteString(r.TokenTypePath)
 	b.WriteByte('|')
 	b.WriteString(strconv.Itoa(r.TimeoutMs))
 	b.WriteByte('|')

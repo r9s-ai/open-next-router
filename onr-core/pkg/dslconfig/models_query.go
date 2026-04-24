@@ -33,24 +33,38 @@ type ProviderModels struct {
 	Defaults ModelsQueryConfig
 }
 
-func (p ProviderModels) Select(_ *dslmeta.Meta) (ModelsQueryConfig, bool) {
+// Select requires a valid ProviderModels receiver.
+func (p *ProviderModels) Select(_ *dslmeta.Meta) (*ModelsQueryConfig, bool) {
 	cfg := inferImplicitCustomModelsQueryConfig(p.Defaults)
-	if strings.TrimSpace(cfg.Mode) == "" {
-		return ModelsQueryConfig{}, false
+	if cfg.Mode == "" {
+		return nil, false
 	}
-	return cfg, true
+	return &cfg, true
 }
 
 func normalizeModelsQueryConfig(in ModelsQueryConfig) ModelsQueryConfig {
 	out := in
 	mode := strings.ToLower(strings.TrimSpace(in.Mode))
 	out.Mode = mode
+	out.Method = strings.TrimSpace(out.Method)
+	out.Path = strings.TrimSpace(out.Path)
+	out.IDRegex = strings.TrimSpace(out.IDRegex)
+	out.IDAllowRegex = strings.TrimSpace(out.IDAllowRegex)
+	if len(out.IDPaths) > 0 {
+		paths := make([]string, 0, len(out.IDPaths))
+		for _, path := range out.IDPaths {
+			if path = strings.TrimSpace(path); path != "" {
+				paths = append(paths, path)
+			}
+		}
+		out.IDPaths = paths
+	}
 
-	if strings.TrimSpace(out.Method) == "" {
+	if out.Method == "" {
 		out.Method = "GET"
 	}
 	if mode == modelsModeOpenAI {
-		if strings.TrimSpace(out.Path) == "" {
+		if out.Path == "" {
 			out.Path = "/v1/models"
 		}
 		if len(out.IDPaths) == 0 {
@@ -58,13 +72,13 @@ func normalizeModelsQueryConfig(in ModelsQueryConfig) ModelsQueryConfig {
 		}
 	}
 	if mode == modelsModeGemini {
-		if strings.TrimSpace(out.Path) == "" {
+		if out.Path == "" {
 			out.Path = "/v1beta/models"
 		}
 		if len(out.IDPaths) == 0 {
 			out.IDPaths = []string{"$.models[*].name"}
 		}
-		if strings.TrimSpace(out.IDRegex) == "" {
+		if out.IDRegex == "" {
 			out.IDRegex = "^models/(.+)$"
 		}
 	}
@@ -124,8 +138,9 @@ func builtinModelsPresetName(mode string) string {
 	}
 }
 
-func ExtractModelIDs(cfg ModelsQueryConfig, respBody []byte) ([]string, error) {
-	normalized := normalizeModelsQueryConfig(cfg)
+// ExtractModelIDs requires a selected ModelsQueryConfig.
+func ExtractModelIDs(cfg *ModelsQueryConfig, respBody []byte) ([]string, error) {
+	normalized := normalizeModelsQueryConfig(*cfg)
 	if len(normalized.IDPaths) == 0 {
 		return nil, nil
 	}
@@ -140,14 +155,14 @@ func ExtractModelIDs(cfg ModelsQueryConfig, respBody []byte) ([]string, error) {
 		allowRE   *regexp.Regexp
 		err       error
 	)
-	if strings.TrimSpace(normalized.IDRegex) != "" {
-		rewriteRE, err = regexp.Compile(strings.TrimSpace(normalized.IDRegex))
+	if normalized.IDRegex != "" {
+		rewriteRE, err = regexp.Compile(normalized.IDRegex)
 		if err != nil {
 			return nil, fmt.Errorf("invalid id_regex: %w", err)
 		}
 	}
-	if strings.TrimSpace(normalized.IDAllowRegex) != "" {
-		allowRE, err = regexp.Compile(strings.TrimSpace(normalized.IDAllowRegex))
+	if normalized.IDAllowRegex != "" {
+		allowRE, err = regexp.Compile(normalized.IDAllowRegex)
 		if err != nil {
 			return nil, fmt.Errorf("invalid id_allow_regex: %w", err)
 		}

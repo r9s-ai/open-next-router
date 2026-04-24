@@ -15,6 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// newPricingCmd returns a non-nil pricing command.
 func newPricingCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "pricing",
@@ -39,6 +40,7 @@ type pricingProvidersOptions struct {
 	search string
 }
 
+// newPricingSyncCmd returns a non-nil pricing sync command.
 func newPricingSyncCmd() *cobra.Command {
 	opts := pricingSyncOptions{
 		cfgPath: "onr.yaml",
@@ -140,6 +142,7 @@ func resolvePricingSyncProviders(opts pricingSyncOptions) ([]string, error) {
 	return providers, nil
 }
 
+// newPricingProvidersCmd returns a non-nil pricing providers command.
 func newPricingProvidersCmd() *cobra.Command {
 	opts := pricingProvidersOptions{
 		url: pricing.DefaultCatalogURL,

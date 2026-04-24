@@ -85,10 +85,8 @@ func Validate(cfg *Config) error {
 	return nil
 }
 
+// IsAPIEnabled requires a non-nil Config receiver.
 func (c *Config) IsAPIEnabled(api string) bool {
-	if c == nil {
-		return false
-	}
 	if !c.Enabled {
 		return false
 	}

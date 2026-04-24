@@ -23,6 +23,7 @@ type streamDumpState struct {
 	streamIgnoredClientDisconnect bool
 }
 
+// newStreamDumpState returns a non-nil dump state.
 func newStreamDumpState(gc *gin.Context) *streamDumpState {
 	if rec := trafficdump.FromContext(gc); rec != nil && rec.MaxBytes() > 0 {
 		return &streamDumpState{enabled: true}
@@ -30,26 +31,20 @@ func newStreamDumpState(gc *gin.Context) *streamDumpState {
 	return &streamDumpState{}
 }
 
+// SetUpstream requires a valid streamDumpState receiver.
 func (d *streamDumpState) SetUpstream(buf []byte, truncated bool) {
-	if d == nil {
-		return
-	}
 	d.upBuf = buf
 	d.upTr = truncated
 }
 
+// SetProxy requires a valid streamDumpState receiver.
 func (d *streamDumpState) SetProxy(buf []byte, truncated bool) {
-	if d == nil {
-		return
-	}
 	d.prBuf = buf
 	d.prTr = truncated
 }
 
+// SetStreamResult requires a valid streamDumpState receiver.
 func (d *streamDumpState) SetStreamResult(bytesCopied int64, err error, ignoredClientDisconnect bool) {
-	if d == nil {
-		return
-	}
 	d.streamBytes = bytesCopied
 	if err != nil {
 		d.streamErrMsg = err.Error()
@@ -57,8 +52,9 @@ func (d *streamDumpState) SetStreamResult(bytesCopied int64, err error, ignoredC
 	d.streamIgnoredClientDisconnect = ignoredClientDisconnect
 }
 
+// Append requires a valid streamDumpState receiver.
 func (d *streamDumpState) Append(gc *gin.Context, resp *http.Response) {
-	if d == nil || !d.enabled || d.appended || gc == nil || resp == nil {
+	if !d.enabled || d.appended {
 		return
 	}
 	// Always write response sections once (even if body is empty), to make dumps debuggable.

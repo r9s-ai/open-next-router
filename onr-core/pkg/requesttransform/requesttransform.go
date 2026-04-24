@@ -26,8 +26,8 @@ type Result struct {
 }
 
 // Apply transforms a request body and request value using request transform rules.
-// meta must be non-nil.
-func Apply(meta *dslmeta.Meta, contentType string, body []byte, value any, t dslconfig.RequestTransform, opts ApplyOptions) (Result, error) {
+// meta and t must be non-nil.
+func Apply(meta *dslmeta.Meta, contentType string, body []byte, value any, t *dslconfig.RequestTransform, opts ApplyOptions) (Result, error) {
 	result := Result{
 		Body:        body,
 		Value:       value,

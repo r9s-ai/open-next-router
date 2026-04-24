@@ -549,10 +549,8 @@ func splitCommaTrim(v string) []string {
 
 var envProviderProxyPattern = regexp.MustCompile(`^ONR_UPSTREAM_PROXY_([A-Z0-9_]+)$`)
 
+// applyProviderProxyEnvOverrides requires a non-nil config loaded by Load.
 func applyProviderProxyEnvOverrides(cfg *Config) {
-	if cfg == nil {
-		return
-	}
 	if cfg.UpstreamProxies.ByProvider == nil {
 		cfg.UpstreamProxies.ByProvider = map[string]string{}
 	}

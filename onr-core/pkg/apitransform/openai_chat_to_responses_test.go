@@ -236,15 +236,14 @@ func TestMapOpenAIChatCompletionsToResponsesObject_Basic(t *testing.T) {
 
 func mustUnmarshalObj(t *testing.T, b []byte) map[string]any {
 	t.Helper()
-	var obj any
+	var obj map[string]any
 	if err := json.Unmarshal(b, &obj); err != nil {
 		t.Fatalf("unmarshal failed: %v", err)
 	}
-	m, _ := obj.(map[string]any)
-	if m == nil {
+	if obj == nil {
 		t.Fatalf("expected object")
 	}
-	return m
+	return obj
 }
 
 func mustAnySlice(t *testing.T, v any) []any {

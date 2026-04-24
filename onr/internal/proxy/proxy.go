@@ -88,18 +88,21 @@ type Client struct {
 }
 
 type proxyCtx struct {
-	start           time.Time
-	provider        string
-	key             ProviderKey
-	api             string
-	stream          bool
-	pf              dslconfig.ProviderFile
-	meta            *dslmeta.Meta
-	model           string
-	reqBody         []byte
-	respDir         dslconfig.ResponseDirective
-	reqTransform    dslconfig.RequestTransform
-	hasReqTransform bool
+	start        time.Time
+	provider     string
+	key          ProviderKey
+	api          string
+	stream       bool
+	pf           dslconfig.ProviderFile
+	meta         *dslmeta.Meta
+	model        string
+	reqBody      []byte
+	respDir      *dslconfig.ResponseDirective
+	reqTransform *dslconfig.RequestTransform
+}
+
+func normalizeUpstreamBaseURL(raw string) string {
+	return strings.TrimRight(strings.TrimSpace(raw), "/")
 }
 
 func (c *Client) ProxyJSON(
@@ -120,7 +123,7 @@ func (c *Client) ProxyJSON(
 	reqBody := bctx.reqBody
 	respDir := bctx.respDir
 
-	resp, cancelUpstream, err := c.doUpstreamRequest(gc, provider, pf, m, reqBody)
+	resp, cancelUpstream, err := c.doUpstreamRequest(gc, provider, &pf, m, reqBody)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +152,7 @@ func (c *Client) handleNonStreamResponse(
 	m *dslmeta.Meta,
 	model string,
 	reqBody []byte,
-	respDir dslconfig.ResponseDirective,
+	respDir *dslconfig.ResponseDirective,
 	resp *http.Response,
 ) (*Result, error) {
 	respBody, err := io.ReadAll(resp.Body)
@@ -193,7 +196,11 @@ func (c *Client) handleNonStreamResponse(
 	}
 	c.logUsageFactsDebug(gc, provider, api, stream, model, usageStage, upstreamUsage)
 
-	respOutBody, outCT, didTransform, err = applyNonStreamResponseJSONOps(respOutBody, outCT, resp, m, respDir.JSONOps, didTransform)
+	var responseJSONOps []dslconfig.JSONOp
+	if respDir != nil {
+		responseJSONOps = respDir.JSONOps
+	}
+	respOutBody, outCT, didTransform, err = applyNonStreamResponseJSONOps(respOutBody, outCT, resp, m, responseJSONOps, didTransform)
 	if err != nil {
 		return nil, err
 	}
@@ -232,16 +239,11 @@ func (c *Client) handleNonStreamResponse(
 	}, nil
 }
 
-func mapNonStreamResponse(respBody []byte, resp *http.Response, respDir dslconfig.ResponseDirective) ([]byte, string, bool, error) {
+// mapNonStreamResponse requires a non-nil upstream response from the non-stream proxy path.
+func mapNonStreamResponse(respBody []byte, resp *http.Response, respDir *dslconfig.ResponseDirective) ([]byte, string, bool, error) {
 	respOutBody := respBody
-	outCT := ""
-	if resp != nil {
-		outCT = resp.Header.Get("Content-Type")
-	}
-	if strings.TrimSpace(respDir.Op) != "resp_map" {
-		return respOutBody, outCT, false, nil
-	}
-	if resp == nil {
+	outCT := resp.Header.Get("Content-Type")
+	if respDir == nil || respDir.Op != "resp_map" {
 		return respOutBody, outCT, false, nil
 	}
 	return apitransform.TransformNonStreamResponseBody(
@@ -286,8 +288,9 @@ func estimateNonStreamUsage(
 	return usageMap(out.Usage), out.Stage, nil
 }
 
+// populateNonStreamDerivedUsage requires a non-nil meta and response.
 func populateNonStreamDerivedUsage(meta *dslmeta.Meta, pf dslconfig.ProviderFile, resp *http.Response, respBody []byte) {
-	if meta == nil || resp == nil || len(respBody) == 0 {
+	if len(respBody) == 0 {
 		return
 	}
 	if resp.StatusCode != http.StatusOK {
@@ -327,7 +330,7 @@ func applyNonStreamResponseJSONOps(
 	ops []dslconfig.JSONOp,
 	didTransform bool,
 ) ([]byte, string, bool, error) {
-	if len(ops) == 0 || resp == nil {
+	if len(ops) == 0 {
 		return respOutBody, outCT, didTransform, nil
 	}
 
@@ -388,7 +391,7 @@ func (c *Client) handleStreamResponse(
 	m *dslmeta.Meta,
 	model string,
 	reqBody []byte,
-	respDir dslconfig.ResponseDirective,
+	respDir *dslconfig.ResponseDirective,
 	resp *http.Response,
 ) (*Result, error) {
 	// copy headers
@@ -475,6 +478,7 @@ func (c *Client) handleStreamResponse(
 	}, nil
 }
 
+// logUsageFactsDebug requires a non-nil Client receiver.
 func (c *Client) logUsageFactsDebug(
 	gc *gin.Context,
 	provider string,
@@ -484,7 +488,7 @@ func (c *Client) logUsageFactsDebug(
 	usageStage string,
 	usage *dslconfig.Usage,
 ) {
-	if c == nil || c.SystemLogger == nil || usage == nil || len(usage.DebugFacts) == 0 {
+	if usage == nil || len(usage.DebugFacts) == 0 {
 		return
 	}
 	payload, err := json.Marshal(usage.DebugFacts)
@@ -492,19 +496,17 @@ func (c *Client) logUsageFactsDebug(
 		return
 	}
 	fields := map[string]any{
-		"provider":    strings.TrimSpace(provider),
+		"provider":    provider,
 		"api":         strings.TrimSpace(api),
 		"stream":      stream,
 		"model":       strings.TrimSpace(model),
 		"usage_stage": strings.TrimSpace(usageStage),
 		"usage_facts": string(payload),
 	}
-	if gc != nil {
-		if rid := strings.TrimSpace(gc.GetString("X-Onr-Request-Id")); rid != "" {
-			fields["request_id"] = rid
-		} else if rid := strings.TrimSpace(gc.GetString("X-Request-Id")); rid != "" {
-			fields["request_id"] = rid
-		}
+	if rid := strings.TrimSpace(gc.GetString("X-Onr-Request-Id")); rid != "" {
+		fields["request_id"] = rid
+	} else if rid := strings.TrimSpace(gc.GetString("X-Request-Id")); rid != "" {
+		fields["request_id"] = rid
 	}
 	c.SystemLogger.Debug(logx.SystemCategoryServer, "usage facts extracted", fields)
 }
@@ -599,7 +601,7 @@ func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey
 		IsStream:           stream,
 		ActualModelName:    strings.TrimSpace(model),
 		APIKey:             strings.TrimSpace(key.Value),
-		BaseURL:            strings.TrimSpace(key.BaseURLOverride),
+		BaseURL:            normalizeUpstreamBaseURL(key.BaseURLOverride),
 		RequestURLPath:     gc.Request.URL.RequestURI(),
 		RequestContentType: gc.Request.Header.Get("Content-Type"),
 		RequestBody:        bodyBytes,
@@ -615,6 +617,7 @@ func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey
 	if err := pf.Routing.Apply(m); err != nil {
 		return nil, err
 	}
+	m.BaseURL = normalizeUpstreamBaseURL(m.BaseURL)
 	if !pf.Routing.HasMatch(m) {
 		return nil, fmt.Errorf("dsl provider no match (provider=%s api=%s stream=%v)", provider, api, stream)
 	}
@@ -634,36 +637,33 @@ func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey
 	reqBody := reqResult.Body
 
 	return &proxyCtx{
-		start:           start,
-		provider:        provider,
-		key:             key,
-		api:             api,
-		stream:          stream,
-		pf:              pf,
-		meta:            m,
-		model:           model,
-		reqBody:         reqBody,
-		respDir:         respDir,
-		reqTransform:    reqTransform,
-		hasReqTransform: hasReqTransform,
+		start:        start,
+		provider:     provider,
+		key:          key,
+		api:          api,
+		stream:       stream,
+		pf:           pf,
+		meta:         m,
+		model:        model,
+		reqBody:      reqBody,
+		respDir:      respDir,
+		reqTransform: reqTransform,
 	}, nil
 }
 
 func readRequestBody(gc *gin.Context, api string) (bodyBytes []byte, root map[string]any, model string, contentType string, err error) {
-	if gc != nil {
-		if cachedBody, ok := gc.Get("onr.request_body"); ok {
-			if bodyBytes, ok = cachedBody.([]byte); ok {
-				if cachedRoot, ok := gc.Get("onr.request_root"); ok {
-					root, _ = cachedRoot.(map[string]any)
-				}
-				if cachedModel, ok := gc.Get("onr.request_model"); ok {
-					model = strings.TrimSpace(fmt.Sprintf("%v", cachedModel))
-				}
-				if cachedContentType, ok := gc.Get("onr.request_content_type"); ok {
-					contentType = strings.TrimSpace(fmt.Sprintf("%v", cachedContentType))
-				}
-				return bodyBytes, root, model, contentType, nil
+	if cachedBody, ok := gc.Get("onr.request_body"); ok {
+		if bodyBytes, ok = cachedBody.([]byte); ok {
+			if cachedRoot, ok := gc.Get("onr.request_root"); ok {
+				root, _ = cachedRoot.(map[string]any)
 			}
+			if cachedModel, ok := gc.Get("onr.request_model"); ok {
+				model = strings.TrimSpace(fmt.Sprintf("%v", cachedModel))
+			}
+			if cachedContentType, ok := gc.Get("onr.request_content_type"); ok {
+				contentType = strings.TrimSpace(fmt.Sprintf("%v", cachedContentType))
+			}
+			return bodyBytes, root, model, contentType, nil
 		}
 	}
 
@@ -707,20 +707,19 @@ func allowNonJSONRequestBodyAPI(api string) bool {
 	}
 }
 
-func selectRequestTransform(pf dslconfig.ProviderFile, meta *dslmeta.Meta) (dslconfig.RequestTransform, bool, error) {
+// selectRequestTransform requires a non-nil meta.
+func selectRequestTransform(pf dslconfig.ProviderFile, meta *dslmeta.Meta) (*dslconfig.RequestTransform, bool, error) {
 	t, ok := pf.Request.Select(meta)
 	if !ok {
-		return dslconfig.RequestTransform{}, false, nil
+		return nil, false, nil
 	}
 
 	t.Apply(meta)
 	return t, true, nil
 }
 
+// applyGeminiModelRewrite requires a non-nil meta.
 func applyGeminiModelRewrite(api string, meta *dslmeta.Meta) {
-	if meta == nil {
-		return
-	}
 	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(api)), "gemini.") {
 		return
 	}
@@ -732,7 +731,8 @@ func applyGeminiModelRewrite(api string, meta *dslmeta.Meta) {
 	}
 }
 
-func applyRequestTransform(meta *dslmeta.Meta, contentType, contentEncoding string, bodyBytes []byte, root map[string]any, t dslconfig.RequestTransform, hasT bool) (requesttransform.Result, error) {
+// applyRequestTransform requires a non-nil meta, and t is non-nil when hasT is true.
+func applyRequestTransform(meta *dslmeta.Meta, contentType, contentEncoding string, bodyBytes []byte, root map[string]any, t *dslconfig.RequestTransform, hasT bool) (requesttransform.Result, error) {
 	if !hasT {
 		return requesttransform.Result{
 			Body:        bodyBytes,
@@ -746,11 +746,9 @@ func applyRequestTransform(meta *dslmeta.Meta, contentType, contentEncoding stri
 	})
 }
 
-func (c *Client) doUpstreamRequest(gc *gin.Context, provider string, pf dslconfig.ProviderFile, m *dslmeta.Meta, reqBody []byte) (*http.Response, context.CancelFunc, error) {
-	if m == nil {
-		return nil, func() {}, errors.New("meta is nil")
-	}
-	baseURL := strings.TrimRight(strings.TrimSpace(m.BaseURL), "/")
+// doUpstreamRequest requires a non-nil provider file and request meta from buildProxyCtx.
+func (c *Client) doUpstreamRequest(gc *gin.Context, provider string, pf *dslconfig.ProviderFile, m *dslmeta.Meta, reqBody []byte) (*http.Response, context.CancelFunc, error) {
+	baseURL := m.BaseURL
 	if baseURL == "" {
 		return nil, func() {}, errors.New("upstream base_url is empty")
 	}
@@ -776,7 +774,7 @@ func (c *Client) doUpstreamRequest(gc *gin.Context, provider string, pf dslconfi
 			req.Header.Set("Content-Type", "application/json")
 		}
 
-		if oauthErr := c.prepareOAuthForUpstream(reqCtx, provider, pf, m); oauthErr != nil {
+		if oauthErr := c.prepareOAuthForUpstream(reqCtx, provider, *pf, m); oauthErr != nil {
 			cancel()
 			return nil, func() {}, oauthErr
 		}
@@ -808,36 +806,25 @@ func isEffectiveStream(clientStream bool, resp *http.Response) bool {
 	if clientStream {
 		return true
 	}
-	if resp == nil {
-		return false
-	}
 	upstreamCT := strings.ToLower(resp.Header.Get("Content-Type"))
 	return strings.Contains(upstreamCT, "text/event-stream")
 }
 
+// httpClientForProvider requires a non-nil Client receiver.
+// provider is expected to be pre-normalized without leading or trailing spaces.
+// c.ProxyByProvider keys and values are expected to be pre-normalized without leading or trailing spaces.
 func (c *Client) httpClientForProvider(provider string) (*http.Client, error) {
-	if c == nil {
-		return http.DefaultClient, nil
-	}
-	// default client
 	base := c.HTTP
-	if base == nil {
-		base = http.DefaultClient
-	}
-
-	raw := ""
-	if c.ProxyByProvider != nil {
-		raw = strings.TrimSpace(c.ProxyByProvider[strings.ToLower(strings.TrimSpace(provider))])
-	}
+	raw := c.ProxyByProvider[strings.ToLower(provider)]
 	if raw == "" {
 		return base, nil
 	}
 
-	u, err := url.Parse(strings.TrimSpace(raw))
+	u, err := url.Parse(raw)
 	if err != nil || u == nil || u.Scheme == "" || u.Host == "" {
-		return nil, fmt.Errorf("invalid upstream proxy url for provider=%s: %q", strings.TrimSpace(provider), raw)
+		return nil, fmt.Errorf("invalid upstream proxy url for provider=%s: %q", provider, raw)
 	}
-	scheme := strings.ToLower(strings.TrimSpace(u.Scheme))
+	scheme := strings.ToLower(u.Scheme)
 
 	// Cache per proxy URL to preserve connection pooling.
 	c.mu.Lock()
@@ -873,7 +860,7 @@ func (c *Client) httpClientForProvider(provider string) (*http.Client, error) {
 		}
 		d, err := xproxy.SOCKS5("tcp", u.Host, auth, xproxy.Direct)
 		if err != nil {
-			return nil, fmt.Errorf("init socks5 dialer for provider=%s: %w", strings.TrimSpace(provider), err)
+			return nil, fmt.Errorf("init socks5 dialer for provider=%s: %w", provider, err)
 		}
 		// Ensure we don't accidentally pick up ProxyFromEnvironment from cloned transports.
 		rt.Proxy = nil
@@ -885,7 +872,7 @@ func (c *Client) httpClientForProvider(provider string) (*http.Client, error) {
 			}
 		}
 	default:
-		return nil, fmt.Errorf("unsupported upstream proxy scheme for provider=%s: %q", strings.TrimSpace(provider), u.Scheme)
+		return nil, fmt.Errorf("unsupported upstream proxy scheme for provider=%s: %q", provider, u.Scheme)
 	}
 
 	hc := &http.Client{
@@ -961,37 +948,29 @@ func usageMap(u *dslconfig.Usage) map[string]any {
 	return m
 }
 
+// SetPricingResolver requires a non-nil Client receiver.
 func (c *Client) SetPricingResolver(r *pricing.Resolver) {
-	if c == nil {
-		return
-	}
 	c.pricingMu.Lock()
 	c.pricing = r
 	c.pricingMu.Unlock()
 }
 
+// SetPricingEnabled requires a non-nil Client receiver.
 func (c *Client) SetPricingEnabled(enabled bool) {
-	if c == nil {
-		return
-	}
 	c.pricingMu.Lock()
 	c.pricingEnabled = enabled
 	c.pricingMu.Unlock()
 }
 
+// getPricingResolver requires a non-nil Client receiver and may return nil when unset.
 func (c *Client) getPricingResolver() *pricing.Resolver {
-	if c == nil {
-		return nil
-	}
 	c.pricingMu.RLock()
 	defer c.pricingMu.RUnlock()
 	return c.pricing
 }
 
+// isPricingEnabled requires a non-nil Client receiver.
 func (c *Client) isPricingEnabled() bool {
-	if c == nil {
-		return false
-	}
 	c.pricingMu.RLock()
 	defer c.pricingMu.RUnlock()
 	return c.pricingEnabled
@@ -1003,7 +982,7 @@ func (c *Client) computeCost(
 	keyName string,
 	usage map[string]any,
 ) map[string]any {
-	if usage == nil || meta == nil {
+	if usage == nil {
 		return nil
 	}
 	if !c.isPricingEnabled() {
@@ -1018,7 +997,7 @@ func (c *Client) computeCost(
 		model = strings.TrimSpace(meta.ActualModelName)
 	}
 	out, ok := resolver.Compute(provider, keyName, model, usage)
-	if !ok {
+	if !ok || out == nil {
 		return nil
 	}
 	return map[string]any{

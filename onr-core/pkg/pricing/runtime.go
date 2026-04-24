@@ -135,15 +135,16 @@ func LoadResolver(pricePath, overridesPath string) (*Resolver, error) {
 	return out, nil
 }
 
-func (r *Resolver) Compute(provider, key, model string, usage map[string]any) (CostResult, bool) {
-	if r == nil || usage == nil {
-		return CostResult{}, false
+// Compute requires a non-nil Resolver receiver.
+func (r *Resolver) Compute(provider, key, model string, usage map[string]any) (*CostResult, bool) {
+	if usage == nil {
+		return nil, false
 	}
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	model = strings.TrimSpace(model)
 	key = strings.TrimSpace(key)
 	if provider == "" || model == "" {
-		return CostResult{}, false
+		return nil, false
 	}
 	effectiveRates := map[string]float64{}
 	multiplier := 1.0
@@ -172,7 +173,7 @@ func (r *Resolver) Compute(provider, key, model string, usage map[string]any) (C
 		effectiveRates[k] = v * multiplier
 	}
 	if len(effectiveRates) == 0 {
-		return CostResult{}, false
+		return nil, false
 	}
 
 	inputRate := effectiveRates[rateInput]
@@ -187,7 +188,7 @@ func (r *Resolver) Compute(provider, key, model string, usage map[string]any) (C
 	}
 	extraCostTotal, hasExtraRate := computeExtraUsageCost(usage, effectiveRates)
 	if inputRate == 0 && outputRate == 0 && cacheReadRate == 0 && cacheWriteRate == 0 && !hasExtraRate {
-		return CostResult{}, false
+		return nil, false
 	}
 
 	inputTokens := intFromAny(usage["input_tokens"])
@@ -210,7 +211,7 @@ func (r *Resolver) Compute(provider, key, model string, usage map[string]any) (C
 		channel = provider + "/" + key
 	}
 
-	return CostResult{
+	return &CostResult{
 		Provider: provider,
 		Key:      key,
 		Channel:  channel,

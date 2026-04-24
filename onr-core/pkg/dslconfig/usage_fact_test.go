@@ -62,7 +62,7 @@ provider "demo" {
 	  }
 	}`)
 
-	usage, cachedTokens, err := ExtractUsage(nil, pf.Usage.Defaults, body)
+	usage, cachedTokens, err := ExtractUsage(&dslmeta.Meta{}, &pf.Usage.Defaults, body)
 	if err != nil {
 		t.Fatalf("ExtractUsage: %v", err)
 	}
@@ -136,7 +136,7 @@ provider "demo" {
 	  }
 	}`)
 
-	usage, _, err := ExtractUsage(nil, pf.Usage.Defaults, body)
+	usage, _, err := ExtractUsage(&dslmeta.Meta{}, &pf.Usage.Defaults, body)
 	if err != nil {
 		t.Fatalf("ExtractUsage: %v", err)
 	}
@@ -232,7 +232,7 @@ provider "demo" {
 	  }
 	}`)
 
-	usage, _, err := ExtractUsage(nil, pf.Usage.Defaults, body)
+	usage, _, err := ExtractUsage(&dslmeta.Meta{}, &pf.Usage.Defaults, body)
 	if err != nil {
 		t.Fatalf("ExtractUsage: %v", err)
 	}
@@ -293,7 +293,7 @@ provider "demo" {
 	  }
 	}`)
 
-	usage, _, err := ExtractUsage(nil, pf.Usage.Defaults, body)
+	usage, _, err := ExtractUsage(&dslmeta.Meta{}, &pf.Usage.Defaults, body)
 	if err != nil {
 		t.Fatalf("ExtractUsage: %v", err)
 	}
@@ -361,7 +361,7 @@ provider "demo" {
 	  }
 	}`)
 
-	usage, _, err := ExtractUsage(nil, pf.Usage.Defaults, body)
+	usage, _, err := ExtractUsage(&dslmeta.Meta{}, &pf.Usage.Defaults, body)
 	if err != nil {
 		t.Fatalf("ExtractUsage: %v", err)
 	}
@@ -604,7 +604,7 @@ provider "demo" {
 	  }
 	}`)
 
-	usage, _, err := ExtractUsage(nil, pf.Usage.Defaults, body)
+	usage, _, err := ExtractUsage(&dslmeta.Meta{}, &pf.Usage.Defaults, body)
 	if err != nil {
 		t.Fatalf("ExtractUsage: %v", err)
 	}
@@ -692,7 +692,7 @@ provider "demo" {
 	  }
 	}`)
 
-	usage, _, err := ExtractUsage(nil, pf.Usage.Defaults, body)
+	usage, _, err := ExtractUsage(&dslmeta.Meta{}, &pf.Usage.Defaults, body)
 	if err != nil {
 		t.Fatalf("ExtractUsage: %v", err)
 	}
@@ -746,7 +746,7 @@ provider "demo" {
 	  }
 	}`)
 
-	usage, _, err := ExtractUsage(nil, pf.Usage.Defaults, body)
+	usage, _, err := ExtractUsage(&dslmeta.Meta{}, &pf.Usage.Defaults, body)
 	if err != nil {
 		t.Fatalf("ExtractUsage: %v", err)
 	}
@@ -809,7 +809,7 @@ provider "demo" {
 	  }
 	}`)
 
-	usage, cached, err := ExtractUsage(nil, pf.Usage.Defaults, body)
+	usage, cached, err := ExtractUsage(&dslmeta.Meta{}, &pf.Usage.Defaults, body)
 	if err != nil {
 		t.Fatalf("ExtractUsage: %v", err)
 	}
@@ -877,7 +877,7 @@ provider "demo" {
 	  ]
 	}`)
 
-	usage, _, err := ExtractUsage(nil, pf.Usage.Defaults, body)
+	usage, _, err := ExtractUsage(&dslmeta.Meta{}, &pf.Usage.Defaults, body)
 	if err != nil {
 		t.Fatalf("ExtractUsage: %v", err)
 	}
@@ -916,7 +916,7 @@ func TestExtractUsage_CustomUsageFactOverrideCacheRead(t *testing.T) {
 	  }
 	}`)
 
-	usage, cached, err := ExtractUsage(meta, cfg, body)
+	usage, cached, err := ExtractUsage(meta, &cfg, body)
 	if err != nil {
 		t.Fatalf("ExtractUsage: %v", err)
 	}
@@ -957,7 +957,7 @@ func TestExtractUsage_CustomUsageFactOverrideCacheWrite(t *testing.T) {
 	  }
 	}`)
 
-	usage, _, err := ExtractUsage(meta, cfg, body)
+	usage, _, err := ExtractUsage(meta, &cfg, body)
 	if err != nil {
 		t.Fatalf("ExtractUsage: %v", err)
 	}
@@ -987,7 +987,7 @@ func TestExtractUsage_CustomLegacyFieldsCompiledIntoFacts(t *testing.T) {
 	  }
 	}`)
 
-	usage, cached, err := ExtractUsage(nil, cfg, body)
+	usage, cached, err := ExtractUsage(&dslmeta.Meta{}, &cfg, body)
 	if err != nil {
 		t.Fatalf("ExtractUsage: %v", err)
 	}
@@ -1024,7 +1024,7 @@ func TestExtractUsage_CustomLegacyOverrideDoesNotDoubleCount(t *testing.T) {
 	  }
 	}`)
 
-	usage, _, err := ExtractUsage(&dslmeta.Meta{API: "chat.completions", IsStream: false}, cfg, body)
+	usage, _, err := ExtractUsage(&dslmeta.Meta{API: "chat.completions", IsStream: false}, &cfg, body)
 	if err != nil {
 		t.Fatalf("ExtractUsage: %v", err)
 	}
@@ -1062,7 +1062,7 @@ func TestExtractUsage_UsageFactSameDimensionDeclarationOrder(t *testing.T) {
 	  }
 	}`)
 
-	usage, _, err := ExtractUsage(nil, cfg, body)
+	usage, _, err := ExtractUsage(&dslmeta.Meta{}, &cfg, body)
 	if err != nil {
 		t.Fatalf("ExtractUsage: %v", err)
 	}
@@ -1119,7 +1119,7 @@ func TestExtractUsage_UsageFactRequestSource(t *testing.T) {
 	  }
 	}`)
 
-	usage, _, err := ExtractUsage(meta, cfg, body)
+	usage, _, err := ExtractUsage(meta, &cfg, body)
 	if err != nil {
 		t.Fatalf("ExtractUsage: %v", err)
 	}
@@ -1163,7 +1163,7 @@ func TestExtractUsage_UsageFactDerivedSourceWithNonJSONResponse(t *testing.T) {
 		},
 	}
 
-	usage, _, err := ExtractUsage(meta, cfg, []byte("fake-audio-binary-response"))
+	usage, _, err := ExtractUsage(meta, &cfg, []byte("fake-audio-binary-response"))
 	if err != nil {
 		t.Fatalf("ExtractUsage: %v", err)
 	}
@@ -1238,7 +1238,7 @@ provider "custom-derived-only" {
 		},
 	}
 
-	usage, _, err := ExtractUsage(meta, pf.Usage.Defaults, []byte("fake-audio-binary-response"))
+	usage, _, err := ExtractUsage(meta, &pf.Usage.Defaults, []byte("fake-audio-binary-response"))
 	if err != nil {
 		t.Fatalf("ExtractUsage: %v", err)
 	}

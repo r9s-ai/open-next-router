@@ -38,6 +38,7 @@ func WithPayloadHook(fn func(payload []byte)) Option {
 }
 
 // NewTap constructs a shared SSE framing tap.
+// NewTap returns nil only when both handler and payload hook are absent.
 func NewTap(handler EventDataHandler, opts ...Option) *Tap {
 	t := &Tap{handler: handler}
 	for _, opt := range opts {

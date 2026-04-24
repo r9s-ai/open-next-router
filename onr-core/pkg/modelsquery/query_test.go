@@ -49,7 +49,7 @@ func TestQuery_CustomModelsConfig(t *testing.T) {
 		},
 	}
 
-	result, err := Query(nil, Params{
+	result, err := Query(context.Background(), Params{
 		Provider: "openai",
 		File:     pf,
 		Meta: &dslmeta.Meta{
@@ -59,6 +59,9 @@ func TestQuery_CustomModelsConfig(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("Query: %v", err)
+	}
+	if result == nil {
+		t.Fatalf("Query returned nil result")
 	}
 	if len(result.IDs) != 2 || result.IDs[0] != "gpt-4o-mini" || result.IDs[1] != "gpt-4.1" {
 		t.Fatalf("ids=%v", result.IDs)
@@ -102,6 +105,9 @@ func TestQuery_UsesInjectedHTTPClient(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("Query: %v", err)
+	}
+	if result == nil {
+		t.Fatalf("Query returned nil result")
 	}
 	if len(result.IDs) != 1 || result.IDs[0] != "fake-model" {
 		t.Fatalf("ids=%v", result.IDs)

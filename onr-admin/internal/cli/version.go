@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// newVersionCmd returns a non-nil version command.
 func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",

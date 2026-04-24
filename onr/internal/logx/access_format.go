@@ -86,6 +86,7 @@ func CompileAccessLogFormat(format string) (*AccessLogFormatter, error) {
 	return &AccessLogFormatter{parts: parts}, nil
 }
 
+// Format requires a non-nil formatter returned by CompileAccessLogFormat.
 func (f *AccessLogFormatter) Format(
 	ts time.Time,
 	status int,
@@ -96,7 +97,7 @@ func (f *AccessLogFormatter) Format(
 	fields map[string]any,
 	color bool,
 ) string {
-	if f == nil || len(f.parts) == 0 {
+	if len(f.parts) == 0 {
 		return ""
 	}
 

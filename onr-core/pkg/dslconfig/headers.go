@@ -40,7 +40,8 @@ type HeaderOp struct {
 	Separator string
 }
 
-func (p ProviderHeaders) Apply(meta *dslmeta.Meta, srcHdr http.Header, dstHdr http.Header) {
+// Apply requires a non-nil meta, a valid ProviderHeaders receiver, and a non-nil dstHdr.
+func (p *ProviderHeaders) Apply(meta *dslmeta.Meta, srcHdr http.Header, dstHdr http.Header) {
 	if dstHdr == nil {
 		return
 	}
@@ -83,13 +84,11 @@ func (p ProviderHeaders) Apply(meta *dslmeta.Meta, srcHdr http.Header, dstHdr ht
 	}
 }
 
-func (p ProviderHeaders) Effective(meta *dslmeta.Meta) (PhaseHeaders, bool) {
-	if meta == nil {
-		return PhaseHeaders{}, false
-	}
+// Effective requires a non-nil meta and a valid ProviderHeaders receiver.
+func (p *ProviderHeaders) Effective(meta *dslmeta.Meta) (*PhaseHeaders, bool) {
 	api := strings.TrimSpace(meta.API)
 	if api == "" {
-		return PhaseHeaders{}, false
+		return nil, false
 	}
 
 	out := PhaseHeaders{
@@ -103,10 +102,10 @@ func (p ProviderHeaders) Effective(meta *dslmeta.Meta) (PhaseHeaders, bool) {
 		out.Request = append(out.Request, m.Headers.Request...)
 		out.OAuth = out.OAuth.Merge(m.Headers.OAuth)
 	}
-	return out, true
+	return &out, true
 }
 
-func (p ProviderHeaders) selectMatch(api string, stream bool) (MatchHeaders, bool) {
+func (p *ProviderHeaders) selectMatch(api string, stream bool) (MatchHeaders, bool) {
 	for _, m := range p.Matches {
 		if m.API != "" && m.API != api {
 			continue

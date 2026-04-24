@@ -91,31 +91,23 @@ func Middleware(masterKey string, matchAccessKey AccessKeyMatcher, tokenOpts ...
 	}
 }
 
+// TokenProvider requires a non-nil Gin context from the auth middleware path.
 func TokenProvider(c *gin.Context) string {
-	if c == nil {
-		return ""
-	}
 	return strings.ToLower(strings.TrimSpace(c.GetString(ctxTokenProvider)))
 }
 
+// TokenModelOverride requires a non-nil Gin context from the auth middleware path.
 func TokenModelOverride(c *gin.Context) string {
-	if c == nil {
-		return ""
-	}
 	return strings.TrimSpace(c.GetString(ctxTokenModelOverride))
 }
 
+// TokenUpstreamKey requires a non-nil Gin context from the auth middleware path.
 func TokenUpstreamKey(c *gin.Context) string {
-	if c == nil {
-		return ""
-	}
 	return strings.TrimSpace(c.GetString(ctxTokenUpstreamKey))
 }
 
+// TokenModeFromContext requires a non-nil Gin context from the auth middleware path.
 func TokenModeFromContext(c *gin.Context) TokenMode {
-	if c == nil {
-		return TokenModeONR
-	}
 	v := strings.ToLower(strings.TrimSpace(c.GetString(ctxTokenMode)))
 	switch v {
 	case string(TokenModeBYOK):

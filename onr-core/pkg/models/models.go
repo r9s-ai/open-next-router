@@ -33,6 +33,7 @@ type Router struct {
 	nextIdx map[string]int
 }
 
+// NewRouter returns a non-nil router.
 func NewRouter(routes map[string]Route) *Router {
 	out := &Router{
 		routes:  map[string]Route{},
@@ -48,10 +49,8 @@ func NewRouter(routes map[string]Route) *Router {
 	return out
 }
 
+// Models requires a non-nil Router receiver.
 func (r *Router) Models() []string {
-	if r == nil {
-		return nil
-	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	out := make([]string, 0, len(r.routes))
@@ -62,10 +61,8 @@ func (r *Router) Models() []string {
 	return out
 }
 
+// NextProvider requires a non-nil Router receiver.
 func (r *Router) NextProvider(modelID string) (string, bool) {
-	if r == nil {
-		return "", false
-	}
 	id := normalizeModelID(modelID)
 	if id == "" {
 		return "", false

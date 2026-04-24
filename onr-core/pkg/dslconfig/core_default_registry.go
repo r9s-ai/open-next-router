@@ -11,6 +11,7 @@ var (
 	defaultRegistry     *Registry
 )
 
+// DefaultRegistry returns a non-nil shared registry instance.
 func DefaultRegistry() *Registry {
 	defaultRegistryOnce.Do(func() {
 		defaultRegistry = NewRegistry()

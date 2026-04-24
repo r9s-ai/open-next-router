@@ -84,7 +84,7 @@ func BenchmarkStreamMetricsAggregator_CustomLegacyEvent_New(b *testing.B) {
 
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		agg := NewStreamMetricsAggregator(meta, usageCfg, finishCfg)
+		agg := NewStreamMetricsAggregator(meta, &usageCfg, finishCfg)
 		if err := agg.OnSSEDataJSON(payload); err != nil {
 			b.Fatalf("OnSSEDataJSON: %v", err)
 		}
@@ -111,17 +111,15 @@ func BenchmarkStreamMetricsAggregator_CustomLegacyEvent_Old(b *testing.B) {
 
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		agg := NewStreamMetricsAggregator(meta, usageCfg, finishCfg)
+		agg := NewStreamMetricsAggregator(meta, &usageCfg, finishCfg)
 		if err := benchmarkLegacyOnSSEDataJSON(agg, payload); err != nil {
 			b.Fatalf("benchmarkLegacyOnSSEDataJSON: %v", err)
 		}
 	}
 }
 
+// benchmarkLegacyOnSSEDataJSON requires a valid StreamMetricsAggregator receiver.
 func benchmarkLegacyOnSSEDataJSON(a *StreamMetricsAggregator, payload []byte) error {
-	if a == nil {
-		return nil
-	}
 	payload = bytes.TrimSpace(payload)
 	if len(payload) == 0 || bytes.Equal(payload, []byte("[DONE]")) {
 		return nil
@@ -154,7 +152,7 @@ func benchmarkLegacyOnSSEDataJSON(a *StreamMetricsAggregator, payload []byte) er
 	if cachedTokens > 0 {
 		a.lastCachedTokens = cachedTokens
 	}
-	if shouldRecomputeMergedTotal(a.usageCfg) && a.lastUsage != nil {
+	if a.usageCfg != nil && shouldRecomputeMergedTotal(*a.usageCfg) && a.lastUsage != nil {
 		normalizeUsageFields(a.lastUsage)
 		a.lastUsage.TotalTokens = a.lastUsage.InputTokens + a.lastUsage.OutputTokens
 	}

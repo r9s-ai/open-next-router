@@ -13,6 +13,7 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/usageestimate"
+	"github.com/r9s-ai/open-next-router/onr/internal/logx"
 )
 
 func TestShouldEstimateUsage(t *testing.T) {
@@ -43,6 +44,16 @@ func TestHandleNonStreamResponse_SkipUsageEstimationOnNon200(t *testing.T) {
 			APIs:                      []string{"chat.completions"},
 		},
 	}
+	color := false
+	logger, err := logx.NewSystemLoggerWithOptions(logx.SystemLoggerOptions{
+		Writer: io.Discard,
+		Level:  "debug",
+		Color:  &color,
+	})
+	if err != nil {
+		t.Fatalf("new test system logger: %v", err)
+	}
+	client.SystemLogger = logger
 
 	t.Run("status 200 keeps estimation", func(t *testing.T) {
 		w := httptest.NewRecorder()
@@ -69,7 +80,7 @@ func TestHandleNonStreamResponse_SkipUsageEstimationOnNon200(t *testing.T) {
 			meta,
 			"gpt-4o-mini",
 			reqBody,
-			dslconfig.ResponseDirective{},
+			&dslconfig.ResponseDirective{},
 			resp,
 		)
 		if err != nil {
@@ -113,7 +124,7 @@ func TestHandleNonStreamResponse_SkipUsageEstimationOnNon200(t *testing.T) {
 			meta,
 			"gpt-4o-mini",
 			reqBody,
-			dslconfig.ResponseDirective{},
+			&dslconfig.ResponseDirective{},
 			resp,
 		)
 		if err != nil {

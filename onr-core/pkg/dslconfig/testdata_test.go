@@ -30,7 +30,7 @@ func mustReadSharedTestData(t *testing.T, rel string) []byte {
 	return b
 }
 
-func mustLoadProviderMatchConfigsTB(tb testing.TB, providerFile string, api string, stream bool) (UsageExtractConfig, FinishReasonExtractConfig) {
+func mustLoadProviderMatchConfigsTB(tb testing.TB, providerFile string, api string, stream bool) (*UsageExtractConfig, *FinishReasonExtractConfig) {
 	tb.Helper()
 
 	path := filepath.Join("..", "..", "..", "config", "providers", providerFile)
@@ -50,7 +50,7 @@ func mustLoadProviderMatchConfigsTB(tb testing.TB, providerFile string, api stri
 	return usageCfg, finishCfg
 }
 
-func mustLoadProviderMatchConfigs(t *testing.T, providerFile string, api string, stream bool) (UsageExtractConfig, FinishReasonExtractConfig) {
+func mustLoadProviderMatchConfigs(t *testing.T, providerFile string, api string, stream bool) (*UsageExtractConfig, *FinishReasonExtractConfig) {
 	t.Helper()
 	return mustLoadProviderMatchConfigsTB(t, providerFile, api, stream)
 }

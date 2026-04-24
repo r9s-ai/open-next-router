@@ -37,25 +37,23 @@ type MatchResponse struct {
 	Response ResponseDirective
 }
 
-func (p ProviderResponse) Select(meta *dslmeta.Meta) (ResponseDirective, bool) {
-	if meta == nil {
-		return ResponseDirective{}, false
-	}
+// Select requires a non-nil meta and a valid ProviderResponse receiver.
+func (p *ProviderResponse) Select(meta *dslmeta.Meta) (*ResponseDirective, bool) {
 	api := strings.TrimSpace(meta.API)
 	if api == "" {
-		return ResponseDirective{}, false
+		return nil, false
 	}
 	out := p.Defaults
 	if m, ok := p.selectMatch(api, meta.IsStream); ok {
 		out = mergeResponseDirective(out, m.Response)
 	}
 	if strings.TrimSpace(out.Op) == "" && len(out.JSONOps) == 0 && len(out.SSEJSONDelIf) == 0 {
-		return ResponseDirective{}, false
+		return nil, false
 	}
-	return out, true
+	return &out, true
 }
 
-func (p ProviderResponse) selectMatch(api string, stream bool) (MatchResponse, bool) {
+func (p *ProviderResponse) selectMatch(api string, stream bool) (MatchResponse, bool) {
 	for _, m := range p.Matches {
 		if m.API != "" && m.API != api {
 			continue

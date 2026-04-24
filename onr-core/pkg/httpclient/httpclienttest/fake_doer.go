@@ -19,6 +19,7 @@ type FakeDoer struct {
 
 // NewFakeDoer returns a FakeDoer seeded with the responses that should be
 // returned for each Do call.
+// NewFakeDoer returns a non-nil fake doer.
 func NewFakeDoer(t testing.TB, responses ...*http.Response) *FakeDoer {
 	return &FakeDoer{
 		t:         t,
@@ -44,6 +45,7 @@ func (f *FakeDoer) Requests() []*http.Request {
 
 // NewStringResponse builds a minimal http.Response with the provided status
 // code and body string.
+// NewStringResponse returns a non-nil HTTP response.
 func NewStringResponse(status int, body string) *http.Response {
 	return &http.Response{
 		StatusCode: status,

@@ -44,7 +44,7 @@ func TestFetchCatalogAndExtractPrices(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	out, err := FetchCatalog(context.Background(), nil, srv.URL)
+	out, err := FetchCatalog(context.Background(), srv.Client(), srv.URL)
 	if err != nil {
 		t.Fatalf("FetchCatalog error: %v", err)
 	}

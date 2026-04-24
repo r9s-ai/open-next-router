@@ -13,6 +13,7 @@ type webOptions struct {
 	listen       string
 }
 
+// newWebCmd returns a non-nil web command.
 func newWebCmd() *cobra.Command {
 	opts := webOptions{
 		cfgPath: "onr.yaml",

@@ -9,10 +9,8 @@ import (
 	"github.com/r9s-ai/open-next-router/onr/internal/proxy"
 )
 
+// setProxyResultContext requires a non-nil Gin context and proxy result.
 func setProxyResultContext(c *gin.Context, res *proxy.Result) {
-	if c == nil || res == nil {
-		return
-	}
 	c.Set("onr.latency_ms", res.LatencyMs)
 	if res.TTFTMs > 0 {
 		c.Set("onr.ttft_ms", res.TTFTMs)

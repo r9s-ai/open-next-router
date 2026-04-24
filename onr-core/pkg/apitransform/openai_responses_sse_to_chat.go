@@ -70,9 +70,6 @@ type sseEventParser struct {
 }
 
 func (p *sseEventParser) FeedLine(line []byte) (*sseEvent, bool, error) {
-	if p == nil {
-		return nil, false, nil
-	}
 	trim := bytes.TrimSpace(line)
 	if len(trim) == 0 {
 		ev, ok := p.Flush()
@@ -90,9 +87,6 @@ func (p *sseEventParser) FeedLine(line []byte) (*sseEvent, bool, error) {
 }
 
 func (p *sseEventParser) Flush() (*sseEvent, bool) {
-	if p == nil {
-		return nil, false
-	}
 	if len(p.curData) == 0 {
 		p.curEvent = ""
 		return nil, false
@@ -129,10 +123,8 @@ type responsesSSEToChatState struct {
 	emittedFinal     bool
 }
 
+// HandleEvent requires a non-nil transform state and non-nil parsed SSE event.
 func (s *responsesSSEToChatState) HandleEvent(ev *sseEvent) error {
-	if s == nil || ev == nil {
-		return nil
-	}
 	root, ok := s.parseEventJSON(ev.Data)
 	if !ok || root == nil {
 		return nil
@@ -171,8 +163,9 @@ func (s *responsesSSEToChatState) resolveEventName(eventLine string, root map[st
 	return strings.TrimSpace(jsonutil.CoerceString(root["type"]))
 }
 
+// updateCommonFields requires a non-nil transform state.
 func (s *responsesSSEToChatState) updateCommonFields(eventName string, root map[string]any) {
-	if s == nil || root == nil {
+	if root == nil {
 		return
 	}
 
@@ -302,15 +295,17 @@ func (s *responsesSSEToChatState) shouldCaptureFinal(eventName string, root map[
 	return false
 }
 
+// captureFinal requires a non-nil transform state.
 func (s *responsesSSEToChatState) captureFinal(root map[string]any) {
-	if s == nil || root == nil {
+	if root == nil {
 		return
 	}
 	s.pendingFinalRoot = root
 }
 
+// EmitFinalIfPending requires a non-nil transform state.
 func (s *responsesSSEToChatState) EmitFinalIfPending() error {
-	if s == nil || s.emittedFinal {
+	if s.emittedFinal {
 		return nil
 	}
 	if s.pendingFinalRoot == nil {

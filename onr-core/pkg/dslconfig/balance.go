@@ -45,26 +45,25 @@ type MatchBalance struct {
 	Query BalanceQueryConfig
 }
 
-func (p ProviderBalance) Select(meta *dslmeta.Meta) (BalanceQueryConfig, bool) {
-	if meta == nil {
-		return BalanceQueryConfig{}, false
-	}
+// Select requires a non-nil meta and a valid ProviderBalance receiver.
+func (p *ProviderBalance) Select(meta *dslmeta.Meta) (*BalanceQueryConfig, bool) {
 	api := strings.TrimSpace(meta.API)
 	if api == "" {
-		return BalanceQueryConfig{}, false
+		return nil, false
 	}
-	cfg := inferImplicitCustomBalanceQueryConfig(p.Defaults)
+	cfg := inferImplicitCustomBalanceQueryConfig(&p.Defaults)
 	if m, ok := p.selectMatch(api, meta.IsStream); ok {
-		cfg = inferImplicitCustomBalanceQueryConfig(mergeBalanceConfig(cfg, m.Query))
+		cfg = inferImplicitCustomBalanceQueryConfig(mergeBalanceConfig(cfg, &m.Query))
 	}
-	if strings.TrimSpace(cfg.Mode) == "" {
-		return BalanceQueryConfig{}, false
+	if cfg.Mode == "" {
+		return nil, false
 	}
 	return cfg, true
 }
 
-func (p ProviderBalance) selectMatch(api string, stream bool) (MatchBalance, bool) {
-	for _, m := range p.Matches {
+func (p *ProviderBalance) selectMatch(api string, stream bool) (*MatchBalance, bool) {
+	for i := range p.Matches {
+		m := &p.Matches[i]
 		if m.API != "" && m.API != api {
 			continue
 		}
@@ -73,11 +72,11 @@ func (p ProviderBalance) selectMatch(api string, stream bool) (MatchBalance, boo
 		}
 		return m, true
 	}
-	return MatchBalance{}, false
+	return nil, false
 }
 
-func mergeBalanceConfig(base BalanceQueryConfig, override BalanceQueryConfig) BalanceQueryConfig {
-	out := base
+func mergeBalanceConfig(base *BalanceQueryConfig, override *BalanceQueryConfig) *BalanceQueryConfig {
+	out := *base
 	if strings.TrimSpace(override.Mode) != "" {
 		out.Mode = override.Mode
 	}
@@ -111,19 +110,19 @@ func mergeBalanceConfig(base BalanceQueryConfig, override BalanceQueryConfig) Ba
 	if len(override.Headers) > 0 {
 		out.Headers = append([]HeaderOp(nil), override.Headers...)
 	}
-	return normalizeBalanceQueryConfig(out)
+	return normalizeBalanceQueryConfig(&out)
 }
 
-func normalizeBalanceQueryConfig(in BalanceQueryConfig) BalanceQueryConfig {
-	out := in
+func normalizeBalanceQueryConfig(in *BalanceQueryConfig) *BalanceQueryConfig {
+	out := *in
 	out.Mode = strings.ToLower(strings.TrimSpace(out.Mode))
-	if strings.TrimSpace(out.Method) == "" {
+	if out.Method == "" {
 		out.Method = "GET"
 	}
-	return out
+	return &out
 }
 
-func inferImplicitCustomBalanceQueryConfig(in BalanceQueryConfig) BalanceQueryConfig {
+func inferImplicitCustomBalanceQueryConfig(in *BalanceQueryConfig) *BalanceQueryConfig {
 	out := normalizeBalanceQueryConfig(in)
 	if out.Mode == "" && hasAnyBalanceQueryRule(in) {
 		out.Mode = balanceModeCustom
@@ -131,7 +130,7 @@ func inferImplicitCustomBalanceQueryConfig(in BalanceQueryConfig) BalanceQueryCo
 	return out
 }
 
-func hasAnyBalanceQueryRule(cfg BalanceQueryConfig) bool {
+func hasAnyBalanceQueryRule(cfg *BalanceQueryConfig) bool {
 	return strings.TrimSpace(cfg.Path) != "" ||
 		strings.TrimSpace(cfg.BalancePath) != "" ||
 		strings.TrimSpace(cfg.BalanceExpr) != "" ||
@@ -144,9 +143,9 @@ func hasAnyBalanceQueryRule(cfg BalanceQueryConfig) bool {
 }
 
 // ExtractBalance parses custom balance response and extracts balance/used values.
-func ExtractBalance(cfg BalanceQueryConfig, respBody []byte) (float64, *float64, error) {
+func ExtractBalance(cfg *BalanceQueryConfig, respBody []byte) (float64, *float64, error) {
 	cfg = inferImplicitCustomBalanceQueryConfig(cfg)
-	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
+	mode := cfg.Mode
 	if mode != balanceModeCustom {
 		return 0, nil, fmt.Errorf("unsupported balance mode %q", cfg.Mode)
 	}
@@ -164,12 +163,12 @@ func ExtractBalance(cfg BalanceQueryConfig, respBody []byte) (float64, *float64,
 	if err != nil {
 		return 0, nil, err
 	}
-	if strings.TrimSpace(cfg.BalanceExpr) == "" && strings.TrimSpace(cfg.BalancePath) == "" {
+	if cfg.BalanceExpr == "" && cfg.BalancePath == "" {
 		return 0, nil, fmt.Errorf("balance field is required")
 	}
 
 	var used *float64
-	if strings.TrimSpace(cfg.UsedExpr) != "" || strings.TrimSpace(cfg.UsedPath) != "" {
+	if cfg.UsedExpr != "" || cfg.UsedPath != "" {
 		v, err := evalBalanceField(root, cfg.UsedExpr, cfg.UsedPath)
 		if err != nil {
 			return 0, nil, err
@@ -180,16 +179,15 @@ func ExtractBalance(cfg BalanceQueryConfig, respBody []byte) (float64, *float64,
 }
 
 func evalBalanceField(root map[string]any, expr, path string) (float64, error) {
-	if strings.TrimSpace(expr) != "" {
+	if expr != "" {
 		parsed, err := ParseBalanceExpr(expr)
 		if err != nil {
 			return 0, fmt.Errorf("invalid balance expr %q: %w", expr, err)
 		}
 		return parsed.Eval(root), nil
 	}
-	p := strings.TrimSpace(path)
-	if p == "" {
+	if path == "" {
 		return 0, nil
 	}
-	return jsonutil.GetFloatByPath(root, p), nil
+	return jsonutil.GetFloatByPath(root, path), nil
 }

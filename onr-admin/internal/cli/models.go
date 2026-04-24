@@ -21,6 +21,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// newModelsCmd returns a non-nil models command.
 func newModelsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "models",
@@ -47,6 +48,7 @@ type modelsGetOptions struct {
 	debug       bool
 }
 
+// newModelsGetCmd returns a non-nil models get command.
 func newModelsGetCmd() *cobra.Command {
 	opts := modelsGetOptions{
 		cfgPath: "onr.yaml",
@@ -132,7 +134,7 @@ func runModelsGetWithOptions(opts modelsGetOptions) error {
 			APIKey:   key,
 		}
 
-		if err := prepareOAuthForModels(oauth, p, pf, &meta); err != nil {
+		if err := prepareOAuthForModels(oauth, p, &pf, &meta); err != nil {
 			fail++
 			fmt.Printf("provider=%s error=%q\n", p, err.Error())
 			if opts.failFast {
@@ -161,7 +163,7 @@ func runModelsGetWithOptions(opts modelsGetOptions) error {
 		}
 
 		success++
-		printModelIDs(result, len(targets) > 1)
+		printModelIDs(*result, len(targets) > 1)
 	}
 	if len(targets) > 1 {
 		fmt.Printf("summary total=%d success=%d failed=%d\n", len(targets), success, fail)
@@ -194,10 +196,8 @@ func resolveProviderKeyAndBaseURL(ks *keystore.Store, provider, keyIn, baseURLIn
 	return key, baseURL
 }
 
-func prepareOAuthForModels(client *oauthclient.Client, provider string, pf dslconfig.ProviderFile, meta *dslmeta.Meta) error {
-	if client == nil || meta == nil {
-		return nil
-	}
+// prepareOAuthForModels requires non-nil client, provider file, and meta.
+func prepareOAuthForModels(client *oauthclient.Client, provider string, pf *dslconfig.ProviderFile, meta *dslmeta.Meta) error {
 	phase, ok := pf.Headers.Effective(meta)
 	if !ok {
 		return nil

@@ -15,13 +15,19 @@ type KeyUpdate = keyUpdate
 type AccessKeyUpdate = accessKeyUpdate
 type ModelUpdate = modelUpdate
 
+// Ptr returns a non-nil pointer to v.
 func Ptr[T any](v T) *T { return ptr(v) }
 
+// LoadConfigIfExists returns nil, nil when path is empty; otherwise it returns a non-nil config on success.
 func LoadConfigIfExists(path string) (*config.Config, error) { return loadConfigIfExists(path) }
-func LoadOrInitKeysDoc(path string) (*yaml.Node, error)      { return loadOrInitKeysDoc(path) }
-func LoadOrInitModelsDoc(path string) (*yaml.Node, error)    { return loadOrInitModelsDoc(path) }
-func ParseProviders(s string) []string                       { return parseProviders(s) }
-func EncodeYAML(doc *yaml.Node) ([]byte, error)              { return encodeYAML(doc) }
+
+// LoadOrInitKeysDoc returns a non-nil YAML document on success.
+func LoadOrInitKeysDoc(path string) (*yaml.Node, error) { return loadOrInitKeysDoc(path) }
+
+// LoadOrInitModelsDoc returns a non-nil YAML document on success.
+func LoadOrInitModelsDoc(path string) (*yaml.Node, error) { return loadOrInitModelsDoc(path) }
+func ParseProviders(s string) []string                    { return parseProviders(s) }
+func EncodeYAML(doc *yaml.Node) ([]byte, error)           { return encodeYAML(doc) }
 func WriteAtomic(path string, data []byte, backup bool) error {
 	return writeAtomic(path, data, backup)
 }
@@ -58,9 +64,13 @@ func ValidateKeysDoc(doc *yaml.Node) error   { return validateKeysDoc(doc) }
 func ValidateModelsDoc(doc *yaml.Node) error { return validateModelsDoc(doc) }
 
 func ListProviders(doc *yaml.Node) []string { return listProviders(doc) }
+
+// GetProviderNode returns nil, false when the provider node does not exist.
 func GetProviderNode(doc *yaml.Node, provider string) (*yaml.Node, bool) {
 	return getProviderNode(doc, provider)
 }
+
+// EnsureProviderNode returns nil when provider is empty; otherwise it returns a non-nil provider node.
 func EnsureProviderNode(doc *yaml.Node, provider string) *yaml.Node {
 	return ensureProviderNode(doc, provider)
 }
@@ -93,6 +103,8 @@ func DeleteAccessKeyDoc(doc *yaml.Node, index int) error { return deleteAccessKe
 func AccessEnvVar(name string, index int) string         { return accessEnvVar(name, index) }
 
 func ListModelIDs(doc *yaml.Node) []string { return listModelIDs(doc) }
+
+// GetModelNode returns nil, false when the model node does not exist.
 func GetModelNode(doc *yaml.Node, modelID string) (*yaml.Node, bool) {
 	return getModelNode(doc, modelID)
 }

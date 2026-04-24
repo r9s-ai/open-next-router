@@ -19,6 +19,7 @@ type Collector struct {
 	}
 }
 
+// NewCollector returns a non-nil access log collector.
 func NewCollector(requestIDHeaderKey string, appNameInferEnabled bool, appNameInferUnknown string) *Collector {
 	c := &Collector{requestIDHeaderKey: requestIDHeaderKey}
 	c.appNameInfer.enabled = appNameInferEnabled
@@ -26,10 +27,8 @@ func NewCollector(requestIDHeaderKey string, appNameInferEnabled bool, appNameIn
 	return c
 }
 
+// Collect requires a non-nil Gin context from the request logging middleware path.
 func (c *Collector) Collect(ctx *gin.Context, latency time.Duration) map[string]any {
-	if ctx == nil {
-		return map[string]any{}
-	}
 	out := make(map[string]any, len(accessLogFieldSpecs)+3)
 	if v := strings.TrimSpace(ctx.GetString(c.requestIDHeaderKey)); v != "" {
 		out["request_id"] = v
@@ -61,8 +60,9 @@ func copyContextFieldsBySpec(ctx *gin.Context, dst map[string]any, specs []logx.
 	}
 }
 
+// copyUsageExtraFields requires a non-nil Gin context from Collect.
 func copyUsageExtraFields(ctx *gin.Context, dst map[string]any) {
-	if ctx == nil || len(ctx.Keys) == 0 {
+	if len(ctx.Keys) == 0 {
 		return
 	}
 	for k, v := range ctx.Keys {
@@ -77,10 +77,8 @@ func copyUsageExtraFields(ctx *gin.Context, dst map[string]any) {
 	}
 }
 
+// resolveAppNameForLog requires a non-nil Gin context from Collect.
 func (c *Collector) resolveAppNameForLog(ctx *gin.Context) string {
-	if ctx == nil {
-		return ""
-	}
 	if v := strings.TrimSpace(ctx.GetHeader("appname")); v != "" {
 		return v
 	}

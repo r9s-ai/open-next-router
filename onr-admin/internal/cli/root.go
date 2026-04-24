@@ -18,6 +18,7 @@ func Run(args []string) error {
 	return root.Execute()
 }
 
+// newRootCmd returns a non-nil root command.
 func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "onr-admin",
@@ -41,6 +42,7 @@ func newRootCmd() *cobra.Command {
 	return cmd
 }
 
+// newTUICmd returns a non-nil TUI command.
 func newTUICmd() *cobra.Command {
 	opts := tuiOptions{
 		cfgPath: "onr.yaml",
