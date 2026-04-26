@@ -194,7 +194,7 @@ func (c *Client) handleNonStreamResponse(
 	}
 	finishReason := ""
 	if estimateEnabled {
-		finishReason = extractNonStreamFinishReason(pf, m, metricsBody)
+		finishReason = extractNonStreamFinishReason(pf, m, respOutObj, metricsBody)
 	}
 	cost := map[string]any(nil)
 	if estimateEnabled {
@@ -206,7 +206,7 @@ func (c *Client) handleNonStreamResponse(
 	if respDir != nil {
 		responseJSONOps = respDir.JSONOps
 	}
-	respOutBody, outCT, didTransform, err = applyNonStreamResponseJSONOps(respOutBody, outCT, resp, m, responseJSONOps, didTransform)
+	respOutBody, outCT, didTransform, err = applyNonStreamResponseJSONOps(respOutObj, respOutBody, outCT, resp, m, responseJSONOps, didTransform)
 	if err != nil {
 		return nil, err
 	}
@@ -325,10 +325,24 @@ func populateNonStreamDerivedUsage(meta *dslmeta.Meta, pf dslconfig.ProviderFile
 	}
 }
 
-func extractNonStreamFinishReason(pf dslconfig.ProviderFile, meta *dslmeta.Meta, metricsBody []byte) string {
+func extractNonStreamFinishReason(
+	pf dslconfig.ProviderFile,
+	meta *dslmeta.Meta,
+	metricsObj map[string]any,
+	metricsBody []byte,
+) string {
 	finishReason := ""
 	if frCfg, ok := pf.Finish.Select(meta); ok {
-		if v, err := dslconfig.ExtractFinishReason(meta, frCfg, metricsBody); err == nil {
+		var (
+			v   string
+			err error
+		)
+		if metricsObj != nil {
+			v, err = dslconfig.ExtractFinishReasonObject(meta, frCfg, metricsObj)
+		} else {
+			v, err = dslconfig.ExtractFinishReason(meta, frCfg, metricsBody)
+		}
+		if err == nil {
 			finishReason = strings.TrimSpace(v)
 		}
 	}
@@ -336,6 +350,7 @@ func extractNonStreamFinishReason(pf dslconfig.ProviderFile, meta *dslmeta.Meta,
 }
 
 func applyNonStreamResponseJSONOps(
+	respOutObj map[string]any,
 	respOutBody []byte,
 	outCT string,
 	resp *http.Response,
@@ -347,31 +362,40 @@ func applyNonStreamResponseJSONOps(
 		return respOutBody, outCT, didTransform, nil
 	}
 
-	ctLower := strings.ToLower(strings.TrimSpace(outCT))
-	if !apitransform.ResponseBodyLooksLikeJSON(outCT, respOutBody) {
+	if respOutObj == nil && !apitransform.ResponseBodyLooksLikeJSON(outCT, respOutBody) {
 		return respOutBody, outCT, didTransform, nil
 	}
 
-	bodyForOps := respOutBody
-	decoded, changed, err := apitransform.DecodeResponseBody(respOutBody, resp.Header.Get("Content-Encoding"))
+	if respOutObj == nil {
+		decoded, changed, err := apitransform.DecodeResponseBody(respOutBody, resp.Header.Get("Content-Encoding"))
+		if err != nil {
+			return nil, "", false, err
+		}
+		if changed {
+			respOutBody = decoded
+		}
+		if err := json.Unmarshal(respOutBody, &respOutObj); err != nil {
+			return nil, "", false, err
+		}
+		if respOutObj == nil {
+			return nil, "", false, fmt.Errorf("response json ops require json object body")
+		}
+	}
+
+	outAny, err := dslconfig.ApplyJSONOps(meta, respOutObj, ops)
 	if err != nil {
 		return nil, "", false, err
 	}
-	if changed {
-		bodyForOps = decoded
-		didTransform = true
+	mappedObj, ok := outAny.(map[string]any)
+	if !ok {
+		return nil, "", false, fmt.Errorf("response json ops must return object, got %T", outAny)
 	}
-	outBytes, applied, err := apitransform.ApplyResponseJSONOpsBody(bodyForOps, outCT, func(obj map[string]any) (any, error) {
-		return dslconfig.ApplyJSONOps(meta, obj, ops)
-	})
+	outBytes, err := json.Marshal(mappedObj)
 	if err != nil {
 		return nil, "", false, err
-	}
-	if !applied {
-		return respOutBody, outCT, didTransform, nil
 	}
 	respOutBody = outBytes
-	if strings.TrimSpace(outCT) == "" || !strings.Contains(ctLower, "json") {
+	if !strings.Contains(outCT, "json") {
 		outCT = "application/json"
 	}
 	return respOutBody, outCT, true, nil

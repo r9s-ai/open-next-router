@@ -2483,14 +2483,17 @@ func (i *OpenAIResponseInput) FromAny(v any) error {
 		i.Text = &typed
 		i.Items = nil
 	case []any:
+		items, err := decodeOpenAIResponseInputItemsFromAnySlice(typed)
+		if err != nil {
+			return err
+		}
+		i.Text = nil
+		i.Items = items
+	case []map[string]any:
 		items := make([]OpenAIResponseInputItem, 0, len(typed))
 		for _, item := range typed {
-			mv, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
 			var decoded OpenAIResponseInputItem
-			if err := decoded.FromMap(mv); err != nil {
+			if err := decoded.FromMap(item); err != nil {
 				return err
 			}
 			items = append(items, decoded)
@@ -2614,14 +2617,17 @@ func (c *OpenAIResponseInputContent) FromAny(v any) error {
 		c.Text = &typed
 		c.Parts = nil
 	case []any:
+		parts, err := decodeOpenAIResponseInputPartsFromAnySlice(typed)
+		if err != nil {
+			return err
+		}
+		c.Text = nil
+		c.Parts = parts
+	case []map[string]any:
 		parts := make([]OpenAIResponseInputPart, 0, len(typed))
 		for _, item := range typed {
-			mv, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
 			var part OpenAIResponseInputPart
-			if err := part.FromMap(mv); err != nil {
+			if err := part.FromMap(item); err != nil {
 				return err
 			}
 			parts = append(parts, part)
@@ -2697,6 +2703,38 @@ func appendOpenAIResponseInputPrompt(builder *strings.Builder, content *OpenAIRe
 		}
 		_, _ = builder.WriteString(part.Text)
 	}
+}
+
+func decodeOpenAIResponseInputItemsFromAnySlice(items []any) ([]OpenAIResponseInputItem, error) {
+	decodedItems := make([]OpenAIResponseInputItem, 0, len(items))
+	for _, item := range items {
+		mv, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		var decoded OpenAIResponseInputItem
+		if err := decoded.FromMap(mv); err != nil {
+			return nil, err
+		}
+		decodedItems = append(decodedItems, decoded)
+	}
+	return decodedItems, nil
+}
+
+func decodeOpenAIResponseInputPartsFromAnySlice(items []any) ([]OpenAIResponseInputPart, error) {
+	decodedParts := make([]OpenAIResponseInputPart, 0, len(items))
+	for _, item := range items {
+		mv, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		var part OpenAIResponseInputPart
+		if err := part.FromMap(mv); err != nil {
+			return nil, err
+		}
+		decodedParts = append(decodedParts, part)
+	}
+	return decodedParts, nil
 }
 
 func (p *OpenAIResponseInputPart) FromMap(m map[string]any) error {

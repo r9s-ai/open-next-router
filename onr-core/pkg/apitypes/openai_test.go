@@ -363,3 +363,28 @@ func TestOpenAIResponsesRequestGetPrompt(t *testing.T) {
 
 	require.Equal(t, "first\nsecond", req.GetPrompt())
 }
+
+func TestOpenAIResponsesRequestFromMap_DecodesConcreteInputSlices(t *testing.T) {
+	t.Parallel()
+
+	input := map[string]any{
+		"model": "gpt-5",
+		"input": []map[string]any{
+			{
+				"role": "user",
+				"content": []map[string]any{
+					{"type": "input_text", "text": "hello"},
+					{"type": "input_image", "image_url": "https://example.com/test.png"},
+				},
+			},
+		},
+	}
+
+	var req OpenAIResponsesRequest
+	require.NoError(t, req.FromMap(input))
+	require.NotNil(t, req.Input)
+	require.Len(t, req.Input.Items, 1)
+	require.NotNil(t, req.Input.Items[0].Content)
+	require.Len(t, req.Input.Items[0].Content.Parts, 2)
+	require.Equal(t, "hello", req.Input.Items[0].Content.Parts[0].Text)
+}
