@@ -847,13 +847,11 @@ func isEffectiveStream(clientStream bool, resp *http.Response) bool {
 	return strings.Contains(upstreamCT, "text/event-stream")
 }
 
-// httpClientForProvider falls back to http.DefaultClient when the receiver or base client is nil.
+// httpClientForProvider selects the upstream HTTP client for one normalized provider name.
+// The receiver is expected to be non-nil. A nil base client falls back to http.DefaultClient.
 // provider is expected to be pre-normalized without leading or trailing spaces.
 // c.ProxyByProvider keys and values are expected to be pre-normalized without leading or trailing spaces.
 func (c *Client) httpClientForProvider(provider string) (*http.Client, error) {
-	if c == nil {
-		return http.DefaultClient, nil
-	}
 	base := c.HTTP
 	if base == nil {
 		base = http.DefaultClient

@@ -101,6 +101,9 @@ func StreamChatMultimodal(ctx context.Context, cfg config.ClientConfig, prompt, 
 	return out, errc
 }
 
+// responseEvents flattens one Gemini SDK stream response into SDK-neutral
+// stream events. A nil response is treated as an empty event batch because the
+// input originates from an external streaming SDK boundary.
 func responseEvents(resp *genai.GenerateContentResponse) []StreamEvent {
 	if resp == nil {
 		return nil
