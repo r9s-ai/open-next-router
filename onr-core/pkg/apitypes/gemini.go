@@ -3,8 +3,6 @@ package apitypes
 import (
 	"fmt"
 	"strings"
-
-	"github.com/edgefn/next-router-shared/channel/relaymode"
 )
 
 const (
@@ -22,7 +20,7 @@ type ChatRequest struct {
 	SystemInstruction *ChatContent         `json:"system_instruction,omitempty"`
 }
 
-func (r *ChatRequest) GetPrompt(_ relaymode.RelayMode) string {
+func (r *ChatRequest) GetPrompt() string {
 	builder := strings.Builder{}
 	appendParts := func(parts []Part) {
 		for _, part := range parts {

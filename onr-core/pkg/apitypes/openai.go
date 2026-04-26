@@ -1,5 +1,9 @@
 package apitypes
 
+import (
+	"strings"
+)
+
 type OpenAIChatCompletionsRequest struct {
 	Model                string                        `json:"model"`
 	Messages             []OpenAIChatMessage           `json:"messages,omitempty"`
@@ -36,6 +40,17 @@ type OpenAIChatCompletionsRequest struct {
 	User                 string                        `json:"user,omitempty"`
 	Verbosity            string                        `json:"verbosity,omitempty"`
 	WebSearchOptions     *OpenAIChatWebSearchOptions   `json:"web_search_options,omitempty"`
+}
+
+func (r *OpenAIChatCompletionsRequest) GetPrompt() string {
+	var builder strings.Builder
+	for i := range r.Messages {
+		if strings.ToLower(r.Messages[i].Role) != "user" || r.Messages[i].Content == nil {
+			continue
+		}
+		appendOpenAIChatMessagePrompt(&builder, r.Messages[i].Content)
+	}
+	return builder.String()
 }
 
 func (r *OpenAIChatCompletionsRequest) FromMap(m map[string]any) error {
@@ -1911,6 +1926,27 @@ type OpenAIResponsesRequest struct {
 	User                 string                         `json:"user,omitempty"`
 }
 
+func (r *OpenAIResponsesRequest) GetPrompt() string {
+	if r.Input == nil {
+		return ""
+	}
+	if r.Input.Text != nil {
+		return *r.Input.Text
+	}
+	var builder strings.Builder
+	for i := range r.Input.Items {
+		role := strings.ToLower(r.Input.Items[i].Role)
+		if role != "" && role != "user" {
+			continue
+		}
+		if r.Input.Items[i].Content == nil {
+			continue
+		}
+		appendOpenAIResponseInputPrompt(&builder, r.Input.Items[i].Content)
+	}
+	return builder.String()
+}
+
 func (r *OpenAIResponsesRequest) FromMap(m map[string]any) error {
 	var err error
 	r.Background, err = boolPtrValue(m, "background")
@@ -2623,6 +2659,44 @@ type OpenAIResponseInputPart struct {
 	FileData string `json:"file_data,omitempty"`
 	FileURL  string `json:"file_url,omitempty"`
 	Filename string `json:"filename,omitempty"`
+}
+
+func appendOpenAIChatMessagePrompt(builder *strings.Builder, content *OpenAIChatMessageContent) {
+	if content == nil {
+		return
+	}
+	if content.Text != nil {
+		_, _ = builder.WriteString(*content.Text)
+		return
+	}
+	for _, part := range content.Parts {
+		if part.Text == "" {
+			continue
+		}
+		if builder.Len() > 0 {
+			_, _ = builder.WriteString("\n")
+		}
+		_, _ = builder.WriteString(part.Text)
+	}
+}
+
+func appendOpenAIResponseInputPrompt(builder *strings.Builder, content *OpenAIResponseInputContent) {
+	if content == nil {
+		return
+	}
+	if content.Text != nil {
+		_, _ = builder.WriteString(*content.Text)
+		return
+	}
+	for _, part := range content.Parts {
+		if part.Text == "" {
+			continue
+		}
+		if builder.Len() > 0 {
+			_, _ = builder.WriteString("\n")
+		}
+		_, _ = builder.WriteString(part.Text)
+	}
 }
 
 func (p *OpenAIResponseInputPart) FromMap(m map[string]any) error {

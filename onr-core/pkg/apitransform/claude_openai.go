@@ -266,6 +266,13 @@ func MapClaudeMessagesResponseToOpenAIChatCompletionsObject(root apitypes.JSONOb
 		"model":   src.Model,
 		"choices": choices,
 	}
+	if src.Usage != nil {
+		out["usage"] = apitypes.JSONObject{
+			"prompt_tokens":     src.Usage.InputTokens,
+			"completion_tokens": src.Usage.OutputTokens,
+			"total_tokens":      src.Usage.InputTokens + src.Usage.OutputTokens,
+		}
+	}
 	return out, nil
 }
 

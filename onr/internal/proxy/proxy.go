@@ -168,9 +168,15 @@ func (c *Client) handleNonStreamResponse(
 		trafficdump.AppendUpstreamResponse(gc, resp.Status, resp.Header, limited, binary, truncated)
 	}
 
-	respOutBody, outCT, didTransform, err := mapNonStreamResponse(respBody, resp, respDir)
+	respOutBody, respOutObj, outCT, didTransform, err := mapNonStreamResponse(respBody, resp, respDir)
 	if err != nil {
 		return nil, err
+	}
+	if respOutBody == nil && respOutObj != nil {
+		respOutBody, err = json.Marshal(respOutObj)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// metrics are extracted from the response after response mapping (resp_map),
@@ -240,19 +246,26 @@ func (c *Client) handleNonStreamResponse(
 }
 
 // mapNonStreamResponse requires a non-nil upstream response from the non-stream proxy path.
-func mapNonStreamResponse(respBody []byte, resp *http.Response, respDir *dslconfig.ResponseDirective) ([]byte, string, bool, error) {
+func mapNonStreamResponse(respBody []byte, resp *http.Response, respDir *dslconfig.ResponseDirective) ([]byte, map[string]any, string, bool, error) {
 	respOutBody := respBody
 	outCT := resp.Header.Get("Content-Type")
 	if respDir == nil || respDir.Op != "resp_map" {
-		return respOutBody, outCT, false, nil
+		return respOutBody, nil, outCT, false, nil
 	}
-	return apitransform.TransformNonStreamResponseBody(
+	outObj, outCT, changed, err := apitransform.TransformNonStreamResponseBody(
 		resp.StatusCode,
 		respDir.Mode,
 		respBody,
 		outCT,
 		resp.Header.Get("Content-Encoding"),
 	)
+	if err != nil {
+		return nil, nil, outCT, changed, err
+	}
+	if !changed {
+		return respOutBody, outObj, outCT, false, nil
+	}
+	return nil, outObj, outCT, true, nil
 }
 
 func estimateNonStreamUsage(

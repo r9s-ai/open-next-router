@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/edgefn/next-router-shared/channel/relaymode"
 	"github.com/stretchr/testify/require"
 )
 
@@ -499,7 +498,7 @@ func TestClaudeRequestGetPrompt(t *testing.T) {
 		},
 	}
 
-	require.Equal(t, "hello\nworld", req.GetPrompt(relaymode.ClaudeMessages))
+	require.Equal(t, "hello\nworld", req.GetPrompt())
 }
 
 func TestClaudeResponseFromMap(t *testing.T) {

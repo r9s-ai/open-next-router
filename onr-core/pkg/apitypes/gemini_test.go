@@ -3,7 +3,6 @@ package apitypes
 import (
 	"testing"
 
-	"github.com/edgefn/next-router-shared/channel/relaymode"
 	"github.com/stretchr/testify/require"
 )
 
@@ -33,7 +32,7 @@ func TestGeminiChatRequestGetPrompt(t *testing.T) {
 		},
 	}
 
-	require.Equal(t, "hello worldsystem", req.GetPrompt(relaymode.ChatCompletions))
+	require.Equal(t, "hello worldsystem", req.GetPrompt())
 }
 
 func TestGeminiChatRequestFromMap(t *testing.T) {

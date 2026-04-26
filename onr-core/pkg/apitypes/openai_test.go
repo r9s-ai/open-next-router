@@ -297,3 +297,69 @@ func TestOpenAIResponsesStreamResponseMapRoundTrip(t *testing.T) {
 	require.Equal(t, int64(3), got["sequence_number"])
 	require.Equal(t, "hel", got["delta"])
 }
+
+func TestOpenAIChatCompletionsRequestGetPrompt(t *testing.T) {
+	t.Parallel()
+
+	userText := "hello"
+	req := &OpenAIChatCompletionsRequest{
+		Messages: []OpenAIChatMessage{
+			{Role: "system", Content: &OpenAIChatMessageContent{Text: &userText}},
+			{Role: "user", Content: &OpenAIChatMessageContent{Text: &userText}},
+			{
+				Role: "user",
+				Content: &OpenAIChatMessageContent{
+					Parts: []OpenAIChatContentPart{
+						{Type: "text", Text: "part 1"},
+						{Type: "input_image", Text: ""},
+						{Type: "text", Text: "part 2"},
+					},
+				},
+			},
+			{Role: "assistant", Content: &OpenAIChatMessageContent{Text: &userText}},
+		},
+	}
+
+	require.Equal(t, "hello\npart 1\npart 2", req.GetPrompt())
+}
+
+func TestOpenAIResponsesRequestGetPrompt(t *testing.T) {
+	t.Parallel()
+
+	text := "plain prompt"
+	req := &OpenAIResponsesRequest{
+		Input: &OpenAIResponseInput{Text: &text},
+	}
+	require.Equal(t, "plain prompt", req.GetPrompt())
+
+	req = &OpenAIResponsesRequest{
+		Input: &OpenAIResponseInput{
+			Items: []OpenAIResponseInputItem{
+				{
+					Role: "developer",
+					Content: &OpenAIResponseInputContent{
+						Text: &text,
+					},
+				},
+				{
+					Role: "user",
+					Content: &OpenAIResponseInputContent{
+						Parts: []OpenAIResponseInputPart{
+							{Type: "input_text", Text: "first"},
+							{Type: "input_image", ImageURL: "https://example.com/image.png"},
+							{Type: "input_text", Text: "second"},
+						},
+					},
+				},
+				{
+					Role: "assistant",
+					Content: &OpenAIResponseInputContent{
+						Text: &text,
+					},
+				},
+			},
+		},
+	}
+
+	require.Equal(t, "first\nsecond", req.GetPrompt())
+}

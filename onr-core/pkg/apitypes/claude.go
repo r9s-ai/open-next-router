@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-
-	"github.com/edgefn/next-router-shared/channel/relaymode"
 )
 
 type ClaudeMetadata struct {
@@ -2436,7 +2434,7 @@ type ClaudeRequest struct {
 	AnthropicBeta    []string            `json:"anthropic_beta,omitempty"`
 }
 
-func (c *ClaudeRequest) GetPrompt(_ relaymode.RelayMode) string {
+func (c *ClaudeRequest) GetPrompt() string {
 	var builder strings.Builder
 	for i := range c.Messages {
 		if c.Messages[i].Role != "user" {
