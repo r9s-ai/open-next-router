@@ -59,43 +59,13 @@ type claudeSSEToChatState struct {
 
 	roleSent      bool
 	doneSent      bool
-	toolCallByIdx map[int]claudeStreamToolCall
-}
-
-type claudeStreamToolCall struct {
-	id   string
-	name string
-}
-
-type claudeStreamSSEMessage struct {
-	Type         string                       `json:"type"`
-	Message      *claudeStreamSSEStartMessage `json:"message,omitempty"`
-	Index        int                          `json:"index,omitempty"`
-	ContentBlock *claudeStreamSSEContentBlock `json:"content_block,omitempty"`
-	Delta        *claudeStreamSSEDelta        `json:"delta,omitempty"`
-}
-
-type claudeStreamSSEStartMessage struct {
-	ID    string `json:"id,omitempty"`
-	Model string `json:"model,omitempty"`
-}
-
-type claudeStreamSSEContentBlock struct {
-	Type string `json:"type,omitempty"`
-	ID   string `json:"id,omitempty"`
-	Name string `json:"name,omitempty"`
-}
-
-type claudeStreamSSEDelta struct {
-	Type        string `json:"type,omitempty"`
-	Text        string `json:"text,omitempty"`
-	PartialJSON string `json:"partial_json,omitempty"`
-	StopReason  string `json:"stop_reason,omitempty"`
+	toolCallByIdx map[int]apitypes.ClaudeStreamContentBlock
+	usage         *apitypes.OpenAIChatCompletionsUsage
 }
 
 // handleEvent requires a non-nil transform state and non-nil parsed SSE event.
 func (s *claudeSSEToChatState) handleEvent(ev *sseEvent) error {
-	var msg claudeStreamSSEMessage
+	var msg apitypes.ClaudeStreamMessage
 	if err := json.Unmarshal(ev.Data, &msg); err != nil {
 		return nil
 	}
@@ -121,8 +91,8 @@ func (s *claudeSSEToChatState) handleEvent(ev *sseEvent) error {
 	}
 }
 
-func (s *claudeSSEToChatState) handleMessageStart(msg *claudeStreamSSEMessage) error {
-	if msg == nil || msg.Message == nil {
+func (s *claudeSSEToChatState) handleMessageStart(msg *apitypes.ClaudeStreamMessage) error {
+	if msg.Message == nil {
 		return nil
 	}
 	if id := strings.TrimSpace(msg.Message.ID); id != "" {
@@ -131,11 +101,12 @@ func (s *claudeSSEToChatState) handleMessageStart(msg *claudeStreamSSEMessage) e
 	if model := strings.TrimSpace(msg.Message.Model); model != "" {
 		s.model = model
 	}
+	s.mergeUsage(msg.Message.Usage)
 	return s.emitRole()
 }
 
-func (s *claudeSSEToChatState) handleContentBlockStart(msg *claudeStreamSSEMessage) error {
-	if msg == nil || msg.ContentBlock == nil {
+func (s *claudeSSEToChatState) handleContentBlockStart(msg *apitypes.ClaudeStreamMessage) error {
+	if msg.ContentBlock == nil {
 		return nil
 	}
 	if strings.TrimSpace(msg.ContentBlock.Type) != claudeContentTypeToolUse {
@@ -152,12 +123,9 @@ func (s *claudeSSEToChatState) handleContentBlockStart(msg *claudeStreamSSEMessa
 	}
 
 	if s.toolCallByIdx == nil {
-		s.toolCallByIdx = map[int]claudeStreamToolCall{}
+		s.toolCallByIdx = map[int]apitypes.ClaudeStreamContentBlock{}
 	}
-	s.toolCallByIdx[idx] = claudeStreamToolCall{
-		id:   id,
-		name: name,
-	}
+	s.toolCallByIdx[idx] = *msg.ContentBlock
 
 	choice := apitypes.JSONObject{
 		"index": 0,
@@ -178,8 +146,8 @@ func (s *claudeSSEToChatState) handleContentBlockStart(msg *claudeStreamSSEMessa
 	return s.emitChunk([]any{choice})
 }
 
-func (s *claudeSSEToChatState) handleContentBlockDelta(msg *claudeStreamSSEMessage) error {
-	if msg == nil || msg.Delta == nil {
+func (s *claudeSSEToChatState) handleContentBlockDelta(msg *apitypes.ClaudeStreamMessage) error {
+	if msg.Delta == nil {
 		return nil
 	}
 	if err := s.emitRole(); err != nil {
@@ -211,8 +179,8 @@ func (s *claudeSSEToChatState) handleContentBlockDelta(msg *claudeStreamSSEMessa
 				"arguments": partial,
 			},
 		}
-		if tool.id != "" {
-			tc["id"] = tool.id
+		if id := strings.TrimSpace(tool.ID); id != "" {
+			tc["id"] = id
 			tc["type"] = chatRoleFunction
 		}
 		choice := apitypes.JSONObject{
@@ -227,8 +195,9 @@ func (s *claudeSSEToChatState) handleContentBlockDelta(msg *claudeStreamSSEMessa
 	}
 }
 
-func (s *claudeSSEToChatState) handleMessageDelta(msg *claudeStreamSSEMessage) error {
-	if msg == nil || msg.Delta == nil {
+func (s *claudeSSEToChatState) handleMessageDelta(msg *apitypes.ClaudeStreamMessage) error {
+	s.mergeUsage(msg.Usage)
+	if msg.Delta == nil {
 		return nil
 	}
 	stopReason := strings.TrimSpace(msg.Delta.StopReason)
@@ -278,10 +247,68 @@ func (s *claudeSSEToChatState) emitDone() error {
 		return nil
 	}
 	s.doneSent = true
+	if err := s.emitUsageChunk(); err != nil {
+		return err
+	}
 	if _, err := io.WriteString(s.w, "data: [DONE]\n\n"); err != nil {
 		return fmt.Errorf("write done: %w", err)
 	}
 	return nil
+}
+
+func (s *claudeSSEToChatState) mergeUsage(raw *apitypes.ClaudeUsage) {
+	if raw == nil {
+		return
+	}
+	if s.usage == nil {
+		s.usage = &apitypes.OpenAIChatCompletionsUsage{}
+	}
+	u := s.usage
+	if raw.InputTokens > 0 {
+		u.PromptTokens = raw.InputTokens
+	}
+	if raw.OutputTokens > 0 {
+		u.CompletionTokens = raw.OutputTokens
+	}
+	if raw.CacheReadInputTokens > 0 {
+		if u.PromptTokensDetails == nil {
+			u.PromptTokensDetails = &apitypes.OpenAITokenDetails{}
+		}
+		u.PromptTokensDetails.CachedTokens = raw.CacheReadInputTokens
+	}
+}
+
+func (s *claudeSSEToChatState) emitUsageChunk() error {
+	if s.usage == nil {
+		return nil
+	}
+	u := *s.usage
+	if u.TotalTokens <= 0 {
+		if u.PromptTokens <= 0 && u.CompletionTokens <= 0 {
+			return nil
+		}
+		u.TotalTokens = u.PromptTokens + u.CompletionTokens
+	}
+	usage, err := u.ToMap()
+	if err != nil {
+		return fmt.Errorf("usage to map: %w", err)
+	}
+	if len(usage) == 0 {
+		return nil
+	}
+	chunk := apitypes.JSONObject{
+		"id":      s.chatID,
+		"object":  "chat.completion.chunk",
+		"created": s.created,
+		"choices": []any{},
+		"usage":   usage,
+	}
+	if strings.TrimSpace(s.model) != "" {
+		chunk["model"] = s.model
+	}
+	// emitDone is single-shot; clear pointer defensively to avoid accidental re-emit.
+	s.usage = nil
+	return writeSSEDataJSON(s.w, chunk)
 }
 
 func mapClaudeStopToOpenAIFinish(stop string) string {

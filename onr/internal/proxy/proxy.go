@@ -439,6 +439,7 @@ func (c *Client) handleStreamResponse(
 	usageCfg, _ := pf.Usage.Select(m)
 	finishCfg, _ := pf.Finish.Select(m)
 	streamAgg := dslconfig.NewStreamMetricsAggregator(m, usageCfg, finishCfg)
+	tapRawSSEForMetrics := shouldTapRawSSEForMetrics(usageCfg, finishCfg)
 
 	var metricsTap *sseMetricsTap
 	upstreamCT := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Type")))
@@ -449,7 +450,7 @@ func (c *Client) handleStreamResponse(
 	dump := newStreamDumpState(gc)
 	defer dump.Append(gc, resp)
 
-	n, firstWriteAt, err := streamToDownstream(gc, m, respDir, resp, usageTail, metricsTap, dump)
+	n, firstWriteAt, err := streamToDownstream(gc, m, respDir, resp, usageTail, metricsTap, tapRawSSEForMetrics, dump)
 	ignoredDisconnect := isClientDisconnectErr(err)
 	dump.SetStreamResult(n, err, ignoredDisconnect)
 	if err != nil && !ignoredDisconnect {
@@ -509,6 +510,12 @@ func (c *Client) handleStreamResponse(
 		TTFTMs:         ttftMs,
 		TPS:            tps,
 	}, nil
+}
+
+func shouldTapRawSSEForMetrics(usageCfg *dslconfig.UsageExtractConfig, finishCfg *dslconfig.FinishReasonExtractConfig) bool {
+	// Stream metrics should be tapped from upstream raw SSE before any response conversion.
+	// This is not anthropic-specific: any configured stream metrics extraction should use raw events.
+	return usageCfg != nil || finishCfg != nil
 }
 
 // logUsageFactsDebug requires a non-nil Client receiver.

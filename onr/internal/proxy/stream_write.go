@@ -38,6 +38,7 @@ func streamToDownstream(
 	resp *http.Response,
 	usageTail *tailBuffer,
 	metricsTap *sseMetricsTap,
+	tapRawSSEForMetrics bool,
 	dump *streamDumpState,
 ) (int64, time.Time, error) {
 	var (
@@ -62,7 +63,7 @@ func streamToDownstream(
 		proxyDump = &limitedBuffer{limit: rec.MaxBytes()}
 	}
 
-	src, err := buildStreamSource(gc, resp, mode, rawMode, needSSEOps, useStrategyTransform, upstreamDump)
+	src, err := buildStreamSource(gc, resp, rawMode, needSSEOps, useStrategyTransform, upstreamDump, usageTail, metricsTap, tapRawSSEForMetrics)
 	if err != nil {
 		return 0, time.Time{}, err
 	}
@@ -71,10 +72,13 @@ func streamToDownstream(
 		src = io.TeeReader(src, upstreamDump)
 	}
 
-	// Always tee the post-strategy stream into usageTail (pre-response-ops).
-	src = io.TeeReader(src, usageTail)
-	if metricsTap != nil {
-		src = io.TeeReader(src, metricsTap)
+	// Default path: collect metrics from post-strategy stream (pre-response-ops).
+	// When configured, strategy-transform path can collect from raw upstream SSE instead.
+	if !useStrategyTransform || !tapRawSSEForMetrics {
+		src = io.TeeReader(src, usageTail)
+		if metricsTap != nil {
+			src = io.TeeReader(src, metricsTap)
+		}
 	}
 
 	dst := io.Writer(gc.Writer)
@@ -109,14 +113,16 @@ func streamToDownstream(
 func buildStreamSource(
 	gc *gin.Context,
 	resp *http.Response,
-	mode string,
 	rawMode string,
 	needSSEOps bool,
 	useStrategyTransform bool,
 	upstreamDump *limitedBuffer,
+	usageTail *tailBuffer,
+	metricsTap *sseMetricsTap,
+	tapRawSSEForMetrics bool,
 ) (io.Reader, error) {
 	if useStrategyTransform {
-		return buildStrategyTransformSource(gc, resp, mode, rawMode, upstreamDump)
+		return buildStrategyTransformSource(gc, resp, rawMode, upstreamDump, usageTail, metricsTap, tapRawSSEForMetrics)
 	}
 	return buildPassthroughSource(gc, resp, needSSEOps)
 }
@@ -124,9 +130,11 @@ func buildStreamSource(
 func buildStrategyTransformSource(
 	gc *gin.Context,
 	resp *http.Response,
-	mode string,
 	rawMode string,
 	upstreamDump *limitedBuffer,
+	usageTail *tailBuffer,
+	metricsTap *sseMetricsTap,
+	tapRawSSEForMetrics bool,
 ) (io.Reader, error) {
 	pr, pw := io.Pipe()
 	upSrc, closeUp, err := decodeUpstreamIfNeeded(resp, true)
@@ -138,6 +146,18 @@ func buildStrategyTransformSource(
 	}
 	if upstreamDump != nil {
 		upSrc = io.TeeReader(upSrc, upstreamDump)
+	}
+	if tapRawSSEForMetrics {
+		var writers []io.Writer
+		if usageTail != nil {
+			writers = append(writers, usageTail)
+		}
+		if metricsTap != nil {
+			writers = append(writers, metricsTap)
+		}
+		if len(writers) > 0 {
+			upSrc = io.TeeReader(upSrc, io.MultiWriter(writers...))
+		}
 	}
 
 	gc.Writer.Header().Set("Content-Type", "text/event-stream")

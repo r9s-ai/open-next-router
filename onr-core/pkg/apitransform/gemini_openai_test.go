@@ -114,3 +114,19 @@ func TestMapGeminiGenerateContentToOpenAIChatCompletionsResponse_Basic(t *testin
 		t.Fatalf("unexpected mapped output: %s", s)
 	}
 }
+
+func TestMapGeminiGenerateContentToOpenAIChatCompletionsResponse_UsageFallbackWithoutTotal(t *testing.T) {
+	in := []byte(`{
+  "candidates":[{"index":0,"finishReason":"STOP","content":{"role":"model","parts":[{"text":"hello"}]}}],
+  "usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":4},
+  "modelVersion":"gemini-2.0-flash"
+}`)
+	out, err := MapGeminiGenerateContentToOpenAIChatCompletionsResponse(in)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	s := string(out)
+	if !containsAll(s, `"prompt_tokens":3`, `"completion_tokens":4`, `"total_tokens":7`) {
+		t.Fatalf("unexpected mapped output: %s", s)
+	}
+}

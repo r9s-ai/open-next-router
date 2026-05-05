@@ -2738,6 +2738,38 @@ type ClaudeUsage struct {
 	ServerToolUse            *ClaudeServerToolUsage `json:"server_tool_use,omitempty"`
 }
 
+// ClaudeStreamMessage models one SSE event payload from Claude /v1/messages streaming.
+type ClaudeStreamMessage struct {
+	Type         string                    `json:"type"`
+	Message      *ClaudeStreamStart        `json:"message,omitempty"`
+	Index        int                       `json:"index,omitempty"`
+	ContentBlock *ClaudeStreamContentBlock `json:"content_block,omitempty"`
+	Delta        *ClaudeStreamDelta        `json:"delta,omitempty"`
+	Usage        *ClaudeUsage              `json:"usage,omitempty"`
+}
+
+// ClaudeStreamStart contains the initial message metadata in `message_start`.
+type ClaudeStreamStart struct {
+	ID    string       `json:"id,omitempty"`
+	Model string       `json:"model,omitempty"`
+	Usage *ClaudeUsage `json:"usage,omitempty"`
+}
+
+// ClaudeStreamContentBlock describes a streamed content block header.
+type ClaudeStreamContentBlock struct {
+	Type string `json:"type,omitempty"`
+	ID   string `json:"id,omitempty"`
+	Name string `json:"name,omitempty"`
+}
+
+// ClaudeStreamDelta carries incremental text/tool stop data from Claude SSE.
+type ClaudeStreamDelta struct {
+	Type        string `json:"type,omitempty"`
+	Text        string `json:"text,omitempty"`
+	PartialJSON string `json:"partial_json,omitempty"`
+	StopReason  string `json:"stop_reason,omitempty"`
+}
+
 func (c *ClaudeUsage) FromMap(m map[string]any) error {
 	var err error
 	c.InputTokens, err = intValue(m, "input_tokens")

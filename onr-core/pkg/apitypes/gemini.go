@@ -384,6 +384,22 @@ func (c *ChatContent) ToMap() (map[string]any, error) {
 	return out, nil
 }
 
+// GenerateContentStreamResponse models one Gemini SSE data payload returned by
+// streamGenerateContent endpoints.
+type GenerateContentStreamResponse struct {
+	Candidates    []GenerateContentCandidate `json:"candidates,omitempty"`
+	UsageMetadata *UsageMetadata             `json:"usageMetadata,omitempty"`
+	ModelVersion  string                     `json:"modelVersion,omitempty"`
+	Model         string                     `json:"model,omitempty"`
+}
+
+// GenerateContentCandidate is a streamed candidate unit in Gemini responses.
+type GenerateContentCandidate struct {
+	Content      ChatContent `json:"content"`
+	FinishReason string      `json:"finishReason,omitempty"`
+	Index        int         `json:"index,omitempty"`
+}
+
 type ChatSafetySettings struct {
 	Category  string `json:"category"`
 	Threshold string `json:"threshold"`

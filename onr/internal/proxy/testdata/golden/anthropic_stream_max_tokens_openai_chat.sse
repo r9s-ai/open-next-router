@@ -6,4 +6,6 @@ data: {"choices":[{"delta":{"content":"!"},"index":0}],"created":0,"id":"chatcmp
 
 data: {"choices":[{"delta":{},"finish_reason":"length","index":0}],"created":0,"id":"chatcmpl_mock","model":"claude-haiku-4-5-20251001","object":"chat.completion.chunk"}
 
+data: {"choices":[],"created":0,"id":"chatcmpl_mock","model":"claude-haiku-4-5-20251001","object":"chat.completion.chunk","usage":{"completion_tokens":12,"prompt_tokens":8,"total_tokens":20}}
+
 data: [DONE]

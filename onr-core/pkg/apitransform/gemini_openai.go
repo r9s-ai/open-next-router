@@ -453,31 +453,29 @@ func mapGeminiUsageToOpenAI(raw map[string]any) (apitypes.JSONObject, error) {
 	if err := usage.FromMap(raw); err != nil {
 		return nil, err
 	}
-	completionTokens := usage.TotalTokenCount - usage.PromptTokenCount
+	promptTokens := usage.PromptTokenCount
+	completionTokens := usage.CandidatesTokenCount
+	totalTokens := usage.TotalTokenCount
+	if totalTokens <= 0 {
+		totalTokens = promptTokens + completionTokens
+	}
+	if completionTokens <= 0 {
+		completionTokens = totalTokens - promptTokens
+	}
 	if completionTokens < 0 {
 		completionTokens = 0
 	}
-	return apitypes.JSONObject{
+	out := apitypes.JSONObject{
 		"prompt_tokens":     usage.PromptTokenCount,
 		"completion_tokens": completionTokens,
-		"total_tokens":      usage.TotalTokenCount,
-		"completion_tokens_details": apitypes.JSONObject{
-			"reasoning_tokens": usage.ThoughtsTokenCount,
-		},
-	}, nil
-}
-
-func mapGeminiFinishToOpenAI(finish string) string {
-	switch strings.TrimSpace(strings.ToUpper(finish)) {
-	case "MAX_TOKENS":
-		return finishReasonLength
-	case "SAFETY", "RECITATION":
-		return finishContentFilter
-	case "":
-		return finishReasonStop
-	default:
-		return finishReasonStop
+		"total_tokens":      totalTokens,
 	}
+	if usage.ThoughtsTokenCount > 0 {
+		out["completion_tokens_details"] = apitypes.JSONObject{
+			"reasoning_tokens": usage.ThoughtsTokenCount,
+		}
+	}
+	return out, nil
 }
 
 // MapOpenAIChatCompletionsToGeminiGenerateContentResponse maps OpenAI chat response JSON to Gemini response JSON.

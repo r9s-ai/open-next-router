@@ -70,7 +70,7 @@ type geminiSSEToChatState struct {
 }
 
 func (s *geminiSSEToChatState) handlePayload(payload []byte) error {
-	var root geminiSSEPayload
+	var root apitypes.GenerateContentStreamResponse
 	if err := json.Unmarshal(payload, &root); err != nil {
 		return nil
 	}
@@ -138,19 +138,6 @@ func (s *geminiSSEToChatState) emitDone() error {
 		return fmt.Errorf("write done: %w", err)
 	}
 	return nil
-}
-
-type geminiSSEPayload struct {
-	Candidates    []geminiSSECandidate    `json:"candidates"`
-	UsageMetadata *apitypes.UsageMetadata `json:"usageMetadata,omitempty"`
-	ModelVersion  string                  `json:"modelVersion,omitempty"`
-	Model         string                  `json:"model,omitempty"`
-}
-
-type geminiSSECandidate struct {
-	Content      apitypes.ChatContent `json:"content"`
-	FinishReason string               `json:"finishReason"`
-	Index        int                  `json:"index"`
 }
 
 func geminiPartsToContentAndToolCalls(parts []apitypes.Part) (string, []any) {
