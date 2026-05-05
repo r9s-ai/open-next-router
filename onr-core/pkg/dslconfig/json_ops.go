@@ -1,7 +1,6 @@
 package dslconfig
 
 import (
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -10,25 +9,12 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
 )
 
-func ApplyJSONOps(meta *dslmeta.Meta, in any, ops []JSONOp) (any, error) {
-	if len(ops) == 0 {
-		return in, nil
-	}
-	obj, ok := in.(map[string]any)
-	if !ok {
-		// Convert non-map inputs to a mutable JSON object representation.
-		b, err := json.Marshal(in)
-		if err != nil {
-			return nil, fmt.Errorf("marshal request json: %w", err)
-		}
-		var root any
-		if err := json.Unmarshal(b, &root); err != nil {
-			return nil, fmt.Errorf("unmarshal request json: %w", err)
-		}
-		obj, ok = root.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("request json root is not an object")
-		}
+// ApplyJSONOps applies object-path JSON mutations to a top-level object root and returns it.
+// in must already be normalized to map[string]any by the caller.
+func ApplyJSONOps(meta *dslmeta.Meta, in map[string]any, ops []JSONOp) (map[string]any, error) {
+	obj := in
+	if obj == nil {
+		return nil, fmt.Errorf("request json root is nil")
 	}
 
 	for _, op := range ops {

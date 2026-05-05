@@ -19,88 +19,82 @@ type ApplyOptions struct {
 }
 
 type Result struct {
-	Body        []byte
-	Value       any
+	Body []byte
+	// Value is the transformed request object root. It is nil only when callers provide
+	// no parsed object root and req_map is not used to rebuild one from raw body.
+	Value       map[string]any
 	Root        map[string]any
 	ContentType string
 }
 
-// Apply transforms a request body and request value using request transform rules.
+// Apply transforms a request body and parsed request object root using request transform rules.
 // meta and t must be non-nil.
-func Apply(meta *dslmeta.Meta, contentType string, body []byte, value any, t *dslconfig.RequestTransform, opts ApplyOptions) (Result, error) {
+// value must already be normalized to a top-level JSON object root. It may be nil when callers
+// only have raw body bytes and want req_map to parse the object on demand.
+func Apply(meta *dslmeta.Meta, contentType string, body []byte, value map[string]any, t *dslconfig.RequestTransform, opts ApplyOptions) (Result, error) {
 	result := Result{
 		Body:        body,
 		Value:       value,
+		Root:        value,
 		ContentType: strings.TrimSpace(contentType),
 	}
 
 	out := value
-	changedByModelRewrite := false
+	changed := false
 	modelMapped := strings.TrimSpace(meta.DSLModelMapped)
-	if root, ok := out.(map[string]any); ok && root != nil {
+	if out != nil {
 		if modelMapped != "" {
-			if _, exists := root["model"]; exists {
-				if current, ok := root["model"].(string); !ok || current != modelMapped {
-					root["model"] = modelMapped
-					changedByModelRewrite = true
+			if _, exists := out["model"]; exists {
+				if current, ok := out["model"].(string); !ok || current != modelMapped {
+					out["model"] = modelMapped
+					changed = true
 				}
 			}
 		}
-		result.Root = root
 	}
 
-	changedByJSONOps := false
 	if out != nil && len(t.JSONOps) > 0 {
-		var err error
-		out, err = dslconfig.ApplyJSONOps(meta, out, t.JSONOps)
+		out, err := dslconfig.ApplyJSONOps(meta, out, t.JSONOps)
 		if err != nil {
 			return Result{}, err
 		}
-		changedByJSONOps = true
+		changed = true
 		result.Value = out
-		if root, ok := out.(map[string]any); ok {
-			result.Root = root
-		} else {
-			result.Root = nil
-		}
+		result.Root = out
 	}
 
-	reqBody := result.Body
-	if changedByModelRewrite || changedByJSONOps || (reqBody == nil && out != nil) {
-		var err error
-		reqBody, err = marshalBody(result.Body, result.Root, result.ContentType, out)
-		if err != nil {
-			return Result{}, err
+	reqMapMode := strings.TrimSpace(t.ReqMapMode)
+	if reqMapMode == "" {
+		if out != nil && (changed || result.Body == nil) {
+			reqBody, err := marshalBody(result.Body, out, result.ContentType)
+			if err != nil {
+				return Result{}, err
+			}
+			result.Body = reqBody
 		}
-		result.Body = reqBody
-	}
-
-	if strings.TrimSpace(t.ReqMapMode) == "" {
 		return result, nil
 	}
 
-	mappedBody, mappedAny, err := ApplyReqMap(t.ReqMapMode, reqBody, out, opts)
+	mappedBody, mappedRoot, err := ApplyReqMap(reqMapMode, result.Body, out, opts)
 	if err != nil {
 		return Result{}, err
 	}
 	result.Body = mappedBody
 
-	result.Value = mappedAny
-	if root, ok := mappedAny.(map[string]any); ok {
-		result.Root = root
-	} else {
-		result.Root = nil
-	}
+	result.Value = mappedRoot
+	result.Root = mappedRoot
 	return result, nil
 }
 
-func ApplyReqMap(mode string, raw []byte, out any, opts ApplyOptions) ([]byte, any, error) {
+// ApplyReqMap remaps a request object root to another object-root request schema.
+// out should be the already-parsed request object root when available; otherwise raw is reparsed.
+func ApplyReqMap(mode string, raw []byte, out map[string]any, opts ApplyOptions) ([]byte, map[string]any, error) {
 	ce := strings.ToLower(strings.TrimSpace(opts.ContentEncoding))
 	if ce != "" && ce != contentEncodingIdentity {
 		return nil, nil, fmt.Errorf("cannot transform encoded client request (Content-Encoding=%q)", opts.ContentEncoding)
 	}
-	if root, ok := out.(map[string]any); ok && root != nil {
-		return applyReqMapObject(mode, apitypes.JSONObject(root))
+	if out != nil {
+		return applyReqMapObject(mode, apitypes.JSONObject(out))
 	}
 	root, err := parseReqMapInputObject(mode, raw)
 	if err != nil {
@@ -109,7 +103,7 @@ func ApplyReqMap(mode string, raw []byte, out any, opts ApplyOptions) ([]byte, a
 	return applyReqMapObject(mode, root)
 }
 
-func applyReqMapObject(mode string, root apitypes.JSONObject) ([]byte, any, error) {
+func applyReqMapObject(mode string, root apitypes.JSONObject) ([]byte, map[string]any, error) {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case "openai_chat_to_openai_responses":
 		var src apitypes.OpenAIChatCompletionsRequest
@@ -163,7 +157,7 @@ func applyReqMapObject(mode string, root apitypes.JSONObject) ([]byte, any, erro
 	}
 }
 
-func marshalReqMapResult(value apitypes.ToMapper) ([]byte, any, error) {
+func marshalReqMapResult(value apitypes.ToMapper) ([]byte, map[string]any, error) {
 	root, err := value.ToMap()
 	if err != nil {
 		return nil, nil, err
@@ -203,10 +197,8 @@ var reasoningEffortBudgetMap = map[string]int{
 	"xhigh":  claudeReasoningBudgetXHigh,
 }
 
+// mapOpenAIChatCompletionsToResponsesRequest requires a non-nil typed OpenAI chat request.
 func mapOpenAIChatCompletionsToResponsesRequest(req *apitypes.OpenAIChatCompletionsRequest) (*apitypes.OpenAIResponsesRequest, error) {
-	if req == nil {
-		return nil, fmt.Errorf("openai chat request is nil")
-	}
 	srcMap, err := req.ToMap()
 	if err != nil {
 		return nil, err
@@ -222,11 +214,8 @@ func mapOpenAIChatCompletionsToResponsesRequest(req *apitypes.OpenAIChatCompleti
 	return &dst, nil
 }
 
+// mapOpenAIChatCompletionsToClaudeRequest requires a non-nil typed OpenAI chat request.
 func mapOpenAIChatCompletionsToClaudeRequest(req *apitypes.OpenAIChatCompletionsRequest) (*apitypes.ClaudeRequest, error) {
-	if req == nil {
-		return nil, fmt.Errorf("openai chat request is nil")
-	}
-
 	tools, toolChoice := buildClaudeToolsAndChoice(req)
 	dst := &apitypes.ClaudeRequest{
 		Model:       req.Model,
@@ -278,11 +267,8 @@ func mapOpenAIChatCompletionsToClaudeRequest(req *apitypes.OpenAIChatCompletions
 	return dst, nil
 }
 
+// buildClaudeToolsAndChoice requires a non-nil typed OpenAI chat request.
 func buildClaudeToolsAndChoice(req *apitypes.OpenAIChatCompletionsRequest) ([]apitypes.ClaudeTool, *apitypes.ClaudeToolChoice) {
-	if req == nil {
-		return nil, nil
-	}
-
 	tools := make([]apitypes.ClaudeTool, 0, len(req.Tools))
 	for i := range req.Tools {
 		tool := req.Tools[i]
@@ -865,10 +851,8 @@ func convertModalitiesToGemini(modalities []string) []string {
 	return result
 }
 
+// mapClaudeRequestToOpenAIChatCompletions requires a non-nil typed Claude request.
 func mapClaudeRequestToOpenAIChatCompletions(req *apitypes.ClaudeRequest) (*apitypes.OpenAIChatCompletionsRequest, error) {
-	if req == nil {
-		return nil, fmt.Errorf("claude request is nil")
-	}
 	srcMap, err := req.ToMap()
 	if err != nil {
 		return nil, err
@@ -884,10 +868,8 @@ func mapClaudeRequestToOpenAIChatCompletions(req *apitypes.ClaudeRequest) (*apit
 	return &dst, nil
 }
 
+// mapGeminiGenerateContentRequestToOpenAIChatCompletions requires a non-nil typed Gemini request.
 func mapGeminiGenerateContentRequestToOpenAIChatCompletions(req *apitypes.GeminiGenerateContentRequest) (*apitypes.OpenAIChatCompletionsRequest, error) {
-	if req == nil {
-		return nil, fmt.Errorf("gemini request is nil")
-	}
 	srcMap, err := req.ToMap()
 	if err != nil {
 		return nil, err
@@ -922,18 +904,9 @@ func parseReqMapInputObject(mode string, raw []byte) (apitypes.JSONObject, error
 	return apitypes.JSONObject(root), nil
 }
 
-func marshalBody(originalBody []byte, root map[string]any, contentType string, value any) ([]byte, error) {
-	if root == nil {
-		if value == nil {
-			return originalBody, nil
-		}
-		if requestcanon.IsMultipartFormData(contentType) {
-			return originalBody, nil
-		}
-		return json.Marshal(value)
-	}
-	if requestcanon.IsMultipartFormData(contentType) {
+func marshalBody(originalBody []byte, out map[string]any, contentType string) ([]byte, error) {
+	if out == nil || requestcanon.IsMultipartFormData(contentType) {
 		return originalBody, nil
 	}
-	return json.Marshal(root)
+	return json.Marshal(out)
 }

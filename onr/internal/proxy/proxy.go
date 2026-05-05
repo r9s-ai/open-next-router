@@ -382,13 +382,9 @@ func applyNonStreamResponseJSONOps(
 		}
 	}
 
-	outAny, err := dslconfig.ApplyJSONOps(meta, respOutObj, ops)
+	mappedObj, err := dslconfig.ApplyJSONOps(meta, respOutObj, ops)
 	if err != nil {
 		return nil, "", false, err
-	}
-	mappedObj, ok := outAny.(map[string]any)
-	if !ok {
-		return nil, "", false, fmt.Errorf("response json ops must return object, got %T", outAny)
 	}
 	outBytes, err := json.Marshal(mappedObj)
 	if err != nil {

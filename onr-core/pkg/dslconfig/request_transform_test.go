@@ -19,17 +19,13 @@ func TestJSONOps_SetDelRename(t *testing.T) {
 		"foo":    "bar",
 		"nested": map[string]any{"a": 1},
 	}
-	outAny, err := ApplyJSONOps(m, in, []JSONOp{
+	out, err := ApplyJSONOps(m, in, []JSONOp{
 		{Op: "json_set", Path: "$.stream", ValueExpr: "true"},
 		{Op: "json_rename", FromPath: "$.foo", ToPath: "$.baz"},
 		{Op: "json_del", Path: "$.nested.a"},
 	})
 	if err != nil {
 		t.Fatalf("ApplyJSONOps: %v", err)
-	}
-	out, ok := outAny.(map[string]any)
-	if !ok {
-		t.Fatalf("unexpected output type: %T", outAny)
 	}
 	if out["stream"] != true {
 		t.Fatalf("expected stream=true, got %#v", out["stream"])

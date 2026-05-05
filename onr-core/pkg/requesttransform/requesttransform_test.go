@@ -31,9 +31,9 @@ func TestApply_JSONOpsThenReqMap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
-	root, ok := result.Value.(map[string]any)
-	if !ok {
-		t.Fatalf("Value type = %T", result.Value)
+	root := result.Value
+	if root == nil {
+		t.Fatalf("Value = nil")
 	}
 	if _, exists := root["messages"]; exists {
 		t.Fatalf("messages should be removed after req_map, got=%v", root)
@@ -112,7 +112,7 @@ func TestApplyReqMap_OpenAIChatToAnthropicMessages_UsesTypedAnthropicConversion(
 		"user":"user-123"
 	}`)
 
-	mappedBody, mappedAny, err := ApplyReqMap("openai_chat_to_anthropic_messages", body, nil, ApplyOptions{})
+	mappedBody, mappedRoot, err := ApplyReqMap("openai_chat_to_anthropic_messages", body, nil, ApplyOptions{})
 	if err != nil {
 		t.Fatalf("ApplyReqMap() error = %v", err)
 	}
@@ -120,9 +120,9 @@ func TestApplyReqMap_OpenAIChatToAnthropicMessages_UsesTypedAnthropicConversion(
 		t.Fatalf("expected mapped body")
 	}
 
-	root, ok := mappedAny.(map[string]any)
-	if !ok {
-		t.Fatalf("mapped value type = %T", mappedAny)
+	root := mappedRoot
+	if root == nil {
+		t.Fatalf("mapped value = nil")
 	}
 	if got, want := root["model"], "claude-2.1"; got != want {
 		t.Fatalf("model=%v want=%v", got, want)
@@ -355,7 +355,7 @@ func TestApplyReqMap_StructFirstWrapperModes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			mappedBody, mappedAny, err := ApplyReqMap(tt.mode, []byte(tt.body), nil, ApplyOptions{})
+			mappedBody, mappedRoot, err := ApplyReqMap(tt.mode, []byte(tt.body), nil, ApplyOptions{})
 			if err != nil {
 				t.Fatalf("ApplyReqMap() error = %v", err)
 			}
@@ -363,9 +363,9 @@ func TestApplyReqMap_StructFirstWrapperModes(t *testing.T) {
 				t.Fatalf("expected mapped body")
 			}
 
-			root, ok := mappedAny.(map[string]any)
-			if !ok {
-				t.Fatalf("mapped value type = %T", mappedAny)
+			root := mappedRoot
+			if root == nil {
+				t.Fatalf("mapped value = nil")
 			}
 			if !json.Valid(mappedBody) {
 				t.Fatalf("mapped body is not valid json: %s", string(mappedBody))
