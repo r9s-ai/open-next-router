@@ -18,7 +18,12 @@ const (
 
 const (
 	apiChatCompletions = "chat.completions"
+	apiEmbeddings      = "embeddings"
 	apiResponses       = "responses"
+	apiMessages        = "claude.messages"
+
+	apiGeminiGenerateContent       = "gemini.generatecontent"
+	apiGeminiStreamGenerateContent = "gemini.streamgeneratecontent"
 )
 
 type Input struct {
@@ -89,7 +94,7 @@ func Estimate(cfg *Config, in Input) Output {
 	est.TotalTokens = est.InputTokens + est.OutputTokens
 
 	// Best-effort overhead for OpenAI-style chat messages.
-	if strings.ToLower(strings.TrimSpace(in.API)) == apiChatCompletions {
+	if normalizeAPI(in.API) == apiChatCompletions {
 		msgCount := countMessagesFromParsed(reqParsed)
 		if msgCount > 0 {
 			est.InputTokens += msgCount*3 + 3
@@ -145,7 +150,7 @@ func estimateMissingFields(cfg *Config, in Input, u *dslconfig.Usage) (*dslconfi
 	out.TotalTokens = out.InputTokens + out.OutputTokens
 
 	// Best-effort overhead for OpenAI-style chat messages only when prompt is estimated.
-	if needPrompt && strings.ToLower(strings.TrimSpace(in.API)) == apiChatCompletions {
+	if needPrompt && normalizeAPI(in.API) == apiChatCompletions {
 		msgCount := countMessagesFromParsed(reqParsed)
 		if msgCount > 0 {
 			out.InputTokens += msgCount*3 + 3
@@ -229,21 +234,20 @@ func extractRequestTextFromParsed(api string, parsed parsedRequestBody) string {
 		return ""
 	}
 
-	switch strings.ToLower(strings.TrimSpace(api)) {
-	case "embeddings", apiResponses:
+	switch normalizeAPI(api) {
+	case apiEmbeddings, apiResponses:
 		// responses can use "input", embeddings uses "input".
 		if v, ok := m["input"]; ok {
 			return stringifyAny(v)
 		}
-	case "gemini.generatecontent", "gemini.streamgeneratecontent":
+	case apiGeminiGenerateContent, apiGeminiStreamGenerateContent:
 		// Gemini native request: contents[].parts[].text
 		if v, ok := m["contents"]; ok {
 			return stringifyGeminiContents(v)
 		}
-	}
+	case apiMessages:
+		return stringifyAnthropicRequest(m)
 
-	if v, ok := m["messages"]; ok {
-		return stringifyMessages(v)
 	}
 	if v, ok := m["prompt"]; ok {
 		return stringifyAny(v)
@@ -268,7 +272,7 @@ func extractResponseText(api string, body []byte, limit int) string {
 		return ""
 	}
 
-	switch strings.ToLower(strings.TrimSpace(api)) {
+	switch normalizeAPI(api) {
 	case apiChatCompletions:
 		// choices[].message.content or choices[].text
 		if v, ok := m["choices"]; ok {
@@ -293,7 +297,7 @@ func extractResponseText(api string, body []byte, limit int) string {
 				return b.String()
 			}
 		}
-	case "claude.messages":
+	case apiMessages:
 		// content[].text
 		if v, ok := m["content"]; ok {
 			if arr, ok := v.([]any); ok {
@@ -303,20 +307,34 @@ func extractResponseText(api string, body []byte, limit int) string {
 					if im == nil {
 						continue
 					}
-					if s, ok := im["text"].(string); ok {
-						b.WriteString(s)
-						b.WriteByte('\n')
+					if typeInfo, ok := im["type"].(string); ok {
+						switch typeInfo {
+						case "thinking", "text":
+							if thinking_text, ok := im[typeInfo].(string); ok {
+								b.WriteString(thinking_text + "\n")
+							}
+						case "tool_use", "server_tool_use": //提取tool call 信息
+							b.WriteString(typeInfo + " ")
+							if toolName, ok := im["name"].(string); ok {
+								b.WriteString(toolName + " ")
+							}
+							if input, ok := im["input"].(map[string]any); ok {
+								data, _ := json.Marshal(input)
+								b.Write(data)
+							}
+							// web_search_tool_result，redacted_thinking 暂时不处理
+						}
 					}
 				}
 				return b.String()
 			}
 		}
-	case "responses":
+	case apiResponses:
 		// best-effort: output_text or any nested "text"
 		if s, ok := m["output_text"].(string); ok && strings.TrimSpace(s) != "" {
 			return s
 		}
-	case "gemini.generatecontent", "gemini.streamgeneratecontent":
+	case apiGeminiGenerateContent, apiGeminiStreamGenerateContent:
 		// Gemini native response: candidates[].content.parts[].text
 		if v, ok := m["candidates"]; ok {
 			return stringifyGeminiCandidates(v)
@@ -327,6 +345,10 @@ func extractResponseText(api string, body []byte, limit int) string {
 	var out strings.Builder
 	collectTextFields(&out, obj, 0, 8)
 	return out.String()
+}
+
+func normalizeAPI(api string) string {
+	return strings.ToLower(strings.TrimSpace(api))
 }
 
 func extractStreamText(api string, sse []byte, limit int) string {
@@ -372,14 +394,152 @@ func stringifyAny(v any) string {
 		}
 		return b.String()
 	case map[string]any:
-		if s, ok := t["text"].(string); ok {
-			return s
-		}
 		var b strings.Builder
+		if role, ok := t["role"].(string); ok {
+			b.WriteString(role + " ")
+		}
+
+		if text, ok := t["text"].(string); ok {
+			b.WriteString(text + " ")
+		}
+		if content, ok := t["content"].(string); ok {
+			//使用场景anthropic {"role": "user", "content": "Hello"}
+			b.WriteString(content + " ")
+		}
+
 		collectTextFields(&b, t, 0, 4)
 		return b.String()
 	default:
 		return ""
+	}
+}
+
+// 用于提取anthropic请求中的内容用于分词
+func stringifyAnthropicRequest(reqBody map[string]any) string {
+	var b strings.Builder
+
+	for k, v := range reqBody {
+		switch k {
+		case "system":
+			b.WriteString("system\n")
+			// data, _ := json.Marshal(v)
+			// b.WriteString(string(data) + "\n")
+			stringifyAnthropicMessages(v, &b, 0, 10)
+			b.WriteString("\n")
+		case "tools":
+			b.WriteString("tool\n")
+			toolList, ok := v.([]any)
+			if !ok {
+				data, _ := json.Marshal(v)
+				b.WriteString(string(data) + "\n")
+				break
+			}
+			for _, item := range toolList {
+				tool, ok := item.(map[string]any)
+				if ok {
+					data, _ := json.Marshal(tool)
+					b.WriteString(string(data) + "\n")
+				}
+			}
+		case "messages":
+			b.WriteString("messages\n")
+			stringifyAnthropicMessages(v, &b, 0, 10)
+			b.WriteString("\n")
+		}
+
+	}
+	return b.String()
+}
+
+func stringifyAnthropicMessages(v any, b *strings.Builder, deep int, maxDeep int) {
+	if deep > maxDeep {
+		return
+	}
+	switch t := v.(type) {
+	case []any: //处理content black list
+		for _, it := range t {
+			stringifyAnthropicMessages(it, b, deep+1, maxDeep)
+		}
+		return
+	case string: //处理content string
+		b.WriteString(t)
+		return
+	case map[string]any: //处理content black
+		stringifyAnthropicMessageObject(t, b, deep, maxDeep)
+		return
+
+	default:
+		return
+
+	}
+
+}
+
+func stringifyAnthropicMessageObject(t map[string]any, b *strings.Builder, deep int, maxDeep int) {
+	if role, ok := t["role"].(string); ok { //角色信息
+		b.WriteString("role:" + role + "\n")
+	}
+
+	if typeInfo, ok := t["type"].(string); ok {
+		stringifyAnthropicContentBlock(typeInfo, t, b, deep, maxDeep)
+		return
+	}
+
+	if content, ok := t["content"]; ok {
+		stringifyAnthropicMessages(content, b, deep+1, maxDeep)
+		b.WriteString("\n")
+	}
+}
+
+func stringifyAnthropicContentBlock(typeInfo string, t map[string]any, b *strings.Builder, deep int, maxDeep int) {
+	switch typeInfo {
+	case "text": //文本内容
+		if text, ok := t["text"].(string); ok {
+			b.WriteString(text)
+		}
+	case "image": //TODO 图片内容提取
+		b.WriteString("")
+	case "document": //TODO 文件内容提取
+		b.WriteString("")
+	case "tool_use", "server_tool_use": //提取tool call 信息
+		b.WriteString(typeInfo + " ")
+		if toolName, ok := t["name"].(string); ok {
+			b.WriteString(toolName + " ")
+		}
+		if input, ok := t["input"].(map[string]any); ok {
+			data, _ := json.Marshal(input)
+			b.Write(data)
+		}
+	case "tool_result": //提取tool 调用结果信息
+		b.WriteString(typeInfo + " ")
+		if content, ok := t["content"]; ok {
+			stringifyAnthropicToolResultContent(content, b, deep, maxDeep)
+		}
+	case "web_search_tool_result":
+		// web search result 暂时不估计。
+	case "thinking": //思考内容
+		if thinking, ok := t["thinking"].(string); ok {
+			b.WriteString("thinking " + thinking)
+		}
+	default:
+		b.WriteString("")
+	}
+}
+
+func stringifyAnthropicToolResultContent(content any, b *strings.Builder, deep int, maxDeep int) {
+	switch t := content.(type) {
+	case string, []any:
+		stringifyAnthropicMessages(t, b, deep+1, maxDeep)
+	case map[string]any:
+		if _, ok := t["type"].(string); ok {
+			stringifyAnthropicMessages(t, b, deep+1, maxDeep)
+			return
+		}
+		data, _ := json.Marshal(t)
+		b.Write(data)
+	default:
+		data, _ := json.Marshal(t)
+		b.Write(data)
 	}
 }
 
