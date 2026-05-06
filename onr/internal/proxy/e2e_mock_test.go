@@ -194,8 +194,7 @@ func TestE2EMock_ChatCompletions_Gemini_Stream(t *testing.T) {
 		`"object":"chat.completion.chunk"`,
 		`"role":"assistant"`,
 		`"content":"Hi"`,
-		`"finish_reason":"stop"`,
-		`"choices":[]`,
+		`"finish_reason":"STOP"`,
 		`"total_tokens":3`,
 		"data: [DONE]",
 	) {
@@ -362,8 +361,8 @@ func TestE2EMock_ChatCompletions_AnthropicMessages_StreamMaxTokens(t *testing.T)
 	if strings.TrimSpace(res.UsageStage) != "" {
 		t.Fatalf("usage_stage=%q want empty", res.UsageStage)
 	}
-	if res.FinishReason != "length" {
-		t.Fatalf("finish_reason=%q want=length", res.FinishReason)
+	if res.FinishReason != "max_tokens" {
+		t.Fatalf("finish_reason=%q want=max_tokens", res.FinishReason)
 	}
 
 	body := rec.Body.String()
@@ -413,8 +412,8 @@ func TestE2EMock_ChatCompletions_OpenAIResponses_StreamIncomplete(t *testing.T) 
 	if strings.TrimSpace(res.UsageStage) != "" {
 		t.Fatalf("usage_stage=%q want empty", res.UsageStage)
 	}
-	if res.FinishReason != "length" {
-		t.Fatalf("finish_reason=%q want=length", res.FinishReason)
+	if res.FinishReason != "max_output_tokens" {
+		t.Fatalf("finish_reason=%q want=max_output_tokens", res.FinishReason)
 	}
 
 	body := rec.Body.String()
@@ -1137,7 +1136,8 @@ provider "anthropic" {
 
   match api = "chat.completions" stream = true {
     metrics {
-      finish_reason_path "$.choices[*].finish_reason";
+      finish_reason_extract custom;
+      finish_reason_path "$.delta.stop_reason" event="message_delta" event_optional=true;
     }
     request {
       req_map openai_chat_to_anthropic_messages;
@@ -1397,7 +1397,9 @@ provider "openai" {
 
   match api = "chat.completions" stream = true {
     metrics {
-      finish_reason_path "$.choices[*].finish_reason";
+      finish_reason_extract custom;
+      finish_reason_path "$.response.incomplete_details.reason";
+      finish_reason_path "$.incomplete_details.reason" fallback=true;
     }
     request {
       req_map openai_chat_to_openai_responses;

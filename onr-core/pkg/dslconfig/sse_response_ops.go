@@ -172,7 +172,7 @@ func applySSEJSONDelIf(obj map[string]any, rules []SSEJSONDelIfRule) {
 		if s != r.Equals {
 			continue
 		}
-		_ = jsonDel(obj, r.DelPath)
+		_, _ = jsonDel(obj, r.DelPath)
 	}
 }
 
@@ -205,15 +205,15 @@ func applyJSONOpsToObject(meta *dslmeta.Meta, obj map[string]any, ops []JSONOp) 
 		switch op.Op {
 		case jsonOpSet:
 			val := evalJSONValueExpr(meta, op.ValueExpr)
-			if err := jsonSet(obj, op.Path, val); err != nil {
+			if _, err := jsonSet(obj, op.Path, val); err != nil {
 				return err
 			}
 		case jsonOpDel:
-			if err := jsonDel(obj, op.Path); err != nil {
+			if _, err := jsonDel(obj, op.Path); err != nil {
 				return err
 			}
 		case jsonOpRename:
-			if err := jsonRename(obj, op.FromPath, op.ToPath); err != nil {
+			if _, err := jsonRename(obj, op.FromPath, op.ToPath); err != nil {
 				return err
 			}
 		default:

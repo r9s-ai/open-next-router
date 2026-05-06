@@ -1,6 +1,7 @@
 package apitransform
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 )
@@ -30,52 +31,63 @@ func SupportsResponseMapMode(mode string) bool {
 }
 
 // MapResponseBodyByMode runs the shared non-stream resp_map transform selected
-// by mode and returns the transformed body plus its downstream content type.
-func MapResponseBodyByMode(mode string, body []byte) ([]byte, string, error) {
+// by mode and returns the transformed response object plus its downstream
+// content type.
+func MapResponseBodyByMode(mode string, body []byte) (map[string]any, string, error) {
+	root, err := unmarshalResponseBodyObject(body)
+	if err != nil {
+		return nil, "", err
+	}
+	out, err := MapResponseObjectByMode(mode, root)
+	if err != nil {
+		return nil, "", err
+	}
+	return out, contentTypeJSON, nil
+}
+
+func MapResponseObjectByMode(mode string, root map[string]any) (map[string]any, error) {
 	switch NormalizeResponseMapMode(mode) {
 	case "openai_responses_to_openai_chat":
-		out, err := MapOpenAIResponsesToChatCompletions(body)
-		return out, contentTypeJSON, err
+		return MapOpenAIResponsesToChatCompletionsObject(root)
 	case "anthropic_to_openai_chat":
-		out, err := MapClaudeMessagesResponseToOpenAIChatCompletions(body)
-		return out, contentTypeJSON, err
+		return MapClaudeMessagesResponseToOpenAIChatCompletionsObject(root)
 	case "gemini_to_openai_chat":
-		out, err := MapGeminiGenerateContentToOpenAIChatCompletionsResponse(body)
-		return out, contentTypeJSON, err
+		return MapGeminiGenerateContentToOpenAIChatCompletionsResponseObject(root)
 	case "openai_to_anthropic_messages":
-		out, err := MapOpenAIChatCompletionsToClaudeMessagesResponse(body)
-		return out, contentTypeJSON, err
+		return MapOpenAIChatCompletionsToClaudeMessagesResponseObject(root)
 	case "openai_to_gemini_chat", "openai_to_gemini_generate_content":
-		out, err := MapOpenAIChatCompletionsToGeminiGenerateContentResponse(body)
-		return out, contentTypeJSON, err
+		return MapOpenAIChatCompletionsToGeminiGenerateContentResponseObject(root)
 	default:
-		return nil, "", unsupportedModeError("resp_map", mode)
+		return nil, unsupportedModeError("resp_map", mode)
 	}
 }
 
+func unmarshalResponseBodyObject(body []byte) (map[string]any, error) {
+	var root map[string]any
+	if err := json.Unmarshal(body, &root); err != nil {
+		return nil, err
+	}
+	return root, nil
+}
+
 // TransformNonStreamResponseBody applies the shared non-stream resp_map flow:
-// skip on upstream errors, decode the upstream body when needed, dispatch by
-// mode, and return whether a transform was actually applied.
+// skip on upstream errors, dispatch by mode, and return whether a transform
+// was actually applied.
 func TransformNonStreamResponseBody(
 	statusCode int,
 	mode string,
-	body []byte,
+	body map[string]any,
 	contentType string,
-	contentEncoding string,
-) ([]byte, string, bool, error) {
+) (map[string]any, string, bool, error) {
 	if statusCode >= http.StatusBadRequest {
-		return body, contentType, false, nil
-	}
-	decoded, _, err := DecodeResponseBody(body, contentEncoding)
-	if err != nil {
-		return nil, "", false, err
+		return nil, contentType, false, nil
 	}
 	if !SupportsResponseMapMode(mode) {
-		return body, contentType, false, nil
+		return nil, contentType, false, nil
 	}
-	out, outCT, err := MapResponseBodyByMode(mode, decoded)
+	outObj, err := MapResponseObjectByMode(mode, body)
 	if err != nil {
 		return nil, "", false, err
 	}
-	return out, outCT, true, nil
+	return outObj, contentTypeJSON, true, nil
 }

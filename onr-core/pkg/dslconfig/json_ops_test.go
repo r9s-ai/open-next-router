@@ -11,13 +11,10 @@ func TestApplyJSONOps_TableDriven(t *testing.T) {
 	t.Parallel()
 
 	meta := &dslmeta.Meta{API: "chat.completions"}
-	type request struct {
-		A int `json:"a"`
-	}
 
 	cases := []struct {
 		name    string
-		in      any
+		in      map[string]any
 		ops     []JSONOp
 		want    any
 		wantErr bool
@@ -59,14 +56,6 @@ func TestApplyJSONOps_TableDriven(t *testing.T) {
 			want: map[string]any{"a": map[string]any{}, "x": map[string]any{"y": 2}},
 		},
 		{
-			name: "struct_input_still_converts_to_json_object",
-			in:   request{A: 1},
-			ops: []JSONOp{
-				{Op: "json_set", Path: "$.stream_options.include_usage", ValueExpr: "true"},
-			},
-			want: map[string]any{"a": float64(1), "stream_options": map[string]any{"include_usage": true}},
-		},
-		{
 			name:    "invalid_path_prefix",
 			in:      map[string]any{"a": 1},
 			ops:     []JSONOp{{Op: "json_set", Path: "a.b", ValueExpr: "true"}},
@@ -78,12 +67,7 @@ func TestApplyJSONOps_TableDriven(t *testing.T) {
 			ops:     []JSONOp{{Op: "json_set", Path: "$.a[0]", ValueExpr: "true"}},
 			wantErr: true,
 		},
-		{
-			name:    "root_not_object",
-			in:      []any{"x"},
-			ops:     []JSONOp{{Op: "json_set", Path: "$.a", ValueExpr: "true"}},
-			wantErr: true,
-		},
+		{name: "nil_root", in: nil, ops: []JSONOp{{Op: "json_set", Path: "$.a", ValueExpr: "true"}}, wantErr: true},
 	}
 
 	for _, tc := range cases {

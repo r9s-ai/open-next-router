@@ -3,7 +3,6 @@ package apitransform
 import (
 	"bytes"
 	"compress/gzip"
-	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -40,32 +39,18 @@ func ResponseBodyLooksLikeJSON(contentType string, body []byte) bool {
 	return len(trim) > 0 && trim[0] == '{'
 }
 
-// ApplyResponseJSONOpsBody unmarshals a JSON object response body, applies a transform, and re-marshals the result.
+// ApplyResponseJSONOpsBody applies JSON ops on an object-root response payload.
 func ApplyResponseJSONOpsBody(
-	body []byte,
-	contentType string,
-	apply func(map[string]any) (any, error),
-) ([]byte, bool, error) {
-	if !ResponseBodyLooksLikeJSON(contentType, body) {
-		return body, false, nil
+	body map[string]any,
+	apply func(map[string]any) (map[string]any, error),
+) (map[string]any, bool, error) {
+	if body == nil {
+		return nil, false, nil
 	}
 
-	var root any
-	if err := json.Unmarshal(body, &root); err != nil {
-		return nil, false, err
-	}
-	obj, _ := root.(map[string]any)
-	if obj == nil {
-		return body, false, nil
-	}
-
-	out, err := apply(obj)
+	out, err := apply(body)
 	if err != nil {
 		return nil, false, err
 	}
-	outBytes, err := json.Marshal(out)
-	if err != nil {
-		return nil, false, err
-	}
-	return outBytes, true, nil
+	return out, true, nil
 }

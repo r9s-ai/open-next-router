@@ -3,6 +3,7 @@ package apitransform
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"testing"
 )
 
@@ -47,22 +48,26 @@ func TestMapResponseBodyByMode_OpenAIResponsesToChat(t *testing.T) {
 	if outCT != contentTypeJSON {
 		t.Fatalf("unexpected content type: %s", outCT)
 	}
-	s := string(out)
+	encoded, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("unexpected marshal error: %v", err)
+	}
+	s := string(encoded)
 	if !containsAll(s, `"object":"chat.completion"`, `"Hello"`, `"total_tokens":3`) {
 		t.Fatalf("unexpected output: %s", s)
 	}
 }
 
 func TestTransformNonStreamResponseBody_UnsupportedMode(t *testing.T) {
-	in := []byte(`{"id":"x"}`)
-	out, outCT, changed, err := TransformNonStreamResponseBody(200, "unknown_mode", in, "application/json", "")
+	in := map[string]any{"id": "x"}
+	out, outCT, changed, err := TransformNonStreamResponseBody(200, "unknown_mode", in, "application/json")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if changed {
 		t.Fatalf("expected changed=false")
 	}
-	if string(out) != string(in) || outCT != "application/json" {
+	if out != nil || outCT != "application/json" {
 		t.Fatalf("unexpected passthrough result")
 	}
 }
@@ -88,14 +93,110 @@ func TestTransformNonStreamResponseBody_Gzip(t *testing.T) {
 		t.Fatalf("gzip close: %v", err)
 	}
 
-	out, outCT, changed, err := TransformNonStreamResponseBody(200, "openai_responses_to_openai_chat", buf.Bytes(), "application/json", "gzip")
+	decoded, _, err := DecodeResponseBody(buf.Bytes(), "gzip")
+	if err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	var root map[string]any
+	if err := json.Unmarshal(decoded, &root); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	out, outCT, changed, err := TransformNonStreamResponseBody(200, "openai_responses_to_openai_chat", root, "application/json")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !changed || outCT != contentTypeJSON {
 		t.Fatalf("unexpected transform flags changed=%v outCT=%q", changed, outCT)
 	}
-	if !containsAll(string(out), `"object":"chat.completion"`, `"Hello"`) {
-		t.Fatalf("unexpected output: %s", string(out))
+	encoded, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("unexpected marshal error: %v", err)
+	}
+	if !containsAll(string(encoded), `"object":"chat.completion"`, `"Hello"`) {
+		t.Fatalf("unexpected output: %s", string(encoded))
+	}
+}
+
+func TestMapResponseBodyByMode_AnthropicToOpenAIChat(t *testing.T) {
+	in := []byte(`{
+  "id":"msg_123",
+  "model":"claude-sonnet-4-5",
+  "stop_reason":"tool_use",
+  "content":[
+    {"type":"text","text":"hello from claude"},
+    {"type":"tool_use","id":"toolu_1","name":"lookup","input":{"city":"Boston"}}
+  ]
+}`)
+	out, outCT, err := MapResponseBodyByMode("anthropic_to_openai_chat", in)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if outCT != contentTypeJSON {
+		t.Fatalf("unexpected content type: %s", outCT)
+	}
+	encoded, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("unexpected marshal error: %v", err)
+	}
+	s := string(encoded)
+	if !containsAll(s,
+		`"object":"chat.completion"`,
+		`"model":"claude-sonnet-4-5"`,
+		`"content":"hello from claude"`,
+		`"name":"lookup"`,
+		`"arguments":"{\"city\":\"Boston\"}"`,
+	) {
+		t.Fatalf("unexpected output: %s", s)
+	}
+}
+
+func TestMapResponseBodyByMode_GeminiToOpenAIChat(t *testing.T) {
+	in := []byte(`{
+  "modelVersion":"gemini-2.5-pro",
+  "candidates":[
+    {
+      "index":0,
+      "finishReason":"STOP",
+      "content":{
+        "role":"model",
+        "parts":[
+          {"text":"hello"},
+          {"functionCall":{"name":"lookup_weather","args":{"city":"Boston"}}},
+          {"inlineData":{"mimeType":"image/png","data":"YWJj"}}
+        ]
+      }
+    }
+  ],
+  "usageMetadata":{
+    "promptTokenCount":11,
+    "totalTokenCount":19,
+    "thoughtsTokenCount":3
+  }
+}`)
+	out, outCT, err := MapResponseBodyByMode("gemini_to_openai_chat", in)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if outCT != contentTypeJSON {
+		t.Fatalf("unexpected content type: %s", outCT)
+	}
+	encoded, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("unexpected marshal error: %v", err)
+	}
+	s := string(encoded)
+	if !containsAll(s,
+		`"object":"chat.completion"`,
+		`"model":"gemini-2.5-pro"`,
+		`"content":"hello"`,
+		`"finish_reason":"STOP"`,
+		`"name":"lookup_weather"`,
+		`"name":"emit_media"`,
+		`"prompt_tokens":11`,
+		`"completion_tokens":8`,
+		`"total_tokens":19`,
+		`"reasoning_tokens":3`,
+	) {
+		t.Fatalf("unexpected output: %s", s)
 	}
 }

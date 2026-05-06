@@ -168,9 +168,15 @@ func (c *Client) handleNonStreamResponse(
 		trafficdump.AppendUpstreamResponse(gc, resp.Status, resp.Header, limited, binary, truncated)
 	}
 
-	respOutBody, outCT, didTransform, err := mapNonStreamResponse(respBody, resp, respDir)
+	respOutBody, respOutObj, outCT, didTransform, err := mapNonStreamResponse(respBody, resp, respDir)
 	if err != nil {
 		return nil, err
+	}
+	if respOutBody == nil && respOutObj != nil {
+		respOutBody, err = json.Marshal(respOutObj)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// metrics are extracted from the response after response mapping (resp_map),
@@ -188,7 +194,7 @@ func (c *Client) handleNonStreamResponse(
 	}
 	finishReason := ""
 	if estimateEnabled {
-		finishReason = extractNonStreamFinishReason(pf, m, metricsBody)
+		finishReason = extractNonStreamFinishReason(pf, m, respOutObj, metricsBody)
 	}
 	cost := map[string]any(nil)
 	if estimateEnabled {
@@ -200,7 +206,7 @@ func (c *Client) handleNonStreamResponse(
 	if respDir != nil {
 		responseJSONOps = respDir.JSONOps
 	}
-	respOutBody, outCT, didTransform, err = applyNonStreamResponseJSONOps(respOutBody, outCT, resp, m, responseJSONOps, didTransform)
+	respOutBody, outCT, didTransform, err = applyNonStreamResponseJSONOps(respOutObj, respOutBody, outCT, resp, m, responseJSONOps, didTransform)
 	if err != nil {
 		return nil, err
 	}
@@ -240,19 +246,39 @@ func (c *Client) handleNonStreamResponse(
 }
 
 // mapNonStreamResponse requires a non-nil upstream response from the non-stream proxy path.
-func mapNonStreamResponse(respBody []byte, resp *http.Response, respDir *dslconfig.ResponseDirective) ([]byte, string, bool, error) {
+func mapNonStreamResponse(respBody []byte, resp *http.Response, respDir *dslconfig.ResponseDirective) ([]byte, map[string]any, string, bool, error) {
 	respOutBody := respBody
 	outCT := resp.Header.Get("Content-Type")
 	if respDir == nil || respDir.Op != "resp_map" {
-		return respOutBody, outCT, false, nil
+		return respOutBody, nil, outCT, false, nil
 	}
-	return apitransform.TransformNonStreamResponseBody(
+	if resp.StatusCode >= http.StatusBadRequest {
+		return respOutBody, nil, outCT, false, nil
+	}
+	if !apitransform.SupportsResponseMapMode(respDir.Mode) {
+		return respOutBody, nil, outCT, false, nil
+	}
+	decoded, _, err := apitransform.DecodeResponseBody(respBody, resp.Header.Get("Content-Encoding"))
+	if err != nil {
+		return nil, nil, outCT, false, err
+	}
+	var root map[string]any
+	if err := json.Unmarshal(decoded, &root); err != nil {
+		return nil, nil, outCT, false, err
+	}
+	outObj, outCT, changed, err := apitransform.TransformNonStreamResponseBody(
 		resp.StatusCode,
 		respDir.Mode,
-		respBody,
+		root,
 		outCT,
-		resp.Header.Get("Content-Encoding"),
 	)
+	if err != nil {
+		return nil, nil, outCT, changed, err
+	}
+	if !changed {
+		return respOutBody, outObj, outCT, false, nil
+	}
+	return nil, outObj, outCT, true, nil
 }
 
 func estimateNonStreamUsage(
@@ -312,10 +338,24 @@ func populateNonStreamDerivedUsage(meta *dslmeta.Meta, pf dslconfig.ProviderFile
 	}
 }
 
-func extractNonStreamFinishReason(pf dslconfig.ProviderFile, meta *dslmeta.Meta, metricsBody []byte) string {
+func extractNonStreamFinishReason(
+	pf dslconfig.ProviderFile,
+	meta *dslmeta.Meta,
+	metricsObj map[string]any,
+	metricsBody []byte,
+) string {
 	finishReason := ""
 	if frCfg, ok := pf.Finish.Select(meta); ok {
-		if v, err := dslconfig.ExtractFinishReason(meta, frCfg, metricsBody); err == nil {
+		var (
+			v   string
+			err error
+		)
+		if metricsObj != nil {
+			v, err = dslconfig.ExtractFinishReasonObject(meta, frCfg, metricsObj)
+		} else {
+			v, err = dslconfig.ExtractFinishReason(meta, frCfg, metricsBody)
+		}
+		if err == nil {
 			finishReason = strings.TrimSpace(v)
 		}
 	}
@@ -323,6 +363,7 @@ func extractNonStreamFinishReason(pf dslconfig.ProviderFile, meta *dslmeta.Meta,
 }
 
 func applyNonStreamResponseJSONOps(
+	respOutObj map[string]any,
 	respOutBody []byte,
 	outCT string,
 	resp *http.Response,
@@ -334,31 +375,36 @@ func applyNonStreamResponseJSONOps(
 		return respOutBody, outCT, didTransform, nil
 	}
 
-	ctLower := strings.ToLower(strings.TrimSpace(outCT))
-	if !apitransform.ResponseBodyLooksLikeJSON(outCT, respOutBody) {
+	if respOutObj == nil && !apitransform.ResponseBodyLooksLikeJSON(outCT, respOutBody) {
 		return respOutBody, outCT, didTransform, nil
 	}
 
-	bodyForOps := respOutBody
-	decoded, changed, err := apitransform.DecodeResponseBody(respOutBody, resp.Header.Get("Content-Encoding"))
+	if respOutObj == nil {
+		decoded, changed, err := apitransform.DecodeResponseBody(respOutBody, resp.Header.Get("Content-Encoding"))
+		if err != nil {
+			return nil, "", false, err
+		}
+		if changed {
+			respOutBody = decoded
+		}
+		if err := json.Unmarshal(respOutBody, &respOutObj); err != nil {
+			return nil, "", false, err
+		}
+		if respOutObj == nil {
+			return nil, "", false, fmt.Errorf("response json ops require json object body")
+		}
+	}
+
+	mappedObj, err := dslconfig.ApplyJSONOps(meta, respOutObj, ops)
 	if err != nil {
 		return nil, "", false, err
 	}
-	if changed {
-		bodyForOps = decoded
-		didTransform = true
-	}
-	outBytes, applied, err := apitransform.ApplyResponseJSONOpsBody(bodyForOps, outCT, func(obj map[string]any) (any, error) {
-		return dslconfig.ApplyJSONOps(meta, obj, ops)
-	})
+	outBytes, err := json.Marshal(mappedObj)
 	if err != nil {
 		return nil, "", false, err
-	}
-	if !applied {
-		return respOutBody, outCT, didTransform, nil
 	}
 	respOutBody = outBytes
-	if strings.TrimSpace(outCT) == "" || !strings.Contains(ctLower, "json") {
+	if !strings.Contains(outCT, "json") {
 		outCT = "application/json"
 	}
 	return respOutBody, outCT, true, nil
@@ -406,6 +452,7 @@ func (c *Client) handleStreamResponse(
 	usageCfg, _ := pf.Usage.Select(m)
 	finishCfg, _ := pf.Finish.Select(m)
 	streamAgg := dslconfig.NewStreamMetricsAggregator(m, usageCfg, finishCfg)
+	tapRawSSEForMetrics := shouldTapRawSSEForMetrics(usageCfg, finishCfg)
 
 	var metricsTap *sseMetricsTap
 	upstreamCT := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Type")))
@@ -416,7 +463,7 @@ func (c *Client) handleStreamResponse(
 	dump := newStreamDumpState(gc)
 	defer dump.Append(gc, resp)
 
-	n, firstWriteAt, err := streamToDownstream(gc, m, respDir, resp, usageTail, metricsTap, dump)
+	n, firstWriteAt, err := streamToDownstream(gc, m, respDir, resp, usageTail, metricsTap, tapRawSSEForMetrics, dump)
 	ignoredDisconnect := isClientDisconnectErr(err)
 	dump.SetStreamResult(n, err, ignoredDisconnect)
 	if err != nil && !ignoredDisconnect {
@@ -476,6 +523,12 @@ func (c *Client) handleStreamResponse(
 		TTFTMs:         ttftMs,
 		TPS:            tps,
 	}, nil
+}
+
+func shouldTapRawSSEForMetrics(usageCfg *dslconfig.UsageExtractConfig, finishCfg *dslconfig.FinishReasonExtractConfig) bool {
+	// Stream metrics should be tapped from upstream raw SSE before any response conversion.
+	// This is not anthropic-specific: any configured stream metrics extraction should use raw events.
+	return usageCfg != nil || finishCfg != nil
 }
 
 // logUsageFactsDebug requires a non-nil Client receiver.
@@ -810,13 +863,11 @@ func isEffectiveStream(clientStream bool, resp *http.Response) bool {
 	return strings.Contains(upstreamCT, "text/event-stream")
 }
 
-// httpClientForProvider falls back to http.DefaultClient when the receiver or base client is nil.
+// httpClientForProvider selects the upstream HTTP client for one normalized provider name.
+// The receiver is expected to be non-nil. A nil base client falls back to http.DefaultClient.
 // provider is expected to be pre-normalized without leading or trailing spaces.
 // c.ProxyByProvider keys and values are expected to be pre-normalized without leading or trailing spaces.
 func (c *Client) httpClientForProvider(provider string) (*http.Client, error) {
-	if c == nil {
-		return http.DefaultClient, nil
-	}
 	base := c.HTTP
 	if base == nil {
 		base = http.DefaultClient

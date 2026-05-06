@@ -29,7 +29,7 @@ func TestDecodeResponseBody_Gzip(t *testing.T) {
 }
 
 func TestApplyResponseJSONOpsBody(t *testing.T) {
-	got, changed, err := ApplyResponseJSONOpsBody([]byte(`{"a":1}`), "application/json", func(obj map[string]any) (any, error) {
+	got, changed, err := ApplyResponseJSONOpsBody(map[string]any{"a": 1}, func(obj map[string]any) (map[string]any, error) {
 		obj["b"] = 2
 		return obj, nil
 	})
@@ -39,7 +39,7 @@ func TestApplyResponseJSONOpsBody(t *testing.T) {
 	if !changed {
 		t.Fatalf("expected changed=true")
 	}
-	if !containsAll(string(got), `"a":1`, `"b":2`) {
-		t.Fatalf("unexpected output: %s", string(got))
+	if got["a"] != 1 || got["b"] != 2 {
+		t.Fatalf("unexpected output: %#v", got)
 	}
 }

@@ -85,7 +85,85 @@ func TestMapClaudeMessagesResponseToOpenAIChatCompletions_Basic(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	s := string(out)
-	if !containsAll(s, `"object":"chat.completion"`, `"model":"claude-3-5-sonnet-20240620"`, `"content":"hello"`, `"total_tokens":7`) {
+	if !containsAll(s, `"object":"chat.completion"`, `"model":"claude-3-5-sonnet-20240620"`, `"content":"hello"`, `"finish_reason":"stop"`) {
 		t.Fatalf("unexpected mapped output: %s", s)
+	}
+}
+
+func TestMapClaudeMessagesResponseToOpenAIChatCompletions_SingleChoiceAggregatesContentAndToolCalls(t *testing.T) {
+	in := []byte(`{
+  "id":"msg_123",
+  "type":"message",
+  "role":"assistant",
+  "model":"claude-3-5-sonnet-20240620",
+  "content":[
+    {"type":"text","text":"hello "},
+    {"type":"thinking","thinking":"internal"},
+    {"type":"text","text":"world"},
+    {"type":"tool_use","id":"tool_1","name":"search","input":{"q":"x"}}
+  ],
+  "stop_reason":"tool_use",
+  "usage":{"input_tokens":3,"output_tokens":4}
+}`)
+	out, err := MapClaudeMessagesResponseToOpenAIChatCompletions(in)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(out, &obj); err != nil {
+		t.Fatalf("unexpected unmarshal error: %v", err)
+	}
+	choices, ok := obj["choices"].([]any)
+	if !ok || len(choices) != 1 {
+		t.Fatalf("choices must contain a single item, got %#v", obj["choices"])
+	}
+	choice, ok := choices[0].(map[string]any)
+	if !ok {
+		t.Fatalf("choice must be object, got %#v", choices[0])
+	}
+	msg, ok := choice["message"].(map[string]any)
+	if !ok {
+		t.Fatalf("choice.message must be object, got %#v", choice["message"])
+	}
+	if msg["content"] != "hello internalworld" {
+		t.Fatalf("unexpected aggregated content: %#v", msg["content"])
+	}
+	toolCalls, ok := msg["tool_calls"].([]any)
+	if !ok || len(toolCalls) != 1 {
+		t.Fatalf("tool_calls must contain one item, got %#v", msg["tool_calls"])
+	}
+	if choice["finish_reason"] != "tool_calls" {
+		t.Fatalf("unexpected finish_reason: %#v", choice["finish_reason"])
+	}
+}
+
+func TestMapClaudeMessagesResponseToOpenAIChatCompletions_FinishReasonMaxTokensToLength(t *testing.T) {
+	in := []byte(`{
+  "id":"msg_123",
+  "type":"message",
+  "role":"assistant",
+  "model":"claude-3-5-sonnet-20240620",
+  "content":[{"type":"text","text":"hello"}],
+  "stop_reason":"max_tokens",
+  "usage":{"input_tokens":3,"output_tokens":4}
+}`)
+	out, err := MapClaudeMessagesResponseToOpenAIChatCompletions(in)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(out, &obj); err != nil {
+		t.Fatalf("unexpected unmarshal error: %v", err)
+	}
+	choices, ok := obj["choices"].([]any)
+	if !ok || len(choices) != 1 {
+		t.Fatalf("choices must contain a single item, got %#v", obj["choices"])
+	}
+	choice, ok := choices[0].(map[string]any)
+	if !ok {
+		t.Fatalf("choice must be object, got %#v", choices[0])
+	}
+	if choice["finish_reason"] != "length" {
+		t.Fatalf("unexpected finish_reason: %#v", choice["finish_reason"])
 	}
 }

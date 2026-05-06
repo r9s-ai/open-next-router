@@ -11,17 +11,15 @@ import (
 	"time"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/apitypes"
-	"github.com/r9s-ai/open-next-router/onr-core/pkg/jsonutil"
 )
 
 // TransformGeminiSSEToOpenAIChatCompletionsSSE converts Gemini SSE responses into
 // OpenAI chat.completions SSE chunks and appends a final data: [DONE].
 func TransformGeminiSSEToOpenAIChatCompletionsSSE(r io.Reader, w io.Writer) error {
 	s := &geminiSSEToChatState{
-		w:         w,
-		chatID:    "chatcmpl_" + strconv.FormatInt(time.Now().UnixNano(), 10),
-		created:   time.Now().Unix(),
-		roleByIdx: map[int]bool{},
+		w:       w,
+		chatID:  "chatcmpl_" + strconv.FormatInt(time.Now().UnixNano(), 10),
+		created: time.Now().Unix(),
 	}
 
 	br := bufio.NewReader(r)
@@ -69,54 +67,40 @@ type geminiSSEToChatState struct {
 	chatID  string
 	created int64
 	model   string
-
-	roleByIdx map[int]bool
 }
 
 func (s *geminiSSEToChatState) handlePayload(payload []byte) error {
-	var root map[string]any
+	var root apitypes.GenerateContentStreamResponse
 	if err := json.Unmarshal(payload, &root); err != nil {
 		return nil
 	}
-	if m := strings.TrimSpace(jsonutil.CoerceString(root["modelVersion"])); m != "" {
+	if m := strings.TrimSpace(root.ModelVersion); m != "" {
 		s.model = m
-	} else if m := strings.TrimSpace(jsonutil.CoerceString(root["model"])); m != "" {
+	} else if m := strings.TrimSpace(root.Model); m != "" {
 		s.model = m
 	}
 
-	candidates, _ := root["candidates"].([]any)
-	if len(candidates) > 0 {
-		for i, raw := range candidates {
-			cand, _ := raw.(map[string]any)
-			if cand == nil {
-				continue
-			}
-			idx := jsonutil.CoerceInt(cand["index"])
+	if len(root.Candidates) > 0 {
+		choices := make([]any, 0, len(root.Candidates))
+		for i, cand := range root.Candidates {
+			idx := cand.Index
 			if idx < 0 {
 				idx = i
 			}
-
-			content, _ := cand["content"].(map[string]any)
-			parts, _ := content["parts"].([]any)
-			text := geminiPartsToText(parts)
-			rawFinish := strings.TrimSpace(jsonutil.CoerceString(cand["finishReason"]))
-			finish := ""
-			if rawFinish != "" {
-				finish = mapGeminiFinishToOpenAI(rawFinish)
+			content, toolCalls := geminiPartsToContentAndToolCalls(cand.Content.Parts)
+			delta := apitypes.JSONObject{
+				"role": openAIRoleAssistant,
 			}
-
-			delta := apitypes.JSONObject{}
-			if !s.roleByIdx[idx] {
-				delta["role"] = openAIRoleAssistant
-				s.roleByIdx[idx] = true
+			if content != "" {
+				delta["content"] = content
 			}
-			if text != "" {
-				delta["content"] = text
+			if len(toolCalls) > 0 {
+				delta["tool_calls"] = toolCalls
 			}
-			if len(delta) == 0 && finish == "" {
+			finish := strings.TrimSpace(cand.FinishReason)
+			if len(delta) == 1 && finish == "" {
 				continue
 			}
-
 			choice := apitypes.JSONObject{
 				"index": idx,
 				"delta": delta,
@@ -124,44 +108,26 @@ func (s *geminiSSEToChatState) handlePayload(payload []byte) error {
 			if finish != "" {
 				choice["finish_reason"] = finish
 			}
+			choices = append(choices, choice)
+		}
+		if len(choices) > 0 {
 			chunk := apitypes.JSONObject{
 				"id":      s.chatID,
 				"object":  "chat.completion.chunk",
 				"created": s.created,
-				"choices": []any{choice},
+				"choices": choices,
 			}
 			if s.model != "" {
 				chunk["model"] = s.model
 			}
+			if usage, err := geminiUsageToChatChunkUsage(root.UsageMetadata); err != nil {
+				return err
+			} else if usage != nil {
+				chunk["usage"] = usage
+			}
 			if err := writeSSEDataJSON(s.w, chunk); err != nil {
 				return err
 			}
-		}
-	}
-
-	if usage, _ := root["usageMetadata"].(map[string]any); usage != nil {
-		p := jsonutil.CoerceInt(usage["promptTokenCount"])
-		c := jsonutil.CoerceInt(usage["candidatesTokenCount"])
-		t := jsonutil.CoerceInt(usage["totalTokenCount"])
-		if t == 0 {
-			t = p + c
-		}
-		chunk := apitypes.JSONObject{
-			"id":      s.chatID,
-			"object":  "chat.completion.chunk",
-			"created": s.created,
-			"choices": []any{},
-			"usage": apitypes.JSONObject{
-				"prompt_tokens":     p,
-				"completion_tokens": c,
-				"total_tokens":      t,
-			},
-		}
-		if s.model != "" {
-			chunk["model"] = s.model
-		}
-		if err := writeSSEDataJSON(s.w, chunk); err != nil {
-			return err
 		}
 	}
 	return nil
@@ -174,16 +140,67 @@ func (s *geminiSSEToChatState) emitDone() error {
 	return nil
 }
 
-func geminiPartsToText(parts []any) string {
+func geminiPartsToContentAndToolCalls(parts []apitypes.Part) (string, []any) {
 	var b strings.Builder
-	for _, raw := range parts {
-		p, _ := raw.(map[string]any)
-		if p == nil {
-			continue
+	toolCalls := make([]any, 0)
+	for idx, part := range parts {
+		if part.Text != "" {
+			b.WriteString(part.Text)
 		}
-		if t := jsonutil.CoerceString(p["text"]); t != "" {
-			b.WriteString(t)
+		if part.FunctionCall != nil && strings.TrimSpace(part.FunctionCall.FunctionName) != "" {
+			args := "{}"
+			if part.FunctionCall.Arguments != nil {
+				if raw, err := json.Marshal(part.FunctionCall.Arguments); err == nil {
+					args = string(raw)
+				}
+			}
+			toolCalls = append(toolCalls, apitypes.JSONObject{
+				"index": idx,
+				"id":    fmt.Sprintf("call_%d_%d", idx, time.Now().UnixNano()),
+				"type":  chatRoleFunction,
+				"function": apitypes.JSONObject{
+					"name":      part.FunctionCall.FunctionName,
+					"arguments": args,
+				},
+			})
+		}
+		if part.InlineData != nil {
+			args, err := json.Marshal(apitypes.JSONObject{
+				"mime":        part.InlineData.MimeType,
+				"data_base64": part.InlineData.Data,
+			})
+			if err != nil {
+				continue
+			}
+			toolCalls = append(toolCalls, apitypes.JSONObject{
+				"index": idx,
+				"id":    fmt.Sprintf("call_media_%d_%d", idx, time.Now().UnixNano()),
+				"type":  chatRoleFunction,
+				"function": apitypes.JSONObject{
+					"name":      "emit_media",
+					"arguments": string(args),
+				},
+			})
 		}
 	}
-	return b.String()
+	return b.String(), toolCalls
+}
+
+func geminiUsageToChatChunkUsage(usage *apitypes.UsageMetadata) (apitypes.JSONObject, error) {
+	if usage == nil {
+		return nil, nil
+	}
+	completionTokens := usage.TotalTokenCount - usage.PromptTokenCount
+	if completionTokens < 0 {
+		completionTokens = 0
+	}
+	out := apitypes.JSONObject{
+		"prompt_tokens":     usage.PromptTokenCount,
+		"completion_tokens": completionTokens,
+		"total_tokens":      usage.TotalTokenCount,
+	}
+	out["completion_tokens_details"] = apitypes.JSONObject{
+		"reasoning_tokens": usage.ThoughtsTokenCount,
+	}
+	return out, nil
 }

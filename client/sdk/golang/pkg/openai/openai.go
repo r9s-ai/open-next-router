@@ -128,8 +128,10 @@ func CreateEmbedding(ctx context.Context, cfg config.ClientConfig, text, model s
 	return embeddingResultFromResponse(resp, model), nil
 }
 
+// chatCompletionText extracts the first text choice from a successful OpenAI
+// chat completion response returned by ChatCompletionService.New.
 func chatCompletionText(resp *openai.ChatCompletion) string {
-	if resp == nil || len(resp.Choices) == 0 {
+	if len(resp.Choices) == 0 {
 		return ""
 	}
 	return resp.Choices[0].Message.Content
@@ -149,8 +151,10 @@ func responseDeltaText(event responses.ResponseStreamEventUnion) string {
 	return event.Delta
 }
 
+// embeddingResultFromResponse converts a successful OpenAI embedding response
+// returned by EmbeddingService.New into the SDK's stable result shape.
 func embeddingResultFromResponse(resp *openai.CreateEmbeddingResponse, model string) EmbeddingResult {
-	if resp == nil || len(resp.Data) == 0 {
+	if len(resp.Data) == 0 {
 		return EmbeddingResult{Object: "embedding", Model: model}
 	}
 	return EmbeddingResult{

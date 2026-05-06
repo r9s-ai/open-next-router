@@ -129,6 +129,17 @@ func ExtractFinishReason(meta *dslmeta.Meta, cfg *FinishReasonExtractConfig, res
 	if root == nil {
 		return "", nil
 	}
+	return ExtractFinishReasonObject(meta, cfg, root)
+}
+
+// ExtractFinishReasonObject extracts finish_reason from a decoded JSON object (best-effort).
+// Returns empty string when it cannot be extracted.
+// ExtractFinishReasonObject requires a selected FinishReasonExtractConfig and is intended
+// for non-stream callers that already have a decoded response object.
+func ExtractFinishReasonObject(meta *dslmeta.Meta, cfg *FinishReasonExtractConfig, root map[string]any) (string, error) {
+	if root == nil {
+		return "", nil
+	}
 	return extractFinishReasonFromRoot(meta, cfg, root)
 }
 

@@ -23,6 +23,23 @@ func TestExtractFinishReason_OpenAI(t *testing.T) {
 	}
 }
 
+func TestExtractFinishReasonObject_OpenAI(t *testing.T) {
+	meta := &dslmeta.Meta{API: "chat.completions"}
+	root := map[string]any{
+		"choices": []any{
+			map[string]any{"index": float64(0), "finish_reason": "stop"},
+		},
+	}
+	_, cfg := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
+	v, err := ExtractFinishReasonObject(meta, cfg, root)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if v != "stop" {
+		t.Fatalf("unexpected finish_reason: %q", v)
+	}
+}
+
 func TestExtractFinishReason_OpenAIResponsesIncompleteMaxOutputTokens(t *testing.T) {
 	meta := &dslmeta.Meta{API: "responses"}
 	body := []byte(`{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[]}`)
@@ -41,6 +58,25 @@ func TestExtractFinishReason_OpenAIResponsesContentFilter(t *testing.T) {
 	body := []byte(`{"status":"incomplete","incomplete_details":{"reason":"content_filter"},"output":[]}`)
 	_, cfg := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
 	v, err := ExtractFinishReason(meta, cfg, body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if v != "content_filter" {
+		t.Fatalf("unexpected finish_reason: %q", v)
+	}
+}
+
+func TestExtractFinishReasonObject_OpenAIResponsesContentFilter(t *testing.T) {
+	meta := &dslmeta.Meta{API: "responses"}
+	root := map[string]any{
+		"status": "incomplete",
+		"incomplete_details": map[string]any{
+			"reason": "content_filter",
+		},
+		"output": []any{},
+	}
+	_, cfg := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
+	v, err := ExtractFinishReasonObject(meta, cfg, root)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
