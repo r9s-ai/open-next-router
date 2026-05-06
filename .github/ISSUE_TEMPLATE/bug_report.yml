@@ -1,0 +1,87 @@
+name: Bug report
+description: Report a reproducible defect in open-next-router.
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please provide enough detail for maintainers to reproduce, triage, and fix it quickly.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What went wrong?
+      placeholder: Describe the observed failure or incorrect behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened? Include error messages, logs, screenshots, or traces if helpful.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: List the minimal steps or repository needed to reproduce the issue.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: minimal-repro
+    attributes:
+      label: Minimal reproduction
+      description: Link a minimal repo, branch, gist, or snippet if available.
+    validations:
+      required: false
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Provide the relevant runtime and project environment.
+      placeholder: |
+        - OS:
+        - Node.js version:
+        - Package manager and version:
+        - open-next-router version / commit:
+        - Next.js version:
+        - Deployment target:
+    validations:
+      required: false
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant configuration
+      description: Add relevant config files or options. Mask secrets before posting.
+      render: yaml
+    validations:
+      required: false
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: Who is affected, and how severe is it?
+      placeholder: e.g. Blocks production deploys, affects local dev only, intermittent routing failure.
+    validations:
+      required: false
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Anything else that may help triage the issue.
+    validations:
+      required: false

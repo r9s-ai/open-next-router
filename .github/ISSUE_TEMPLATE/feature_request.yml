@@ -1,0 +1,63 @@
+name: Feature request
+description: Propose a new capability or behavior change for open-next-router.
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please include the original requirement context before requesting a feature or behavior change.
+  - type: textarea
+    id: background
+    attributes:
+      label: Background / original requirement
+      description: What user scenario, product requirement, or integration need motivates this change?
+      placeholder: Describe where the requirement came from and why it is needed now.
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What limitation, pain point, or missing capability should this address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the desired behavior or implementation direction.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What other approaches were considered? Why are they insufficient?
+    validations:
+      required: false
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope / affected components
+      description: Which modules, APIs, runtimes, deployment flows, or users are affected?
+    validations:
+      required: false
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: What must be true for this issue to be considered done?
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: false
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks / rollout notes
+      description: Compatibility, migration, security, observability, or rollout concerns.
+    validations:
+      required: false
