@@ -182,6 +182,8 @@ func MapClaudeMessagesResponseToOpenAIChatCompletions(body []byte) ([]byte, erro
 
 // MapClaudeMessagesResponseToOpenAIChatCompletionsObject maps Claude messages response object
 // to OpenAI chat.completions response object.
+// The mapping intentionally emits a single OpenAI choice and aggregates supported Claude
+// content blocks (text/thinking + tool_use metadata) into one assistant message.
 func MapClaudeMessagesResponseToOpenAIChatCompletionsObject(root apitypes.JSONObject) (apitypes.JSONObject, error) {
 	var src apitypes.ClaudeResponse
 	if err := src.FromMap(root); err != nil {

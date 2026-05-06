@@ -250,6 +250,8 @@ func mapStringFloat64Value(m map[string]any, key string) (map[string]float64, er
 	return out, nil
 }
 
+// mapStringAnySliceValue returns a shallow-copied []map[string]any.
+// It copies each top-level map entry, but does not deep-copy nested maps/slices.
 func mapStringAnySliceValue(m map[string]any, key string) ([]map[string]any, error) {
 	v, ok := m[key]
 	if !ok || v == nil {
@@ -274,6 +276,8 @@ func mapStringAnySliceValue(m map[string]any, key string) ([]map[string]any, err
 	return out, nil
 }
 
+// mapListValue returns a shallow-copied []map[string]any.
+// It copies each top-level map entry, but does not deep-copy nested maps/slices.
 func mapListValue(m map[string]any, key string) ([]map[string]any, error) {
 	v, ok := m[key]
 	if !ok || v == nil {
