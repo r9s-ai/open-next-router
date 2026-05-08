@@ -1390,6 +1390,7 @@ Multiple: yes
 ```
 
 - Reads original downstream user request header values, splits them into items, and writes them as a JSON string array. It does not read the upstream headers prepared by request header rules.
+- Extra value patterns are not accepted here. Use `json_filter_values` after `json_set_header_values` when only a whitelist should be kept.
 - If no header item exists, the JSON path is not written.
 - JSONPath is limited to object paths: `$.a.b.c`.
 

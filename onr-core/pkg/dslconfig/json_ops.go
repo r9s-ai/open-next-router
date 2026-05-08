@@ -60,6 +60,9 @@ func ApplyJSONOps(meta *dslmeta.Meta, in map[string]any, ops []JSONOp) (map[stri
 			}
 			_ = opChanged
 		case jsonOpSetHeaderVals:
+			// Filtering is intentionally handled by a following json_filter_values op.
+			// The parser rejects extra value patterns on json_set_header_values so
+			// config authors do not assume this op filters values by itself.
 			vals := headerValuesForJSON(meta, op.HeaderName, op.Separator)
 			if len(vals) == 0 {
 				continue

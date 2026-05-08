@@ -365,7 +365,7 @@ request {
 - `json_set` 的值表达式支持：`true/false/null`、整数、字符串字面量、变量/concat
 - `json_set_if_absent`：仅当路径不存在时写入；已存在值会保留
 - `json_wrap_input_text`：当路径值是字符串时，将其包装成 OpenAI Responses `input` message 列表；路径不存在或值已经是数组时为 no-op，其他类型会报错
-- `json_set_header_values`：从原始下游用户请求 header 中读取条目并写成 JSON 字符串数组，不读取 request header 规则准备发送给上游的 header。默认按逗号拆分，可用 `separator="<sep>"` 覆盖
+- `json_set_header_values`：从原始下游用户请求 header 中读取条目并写成 JSON 字符串数组，不读取 request header 规则准备发送给上游的 header。默认按逗号拆分，可用 `separator="<sep>"` 覆盖；不接受额外过滤参数，需要过滤时在后面显式配置 `json_filter_values`
 - `json_filter_values`：过滤已有 JSON 字符串数组，只保留允许的值或通配符匹配项
 - `json_del_with_condition`：当对象字段匹配允许值或通配符时，删除该对象或数组中的匹配对象
 - `after_req_map { ... }`：在 `req_map` 之后执行内部 JSON 操作；如果没有配置 `req_map`，则在普通请求 JSON 操作之后执行

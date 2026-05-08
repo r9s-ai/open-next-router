@@ -501,15 +501,8 @@ func buildJSONSetHeaderValuesOp(s *scanner, pathTok token, path string, headerNa
 		op.Separator = unquoteString(valueTok.text)
 		args = args[:len(args)-3]
 	}
-	for _, tok := range args {
-		switch tok.kind {
-		case tokIdent:
-			op.Patterns = append(op.Patterns, strings.TrimSpace(tok.text))
-		case tokString:
-			op.Patterns = append(op.Patterns, strings.TrimSpace(unquoteString(tok.text)))
-		default:
-			return JSONOp{}, s.errAt(tok, "json_set_header_values expects patterns followed by optional separator=\"<sep>\"")
-		}
+	if len(args) > 0 {
+		return JSONOp{}, s.errAt(args[0], `json_set_header_values only accepts path, header name, and optional separator="<sep>"; use json_filter_values to filter values`)
 	}
 	return op, nil
 }

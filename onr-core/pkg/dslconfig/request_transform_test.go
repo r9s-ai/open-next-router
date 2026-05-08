@@ -217,6 +217,27 @@ provider "t" {
 	}
 }
 
+func TestRequestJSONSetHeaderValues_RejectsUnusedExtraArgs(t *testing.T) {
+	conf := `
+syntax "next-router/0.1";
+
+provider "t" {
+  defaults {
+    request {
+      json_set_header_values "$.anthropic_beta" "anthropic-beta" "computer-use-2025-01-24";
+    }
+  }
+}
+`
+	_, _, _, _, _, _, _, _, _, err := parseProviderConfig("t.conf", conf)
+	if err == nil {
+		t.Fatalf("expected parse error")
+	}
+	if !strings.Contains(err.Error(), "use json_filter_values to filter values") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestRequestAfterReqMap_Parsed(t *testing.T) {
 	conf := `
 syntax "next-router/0.1";
