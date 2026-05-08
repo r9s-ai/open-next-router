@@ -12,4 +12,7 @@ const (
 	jsonOpDel           = "json_del"
 	jsonOpRename        = "json_rename"
 	jsonOpWrapInputText = "json_wrap_input_text"
+	jsonOpSetHeaderVals = "json_set_header_values"
+	jsonOpFilterValues  = "json_filter_values"
+	jsonOpDelWithCond   = "json_del_with_condition"
 )

@@ -58,11 +58,49 @@ func ApplyJSONOps(meta *dslmeta.Meta, in map[string]any, ops []JSONOp) (map[stri
 				return nil, err
 			}
 			_ = opChanged
+		case jsonOpSetHeaderVals:
+			vals := headerValuesForJSON(meta, op.HeaderName, op.Separator)
+			if len(vals) == 0 {
+				continue
+			}
+			opChanged, err := jsonSet(obj, op.Path, vals)
+			if err != nil {
+				return nil, err
+			}
+			_ = opChanged
+		case jsonOpFilterValues:
+			opChanged, err := jsonFilterValues(obj, op.Path, op.Patterns)
+			if err != nil {
+				return nil, err
+			}
+			_ = opChanged
+		case jsonOpDelWithCond:
+			opChanged, err := jsonDelWithCondition(obj, op.Path, op.FieldName, op.Patterns)
+			if err != nil {
+				return nil, err
+			}
+			_ = opChanged
 		default:
 			return nil, fmt.Errorf("unsupported json op %q", op.Op)
 		}
 	}
 	return obj, nil
+}
+
+func headerValuesForJSON(meta *dslmeta.Meta, headerName string, separator string) []string {
+	name := strings.TrimSpace(headerName)
+	if meta == nil || meta.RequestHeaders == nil || name == "" {
+		return nil
+	}
+	return splitHeaderValues(meta.RequestHeaders.Values(name), separator)
+}
+
+func lowerPatterns(patterns []string) []string {
+	out := make([]string, 0, len(patterns))
+	for _, pattern := range patterns {
+		out = append(out, strings.ToLower(strings.TrimSpace(pattern)))
+	}
+	return out
 }
 
 func jsonPathExists(root map[string]any, path string) (bool, error) {
@@ -280,6 +318,142 @@ func jsonWrapInputText(root map[string]any, path string) (bool, error) {
 		return false, nil
 	}
 	return false, fmt.Errorf("json_wrap_input_text %s expects string or array, got %T", path, val)
+}
+
+func jsonFilterValues(root map[string]any, path string, patterns []string) (bool, error) {
+	parts, err := parseObjectPath(path)
+	if err != nil {
+		return false, err
+	}
+	if len(parts) == 0 {
+		return false, nil
+	}
+	cur := root
+	for i := 0; i < len(parts)-1; i++ {
+		next, ok := cur[parts[i]]
+		if !ok {
+			return false, nil
+		}
+		m, ok := next.(map[string]any)
+		if !ok {
+			return false, nil
+		}
+		cur = m
+	}
+	last := parts[len(parts)-1]
+	val, ok := cur[last]
+	if !ok {
+		return false, nil
+	}
+	values, ok := stringSliceValue(val)
+	if !ok {
+		return false, fmt.Errorf("json_filter_values %s expects string array, got %T", path, val)
+	}
+	loweredPatterns := lowerPatterns(patterns)
+	filtered := make([]string, 0, len(values))
+	for _, value := range values {
+		if matchesAnyHeaderValuePattern(strings.ToLower(value), loweredPatterns) {
+			filtered = append(filtered, value)
+		}
+	}
+	if len(filtered) == 0 {
+		delete(cur, last)
+		return true, nil
+	}
+	if reflect.DeepEqual(values, filtered) {
+		return false, nil
+	}
+	cur[last] = filtered
+	return true, nil
+}
+
+func stringSliceValue(value any) ([]string, bool) {
+	switch typed := value.(type) {
+	case []string:
+		return typed, true
+	case []any:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			s, ok := item.(string)
+			if !ok {
+				return nil, false
+			}
+			out = append(out, s)
+		}
+		return out, true
+	default:
+		return nil, false
+	}
+}
+
+func jsonDelWithCondition(root map[string]any, path string, fieldName string, patterns []string) (bool, error) {
+	parent, key, ok, err := jsonParentAndKey(root, path)
+	if err != nil || !ok {
+		return false, err
+	}
+	val, ok := parent[key]
+	if !ok {
+		return false, nil
+	}
+	switch typed := val.(type) {
+	case []any:
+		filtered := make([]any, 0, len(typed))
+		for _, item := range typed {
+			obj, ok := item.(map[string]any)
+			if ok && jsonObjectFieldMatches(obj, fieldName, patterns) {
+				continue
+			}
+			filtered = append(filtered, item)
+		}
+		if len(filtered) == len(typed) {
+			return false, nil
+		}
+		if len(filtered) == 0 {
+			delete(parent, key)
+			return true, nil
+		}
+		parent[key] = filtered
+		return true, nil
+	case map[string]any:
+		if !jsonObjectFieldMatches(typed, fieldName, patterns) {
+			return false, nil
+		}
+		delete(parent, key)
+		return true, nil
+	default:
+		return false, fmt.Errorf("json_del_with_condition %s expects object or array, got %T", path, val)
+	}
+}
+
+func jsonObjectFieldMatches(obj map[string]any, fieldName string, patterns []string) bool {
+	fieldValue, ok := obj[strings.TrimSpace(fieldName)].(string)
+	if !ok {
+		return false
+	}
+	return matchesAnyHeaderValuePattern(strings.ToLower(fieldValue), lowerPatterns(patterns))
+}
+
+func jsonParentAndKey(root map[string]any, path string) (map[string]any, string, bool, error) {
+	parts, err := parseObjectPath(path)
+	if err != nil {
+		return nil, "", false, err
+	}
+	if len(parts) == 0 {
+		return nil, "", false, nil
+	}
+	cur := root
+	for i := 0; i < len(parts)-1; i++ {
+		next, ok := cur[parts[i]]
+		if !ok {
+			return nil, "", false, nil
+		}
+		m, ok := next.(map[string]any)
+		if !ok {
+			return nil, "", false, nil
+		}
+		cur = m
+	}
+	return cur, parts[len(parts)-1], true, nil
 }
 
 func parseObjectPath(path string) ([]string, error) {

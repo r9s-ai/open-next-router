@@ -173,6 +173,97 @@ provider "t" {
 	}
 }
 
+func TestRequestJSONSetHeaderValues_Parsed(t *testing.T) {
+	conf := `
+syntax "next-router/0.1";
+
+provider "t" {
+  defaults {
+    request {
+      json_set_header_values "$.anthropic_beta" "anthropic-beta";
+      json_filter_values "$.anthropic_beta" "computer-use-2025-01-24" "context-management-2025-06-27";
+    }
+  }
+}
+`
+	routing, headers, req, response, perr, usage, finish, balance, models, err := parseProviderConfig("t.conf", conf)
+	if err != nil {
+		t.Fatalf("parseProviderConfig: %v", err)
+	}
+	_ = routing
+	_ = headers
+	_ = response
+	_ = perr
+	_ = usage
+	_ = finish
+	_ = balance
+	_ = models
+	if len(req.Defaults.JSONOps) != 2 {
+		t.Fatalf("expected 2 json ops, got %d", len(req.Defaults.JSONOps))
+	}
+	op := req.Defaults.JSONOps[0]
+	if op.Op != "json_set_header_values" {
+		t.Fatalf("unexpected op: %q", op.Op)
+	}
+	if op.Path != "$.anthropic_beta" || op.HeaderName != "anthropic-beta" {
+		t.Fatalf("unexpected op target: %#v", op)
+	}
+	filterOp := req.Defaults.JSONOps[1]
+	if filterOp.Op != "json_filter_values" || filterOp.Path != "$.anthropic_beta" {
+		t.Fatalf("unexpected filter op: %#v", filterOp)
+	}
+	if len(filterOp.Patterns) != 2 || filterOp.Patterns[0] != "computer-use-2025-01-24" || filterOp.Patterns[1] != "context-management-2025-06-27" {
+		t.Fatalf("unexpected patterns: %#v", filterOp.Patterns)
+	}
+}
+
+func TestRequestAfterReqMap_Parsed(t *testing.T) {
+	conf := `
+syntax "next-router/0.1";
+
+provider "t" {
+  defaults {
+    request {
+      json_del "$.stream_options";
+      after_req_map {
+        json_set "$.anthropic_version" "bedrock-2023-05-31";
+        json_set_header_values "$.anthropic_beta" "anthropic-beta";
+        json_filter_values "$.anthropic_beta" "computer-use-2025-01-24";
+        json_del_with_condition "$.tools" "type" "web_search*" "web_fetch*";
+      }
+    }
+  }
+}
+`
+	routing, headers, req, response, perr, usage, finish, balance, models, err := parseProviderConfig("t.conf", conf)
+	if err != nil {
+		t.Fatalf("parseProviderConfig: %v", err)
+	}
+	_ = routing
+	_ = headers
+	_ = response
+	_ = perr
+	_ = usage
+	_ = finish
+	_ = balance
+	_ = models
+	if len(req.Defaults.JSONOps) != 1 {
+		t.Fatalf("expected 1 json op, got %d", len(req.Defaults.JSONOps))
+	}
+	if got := req.Defaults.JSONOps[0].Op; got != "json_del" {
+		t.Fatalf("JSONOps[0].Op=%q", got)
+	}
+	if len(req.Defaults.AfterReqMapJSONOps) != 4 {
+		t.Fatalf("expected 4 after_req_map json ops, got %d", len(req.Defaults.AfterReqMapJSONOps))
+	}
+	if got := req.Defaults.AfterReqMapJSONOps[0].Op; got != "json_set" {
+		t.Fatalf("AfterReqMapJSONOps[0].Op=%q", got)
+	}
+	if got := req.Defaults.AfterReqMapJSONOps[3].Op; got != "json_del_with_condition" {
+		t.Fatalf("AfterReqMapJSONOps[3].Op=%q", got)
+	}
+}
+
 func TestValidateProviderFile_RequestJSONWrapInputTextRejectsInvalidPath(t *testing.T) {
 	path := writeProviderFile(t, "t.conf", `
 syntax "next-router/0.1";

@@ -47,6 +47,56 @@ func TestApply_JSONOpsThenReqMap(t *testing.T) {
 	}
 }
 
+func TestApply_AfterReqMapJSONOpsRunAfterReqMap(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"model":"claude-3-5-sonnet-20241022","messages":[{"role":"user","content":"hello"}]}`)
+	value := map[string]any{
+		"model":    "claude-3-5-sonnet-20241022",
+		"messages": []any{map[string]any{"role": "user", "content": "hello"}},
+	}
+
+	result, err := Apply(&dslmeta.Meta{}, "application/json", body, value, &dslconfig.RequestTransform{
+		ReqMapMode: "openai_chat_to_anthropic_messages",
+		AfterReqMapJSONOps: []dslconfig.JSONOp{
+			{Op: "json_set", Path: "$.anthropic_version", ValueExpr: `"bedrock-2023-05-31"`},
+		},
+	}, ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if got, want := result.Root["anthropic_version"], "bedrock-2023-05-31"; got != want {
+		t.Fatalf("anthropic_version=%v want=%v", got, want)
+	}
+	if _, exists := result.Root["messages"]; !exists {
+		t.Fatalf("expected mapped anthropic messages root, got=%v", result.Root)
+	}
+}
+
+func TestApply_AfterReqMapJSONOpsRunAfterJSONOpsWithoutReqMap(t *testing.T) {
+	t.Parallel()
+
+	value := map[string]any{"model": "gpt-4o-mini"}
+	result, err := Apply(&dslmeta.Meta{}, "application/json", nil, value, &dslconfig.RequestTransform{
+		JSONOps: []dslconfig.JSONOp{
+			{Op: "json_set", Path: "$.metadata.phase", ValueExpr: `"before"`},
+		},
+		AfterReqMapJSONOps: []dslconfig.JSONOp{
+			{Op: "json_set", Path: "$.metadata.phase", ValueExpr: `"after"`},
+		},
+	}, ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	metadata, ok := result.Root["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("metadata=%T", result.Root["metadata"])
+	}
+	if got, want := metadata["phase"], "after"; got != want {
+		t.Fatalf("metadata.phase=%v want=%v", got, want)
+	}
+}
+
 func TestApply_ReqMapOnRawBodyWithoutParsedValue(t *testing.T) {
 	t.Parallel()
 

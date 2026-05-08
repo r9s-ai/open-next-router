@@ -1,6 +1,7 @@
 package dslmeta
 
 import (
+	"net/http"
 	"sync"
 	"time"
 
@@ -44,6 +45,9 @@ type Meta struct {
 	// RequestBody holds the original request body bytes when available.
 	// It is used by request-side usage extraction.
 	RequestBody []byte
+
+	// RequestHeaders holds the original downstream request headers when available.
+	RequestHeaders http.Header
 
 	// DerivedUsage carries runtime-derived usage signals that are not directly
 	// available from request/response JSON, such as audio duration from binary

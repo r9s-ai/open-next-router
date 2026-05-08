@@ -154,6 +154,30 @@ func parseRequestPhaseWithTransform(s *scanner, phase *PhaseHeaders, transform *
 			}
 			return parseJSONWrapInputTextStmt(s, t)
 		},
+		"json_set_header_values": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
+			if t == nil {
+				return skipStmtOrBlock(s)
+			}
+			return parseJSONSetHeaderValuesStmt(s, t)
+		},
+		"json_filter_values": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
+			if t == nil {
+				return skipStmtOrBlock(s)
+			}
+			return parseJSONFilterValuesStmt(s, t)
+		},
+		"json_del_with_condition": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
+			if t == nil {
+				return skipStmtOrBlock(s)
+			}
+			return parseJSONDelWithConditionStmt(s, t)
+		},
+		"after_req_map": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
+			if t == nil {
+				return skipStmtOrBlock(s)
+			}
+			return parseAfterReqMapBlock(s, t)
+		},
 		"req_map": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
 			if t == nil {
 				return skipStmtOrBlock(s)
@@ -192,6 +216,72 @@ func parseRequestPhaseWithTransform(s *scanner, phase *PhaseHeaders, transform *
 			}
 			if err := skipStmtOrBlock(s); err != nil {
 				return err
+			}
+		default:
+			// ignore
+		}
+	}
+}
+
+func parseAfterReqMapBlock(s *scanner, t *RequestTransform) error {
+	lb := s.nextNonTrivia()
+	if lb.kind != tokLBrace {
+		return s.errAt(lb, "expected '{' after after_req_map")
+	}
+	var inner RequestTransform
+	if err := parseRequestJSONOpsOnlyBlock(s, &inner, "after_req_map block"); err != nil {
+		return err
+	}
+	t.AfterReqMapJSONOps = append(t.AfterReqMapJSONOps, inner.JSONOps...)
+	return nil
+}
+
+func parseRequestJSONOpsOnlyBlock(s *scanner, t *RequestTransform, blockName string) error {
+	for {
+		tok := s.nextNonTrivia()
+		switch tok.kind {
+		case tokEOF:
+			return s.errAt(tok, "unexpected EOF in "+blockName)
+		case tokRBrace:
+			return nil
+		case tokIdent:
+			switch tok.text {
+			case "json_set":
+				if err := parseJSONSetStmt(s, t, jsonOpSet); err != nil {
+					return err
+				}
+			case "json_set_if_absent":
+				if err := parseJSONSetStmt(s, t, jsonOpSetIfAbsent); err != nil {
+					return err
+				}
+			case "json_del":
+				if err := parseJSONDelStmt(s, t); err != nil {
+					return err
+				}
+			case "json_rename":
+				if err := parseJSONRenameStmt(s, t); err != nil {
+					return err
+				}
+			case "json_wrap_input_text":
+				if err := parseJSONWrapInputTextStmt(s, t); err != nil {
+					return err
+				}
+			case "json_set_header_values":
+				if err := parseJSONSetHeaderValuesStmt(s, t); err != nil {
+					return err
+				}
+			case "json_filter_values":
+				if err := parseJSONFilterValuesStmt(s, t); err != nil {
+					return err
+				}
+			case "json_del_with_condition":
+				if err := parseJSONDelWithConditionStmt(s, t); err != nil {
+					return err
+				}
+			default:
+				if err := skipStmtOrBlock(s); err != nil {
+					return err
+				}
 			}
 		default:
 			// ignore
@@ -345,6 +435,196 @@ func parseJSONWrapInputTextStmt(s *scanner, t *RequestTransform) error {
 		Path: strings.TrimSpace(path),
 	})
 	return nil
+}
+
+func parseJSONSetHeaderValuesStmt(s *scanner, t *RequestTransform) error {
+	pathTok := s.nextNonTrivia()
+	switch pathTok.kind {
+	case tokIdent, tokString:
+	default:
+		return s.errAt(pathTok, "json_set_header_values expects json path")
+	}
+	path := pathTok.text
+	if pathTok.kind == tokString {
+		path = unquoteString(pathTok.text)
+	}
+	headerTok := s.nextNonTrivia()
+	switch headerTok.kind {
+	case tokIdent, tokString:
+	default:
+		return s.errAt(headerTok, "json_set_header_values expects header name")
+	}
+	headerName := headerTok.text
+	if headerTok.kind == tokString {
+		headerName = unquoteString(headerTok.text)
+	}
+	args := make([]token, 0, 4)
+	for {
+		tok := s.nextNonTrivia()
+		switch tok.kind {
+		case tokEOF:
+			return s.errAt(tok, "unexpected EOF in json_set_header_values")
+		case tokSemicolon:
+			op, err := buildJSONSetHeaderValuesOp(s, pathTok, path, headerName, args)
+			if err != nil {
+				return err
+			}
+			t.JSONOps = append(t.JSONOps, op)
+			return nil
+		default:
+			args = append(args, tok)
+		}
+	}
+}
+
+func buildJSONSetHeaderValuesOp(s *scanner, pathTok token, path string, headerName string, args []token) (JSONOp, error) {
+	op := JSONOp{
+		Op:         jsonOpSetHeaderVals,
+		Path:       strings.TrimSpace(path),
+		HeaderName: strings.TrimSpace(headerName),
+	}
+	if len(args) >= 3 && strings.TrimSpace(args[len(args)-2].text) == "separator" {
+		if strings.TrimSpace(args[len(args)-1].text) != "=" {
+			return JSONOp{}, s.errAt(args[len(args)-2], "json_set_header_values separator must use '='")
+		}
+		return JSONOp{}, s.errAt(args[len(args)-2], `json_set_header_values separator expects separator="<sep>"`)
+	}
+	if len(args) >= 3 && strings.TrimSpace(args[len(args)-3].text) == "separator" {
+		eqTok := args[len(args)-2]
+		valueTok := args[len(args)-1]
+		if strings.TrimSpace(eqTok.text) != "=" {
+			return JSONOp{}, s.errAt(args[len(args)-3], "json_set_header_values separator must use '='")
+		}
+		if valueTok.kind != tokString {
+			return JSONOp{}, s.errAt(valueTok, `json_set_header_values separator expects string literal, use: separator="<sep>"`)
+		}
+		op.Separator = unquoteString(valueTok.text)
+		args = args[:len(args)-3]
+	}
+	for _, tok := range args {
+		switch tok.kind {
+		case tokIdent:
+			op.Patterns = append(op.Patterns, strings.TrimSpace(tok.text))
+		case tokString:
+			op.Patterns = append(op.Patterns, strings.TrimSpace(unquoteString(tok.text)))
+		default:
+			return JSONOp{}, s.errAt(tok, "json_set_header_values expects patterns followed by optional separator=\"<sep>\"")
+		}
+	}
+	return op, nil
+}
+
+func parseJSONFilterValuesStmt(s *scanner, t *RequestTransform) error {
+	pathTok := s.nextNonTrivia()
+	switch pathTok.kind {
+	case tokIdent, tokString:
+	default:
+		return s.errAt(pathTok, "json_filter_values expects json path")
+	}
+	path := pathTok.text
+	if pathTok.kind == tokString {
+		path = unquoteString(pathTok.text)
+	}
+	args := make([]token, 0, 4)
+	for {
+		tok := s.nextNonTrivia()
+		switch tok.kind {
+		case tokEOF:
+			return s.errAt(tok, "unexpected EOF in json_filter_values")
+		case tokSemicolon:
+			op, err := buildJSONFilterValuesOp(s, pathTok, path, args)
+			if err != nil {
+				return err
+			}
+			t.JSONOps = append(t.JSONOps, op)
+			return nil
+		default:
+			args = append(args, tok)
+		}
+	}
+}
+
+func buildJSONFilterValuesOp(s *scanner, pathTok token, path string, args []token) (JSONOp, error) {
+	op := JSONOp{
+		Op:   jsonOpFilterValues,
+		Path: strings.TrimSpace(path),
+	}
+	if len(args) == 0 {
+		return JSONOp{}, s.errAt(pathTok, "json_filter_values requires at least one pattern")
+	}
+	for _, tok := range args {
+		switch tok.kind {
+		case tokIdent:
+			op.Patterns = append(op.Patterns, strings.TrimSpace(tok.text))
+		case tokString:
+			op.Patterns = append(op.Patterns, strings.TrimSpace(unquoteString(tok.text)))
+		default:
+			return JSONOp{}, s.errAt(tok, "json_filter_values expects patterns")
+		}
+	}
+	return op, nil
+}
+
+func parseJSONDelWithConditionStmt(s *scanner, t *RequestTransform) error {
+	pathTok := s.nextNonTrivia()
+	switch pathTok.kind {
+	case tokIdent, tokString:
+	default:
+		return s.errAt(pathTok, "json_del_with_condition expects json path")
+	}
+	path := pathTok.text
+	if pathTok.kind == tokString {
+		path = unquoteString(pathTok.text)
+	}
+	fieldTok := s.nextNonTrivia()
+	switch fieldTok.kind {
+	case tokIdent, tokString:
+	default:
+		return s.errAt(fieldTok, "json_del_with_condition expects field name")
+	}
+	fieldName := fieldTok.text
+	if fieldTok.kind == tokString {
+		fieldName = unquoteString(fieldTok.text)
+	}
+	args := make([]token, 0, 4)
+	for {
+		tok := s.nextNonTrivia()
+		switch tok.kind {
+		case tokEOF:
+			return s.errAt(tok, "unexpected EOF in json_del_with_condition")
+		case tokSemicolon:
+			op, err := buildJSONDelWithConditionOp(s, pathTok, path, fieldName, args)
+			if err != nil {
+				return err
+			}
+			t.JSONOps = append(t.JSONOps, op)
+			return nil
+		default:
+			args = append(args, tok)
+		}
+	}
+}
+
+func buildJSONDelWithConditionOp(s *scanner, pathTok token, path string, fieldName string, args []token) (JSONOp, error) {
+	op := JSONOp{
+		Op:        jsonOpDelWithCond,
+		Path:      strings.TrimSpace(path),
+		FieldName: strings.TrimSpace(fieldName),
+	}
+	if len(args) == 0 {
+		return JSONOp{}, s.errAt(pathTok, "json_del_with_condition requires at least one pattern")
+	}
+	for _, tok := range args {
+		switch tok.kind {
+		case tokIdent:
+			op.Patterns = append(op.Patterns, strings.TrimSpace(tok.text))
+		case tokString:
+			op.Patterns = append(op.Patterns, strings.TrimSpace(unquoteString(tok.text)))
+		default:
+			return JSONOp{}, s.errAt(tok, "json_del_with_condition expects patterns")
+		}
+	}
+	return op, nil
 }
 
 func parseAuthBearerStmt(s *scanner, phase *PhaseHeaders) error {

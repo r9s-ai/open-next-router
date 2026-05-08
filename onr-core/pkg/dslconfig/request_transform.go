@@ -14,8 +14,9 @@ type ModelMapConfig struct {
 }
 
 type RequestTransform struct {
-	ModelMap ModelMapConfig
-	JSONOps  []JSONOp
+	ModelMap           ModelMapConfig
+	JSONOps            []JSONOp
+	AfterReqMapJSONOps []JSONOp
 	// ReqMapMode selects a built-in request mapping mode (non-streaming JSON transform),
 	// e.g. openai chat.completions -> openai responses.
 	ReqMapMode string
@@ -51,7 +52,7 @@ func (p *ProviderRequestTransform) Select(meta *dslmeta.Meta) (*RequestTransform
 		out = mergeRequestTransform(out, m.Transform)
 	}
 	out.ReqMapMode = normalizedReqMapMode(out.ReqMapMode)
-	if out.ModelMap.Map == nil && strings.TrimSpace(out.ModelMap.DefaultExpr) == "" && len(out.JSONOps) == 0 && out.ReqMapMode == "" {
+	if out.ModelMap.Map == nil && strings.TrimSpace(out.ModelMap.DefaultExpr) == "" && len(out.JSONOps) == 0 && len(out.AfterReqMapJSONOps) == 0 && out.ReqMapMode == "" {
 		return nil, false
 	}
 	return &out, true
@@ -82,6 +83,9 @@ func mergeRequestTransform(base, override RequestTransform) RequestTransform {
 	if len(base.JSONOps) > 0 {
 		out.JSONOps = append([]JSONOp(nil), base.JSONOps...)
 	}
+	if len(base.AfterReqMapJSONOps) > 0 {
+		out.AfterReqMapJSONOps = append([]JSONOp(nil), base.AfterReqMapJSONOps...)
+	}
 	if len(override.ModelMap.Map) > 0 {
 		if out.ModelMap.Map == nil {
 			out.ModelMap.Map = map[string]string{}
@@ -95,6 +99,9 @@ func mergeRequestTransform(base, override RequestTransform) RequestTransform {
 	}
 	if len(override.JSONOps) > 0 {
 		out.JSONOps = append(out.JSONOps, override.JSONOps...)
+	}
+	if len(override.AfterReqMapJSONOps) > 0 {
+		out.AfterReqMapJSONOps = append(out.AfterReqMapJSONOps, override.AfterReqMapJSONOps...)
 	}
 	if reqMapMode := normalizedReqMapMode(override.ReqMapMode); reqMapMode != "" {
 		out.ReqMapMode = reqMapMode
@@ -130,8 +137,12 @@ func (t *RequestTransform) Apply(meta *dslmeta.Meta) {
 type JSONOp struct {
 	Op string
 
-	Path      string
-	FromPath  string
-	ToPath    string
-	ValueExpr string
+	Path       string
+	FromPath   string
+	ToPath     string
+	ValueExpr  string
+	HeaderName string
+	FieldName  string
+	Patterns   []string
+	Separator  string
 }

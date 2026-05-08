@@ -22,6 +22,9 @@ func validateRequestTransform(path, providerName, scope string, t RequestTransfo
 	if err := validateRequestJSONOps(path, providerName, scope, t.JSONOps); err != nil {
 		return err
 	}
+	if err := validateRequestJSONOps(path, providerName, scope+".after_req_map", t.AfterReqMapJSONOps); err != nil {
+		return err
+	}
 
 	mode := strings.ToLower(strings.TrimSpace(t.ReqMapMode))
 	if mode == "" {
@@ -51,9 +54,33 @@ func validateRequestJSONOps(path, providerName, scope string, ops []JSONOp) erro
 	for i, op := range ops {
 		opScope := fmt.Sprintf("%s.json_op[%d]", scope, i)
 		switch strings.ToLower(strings.TrimSpace(op.Op)) {
+		case jsonOpDelWithCond:
+			if _, err := parseObjectPath(op.Path); err != nil {
+				return fmt.Errorf("provider %q in %q: %s invalid json path: %w", providerName, path, opScope, err)
+			}
+			if strings.TrimSpace(op.FieldName) == "" {
+				return fmt.Errorf("provider %q in %q: %s json_del_with_condition requires field name", providerName, path, opScope)
+			}
+			if len(op.Patterns) == 0 {
+				return fmt.Errorf("provider %q in %q: %s json_del_with_condition requires at least one pattern", providerName, path, opScope)
+			}
 		case jsonOpSet, jsonOpSetIfAbsent, jsonOpDel, jsonOpWrapInputText:
 			if _, err := parseObjectPath(op.Path); err != nil {
 				return fmt.Errorf("provider %q in %q: %s invalid json path: %w", providerName, path, opScope, err)
+			}
+		case jsonOpSetHeaderVals:
+			if _, err := parseObjectPath(op.Path); err != nil {
+				return fmt.Errorf("provider %q in %q: %s invalid json path: %w", providerName, path, opScope, err)
+			}
+			if strings.TrimSpace(op.HeaderName) == "" {
+				return fmt.Errorf("provider %q in %q: %s json_set_header_values requires header name", providerName, path, opScope)
+			}
+		case jsonOpFilterValues:
+			if _, err := parseObjectPath(op.Path); err != nil {
+				return fmt.Errorf("provider %q in %q: %s invalid json path: %w", providerName, path, opScope, err)
+			}
+			if len(op.Patterns) == 0 {
+				return fmt.Errorf("provider %q in %q: %s json_filter_values requires at least one pattern", providerName, path, opScope)
 			}
 		case jsonOpRename:
 			if _, err := parseObjectPath(op.FromPath); err != nil {

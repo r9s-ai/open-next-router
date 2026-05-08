@@ -3,6 +3,7 @@ package requesttransform
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/apitransform"
@@ -16,6 +17,7 @@ const contentEncodingIdentity = "identity"
 
 type ApplyOptions struct {
 	ContentEncoding string
+	RequestHeaders  http.Header
 }
 
 type Result struct {
@@ -32,6 +34,9 @@ type Result struct {
 // value must already be normalized to a top-level JSON object root. It may be nil when callers
 // only have raw body bytes and want req_map to parse the object on demand.
 func Apply(meta *dslmeta.Meta, contentType string, body []byte, value map[string]any, t *dslconfig.RequestTransform, opts ApplyOptions) (Result, error) {
+	if opts.RequestHeaders != nil {
+		meta.RequestHeaders = opts.RequestHeaders
+	}
 	result := Result{
 		Body:        body,
 		Value:       value,
@@ -65,6 +70,15 @@ func Apply(meta *dslmeta.Meta, contentType string, body []byte, value map[string
 
 	reqMapMode := strings.TrimSpace(t.ReqMapMode)
 	if reqMapMode == "" {
+		if out != nil && len(t.AfterReqMapJSONOps) > 0 {
+			out, err := dslconfig.ApplyJSONOps(meta, out, t.AfterReqMapJSONOps)
+			if err != nil {
+				return Result{}, err
+			}
+			changed = true
+			result.Value = out
+			result.Root = out
+		}
 		if out != nil && (changed || result.Body == nil) {
 			reqBody, err := marshalBody(result.Body, out, result.ContentType)
 			if err != nil {
@@ -83,6 +97,19 @@ func Apply(meta *dslmeta.Meta, contentType string, body []byte, value map[string
 
 	result.Value = mappedRoot
 	result.Root = mappedRoot
+	if mappedRoot != nil && len(t.AfterReqMapJSONOps) > 0 {
+		mappedRoot, err = dslconfig.ApplyJSONOps(meta, mappedRoot, t.AfterReqMapJSONOps)
+		if err != nil {
+			return Result{}, err
+		}
+		reqBody, err := marshalBody(result.Body, mappedRoot, result.ContentType)
+		if err != nil {
+			return Result{}, err
+		}
+		result.Body = reqBody
+		result.Value = mappedRoot
+		result.Root = mappedRoot
+	}
 	return result, nil
 }
 

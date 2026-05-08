@@ -1,6 +1,7 @@
 package dslconfig
 
 import (
+	"net/http"
 	"reflect"
 	"testing"
 
@@ -10,7 +11,12 @@ import (
 func TestApplyJSONOps_TableDriven(t *testing.T) {
 	t.Parallel()
 
-	meta := &dslmeta.Meta{API: "chat.completions"}
+	meta := &dslmeta.Meta{
+		API: "chat.completions",
+		RequestHeaders: http.Header{
+			"Anthropic-Beta": []string{" computer-use-2025-01-24 , unknown , CONTEXT-MANAGEMENT-2025-06-27 "},
+		},
+	}
 
 	cases := []struct {
 		name    string
@@ -94,6 +100,59 @@ func TestApplyJSONOps_TableDriven(t *testing.T) {
 					map[string]any{"role": "user", "content": "already wrapped"},
 				},
 			},
+		},
+		{
+			name: "json_set_header_values_sets_header_items_then_filter_values_filters",
+			in:   map[string]any{"model": "claude"},
+			ops: []JSONOp{
+				{
+					Op:         "json_set_header_values",
+					Path:       "$.anthropic_beta",
+					HeaderName: "anthropic-beta",
+				},
+				{
+					Op:   "json_filter_values",
+					Path: "$.anthropic_beta",
+					Patterns: []string{
+						"computer-use-2025-01-24",
+						"context-management-2025-06-27",
+					},
+				},
+			},
+			want: map[string]any{
+				"model":          "claude",
+				"anthropic_beta": []string{"computer-use-2025-01-24", "CONTEXT-MANAGEMENT-2025-06-27"},
+			},
+		},
+		{
+			name: "json_del_with_condition_filters_tools_and_tool_choice",
+			in: map[string]any{
+				"tools": []any{
+					map[string]any{"type": "web_search_20260209", "name": "web_search"},
+					map[string]any{"type": "custom", "name": "keep"},
+					map[string]any{"type": "web_fetch_20250101", "name": "web_fetch"},
+				},
+				"tool_choice": map[string]any{"type": "web_search_20260209", "name": "web_search"},
+			},
+			ops: []JSONOp{
+				{Op: "json_del_with_condition", Path: "$.tools", FieldName: "type", Patterns: []string{"web_search*", "web_fetch*"}},
+				{Op: "json_del_with_condition", Path: "$.tool_choice", FieldName: "type", Patterns: []string{"web_search*", "web_fetch*"}},
+			},
+			want: map[string]any{
+				"tools": []any{
+					map[string]any{"type": "custom", "name": "keep"},
+				},
+			},
+		},
+		{
+			name: "json_del_with_condition_deletes_empty_tools",
+			in: map[string]any{
+				"tools": []any{
+					map[string]any{"type": "web_search_20260209", "name": "web_search"},
+				},
+			},
+			ops:  []JSONOp{{Op: "json_del_with_condition", Path: "$.tools", FieldName: "type", Patterns: []string{"web_search*"}}},
+			want: map[string]any{},
 		},
 		{
 			name:    "json_wrap_input_text_rejects_object",

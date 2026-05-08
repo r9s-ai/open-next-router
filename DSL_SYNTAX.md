@@ -329,7 +329,7 @@ request {
 - If no `model_map <from> ...;` matches, the default expression is used for `$request.model_mapped`.
 - If not configured, `$request.model_mapped` defaults to `$request.model`.
 
-#### json_set / json_set_if_absent / json_del / json_rename / json_wrap_input_text (multiple allowed)
+#### json_set / json_set_if_absent / json_del / json_rename / json_wrap_input_text / json_set_header_values / json_filter_values / json_del_with_condition (multiple allowed)
 
 ```conf
 request {
@@ -338,6 +338,12 @@ request {
   json_set "$.user" "alice";
   json_rename "$.max_tokens" "$.max_completion_tokens";
   json_wrap_input_text "$.input";
+  json_set_header_values "$.anthropic_beta" "anthropic-beta";
+  json_filter_values "$.anthropic_beta" "computer-use-2025-01-24";
+  after_req_map {
+    json_set "$.anthropic_version" "bedrock-2023-05-31";
+    json_del_with_condition "$.tools" "type" "web_search*" "web_fetch*";
+  }
   json_del "$.tools";
 }
 ```
@@ -347,6 +353,10 @@ request {
 - `json_set` value expressions support: `true/false/null`, integer, string literal, variable, `concat(...)`.
 - `json_set_if_absent` only sets when the path does not exist; existing values are preserved.
 - `json_wrap_input_text` wraps a string value as an OpenAI Responses `input` message list. Missing paths and already-array values are no-op; other types are rejected.
+- `json_set_header_values` sets a JSON array from downstream request header values. Values are split by comma unless `separator="<sep>"` is provided.
+- `json_filter_values` filters an existing JSON string array by allowed values or wildcard patterns.
+- `json_del_with_condition` deletes an object, or matching objects from an array, when the object's field matches an allowed value or wildcard pattern.
+- `after_req_map { ... }` runs nested JSON operations after `req_map`. If no `req_map` is configured, it runs after the normal request JSON operations.
 
 #### req_map
 
@@ -1367,6 +1377,75 @@ Output:
       ]
     }
   ]
+}
+```
+
+#### json_set_header_values
+
+```text
+Syntax:  json_set_header_values <jsonpath> <Header-Name> [separator="<sep>"];
+Default: —
+Context: request
+Multiple: yes
+```
+
+- Reads downstream request header values, splits them into items, and writes them as a JSON string array.
+- If no header item exists, the JSON path is not written.
+- JSONPath is limited to object paths: `$.a.b.c`.
+
+Example:
+
+```conf
+request {
+  json_set_header_values "$.anthropic_beta" "anthropic-beta";
+}
+```
+
+#### json_filter_values
+
+```text
+Syntax:  json_filter_values <jsonpath> <pattern>...;
+Default: —
+Context: request
+Multiple: yes
+```
+
+- Filters a JSON string array in place, keeping only values that match one of the patterns.
+- Matching is case-insensitive and supports `*` wildcards.
+- If no values remain, the JSON path is removed.
+- Missing paths are no-op.
+- JSONPath is limited to object paths: `$.a.b.c`.
+
+Example:
+
+```conf
+request {
+  json_filter_values "$.anthropic_beta" "computer-use-2025-01-24" "context-management-2025-06-27";
+}
+```
+
+#### json_del_with_condition
+
+```text
+Syntax:  json_del_with_condition <jsonpath> <field> <pattern>...;
+Default: —
+Context: request
+Multiple: yes
+```
+
+- If `<jsonpath>` points to an object, deletes that object when `<field>` matches one of the patterns.
+- If `<jsonpath>` points to an array, deletes matching object items from that array.
+- Matching is case-insensitive and supports `*` wildcards.
+- If an array becomes empty, the array field is removed.
+
+Example:
+
+```conf
+request {
+  after_req_map {
+    json_del_with_condition "$.tools" "type" "web_search*" "web_fetch*";
+    json_del_with_condition "$.tool_choice" "type" "web_search*" "web_fetch*";
+  }
 }
 ```
 

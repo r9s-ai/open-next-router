@@ -128,6 +128,10 @@ var directiveMetadata = []DirectiveMetadata{
 	{Name: "json_del", Block: "request", Hover: "`json_del <jsonpath>;`\n\nDeletes one request JSON field."},
 	{Name: "json_rename", Block: "request", Hover: "`json_rename <from-jsonpath> <to-jsonpath>;`\n\nRenames/moves one request JSON field."},
 	{Name: "json_wrap_input_text", Block: "request", Hover: "`json_wrap_input_text <jsonpath>;`\n\nWraps a string field as an OpenAI Responses `input` message list. Missing paths and already-array values are left unchanged."},
+	{Name: "json_set_header_values", Block: "request", Hover: "`json_set_header_values <jsonpath> <Header-Name> [separator=\"<sep>\"];`\n\nSets one request JSON array field from downstream header values."},
+	{Name: "json_filter_values", Block: "request", Hover: "`json_filter_values <jsonpath> <pattern>...;`\n\nFilters one request JSON string array field by allowed values."},
+	{Name: "json_del_with_condition", Block: "request", Hover: "`json_del_with_condition <jsonpath> <field> <pattern>...;`\n\nDeletes an object, or matching objects from an array, when the object's field matches one of the patterns."},
+	{Name: "after_req_map", Block: "request", Hover: "`after_req_map { ... }`\n\nRuns nested request JSON operations after req_map. If no req_map is configured, runs after normal request JSON operations."},
 	{Name: "req_map", Block: "request", Hover: "`req_map <mode>;`\n\nMap request JSON between API schemas.", Modes: []string{"openai_chat_to_openai_responses", "openai_chat_to_anthropic_messages", "openai_chat_to_gemini_generate_content", "anthropic_to_openai_chat", "gemini_to_openai_chat"}},
 
 	{Name: "resp_passthrough", Block: "response", Hover: "`resp_passthrough;`\n\nPasses upstream response through without schema mapping."},
