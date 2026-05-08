@@ -26,30 +26,39 @@ type multipliers struct {
 	Newline    float64
 	Space      float64
 	BasePad    int
+	ToolsExist int // base token estimate added when tools are present
+	PerTool    int // additional token estimate per tool
+
 }
 
 var multipliersMap = map[provider]multipliers{
-	providerGemini: {Word: 1.15, Number: 2.8, CJK: 0.68, Symbol: 0.38, MathSymbol: 1.05, URLDelim: 1.2, AtSign: 2.5, Emoji: 1.08, Newline: 1.15, Space: 0.2, BasePad: 0},
-	providerClaude: {Word: 1.13, Number: 1.63, CJK: 1.21, Symbol: 0.4, MathSymbol: 4.52, URLDelim: 1.26, AtSign: 2.82, Emoji: 2.6, Newline: 0.89, Space: 0.39, BasePad: 0},
-	providerOpenAI: {Word: 1.02, Number: 1.55, CJK: 0.85, Symbol: 0.4, MathSymbol: 2.68, URLDelim: 1.0, AtSign: 2.0, Emoji: 2.12, Newline: 0.5, Space: 0.42, BasePad: 0},
+	providerGemini: {Word: 1.15, Number: 2.8, CJK: 0.68, Symbol: 0.38, MathSymbol: 1.05,
+		URLDelim: 1.2, AtSign: 2.5, Emoji: 1.08, Newline: 1.15, Space: 0.2, BasePad: 0,
+		ToolsExist: 0, PerTool: 0},
+	providerClaude: {Word: 1.05, Number: 1.63, CJK: 1.25, Symbol: 0.4, MathSymbol: 4.52,
+		URLDelim: 1.26, AtSign: 2.82, Emoji: 2.6, Newline: 0.89, Space: 0.39, BasePad: 0,
+		ToolsExist: 515, PerTool: 55},
+	providerOpenAI: {Word: 1.02, Number: 1.55, CJK: 0.85, Symbol: 0.4, MathSymbol: 2.68,
+		URLDelim: 1.0, AtSign: 2.0, Emoji: 2.12, Newline: 0.5, Space: 0.42, BasePad: 0,
+		ToolsExist: 0, PerTool: 0},
 }
 
-func EstimateTokenByModel(model, text string) int {
+func EstimateTokenByModel(model, text string, numTools int) int {
 	if strings.TrimSpace(text) == "" {
 		return 0
 	}
 	m := strings.ToLower(strings.TrimSpace(model))
 	switch {
 	case strings.Contains(m, "gemini"):
-		return estimateToken(providerGemini, text)
+		return estimateToken(providerGemini, text, numTools)
 	case strings.Contains(m, "claude"):
-		return estimateToken(providerClaude, text)
+		return estimateToken(providerClaude, text, numTools)
 	default:
-		return estimateToken(providerOpenAI, text)
+		return estimateToken(providerOpenAI, text, numTools)
 	}
 }
 
-func estimateToken(p provider, text string) int {
+func estimateToken(p provider, text string, numTools int) int {
 	m := multipliersMap[p]
 	var count float64
 
@@ -110,7 +119,11 @@ func estimateToken(p provider, text string) int {
 			count += m.Symbol
 		}
 	}
-	return int(math.Ceil(count)) + m.BasePad
+	sum := int(math.Ceil(count)) + m.BasePad
+	if numTools != 0 { // add tool token estimate
+		sum += m.ToolsExist + numTools*m.PerTool
+	}
+	return sum
 }
 
 func isCJK(r rune) bool {

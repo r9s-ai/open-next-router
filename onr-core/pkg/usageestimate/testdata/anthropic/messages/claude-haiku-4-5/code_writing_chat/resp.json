@@ -1,0 +1,27 @@
+{
+  "model": "claude-haiku-4-5-20251001",
+  "id": "msg_012XrB17wCWMULRue8mRV3RF",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "\n\nHere's the complete updated code:\n\n```go\npackage lru\n\nimport (\n    \"container/list\"\n    \"sync\"\n    \"sync/atomic\"\n    \"time\"\n)\n\ntype entry[K comparable, V any] struct {\n    key       K\n    value     V\n    expiresAt time.Time\n}\n\ntype Options[K comparable, V any] struct {\n    Capacity  int\n    TTL       time.Duration\n    OnEvict   func(K, V)\n}\n\ntype Stats struct {\n    Hits      int64\n    Misses    int64\n    Evictions int64\n    Size      int\n    Capacity  int\n}\n\ntype Cache[K comparable, V any] struct {\n    mu        sync.Mutex\n    opts      Options[K, V]\n    items     map[K]*list.Element\n    order     *list.List\n    stopCh    chan struct{}\n    hitsA     atomic.Int64\n    missesA   atomic.Int64\n    evictionsA atomic.Int64\n}\n\nfunc New[K comparable, V any](opts Options[K, V]) *Cache[K, V] {\n    if opts.Capacity <= 0 {\n        opts.Capacity = 128\n    }\n    c := &Cache[K, V]{\n        opts:    opts,\n        items:   make(map[K]*list.Element, opts.Capacity),\n        order:   list.New(),\n        stopCh:  make(chan struct{}),\n    }\n    if opts.TTL > 0 {\n        go c.startCleanup()\n    }\n    return c\n}\n\nfunc (c *Cache[K, V]) Get(key K) (V, bool) {\n    c.mu.Lock()\n    defer c.mu.Unlock()\n\n    elem, ok := c.items[key]\n    if !ok {\n        c.missesA.Add(1)\n        var zero V\n        return zero, false\n    }\n\n    e := elem.Value.(*entry[K, V])\n    if !e.expiresAt.IsZero() && time.Now().After(e.expiresAt) {\n        c.removeElement(elem)\n        c.missesA.Add(1)\n        var zero V\n        return zero, false\n    }\n\n    c.order.MoveToFront(elem)\n    c.hitsA.Add(1)\n    return e.value, true\n}\n\nfunc (c *Cache[K, V]) Put(key K, value V) {\n    c.mu.Lock()\n    defer c.mu.Unlock()\n\n    if elem, ok := c.items[key]; ok {\n        e := elem.Value.(*entry[K, V])\n        e.value = value\n        if c.opts.TTL > 0 {\n            e.expiresAt = time.Now().Add(c.opts.TTL)\n        }\n        c.order.MoveToFront(elem)\n        return\n    }\n\n    if c.order.Len() >= c.opts.Capacity {\n        c.evictOldest()\n    }\n\n    e := &entry[K, V]{key: key, value: value}\n    if c.opts.TTL > 0 {\n        e.expiresAt = time.Now().Add(c.opts.TTL)\n    }\n    elem := c.order.PushFront(e)\n    c.items[key] = elem\n}\n\nfunc (c *Cache[K, V]) evictOldest() {\n    oldest := c.order.Back()\n    if oldest != nil {\n        c.removeElement(oldest)\n    }\n}\n\nfunc (c *Cache[K, V]) removeElement(elem *list.Element) {\n    e := elem.Value.(*entry[K, V])\n    c.order.Remove(elem)\n    delete(c.items, e.key)\n    c.evictionsA.Add(1)\n    if c.opts.OnEvict != nil {\n        c.opts.OnEvict(e.key, e.value)\n    }\n}\n\nfunc (c *Cache[K, V]) Stats() Stats {\n    c.mu.Lock()\n    defer c.mu.Unlock()\n    return Stats{\n        Hits:      c.hitsA.Load(),\n        Misses:    c.missesA.Load(),\n        Evictions: c.evictionsA.Load(),\n        Size:      c.order.Len(),\n        Capacity:  c.opts.Capacity,\n    }\n}\n\nfunc (c *Cache[K, V]) Len() int {\n    c.mu.Lock()\n    defer c.mu.Unlock()\n    return c.order.Len()\n}\n\nfunc (c *Cache[K, V]) startCleanup() {\n    ticker := time.NewTicker(c.opts.TTL / 2)\n    defer ticker.Stop()\n    for {\n        select {\n        case <-ticker.C:\n            c.cleanupExpired()\n        case <-c.stopCh:\n            return\n        }\n    }\n}\n\nfunc (c *Cache[K, V]) cleanupExpired() {\n    c.mu.Lock()\n    defer c.mu.Unlock()\n    now := time.Now()\n    for e := c.order.Back(); e != nil; {\n        prev := e.Prev()\n        entry := e.Value.(*entry[K, V])\n        if !entry.expiresAt.IsZero() && now.After(entry.expiresAt) {\n            c.removeElement(e)\n        }\n        e = prev\n    }\n}\n\nfunc (c *Cache[K, V]) Close() {\n    close(c.stopCh)\n}\n```\n\n**Key improvements:**\n\n- Uses `atomic.Int64` for counters to avoid lock contention on reads\n- `Stats()` acquires the mutex once and returns a snapshot\n- Eviction counter increments in `removeElement()`, catching all evictions (TTL or capacity)\n- Added capacity validation in `New()` with sensible default"
+    }
+  ],
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "stop_details": null,
+  "usage": {
+    "input_tokens": 2110,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 1487,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+  }
+}

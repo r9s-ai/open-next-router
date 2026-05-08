@@ -1,0 +1,109 @@
+{
+  "model":"claude-haiku-4-5",
+  "max_tokens": 8192,
+  "thinking": {
+    "type": "enabled",
+    "budget_tokens": 1024
+  },
+  "system": [
+    {
+      "type": "text",
+      "text": "You are a senior software engineer debugging an issue in a codebase. You have access to a tool for searching code. Be thorough and evidence-driven — search before drawing conclusions."
+    }
+  ],
+  "tools": [
+    {
+      "name": "search_code",
+      "description": "Search repository code with a ripgrep-compatible pattern and return matching file paths and line snippets.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "description": "Search pattern."
+          },
+          "path": {
+            "type": "string",
+            "description": "Optional repository-relative directory."
+          }
+        },
+        "required": ["pattern"]
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Our production API started returning 500 errors after the latest deployment. The logs show 'connection pool exhausted' errors from the database layer. The deploy only changed the query timeout from 30s to 60s. Can you help find the root cause?"
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "A connection pool exhaustion after increasing query timeout is suspicious — longer timeouts mean connections are held longer, which would reduce available connections. But let me verify by looking at the connection pool configuration and timeout settings in the codebase."
+        },
+        {
+          "type": "tool_use",
+          "id": "toolu_search_pool_01",
+          "name": "search_code",
+          "input": {
+            "pattern": "connection.*pool|max.*conn|pool.*size|MaxConns|SetMaxOpenConns|timeout",
+            "path": "internal/database"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_search_pool_01",
+          "content": "internal/database/pool.go:15: var poolConfig = &PoolConfig{MaxConns: 20, MinConns: 2, MaxIdleTime: 5 * time.Minute}\ninternal/database/pool.go:22: func NewPool(cfg *PoolConfig) (*sql.DB, error) {\ninternal/database/pool.go:28:     db.SetMaxOpenConns(cfg.MaxConns)\ninternal/database/pool.go:29:     db.SetMaxIdleConns(cfg.MaxConns / 2)\ninternal/database/query.go:42: func QueryWithTimeout(ctx context.Context, db *sql.DB, query string, timeout time.Duration) (*sql.Rows, error) {\ninternal/database/query.go:45:     ctx, cancel := context.WithTimeout(ctx, timeout)\ninternal/database/query.go:56: func ExecuteWithTimeout(ctx context.Context, db *sql.DB, query string, timeout time.Duration) (sql.Result, error) {"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "Found the issue. `pool.go:15` shows MaxConns=20, and `pool.go:29` sets max idle to MaxConns/2=10. The timeout is passed to each query via `context.WithTimeout`. \n\nWith the old 30s timeout, a connection would be held for at most 30s. With the new 60s timeout, connections are held twice as long. If you have 20 concurrent slow queries (each taking 30-60s), all 20 connections are occupied, and any new request waits for a connection — but there's no connection wait timeout configured, so it eventually panics/exhausts.\n\nLet me also check if there's a connection wait timeout or acquire timeout set."
+        },
+        {
+          "type": "tool_use",
+          "id": "toolu_search_timeout_02",
+          "name": "search_code",
+          "input": {
+            "pattern": "ConnMaxLifetime|ConnMaxIdleTime|MaxWaitTimeout|acquire.*timeout|wait.*timeout",
+            "path": "internal/database"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_search_timeout_02",
+          "content": "internal/database/pool.go:18:     MaxIdleTime: 5 * time.Minute\ninternal/database/pool.go:19:     // ConnMaxLifetime is not set (default: infinite)\ninternal/database/pool.go:20:     // No acquire timeout configured"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "Root cause identified. Here's the chain:\n\n1. **MaxConns=20** with no connection acquire timeout means callers wait indefinitely when the pool is exhausted.\n2. **Timeout increased from 30s to 60s** — each connection now holds 2× longer under slow queries.\n3. With 20 slow queries, all connections are occupied for up to 60s.\n4. The 21st caller waits forever → eventually the HTTP layer times out (or the process runs out of goroutines) → 500 errors.\n\n**Fix recommendations**:\n- Set `ConnMaxLifetime` to a reasonable value (e.g., 30 min) to prevent stale connections.\n- Add an acquire timeout via `context.WithTimeout` wrapping the pool acquire.\n- Or increase MaxConns proportionally to the timeout increase (from 20 to 40 if timeout doubled)."
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": "Based on the findings, summarize the root cause chain and your recommended fix, ordered by priority. Don't search further."
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "model": "claude-haiku-4-5-20251001",
+  "id": "msg_01GGyXCAbsWH7BUsnWfNnLC6",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "thinking",
+      "thinking": "The user is asking for a summary of our conversation to share with their team. I should provide a concise, well-organized summary that captures the key advice we discussed. Let me organize it in a way that would be useful for a team to reference.\n\nKey topics covered:\n1. Why auto-generated docs don't work\n2. Three core principles for better docs\n3. What to add to auto-generated API specs\n4. How to structure docs (with the endpoint example)\n5. How to keep docs updated\n6. Documenting internal endpoints\n\nI should make this shareable and actionable.",
+      "signature": "EuwFCmMIDRgCKkBGoowgfF6UNDjuJv5w/uphrlHiEUAUCCA1F/bWpWrn7MVxg8eGQQtNN001+iWO/GqESPPcLLH+MRXEiq4RMU7uMhljbGF1ZGUtaGFpa3UtNC01LTIwMjUxMDAxOAASDHfkmSKJ1v3jJ3/k0hoMfkvFuBvdfsHpJLOPIjAKVgBDNaQEBRQ0u+yEpZuzt6XUMVC0lKsGDm7MldhlLn1e0N+pvFsaoyhx9zU9L6wqtgRA3ciGNHydmIVuos/QiNbTTkWjMkX7pwMqCwIZ6c4UiOxvhwqDbbFqUcsx7unrO3Hj3r4oRlabhkrw6EpSy+amASfx6RgEzOT2GTXkM9+Cpd0Ift0IluQqJrnRkoKS7vjgDXH/7uanhDviyRwQtUJadJ0ej3dsVN22GO+HcO1EcDYXWQVWS1i5JHL4SeOWVCdPjqJ0Gf+Y03y6S18z+OPHa3nzZIsnNSc1ifutP48tpB7z+LqNzRJwSPkGejd17ZO44gRG85MVvh1BjhehAvxuetakr9vk/mIGHb56M8NH2eVooAOS/HID+cfjibBzwy9vWu8CATadKH6c1RLKN3NW+pVVI3AOz0G2QKvAEqkNfCWSHZSIEXH7ZwTuwlBIC2P0FCWE6RQ3SYmsb3swDWM1xiSEa3cnlFDdx1XciHF87NN8kDMYLZFG0AKJlAEzG05IXQvJg2EezE0niy0bWwsqUrFoCk8iQhRKeDIZVwoEBvzlyJJmj5YsEgTUJfbQNzxcnI+8FeT/AZez95F9CbfckXXtZWN4l572vYFELXeqy1C0CjBsqAxxdyzfJMe985ez1wSxzdXSZtQGDSLrrfjqKfUap2x/UABDfAhsfiDaHj9neFHWj5x4AhEgB6BA6Fqgp2IIFkcPPSAVcdT9PZceiJ9J1DRBSKkj402kePtHzheGE01nA4kouvk2jwczxFUGAxqyOKTUmMxI1rUbdqzUV1izK5bo5ir+nFOBoJdBQsO+71ajDxgB"
+    },
+    {
+      "type": "text",
+      "text": "**API Documentation Best Practices — Quick Summary**\n\n**The Problem:** Auto-generated OpenAPI specs are incomplete. They list endpoints and schemas but don't explain what problems they solve or how to use them in practice.\n\n**Three Core Principles:**\n1. Know your audience (onboarding vs. reference needs differ)\n2. Lead with the outcome (what will the reader be able to do?)\n3. Separate tutorials from reference material\n\n**What to Add to Each Endpoint:**\n- One-sentence summary of what it actually does\n- A concrete example (real request/response, not just the schema)\n- Pagination/filtering details with gotchas\n- Common pitfalls callout\n\n**Structure:**\n- Group endpoints by user task, not by resource\n- Write a 5-minute quickstart that chains real API calls\n- Use headers and callouts to break up text\n\n**Keeping Docs Fresh:**\n1. Co-locate docs with code; require doc updates in PRs\n2. Test your example commands in CI\n3. Version your docs alongside API releases\n4. Rotate a \"docs sheriff\" role to review quality\n\n**Internal-Only Endpoints:**\nDocument minimally: what it does, auth, request/response shape, error codes, and owner contact info.\n\n**Quick Win:** Start by layering narrative onto your top 5 most-called endpoints. Show the team the difference. Then expand.\n\nGood luck!"
+    }
+  ],
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "stop_details": null,
+  "usage": {
+    "input_tokens": 1559,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 453,
+    "service_tier": "standard",
+    "inference_geo": "not_available"
+  }
+}

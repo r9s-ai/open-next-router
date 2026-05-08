@@ -2,6 +2,7 @@ package usageestimate
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
@@ -327,265 +328,175 @@ func TestEstimate_WhenEstimationDisabled_ReturnsNilOnMissing(t *testing.T) {
 	}
 }
 
-// 测试anthropic的请求token预估，该测试仅仅开发使用，不保证功能测试正确性
+// Test Anthropic request token estimation. This test is for development use only.
 func TestEstimate_AnthropicInput(t *testing.T) {
 	cfg := &Config{}
 	ApplyDefaults(cfg)
-	out := Estimate(cfg, Input{
-		API:           "claude.messages",
-		Model:         "claude-3-5-sonnet",
-		UpstreamUsage: &dslconfig.Usage{InputTokens: 6, OutputTokens: 0, TotalTokens: 6},
-		RequestBody: []byte(`{
-  "model":"claude-haiku-4-5",
- "max_tokens": 2048,
-  "thinking": {
-    "type": "enabled",
-    "budget_tokens": 1024
-  },
-  "stream":true,
-  "system": [
-    {
-      "type": "text",
-      "text": "你是一个资深 code agent，正在一个 Go relay 服务仓库中帮助用户排查计费 token 估计问题。你可以使用工具读取文件、搜索代码和查看 git diff。回答使用中文，但保留代码标识符、文件路径、函数名和变量名的英文原文。排查时先基于证据，不要臆测；需要更多上下文时调用工具。"
-    }
-  ],
-  "tools": [
-    {
-      "name": "read_file",
-      "description": "Read a repository file and optionally return a selected line range.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "path": {
-            "type": "string",
-            "description": "Repository-relative file path."
-          },
-          "start_line": {
-            "type": "integer",
-            "description": "1-based start line."
-          },
-          "end_line": {
-            "type": "integer",
-            "description": "1-based end line."
-          }
-        },
-        "required": ["path"]
-      }
-    },
-    {
-      "name": "search_code",
-      "description": "Search repository code with a ripgrep-compatible pattern and return matching file paths and line snippets.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "pattern": {
-            "type": "string",
-            "description": "Search pattern."
-          },
-          "path": {
-            "type": "string",
-            "description": "Optional repository-relative directory."
-          }
-        },
-        "required": ["pattern"]
-      }
-    },
-    {
-      "name": "show_diff",
-      "description": "Show the current git diff for selected files.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "paths": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Repository-relative file paths. Empty or omitted means all changed files."
-          }
-        }
-      }
-    }
-  ],
-  "messages": [
-    {
-      "role": "user",
-      "content": "我们线上有个问题：Anthropic /v1/messages 流式响应内容正常，但有时 billing 里 output_tokens 是 0。请帮我排查。先不要改代码，先看 token 估计相关逻辑。"
-    },
-    {
-      "role": "assistant",
-      "content": [
-        {
-          "type": "text",
-          "text": "我会先找 'output_tokens'、'stream_text' 和估计逻辑的入口，确认缺失上游 usage 时是否会从流式文本或 tool_use 内容估计。"
-        },
-        {
-          "type": "tool_use",
-          "id": "toolu_search_estimate_01",
-          "name": "search_code",
-          "input": {
-            "pattern": "ensureEstimatedUsageIfNeeded|StreamText|UpstreamCompletionTokens",
-            "path": "relay/internal"
-          }
-        }
-      ]
-    },
-    {
-      "role": "user",
-      "content": [
-        {
-          "type": "tool_result",
-          "tool_use_id": "toolu_search_estimate_01",
-          "content": "relay/internal/billing/extractor/configfile_extractor.go:55: ensureEstimatedUsageIfNeeded(ctx)\nrelay/internal/billing/extractor/configfile_extractor.go:338: func ensureEstimatedUsageIfNeeded(ctx *gin.Context) {\nrelay/internal/billing/extractor/configfile_extractor.go:390: StreamText: ctx.GetString(meta.StreamText),\nrelay/internal/channel/claudemessages/native_passthrough.go:438: c.Set(meta.UpstreamCompletionTokensEstimated, true)\nrelay/internal/meta/key.go:41: StreamText = \"stream_text\"\nrelay/internal/meta/key.go:76: UpstreamCompletionTokens = \"upstream_completion_tokens\""
-        }
-      ]
-    },
-    {
-      "role": "assistant",
-      "content": [
-        {
-          "type": "text",
-          "text": "入口在 'configfile_extractor.go'，我需要看 'ensureEstimatedUsageIfNeeded' 如何构造估计输入，以及 stream 文本在哪里写入。"
-        },
-        {
-          "type": "tool_use",
-          "id": "toolu_read_configfile_01",
-          "name": "read_file",
-          "input": {
-            "path": "relay/internal/billing/extractor/configfile_extractor.go",
-            "start_line": 338,
-            "end_line": 430
-          }
-        }
-      ]
-    },
-    {
-      "role": "user",
-      "content": [
-        {
-          "type": "tool_result",
-          "tool_use_id": "toolu_read_configfile_01",
-          "content": "func ensureEstimatedUsageIfNeeded(ctx *gin.Context) {\n    if ctx == nil {\n        return\n    }\n    prompt := ctx.GetInt(meta.UpstreamPromptTokens)\n    completion := ctx.GetInt(meta.UpstreamCompletionTokens)\n    total := ctx.GetInt(meta.UpstreamTotalTokens)\n    if prompt > 0 && completion > 0 {\n        return\n    }\n\n    cfg := &onrusageestimate.Config{}\n    onrusageestimate.ApplyDefaults(cfg)\n\n    in := onrusageestimate.Input{\n        Model: ctx.GetString(meta.RequestModel),\n        PromptTokens: prompt,\n        CompletionTokens: completion,\n        TotalTokens: total,\n        RequestBody: ctx.GetString(meta.RequestBody),\n        StreamText: ctx.GetString(meta.StreamText),\n        ResponseBody: ctx.GetString(meta.ResponseBody),\n    }\n    out := onrusageestimate.Estimate(cfg, in)\n    if out.PromptTokens > 0 {\n        ctx.Set(meta.UpstreamPromptTokens, out.PromptTokens)\n    }\n    if out.CompletionTokens > 0 {\n        ctx.Set(meta.UpstreamCompletionTokens, out.CompletionTokens)\n    }\n    if out.TotalTokens > 0 {\n        ctx.Set(meta.UpstreamTotalTokens, out.TotalTokens)\n    }\n}"
-        }
-      ]
-    },
-    {
-      "role": "assistant",
-      "content": [
-        {
-          "type": "text",
-          "text": "这里的早退条件是 'prompt > 0 && completion > 0'，所以只要 'completion == 0' 仍会进入估计。下一步要确认 'meta.StreamText' 和 'meta.ResponseBody' 是否在 Anthropic stream/tool_use 场景被正确填充。"
-        },
-        {
-          "type": "tool_use",
-          "id": "toolu_search_streamtext_01",
-          "name": "search_code",
-          "input": {
-            "pattern": "Set\\(meta\\.StreamText|StreamText",
-            "path": "relay/internal/channel"
-          }
-        }
-      ]
-    },
-    {
-      "role": "user",
-      "content": [
-        {
-          "type": "tool_result",
-          "tool_use_id": "toolu_search_streamtext_01",
-          "content": "relay/internal/channel/claudemessages/native_passthrough.go:220: current := c.GetString(meta.StreamText)\nrelay/internal/channel/claudemessages/native_passthrough.go:224: c.Set(meta.StreamText, current + text)\nrelay/internal/channel/claudemessages/native_passthrough.go:246: // tool_use input_json_delta is not appended to StreamText\nrelay/internal/channel/adaptor/configfile/response_phase.go:118: c.Set(meta.ResponseBody, bodyString)"
-        }
-      ]
-    },
-    {
-      "role": "user",
-      "content": "请继续排查：如果输出是 'tool_use'而不是文本，'completion_tokens' 为 0 的原因可能是什么？请先指出你还要读哪个函数，然后给出你当前的初步判断。"
-    }
-  ]
-}
-`),
-	})
-	if out.Usage == nil {
-		t.Fatalf("usage is nil")
+
+	tests := []struct {
+		name string
+		in   string
+		want int
+	}{
+		{name: "agent_chat_resp",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/agent_chat/req.json",
+			want: 2342},
+		{name: "chinese_chat",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/chinese_chat/req.json",
+			want: 1955},
+		{name: "english_chat",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/english_chat/req.json",
+			want: 1559},
+		{name: "chinese_agent",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/chinese_agent/req.json",
+			want: 3661},
+		{name: "english_agent",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/english_agent/req.json",
+			want: 4246},
+		{name: "english_agent_1tool",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/english_agent_1tool/req.json",
+			want: 1686},
+		{name: "english_agent_2tool",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/english_agent_2tool/req.json",
+			want: 1765},
+		{name: "english_agent_4tool",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/english_agent_4tool/req.json",
+			want: 2424},
+		{name: "chinese_agent_1tool",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/chinese_agent_1tool/req.json",
+			want: 1548},
+		{name: "chinese_agent_2tool",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/chinese_agent_2tool/req.json",
+			want: 1911},
+		{name: "chinese_chat_short",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/chinese_chat_short/req.json",
+			want: 534},
+		{name: "chinese_chat_long",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/chinese_chat_long/req.json",
+			want: 3305},
+		{name: "english_chat_short",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/english_chat_short/req.json",
+			want: 343},
+		{name: "english_chat_long",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/english_chat_long/req.json",
+			want: 2141},
+		{name: "code_review_chat",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/code_review_chat/req.json",
+			want: 1584},
+		{name: "code_writing_chat",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/code_writing_chat/req.json",
+			want: 2110},
+		{name: "mixed_en_zh_chat",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/mixed_en_zh_chat/req.json",
+			want: 1276},
 	}
-	if out.Usage.InputTokens == 0 {
-		t.Fatalf("output_tokens=%d", out.Usage.InputTokens)
+	for _, item := range tests {
+		t.Run(item.name, func(t *testing.T) {
+			data, err := os.ReadFile(item.in)
+			if err != nil {
+				t.Fatalf("read testdata: %v", err)
+			}
+			out := Estimate(cfg, Input{
+				API:           "claude.messages",
+				Model:         "claude-3-5-sonnet",
+				UpstreamUsage: &dslconfig.Usage{InputTokens: 0, OutputTokens: 6, TotalTokens: 6},
+				RequestBody:   data,
+			})
+			if out.Usage == nil {
+				t.Fatalf("usage is nil")
+			}
+			t.Logf("case %s, official input=%d, estimated=%d, deviation=%.1f%%", item.name, item.want, out.Usage.InputTokens, deviation(item.want, out.Usage.InputTokens))
+		})
 	}
 }
 
-// 测试anthropic的响应token预估，该测试仅仅开发使用，不保证功能测试正确性
+// Test Anthropic response token estimation. This test is for development use only.
 func TestEstimate_AnthropicOutput(t *testing.T) {
 	cfg := &Config{}
 	ApplyDefaults(cfg)
-	out := Estimate(cfg, Input{
-		API:           "claude.messages",
-		Model:         "claude-3-5-sonnet",
-		UpstreamUsage: &dslconfig.Usage{InputTokens: 6, OutputTokens: 0, TotalTokens: 6},
-		ResponseBody: []byte(`{
-		    "model": "claude-haiku-4-5-20251001",
-    "id": "msg_01PS8Kg2hMsvMzMKDB9RYqD9",
-    "type": "message",
-    "role": "assistant",
-	 "content":[
-	    {
-            "type": "thinking",
-            "thinking": "用户问：如果输出是 tool_use 而不是文本，completion_tokens 为 0 的原因可能是什么？\n\n我需要：\n1. 看 native_passthrough.go 中 tool_use 相关的处理逻辑\n2. 看 onrusageestimate 的估计逻辑，特别是 tool_use 场景\n3. 理解为什么 tool_use 时 completion_tokens 会为 0\n\n根据搜索结果显示：\n- Line 246: '// tool_use input_json_delta is not appended to StreamText'\n- 这说明 tool_use input_json_delta 不会被追加到 StreamText\n\n让我先读一下 native_passthrough.go 中关于 tool_use 和 completion_tokens 的处理，然后再看 onrusageestimate 的估计逻辑。",
-            "signature": "ErcGCmMIDRgCKkBXN98wrl0k1p98sEWAyQK5bUGwwPXjTMTvUmRIWYQsjFOqb63J0UvCGwgX/FXp+UPX0kWqcZEkD+PeIxs3ydDpMhljbGF1ZGUtaGFpa3UtNC01LTIwMjUxMDAxOAASDBHxQoqBr8stY+UzERoM24S+W0jYL/FBPmjTIjCF6a8wp4gWyTuyWFNfYpSVrVgXDPNppBseJswscGyg3ficmuY8tnNFhZ5VF/jZswsqgQXab8qhxGjzapxWa4wsiWN4ndkE8/YGOqh+vHVVSDi9stNVw19Ey1merMLCFOqHwv8b+qnXWXMOYuqbbg/ahT/x3ewqgMYJyYYkbU/XSSywsoHBFNDfz++PcSR7cbw41lF7Stj7BtqgzJmvDcGvHIw+YsQZpGOkpMKL90ymNDBGbRv7H6PmXJVA+3BvOAwTLnyZa/zXLci3ghhnQhebgcexICivsO052a3bm6ZtFLyjYinmHm8h5P1Ntt377+bJyiiAwTjOjn0Ryrkx4Xk6jC9gapq0VqlEyx5s8t+IIK8m5N9peHbsQMd1NFlSeAAg9Ax62EoX5nj5A5SJaZP5C7DjV6/LGtz36uEUac06avH6t7TQK8cNIalKXoqKvJcgSBhXGsOtTi04WiG88dOWQXpf1z+5hUoZ9ZkgiGuFNWouXjQZFZlByUe0u2oX0fZaM1ZWu7lL636VT50Bx7d6W8nEAHxMbJGjVASn4DtfpVzw6y7SBAfU2wAquhGnEAhAPTXt9fpzimaVKlZd4FW2eybNH7GW6IILdRXtX9MMVPkQfBMn43vGYCmuaeUDJcAZe3EXHOokuimLE16GDT/VbqOh2wCX+L7Ekp3eA5Hcce64/TJc6ERVmRRKtaSYJLqWcq/JOfwJLqpvnNk1a82SRD9mAir2s1c/Qp0APBZ84Ct/8AMQOxY0/JhjEt3cNxsFtP+KIoQyjeUOtD8jhkg7Bt76DU4U7C+sgUyOqFxeAdYn5mv4WT8PbdMTAPBorA3zJZBamSSh5ihFlVhx3YXa/5iiPh8Nm9EPIAncpiMySqW3di6G9g06FXHg1ZeLj4LeDiBD4yvyrHGzpMJz8FoYx2DotRgB"
-        },
-		  {
-            "type": "text",
-            "text": "我需要先确认以下关键路径。根据搜索结果，有个重要提示：'tool_use input_json_delta is not appended to StreamText'。\n\n**我先指出需要读的函数：**\n\n1. 'relay/internal/channel/claudemessages/native_passthrough.go' 中处理 tool_use 的部分（特别是围绕 line 220-246 的逻辑）\n2. 'onrusageestimate.Estimate()' 函数的实现（看如何估计 CompletionTokens，特别是 tool_use 场景）\n3. 检查 Anthropic stream 响应中是否包含 usage 字段、何时会丢失\n\n让我先读这些关键位置："
-        },
-        {
-            "type": "tool_use",
-            "id": "toolu_0126msd1pN8y1UTwF3Aovp8p",
-            "name": "read_file",
-            "input": {
-                "path": "relay/internal/channel/claudemessages/native_passthrough.go",
-                "start_line": 210,
-                "end_line": 280
-            },
-            "caller": {
-                "type": "direct"
-            }
-        },
-        {
-            "type": "tool_use",
-            "id": "toolu_01PdC19Dg2GTcDYVp6yd44yR",
-            "name": "search_code",
-            "input": {
-                "pattern": "func Estimate",
-                "path": "relay/internal/billing"
-            },
-            "caller": {
-                "type": "direct"
-            }
-        }
-	 ],
-	  "stop_reason": "tool_use",
-    "stop_sequence": null,
-    "stop_details": null,
-    "usage": {
-        "input_tokens": 2342,
-        "cache_creation_input_tokens": 0,
-        "cache_read_input_tokens": 0,
-        "cache_creation": {
-            "ephemeral_5m_input_tokens": 0,
-            "ephemeral_1h_input_tokens": 0
-        },
-        "output_tokens": 612,
-        "service_tier": "standard",
-        "inference_geo": "not_available"
-    }
-		
-		}`),
-	})
-	if out.Usage == nil {
-		t.Fatalf("usage is nil")
+
+	tests := []struct {
+		name string
+		in   string
+		want int
+	}{
+		{name: "agent_chat_resp",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/agent_chat/resp.json",
+			want: 512},
+		{name: "chinese_chat",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/chinese_chat/resp.json",
+			want: 107},
+		{name: "english_chat",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/english_chat/resp.json",
+			want: 453},
+		{name: "chinese_agent",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/chinese_agent/resp.json",
+			want: 2576},
+		{name: "english_agent",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/english_agent/resp.json",
+			want: 1283},
+		{name: "english_agent_1tool",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/english_agent_1tool/resp.json",
+			want: 736},
+		{name: "english_agent_2tool",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/english_agent_2tool/resp.json",
+			want: 647},
+		{name: "english_agent_4tool",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/english_agent_4tool/resp.json",
+			want: 662},
+		{name: "chinese_agent_1tool",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/chinese_agent_1tool/resp.json",
+			want: 703},
+		{name: "chinese_agent_2tool",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/chinese_agent_2tool/resp.json",
+			want: 641},
+		{name: "chinese_chat_short",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/chinese_chat_short/resp.json",
+			want: 545},
+		{name: "chinese_chat_long",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/chinese_chat_long/resp.json",
+			want: 738},
+		{name: "english_chat_short",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/english_chat_short/resp.json",
+			want: 591},
+		{name: "english_chat_long",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/english_chat_long/resp.json",
+			want: 734},
+		{name: "code_review_chat",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/code_review_chat/resp.json",
+			want: 439},
+		{name: "code_writing_chat",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/code_writing_chat/resp.json",
+			want: 1487},
+		{name: "mixed_en_zh_chat",
+			in:   "testdata/anthropic/messages/claude-haiku-4-5/mixed_en_zh_chat/resp.json",
+			want: 787},
 	}
+	for _, item := range tests {
+		t.Run(item.name, func(t *testing.T) {
+			data, err := os.ReadFile(item.in)
+			if err != nil {
+				t.Fatalf("read testdata: %v", err)
+			}
+			out := Estimate(cfg, Input{
+				API:           "claude.messages",
+				Model:         "claude-3-5-sonnet",
+				UpstreamUsage: &dslconfig.Usage{InputTokens: 6, OutputTokens: 0, TotalTokens: 6},
+				ResponseBody:  data,
+			})
+			if out.Usage == nil {
+				t.Fatalf("usage is nil")
+			}
+			if out.Usage == nil {
+				t.Fatalf("usage is nil")
+			}
+			t.Logf("case %s, official output=%d, estimated=%d, deviation=%.1f%%", item.name, item.want, out.Usage.OutputTokens, deviation(item.want, out.Usage.OutputTokens))
+		})
+	}
+
 }
 
-// 测试anthropic的sse提取和token预估，该测试仅仅开发使用，不保证功能测试正确性
+// Test Anthropic SSE extraction and token estimation. This test is for development use only.
 func TestEstimate_AnthropicStreamOutput(t *testing.T) {
 	cfg := &Config{}
 	ApplyDefaults(cfg)
@@ -618,7 +529,7 @@ func TestEstimate_AnthropicStreamOutput(t *testing.T) {
 - 导致估计器接收到的 'StreamText' 为空，无法估算 'completion_tokens'，最终为 0
 
 让我读这两个关键位置确认：read_file{"path": "relay/internal/channel/claudemessages/native_passthrough.go", "start_line": 210, "end_line": 260}search_code{"pattern": "func Estimate", "path": "relay/internal/onrusageestimate"}`
-	payload, err := json.Marshal(map[string]string{"text": esc}) //转义特殊字符
+	payload, err := json.Marshal(map[string]string{"text": esc}) // Escape special characters.
 	if err == nil {
 		streamTail = []byte("data: " + string(payload) + "\n\n")
 	} else {
@@ -633,7 +544,7 @@ func TestEstimate_AnthropicStreamOutput(t *testing.T) {
 	if out.Usage == nil {
 		t.Fatalf("usage is nil")
 	}
-	t.Logf("anthropic stream out token = %d expected 785", out.Usage.OutputTokens)
+	t.Logf("official output=785, estimated=%d", out.Usage.OutputTokens)
 }
 
 func TestExtractStreamText_ChatCompletionsDelta(t *testing.T) {
@@ -854,10 +765,20 @@ func Test_stringifyAnthropicRequest(t *testing.T) {
 	if err := json.Unmarshal(rawBody, &req); err != nil {
 		t.Fatal(err.Error())
 	}
-	s := stringifyAnthropicRequest(req)
+	s, n := stringifyAnthropicRequest(req)
 	if s == "" {
 		t.Fatalf("expected normal s,but get \"\"")
 	}
+	if n != 3 {
+		t.Fatalf("expected num of tools is 3 s,but get %d\"\"", n)
+	}
 	t.Log(s)
 
+}
+
+func deviation(official, estimated int) float64 {
+	if official == 0 {
+		return 0
+	}
+	return float64(estimated-official) / float64(official) * 100
 }

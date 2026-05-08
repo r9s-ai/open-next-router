@@ -1,0 +1,168 @@
+{
+  "model":"claude-haiku-4-5",
+ "max_tokens": 2048,
+  "thinking": {
+    "type": "enabled",
+    "budget_tokens": 1024
+  },
+  "stream":true,
+  "system": [
+    {
+      "type": "text",
+      "text": "你是一个资深 code agent，正在一个 Go relay 服务仓库中帮助用户排查计费 token 估计问题。你可以使用工具读取文件、搜索代码和查看 git diff。回答使用中文，但保留代码标识符、文件路径、函数名和变量名的英文原文。排查时先基于证据，不要臆测；需要更多上下文时调用工具。"
+    }
+  ],
+  "tools": [
+    {
+      "name": "read_file",
+      "description": "Read a repository file and optionally return a selected line range.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Repository-relative file path."
+          },
+          "start_line": {
+            "type": "integer",
+            "description": "1-based start line."
+          },
+          "end_line": {
+            "type": "integer",
+            "description": "1-based end line."
+          }
+        },
+        "required": ["path"]
+      }
+    },
+    {
+      "name": "search_code",
+      "description": "Search repository code with a ripgrep-compatible pattern and return matching file paths and line snippets.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "description": "Search pattern."
+          },
+          "path": {
+            "type": "string",
+            "description": "Optional repository-relative directory."
+          }
+        },
+        "required": ["pattern"]
+      }
+    },
+    {
+      "name": "show_diff",
+      "description": "Show the current git diff for selected files.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Repository-relative file paths. Empty or omitted means all changed files."
+          }
+        }
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "我们线上有个问题：Anthropic /v1/messages 流式响应内容正常，但有时 billing 里 output_tokens 是 0。请帮我排查。先不要改代码，先看 token 估计相关逻辑。"
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "我会先找 'output_tokens'、'stream_text' 和估计逻辑的入口，确认缺失上游 usage 时是否会从流式文本或 tool_use 内容估计。"
+        },
+        {
+          "type": "tool_use",
+          "id": "toolu_search_estimate_01",
+          "name": "search_code",
+          "input": {
+            "pattern": "ensureEstimatedUsageIfNeeded|StreamText|UpstreamCompletionTokens",
+            "path": "relay/internal"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_search_estimate_01",
+          "content": "relay/internal/billing/extractor/configfile_extractor.go:55: ensureEstimatedUsageIfNeeded(ctx)\nrelay/internal/billing/extractor/configfile_extractor.go:338: func ensureEstimatedUsageIfNeeded(ctx *gin.Context) {\nrelay/internal/billing/extractor/configfile_extractor.go:390: StreamText: ctx.GetString(meta.StreamText),\nrelay/internal/channel/claudemessages/native_passthrough.go:438: c.Set(meta.UpstreamCompletionTokensEstimated, true)\nrelay/internal/meta/key.go:41: StreamText = \"stream_text\"\nrelay/internal/meta/key.go:76: UpstreamCompletionTokens = \"upstream_completion_tokens\""
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "入口在 'configfile_extractor.go'，我需要看 'ensureEstimatedUsageIfNeeded' 如何构造估计输入，以及 stream 文本在哪里写入。"
+        },
+        {
+          "type": "tool_use",
+          "id": "toolu_read_configfile_01",
+          "name": "read_file",
+          "input": {
+            "path": "relay/internal/billing/extractor/configfile_extractor.go",
+            "start_line": 338,
+            "end_line": 430
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_read_configfile_01",
+          "content": "func ensureEstimatedUsageIfNeeded(ctx *gin.Context) {\n    if ctx == nil {\n        return\n    }\n    prompt := ctx.GetInt(meta.UpstreamPromptTokens)\n    completion := ctx.GetInt(meta.UpstreamCompletionTokens)\n    total := ctx.GetInt(meta.UpstreamTotalTokens)\n    if prompt > 0 && completion > 0 {\n        return\n    }\n\n    cfg := &onrusageestimate.Config{}\n    onrusageestimate.ApplyDefaults(cfg)\n\n    in := onrusageestimate.Input{\n        Model: ctx.GetString(meta.RequestModel),\n        PromptTokens: prompt,\n        CompletionTokens: completion,\n        TotalTokens: total,\n        RequestBody: ctx.GetString(meta.RequestBody),\n        StreamText: ctx.GetString(meta.StreamText),\n        ResponseBody: ctx.GetString(meta.ResponseBody),\n    }\n    out := onrusageestimate.Estimate(cfg, in)\n    if out.PromptTokens > 0 {\n        ctx.Set(meta.UpstreamPromptTokens, out.PromptTokens)\n    }\n    if out.CompletionTokens > 0 {\n        ctx.Set(meta.UpstreamCompletionTokens, out.CompletionTokens)\n    }\n    if out.TotalTokens > 0 {\n        ctx.Set(meta.UpstreamTotalTokens, out.TotalTokens)\n    }\n}"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "这里的早退条件是 'prompt > 0 && completion > 0'，所以只要 'completion == 0' 仍会进入估计。下一步要确认 'meta.StreamText' 和 'meta.ResponseBody' 是否在 Anthropic stream/tool_use 场景被正确填充。"
+        },
+        {
+          "type": "tool_use",
+          "id": "toolu_search_streamtext_01",
+          "name": "search_code",
+          "input": {
+            "pattern": "Set\\(meta\\.StreamText|StreamText",
+            "path": "relay/internal/channel"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_search_streamtext_01",
+          "content": "relay/internal/channel/claudemessages/native_passthrough.go:220: current := c.GetString(meta.StreamText)\nrelay/internal/channel/claudemessages/native_passthrough.go:224: c.Set(meta.StreamText, current + text)\nrelay/internal/channel/claudemessages/native_passthrough.go:246: // tool_use input_json_delta is not appended to StreamText\nrelay/internal/channel/adaptor/configfile/response_phase.go:118: c.Set(meta.ResponseBody, bodyString)"
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": "请继续排查：如果输出是 'tool_use'而不是文本，'completion_tokens' 为 0 的原因可能是什么？请先指出你还要读哪个函数，然后给出你当前的初步判断。"
+    }
+  ]
+}

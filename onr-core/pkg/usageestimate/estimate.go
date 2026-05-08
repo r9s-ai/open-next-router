@@ -79,7 +79,7 @@ func Estimate(cfg *Config, in Input) Output {
 	}
 
 	reqParsed := parseRequestBody(in.RequestBody, in.RequestRoot, cfg.MaxRequestBytes)
-	reqText := extractRequestTextFromParsed(in.API, reqParsed)
+	reqText, numTools := extractRequestTextFromParsed(in.API, reqParsed)
 	respText := ""
 	if len(in.StreamTail) > 0 {
 		respText = extractStreamText(in.API, in.StreamTail, cfg.MaxStreamCollectBytes)
@@ -88,8 +88,8 @@ func Estimate(cfg *Config, in Input) Output {
 	}
 
 	est := &dslconfig.Usage{
-		InputTokens:  EstimateTokenByModel(in.Model, reqText),
-		OutputTokens: EstimateTokenByModel(in.Model, respText),
+		InputTokens:  EstimateTokenByModel(in.Model, reqText, numTools),
+		OutputTokens: EstimateTokenByModel(in.Model, respText, numTools),
 	}
 	est.TotalTokens = est.InputTokens + est.OutputTokens
 
@@ -117,8 +117,9 @@ func estimateMissingFields(cfg *Config, in Input, u *dslconfig.Usage) (*dslconfi
 
 	reqParsed := parseRequestBody(in.RequestBody, in.RequestRoot, cfg.MaxRequestBytes)
 	reqText := ""
+	numTools := 0
 	if needPrompt {
-		reqText = extractRequestTextFromParsed(in.API, reqParsed)
+		reqText, numTools = extractRequestTextFromParsed(in.API, reqParsed)
 		if strings.TrimSpace(reqText) == "" {
 			needPrompt = false
 		}
@@ -142,10 +143,10 @@ func estimateMissingFields(cfg *Config, in Input, u *dslconfig.Usage) (*dslconfi
 
 	out := *u
 	if needPrompt {
-		out.InputTokens = EstimateTokenByModel(in.Model, reqText)
+		out.InputTokens = EstimateTokenByModel(in.Model, reqText, numTools)
 	}
 	if needCompletion {
-		out.OutputTokens = EstimateTokenByModel(in.Model, respText)
+		out.OutputTokens = EstimateTokenByModel(in.Model, respText, numTools)
 	}
 	out.TotalTokens = out.InputTokens + out.OutputTokens
 
@@ -202,7 +203,7 @@ func isAllZero(u *dslconfig.Usage) bool {
 		(u.InputTokenDetails == nil || (u.InputTokenDetails.CachedTokens == 0 && u.InputTokenDetails.CacheWriteTokens == 0))
 }
 
-func extractRequestText(api string, body []byte, limit int) string {
+func extractRequestText(api string, body []byte, limit int) (string, int) {
 	return extractRequestTextFromParsed(api, parseRequestBody(body, nil, limit))
 }
 
@@ -222,40 +223,40 @@ func parseRequestBody(body []byte, root map[string]any, limit int) parsedRequest
 	return parsedRequestBody{raw: body, obj: obj, root: m}
 }
 
-func extractRequestTextFromParsed(api string, parsed parsedRequestBody) string {
+func extractRequestTextFromParsed(api string, parsed parsedRequestBody) (string, int) {
 	if len(bytes.TrimSpace(parsed.raw)) == 0 {
-		return ""
+		return "", 0
 	}
 	if parsed.err != nil {
-		return string(bytes.TrimSpace(parsed.raw))
+		return string(bytes.TrimSpace(parsed.raw)), 0
 	}
 	m := parsed.root
 	if m == nil {
-		return ""
+		return "", 0
 	}
 
 	switch normalizeAPI(api) {
 	case apiEmbeddings, apiResponses:
 		// responses can use "input", embeddings uses "input".
 		if v, ok := m["input"]; ok {
-			return stringifyAny(v)
+			return stringifyAny(v), 0
 		}
 	case apiGeminiGenerateContent, apiGeminiStreamGenerateContent:
 		// Gemini native request: contents[].parts[].text
 		if v, ok := m["contents"]; ok {
-			return stringifyGeminiContents(v)
+			return stringifyGeminiContents(v), 0
 		}
 	case apiMessages:
 		return stringifyAnthropicRequest(m)
 
 	}
 	if v, ok := m["prompt"]; ok {
-		return stringifyAny(v)
+		return stringifyAny(v), 0
 	}
 	if v, ok := m["input"]; ok {
-		return stringifyAny(v)
+		return stringifyAny(v), 0
 	}
-	return ""
+	return "", 0
 }
 
 func extractResponseText(api string, body []byte, limit int) string {
@@ -313,7 +314,7 @@ func extractResponseText(api string, body []byte, limit int) string {
 							if thinking_text, ok := im[typeInfo].(string); ok {
 								b.WriteString(thinking_text + "\n")
 							}
-						case "tool_use", "server_tool_use": //提取tool call 信息
+						case "tool_use", "server_tool_use": // Extract tool call details.
 							b.WriteString(typeInfo + " ")
 							if toolName, ok := im["name"].(string); ok {
 								b.WriteString(toolName + " ")
@@ -322,7 +323,7 @@ func extractResponseText(api string, body []byte, limit int) string {
 								data, _ := json.Marshal(input)
 								b.Write(data)
 							}
-							// web_search_tool_result，redacted_thinking 暂时不处理
+							// web_search_tool_result and redacted_thinking are skipped for now.
 						}
 					}
 				}
@@ -403,7 +404,7 @@ func stringifyAny(v any) string {
 			b.WriteString(text + " ")
 		}
 		if content, ok := t["content"].(string); ok {
-			//使用场景anthropic {"role": "user", "content": "Hello"}
+			// Anthropic example: {"role": "user", "content": "Hello"}
 			b.WriteString(content + " ")
 		}
 
@@ -414,10 +415,10 @@ func stringifyAny(v any) string {
 	}
 }
 
-// 用于提取anthropic请求中的内容用于分词
-func stringifyAnthropicRequest(reqBody map[string]any) string {
+// extract text content and tool count from Anthropic request body for token estimation
+func stringifyAnthropicRequest(reqBody map[string]any) (string, int) {
 	var b strings.Builder
-
+	var numTools int
 	for k, v := range reqBody {
 		switch k {
 		case "system":
@@ -427,8 +428,9 @@ func stringifyAnthropicRequest(reqBody map[string]any) string {
 			stringifyAnthropicMessages(v, &b, 0, 10)
 			b.WriteString("\n")
 		case "tools":
-			b.WriteString("tool\n")
+			b.WriteString("tools\n")
 			toolList, ok := v.([]any)
+			numTools = len(toolList)
 			if !ok {
 				data, _ := json.Marshal(v)
 				b.WriteString(string(data) + "\n")
@@ -448,7 +450,7 @@ func stringifyAnthropicRequest(reqBody map[string]any) string {
 		}
 
 	}
-	return b.String()
+	return b.String(), numTools
 }
 
 func stringifyAnthropicMessages(v any, b *strings.Builder, deep int, maxDeep int) {
@@ -456,15 +458,15 @@ func stringifyAnthropicMessages(v any, b *strings.Builder, deep int, maxDeep int
 		return
 	}
 	switch t := v.(type) {
-	case []any: //处理content black list
+	case []any: // Handle content block list.
 		for _, it := range t {
 			stringifyAnthropicMessages(it, b, deep+1, maxDeep)
 		}
 		return
-	case string: //处理content string
+	case string: // Handle content string.
 		b.WriteString(t)
 		return
-	case map[string]any: //处理content black
+	case map[string]any: // Handle content block.
 		stringifyAnthropicMessageObject(t, b, deep, maxDeep)
 		return
 
@@ -476,7 +478,7 @@ func stringifyAnthropicMessages(v any, b *strings.Builder, deep int, maxDeep int
 }
 
 func stringifyAnthropicMessageObject(t map[string]any, b *strings.Builder, deep int, maxDeep int) {
-	if role, ok := t["role"].(string); ok { //角色信息
+	if role, ok := t["role"].(string); ok { // Role info.
 		b.WriteString("role:" + role + "\n")
 	}
 
@@ -493,15 +495,15 @@ func stringifyAnthropicMessageObject(t map[string]any, b *strings.Builder, deep 
 
 func stringifyAnthropicContentBlock(typeInfo string, t map[string]any, b *strings.Builder, deep int, maxDeep int) {
 	switch typeInfo {
-	case "text": //文本内容
+	case "text": // Text content.
 		if text, ok := t["text"].(string); ok {
 			b.WriteString(text)
 		}
-	case "image": //TODO 图片内容提取
+	case "image": // TODO: extract image content.
 		b.WriteString("")
-	case "document": //TODO 文件内容提取
+	case "document": // TODO: extract document content.
 		b.WriteString("")
-	case "tool_use", "server_tool_use": //提取tool call 信息
+	case "tool_use", "server_tool_use": // Extract tool call details.
 		b.WriteString(typeInfo + " ")
 		if toolName, ok := t["name"].(string); ok {
 			b.WriteString(toolName + " ")
@@ -510,14 +512,14 @@ func stringifyAnthropicContentBlock(typeInfo string, t map[string]any, b *string
 			data, _ := json.Marshal(input)
 			b.Write(data)
 		}
-	case "tool_result": //提取tool 调用结果信息
+	case "tool_result": // Extract tool result details.
 		b.WriteString(typeInfo + " ")
 		if content, ok := t["content"]; ok {
 			stringifyAnthropicToolResultContent(content, b, deep, maxDeep)
 		}
 	case "web_search_tool_result":
-		// web search result 暂时不估计。
-	case "thinking": //思考内容
+		// Web search result is not estimated yet.
+	case "thinking": // Thinking content.
 		if thinking, ok := t["thinking"].(string); ok {
 			b.WriteString("thinking " + thinking)
 		}
