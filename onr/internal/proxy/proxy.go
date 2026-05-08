@@ -657,6 +657,7 @@ func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey
 		BaseURL:            normalizeUpstreamBaseURL(key.BaseURLOverride),
 		RequestURLPath:     gc.Request.URL.RequestURI(),
 		RequestContentType: gc.Request.Header.Get("Content-Type"),
+		RequestHeaders:     gc.Request.Header,
 		RequestBody:        bodyBytes,
 		StartTime:          time.Now(),
 	}
@@ -796,6 +797,7 @@ func applyRequestTransform(meta *dslmeta.Meta, contentType, contentEncoding stri
 	}
 	return requesttransform.Apply(meta, contentType, bodyBytes, root, t, requesttransform.ApplyOptions{
 		ContentEncoding: contentEncoding,
+		RequestHeaders:  meta.RequestHeaders,
 	})
 }
 

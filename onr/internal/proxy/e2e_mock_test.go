@@ -95,6 +95,59 @@ func TestE2EMock_ChatCompletions_AnthropicMessages_NonStream(t *testing.T) {
 	assertGolden(t, "golden/anthropic_nonstream_openai_chat.json", normalizeForGolden(rec.Body.String()))
 }
 
+func TestE2EMock_ChatCompletions_BedrockAnthropicBetaHeaderMappedToBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockResp := mustReadTestData(t, "mock_upstream/anthropic/messages_nonstream_ok.json")
+	fixtureReq := mustReadTestData(t, "fixtures/chat_nonstream_request.json")
+
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/messages" {
+			http.NotFound(w, r)
+			return
+		}
+		if got := strings.TrimSpace(r.Header.Get("anthropic-beta")); got != "" {
+			t.Fatalf("anthropic-beta header forwarded upstream: %q", got)
+		}
+		var req map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode upstream request: %v", err)
+		}
+		betas, _ := req["anthropic_beta"].([]any)
+		if len(betas) != 2 {
+			t.Fatalf("anthropic_beta len=%d want=2, body=%#v", len(betas), req)
+		}
+		if asString(betas[0]) != "computer-use-2025-01-24" || asString(betas[1]) != "CONTEXT-MANAGEMENT-2025-06-27" {
+			t.Fatalf("unexpected anthropic_beta: %#v", betas)
+		}
+		if got := asString(req["anthropic_version"]); got != "bedrock-2023-05-31" {
+			t.Fatalf("anthropic_version=%q want bedrock-2023-05-31", got)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(mockResp)
+	}))
+	t.Cleanup(mock.Close)
+
+	c := newMockE2EClient(t, map[string]string{
+		"bedrock-anthropic.conf": providerConfBedrockAnthropicBeta(mock.URL),
+	})
+	gc, rec := newGinJSONRequest(t, fixtureReq)
+	gc.Request.Header.Set("anthropic-beta", "computer-use-2025-01-24, unknown, CONTEXT-MANAGEMENT-2025-06-27")
+
+	res, err := c.ProxyJSON(gc, "bedrock-anthropic", ProviderKey{Name: "bedrock-key", Value: "mock-key"}, "chat.completions", false)
+	if err != nil {
+		t.Fatalf("proxy error: %v", err)
+	}
+	if res == nil || res.Status != http.StatusOK {
+		t.Fatalf("unexpected result: %#v", res)
+	}
+	if got := rec.Code; got != http.StatusOK {
+		t.Fatalf("unexpected status: %d", got)
+	}
+}
+
 func TestE2EMock_ChatCompletions_AnthropicMessages_StreamToolUse(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -1109,6 +1162,46 @@ provider "anthropic" {
     }
     response {
       sse_parse anthropic_to_openai_chunks;
+    }
+  }
+}
+`, baseURL)
+}
+
+func providerConfBedrockAnthropicBeta(baseURL string) string {
+	return fmt.Sprintf(`syntax "next-router/0.1";
+
+provider "bedrock-anthropic" {
+  defaults {
+    upstream_config {
+      base_url = %q;
+    }
+    auth {
+      auth_header_key "x-api-key";
+    }
+    request {
+      after_req_map {
+        json_set "$.anthropic_version" "bedrock-2023-05-31";
+        json_set_header_values "$.anthropic_beta" "anthropic-beta";
+        json_filter_values "$.anthropic_beta" "computer-use-2025-01-24" "context-management-2025-06-27";
+      }
+      del_header "anthropic-beta";
+    }
+    response {
+      resp_passthrough;
+    }
+  }
+
+  match api = "chat.completions" stream = false {
+    request {
+      req_map openai_chat_to_anthropic_messages;
+      json_del "$.stream_options";
+    }
+    upstream {
+      set_path "/v1/messages";
+    }
+    response {
+      resp_map anthropic_to_openai_chat;
     }
   }
 }

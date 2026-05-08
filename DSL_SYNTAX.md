@@ -1389,7 +1389,7 @@ Context: request
 Multiple: yes
 ```
 
-- Reads downstream request header values, splits them into items, and writes them as a JSON string array.
+- Reads original downstream user request header values, splits them into items, and writes them as a JSON string array. It does not read the upstream headers prepared by request header rules.
 - If no header item exists, the JSON path is not written.
 - JSONPath is limited to object paths: `$.a.b.c`.
 

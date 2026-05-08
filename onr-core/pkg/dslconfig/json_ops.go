@@ -87,6 +87,10 @@ func ApplyJSONOps(meta *dslmeta.Meta, in map[string]any, ops []JSONOp) (map[stri
 	return obj, nil
 }
 
+// headerValuesForJSON reads header values from the original downstream user request.
+// It intentionally does not read headers prepared for the upstream request, so
+// JSON body fields can still be populated from headers that request rules delete
+// before forwarding upstream.
 func headerValuesForJSON(meta *dslmeta.Meta, headerName string, separator string) []string {
 	name := strings.TrimSpace(headerName)
 	if meta == nil || meta.RequestHeaders == nil || name == "" {
