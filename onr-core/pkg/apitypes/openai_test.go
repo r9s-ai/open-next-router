@@ -82,6 +82,10 @@ func TestOpenAIChatCompletionsResponseFromMap(t *testing.T) {
 			"prompt_tokens":     float64(10),
 			"completion_tokens": float64(5),
 			"total_tokens":      float64(15),
+			"prompt_tokens_details": map[string]any{
+				"cached_tokens":      float64(7),
+				"cache_write_tokens": float64(4),
+			},
 			"completion_tokens_details": map[string]any{
 				"reasoning_tokens": float64(2),
 			},
@@ -97,8 +101,15 @@ func TestOpenAIChatCompletionsResponseFromMap(t *testing.T) {
 	require.Equal(t, "done", *resp.Choices[0].Message.Content.Text)
 	require.NotNil(t, resp.Usage)
 	require.Equal(t, 15, resp.Usage.TotalTokens)
+	require.NotNil(t, resp.Usage.PromptTokensDetails)
+	require.Equal(t, 7, resp.Usage.PromptTokensDetails.CachedTokens)
+	require.Equal(t, 4, resp.Usage.PromptTokensDetails.CacheWriteTokens)
 	require.NotNil(t, resp.Usage.CompletionTokensDetails)
 	require.Equal(t, 2, resp.Usage.CompletionTokensDetails.ReasoningTokens)
+
+	got, err := resp.Usage.ToMap()
+	require.NoError(t, err)
+	require.Contains(t, got, "prompt_tokens_details")
 }
 
 func TestOpenAIChatCompletionsStreamResponseMapRoundTrip(t *testing.T) {

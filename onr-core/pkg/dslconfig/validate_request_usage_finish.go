@@ -68,6 +68,13 @@ func validateRequestJSONOps(path, providerName, scope string, ops []JSONOp) erro
 			if _, err := parseObjectPath(op.Path); err != nil {
 				return fmt.Errorf("provider %q in %q: %s invalid json path: %w", providerName, path, opScope, err)
 			}
+		case jsonOpDelIfMissing:
+			if _, err := parseObjectPath(op.Path); err != nil {
+				return fmt.Errorf("provider %q in %q: %s invalid json path: %w", providerName, path, opScope, err)
+			}
+			if _, err := parseObjectPath(op.FromPath); err != nil {
+				return fmt.Errorf("provider %q in %q: %s invalid required path: %w", providerName, path, opScope, err)
+			}
 		case jsonOpSetHeaderVals:
 			if _, err := parseObjectPath(op.Path); err != nil {
 				return fmt.Errorf("provider %q in %q: %s invalid json path: %w", providerName, path, opScope, err)

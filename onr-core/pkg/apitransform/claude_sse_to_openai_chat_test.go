@@ -70,7 +70,7 @@ func TestTransformClaudeMessagesSSEToOpenAIChatCompletionsSSE_ToolUse(t *testing
 func TestTransformClaudeMessagesSSEToOpenAIChatCompletionsSSE_EmitsFinalUsageChunk(t *testing.T) {
 	in := strings.Join([]string{
 		"event: message_start",
-		`data: {"type":"message_start","message":{"id":"msg_usage_1","model":"claude-haiku-4-5-20251001","usage":{"input_tokens":11,"cache_read_input_tokens":2}}}`,
+		`data: {"type":"message_start","message":{"id":"msg_usage_1","model":"claude-haiku-4-5-20251001","usage":{"input_tokens":11,"cache_read_input_tokens":2,"cache_creation_input_tokens":7}}}`,
 		"",
 		"event: content_block_delta",
 		`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hi"}}`,
@@ -92,7 +92,45 @@ func TestTransformClaudeMessagesSSEToOpenAIChatCompletionsSSE_EmitsFinalUsageChu
 		s,
 		`"finish_reason":"stop"`,
 		`"choices":[]`,
-		`"usage":{"completion_tokens":19,"prompt_tokens":11,"prompt_tokens_details":{"cached_tokens":2},"total_tokens":30}`,
+		`"completion_tokens":19`,
+		`"prompt_tokens":20`,
+		`"cached_tokens":2`,
+		`"cache_write_tokens":7`,
+		`"total_tokens":39`,
+		"data: [DONE]",
+	) {
+		t.Fatalf("unexpected output: %s", s)
+	}
+}
+
+func TestTransformClaudeMessagesSSEToOpenAIChatCompletionsSSE_MergesUsageAcrossEvents(t *testing.T) {
+	in := strings.Join([]string{
+		"event: message_start",
+		`data: {"type":"message_start","message":{"id":"msg_usage_2","model":"claude-opus-4-6","usage":{"input_tokens":22}}}`,
+		"",
+		"event: message_delta",
+		`data: {"type":"message_delta","usage":{"cache_creation_input_tokens":139,"output_tokens":3}}`,
+		"",
+		"event: message_delta",
+		`data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":10}}`,
+		"",
+		"event: message_stop",
+		`data: {"type":"message_stop"}`,
+		"",
+	}, "\n")
+
+	var out bytes.Buffer
+	if err := TransformClaudeMessagesSSEToOpenAIChatCompletionsSSE(bytes.NewBufferString(in), &out); err != nil {
+		t.Fatalf("transform error: %v", err)
+	}
+	s := out.String()
+	if !containsAll(
+		s,
+		`"finish_reason":"tool_calls"`,
+		`"completion_tokens":10`,
+		`"prompt_tokens":161`,
+		`"cache_write_tokens":139`,
+		`"total_tokens":171`,
 		"data: [DONE]",
 	) {
 		t.Fatalf("unexpected output: %s", s)

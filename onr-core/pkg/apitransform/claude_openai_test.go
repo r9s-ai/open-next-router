@@ -90,6 +90,46 @@ func TestMapClaudeMessagesResponseToOpenAIChatCompletions_Basic(t *testing.T) {
 	}
 }
 
+func TestMapClaudeMessagesResponseToOpenAIChatCompletions_PreservesCacheUsage(t *testing.T) {
+	in := []byte(`{
+  "id":"msg_123",
+  "type":"message",
+  "role":"assistant",
+  "model":"claude-3-5-sonnet-20240620",
+  "content":[{"type":"text","text":"hello"}],
+  "stop_reason":"end_turn",
+  "usage":{"input_tokens":10,"output_tokens":4,"cache_creation_input_tokens":7,"cache_read_input_tokens":2}
+}`)
+	out, err := MapClaudeMessagesResponseToOpenAIChatCompletions(in)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(out, &obj); err != nil {
+		t.Fatalf("unexpected unmarshal error: %v", err)
+	}
+	usage, ok := obj["usage"].(map[string]any)
+	if !ok {
+		t.Fatalf("usage must be object, got %#v", obj["usage"])
+	}
+	if got, want := usage["prompt_tokens"], float64(19); got != want {
+		t.Fatalf("prompt_tokens=%#v want %#v", got, want)
+	}
+	if got, want := usage["total_tokens"], float64(23); got != want {
+		t.Fatalf("total_tokens=%#v want %#v", got, want)
+	}
+	promptDetails, ok := usage["prompt_tokens_details"].(map[string]any)
+	if !ok {
+		t.Fatalf("prompt_tokens_details must be object, got %#v", usage["prompt_tokens_details"])
+	}
+	if got, want := promptDetails["cached_tokens"], float64(2); got != want {
+		t.Fatalf("cached_tokens=%#v want %#v", got, want)
+	}
+	if got, want := promptDetails["cache_write_tokens"], float64(7); got != want {
+		t.Fatalf("cache_write_tokens=%#v want %#v", got, want)
+	}
+}
+
 func TestMapClaudeMessagesResponseToOpenAIChatCompletions_SingleChoiceAggregatesContentAndToolCalls(t *testing.T) {
 	in := []byte(`{
   "id":"msg_123",

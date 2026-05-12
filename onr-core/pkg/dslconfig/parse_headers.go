@@ -142,6 +142,12 @@ func parseRequestPhaseWithTransform(s *scanner, phase *PhaseHeaders, transform *
 			}
 			return parseJSONDelStmt(s, t)
 		},
+		"json_del_if_missing": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
+			if t == nil {
+				return skipStmtOrBlock(s)
+			}
+			return parseJSONDelIfMissingStmt(s, t)
+		},
 		"json_rename": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
 			if t == nil {
 				return skipStmtOrBlock(s)
@@ -256,6 +262,10 @@ func parseRequestJSONOpsOnlyBlock(s *scanner, t *RequestTransform, blockName str
 				}
 			case "json_del":
 				if err := parseJSONDelStmt(s, t); err != nil {
+					return err
+				}
+			case "json_del_if_missing":
+				if err := parseJSONDelIfMissingStmt(s, t); err != nil {
 					return err
 				}
 			case "json_rename":
@@ -375,6 +385,39 @@ func parseJSONDelStmt(s *scanner, t *RequestTransform) error {
 	t.JSONOps = append(t.JSONOps, JSONOp{
 		Op:   jsonOpDel,
 		Path: strings.TrimSpace(path),
+	})
+	return nil
+}
+
+func parseJSONDelIfMissingStmt(s *scanner, t *RequestTransform) error {
+	// json_del_if_missing <target-jsonpath> <required-jsonpath>;
+	targetTok := s.nextNonTrivia()
+	switch targetTok.kind {
+	case tokIdent, tokString:
+	default:
+		return s.errAt(targetTok, "json_del_if_missing expects target path")
+	}
+	target := targetTok.text
+	if targetTok.kind == tokString {
+		target = unquoteString(targetTok.text)
+	}
+	requiredTok := s.nextNonTrivia()
+	switch requiredTok.kind {
+	case tokIdent, tokString:
+	default:
+		return s.errAt(requiredTok, "json_del_if_missing expects required path")
+	}
+	required := requiredTok.text
+	if requiredTok.kind == tokString {
+		required = unquoteString(requiredTok.text)
+	}
+	if err := consumeSemicolon(s, "json_del_if_missing"); err != nil {
+		return err
+	}
+	t.JSONOps = append(t.JSONOps, JSONOp{
+		Op:       jsonOpDelIfMissing,
+		Path:     strings.TrimSpace(target),
+		FromPath: strings.TrimSpace(required),
 	})
 	return nil
 }

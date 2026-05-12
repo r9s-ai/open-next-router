@@ -155,6 +155,36 @@ func TestApplyJSONOps_TableDriven(t *testing.T) {
 			want: map[string]any{},
 		},
 		{
+			name: "json_del_if_missing_deletes_tool_choice_after_tools_removed",
+			in: map[string]any{
+				"tools":       []any{map[string]any{"type": "web_search_20260209", "name": "web_search"}},
+				"tool_choice": "auto",
+			},
+			ops: []JSONOp{
+				{Op: "json_del_with_condition", Path: "$.tools", FieldName: "type", Patterns: []string{"web_search*"}},
+				{Op: "json_del_if_missing", Path: "$.tool_choice", FromPath: "$.tools"},
+			},
+			want: map[string]any{},
+		},
+		{
+			name: "json_del_if_missing_keeps_tool_choice_when_tools_remain",
+			in: map[string]any{
+				"tools": []any{
+					map[string]any{"type": "web_search_20260209", "name": "web_search"},
+					map[string]any{"type": "custom", "name": "keep"},
+				},
+				"tool_choice": map[string]any{"type": "function", "function": map[string]any{"name": "keep"}},
+			},
+			ops: []JSONOp{
+				{Op: "json_del_with_condition", Path: "$.tools", FieldName: "type", Patterns: []string{"web_search*"}},
+				{Op: "json_del_if_missing", Path: "$.tool_choice", FromPath: "$.tools"},
+			},
+			want: map[string]any{
+				"tools":       []any{map[string]any{"type": "custom", "name": "keep"}},
+				"tool_choice": map[string]any{"type": "function", "function": map[string]any{"name": "keep"}},
+			},
+		},
+		{
 			name: "json_del_with_condition_ignores_scalar",
 			in:   map[string]any{"tool_choice": "auto"},
 			ops:  []JSONOp{{Op: "json_del_with_condition", Path: "$.tool_choice", FieldName: "type", Patterns: []string{"web_search*", "web_fetch*"}}},

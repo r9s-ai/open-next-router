@@ -616,6 +616,124 @@ provider "demo" {
 	}
 }
 
+func TestExtractUsage_UsageFactCacheWriteTotalUsesAggregateBeforeTTLDetailFallback(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.conf")
+	// #nosec G306 -- test data file.
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "demo" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_extract custom;
+      usage_fact input token path="$.usage.input_tokens";
+      usage_fact output token path="$.usage.output_tokens";
+      usage_fact cache_write token path="$.usage.cache_creation_input_tokens";
+      usage_fact cache_write token path="$.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m" fallback=true;
+      usage_fact cache_write token path="$.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h" fallback=true;
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+
+	body := []byte(`{
+	  "usage": {
+	    "input_tokens": 10,
+	    "output_tokens": 20,
+	    "cache_creation": {
+	      "ephemeral_5m_input_tokens": 7,
+	      "ephemeral_1h_input_tokens": 9
+	    },
+	    "cache_creation_input_tokens": 30
+	  }
+	}`)
+
+	usage, _, err := ExtractUsage(&dslmeta.Meta{}, &pf.Usage.Defaults, body)
+	if err != nil {
+		t.Fatalf("ExtractUsage: %v", err)
+	}
+	if usage == nil || usage.InputTokenDetails == nil {
+		t.Fatalf("expected InputTokenDetails")
+	}
+	if got, want := usage.InputTokenDetails.CacheWriteTokens, 30; got != want {
+		t.Fatalf("CacheWriteTokens got %d, want %d", got, want)
+	}
+	if usage.FlatFields != nil {
+		t.Fatalf("FlatFields got %v, want nil when aggregate cache_write matched", usage.FlatFields)
+	}
+}
+
+func TestExtractUsage_UsageFactCacheWriteTotalFallsBackToTTLDetail(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.conf")
+	// #nosec G306 -- test data file.
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "demo" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_extract custom;
+      usage_fact input token path="$.usage.input_tokens";
+      usage_fact output token path="$.usage.output_tokens";
+      usage_fact cache_write token path="$.usage.cache_creation_input_tokens";
+      usage_fact cache_write token path="$.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m" fallback=true;
+      usage_fact cache_write token path="$.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h" fallback=true;
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+
+	body := []byte(`{
+	  "usage": {
+	    "input_tokens": 10,
+	    "output_tokens": 20,
+	    "cache_creation": {
+	      "ephemeral_5m_input_tokens": 7,
+	      "ephemeral_1h_input_tokens": 9
+	    }
+	  }
+	}`)
+
+	usage, _, err := ExtractUsage(&dslmeta.Meta{}, &pf.Usage.Defaults, body)
+	if err != nil {
+		t.Fatalf("ExtractUsage: %v", err)
+	}
+	if usage == nil || usage.InputTokenDetails == nil {
+		t.Fatalf("expected InputTokenDetails")
+	}
+	if got, want := usage.InputTokenDetails.CacheWriteTokens, 16; got != want {
+		t.Fatalf("CacheWriteTokens got %d, want %d", got, want)
+	}
+	if got, want := usage.FlatFields["cache_write_ttl_5m_tokens"], 7; got != want {
+		t.Fatalf("cache_write_ttl_5m_tokens got %v, want %v", got, want)
+	}
+	if got, want := usage.FlatFields["cache_write_ttl_1h_tokens"], 9; got != want {
+		t.Fatalf("cache_write_ttl_1h_tokens got %v, want %v", got, want)
+	}
+}
+
 func TestValidateProviderFile_UsageFactAudioSecondAllowed(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "demo.conf")

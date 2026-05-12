@@ -47,6 +47,19 @@ func ApplyJSONOps(meta *dslmeta.Meta, in map[string]any, ops []JSONOp) (map[stri
 				return nil, err
 			}
 			_ = opChanged
+		case jsonOpDelIfMissing:
+			exists, err := jsonPathExists(obj, op.FromPath)
+			if err != nil {
+				return nil, err
+			}
+			if exists {
+				continue
+			}
+			opChanged, err := jsonDel(obj, op.Path)
+			if err != nil {
+				return nil, err
+			}
+			_ = opChanged
 		case jsonOpRename:
 			opChanged, err := jsonRename(obj, op.FromPath, op.ToPath)
 			if err != nil {

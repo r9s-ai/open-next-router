@@ -10,6 +10,7 @@ const (
 	jsonOpSet           = "json_set"
 	jsonOpSetIfAbsent   = "json_set_if_absent"
 	jsonOpDel           = "json_del"
+	jsonOpDelIfMissing  = "json_del_if_missing"
 	jsonOpRename        = "json_rename"
 	jsonOpWrapInputText = "json_wrap_input_text"
 	jsonOpSetHeaderVals = "json_set_header_values"

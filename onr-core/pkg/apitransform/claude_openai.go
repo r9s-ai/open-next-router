@@ -244,11 +244,31 @@ func MapClaudeMessagesResponseToOpenAIChatCompletionsObject(root apitypes.JSONOb
 		"choices": choices,
 	}
 	if src.Usage != nil {
-		out["usage"] = apitypes.JSONObject{
-			"prompt_tokens":     src.Usage.InputTokens,
-			"completion_tokens": src.Usage.OutputTokens,
-			"total_tokens":      src.Usage.InputTokens + src.Usage.OutputTokens,
+		usage, err := mapClaudeUsageToOpenAIChatUsage(src.Usage)
+		if err != nil {
+			return nil, err
 		}
+		out["usage"] = usage
+	}
+	return out, nil
+}
+
+func mapClaudeUsageToOpenAIChatUsage(raw *apitypes.ClaudeUsage) (apitypes.JSONObject, error) {
+	promptTokens := raw.InputTokens + raw.CacheCreationInputTokens + raw.CacheReadInputTokens
+	u := &apitypes.OpenAIChatCompletionsUsage{
+		PromptTokens:     promptTokens,
+		CompletionTokens: raw.OutputTokens,
+		TotalTokens:      promptTokens + raw.OutputTokens,
+	}
+	if raw.CacheReadInputTokens > 0 || raw.CacheCreationInputTokens > 0 {
+		u.PromptTokensDetails = &apitypes.OpenAITokenDetails{
+			CachedTokens:     raw.CacheReadInputTokens,
+			CacheWriteTokens: raw.CacheCreationInputTokens,
+		}
+	}
+	out, err := u.ToMap()
+	if err != nil {
+		return nil, err
 	}
 	return out, nil
 }

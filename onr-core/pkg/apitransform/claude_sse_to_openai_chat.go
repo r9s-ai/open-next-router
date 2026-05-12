@@ -275,6 +275,14 @@ func (s *claudeSSEToChatState) mergeUsage(raw *apitypes.ClaudeUsage) {
 			u.PromptTokensDetails = &apitypes.OpenAITokenDetails{}
 		}
 		u.PromptTokensDetails.CachedTokens = raw.CacheReadInputTokens
+		u.PromptTokens += raw.CacheReadInputTokens
+	}
+	if raw.CacheCreationInputTokens > 0 {
+		if u.PromptTokensDetails == nil {
+			u.PromptTokensDetails = &apitypes.OpenAITokenDetails{}
+		}
+		u.PromptTokensDetails.CacheWriteTokens = raw.CacheCreationInputTokens
+		u.PromptTokens += raw.CacheCreationInputTokens
 	}
 }
 

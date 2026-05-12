@@ -370,6 +370,56 @@ func TestStreamMetricsAggregator_OpenAIResponsesProviderFallbackWithoutEvent_Doe
 	}
 }
 
+func TestStreamMetricsAggregator_AnthropicInputIncludesCacheReturnsTotalInput(t *testing.T) {
+	meta := &dslmeta.Meta{API: "claude.messages", IsStream: true}
+	usageCfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		facts: []usageFactConfig{
+			{Dimension: "input", Unit: "token", Path: "$.message.usage.input_tokens", Event: "message_start", EventOptional: true},
+			{Dimension: "input", Unit: "token", Path: "$.usage.cache_creation_input_tokens", Event: "message_delta", EventOptional: true},
+			{Dimension: "output", Unit: "token", Path: "$.usage.output_tokens", Event: "message_delta", EventOptional: true},
+			{Dimension: "cache_write", Unit: "token", Path: "$.usage.cache_creation_input_tokens", Event: "message_delta", EventOptional: true},
+		},
+	}
+	agg := NewStreamMetricsAggregator(meta, &usageCfg, &FinishReasonExtractConfig{Mode: usageModeCustom})
+
+	_ = agg.OnSSEEventDataJSON("message_start", []byte(`{"type":"message_start","message":{"usage":{"input_tokens":21}}}`))
+	_ = agg.OnSSEEventDataJSON("message_delta", []byte(`{"type":"message_delta","usage":{"cache_creation_input_tokens":140,"output_tokens":9}}`))
+
+	u, _, _, ok := agg.Result()
+	if !ok || u == nil {
+		t.Fatalf("expected usage ok")
+	}
+	if u.InputTokens != 161 || u.PromptTokens != 161 || u.OutputTokens != 9 || u.TotalTokens != 170 {
+		t.Fatalf("unexpected usage: %+v", *u)
+	}
+	if u.InputTokenDetails == nil || u.InputTokenDetails.CacheWriteTokens != 140 {
+		t.Fatalf("unexpected input token details: %+v", u.InputTokenDetails)
+	}
+}
+
+func TestStreamMetricsAggregator_AnthropicCacheOnlyInputReturnsCacheInput(t *testing.T) {
+	meta := &dslmeta.Meta{API: "claude.messages", IsStream: true}
+	usageCfg, finishCfg := mustLoadProviderMatchConfigs(t, "anthropic.conf", meta.API, meta.IsStream)
+	agg := NewStreamMetricsAggregator(meta, usageCfg, finishCfg)
+	if !agg.inputIncludesCache {
+		t.Fatalf("expected inputIncludesCache")
+	}
+
+	_ = agg.OnSSEEventDataJSON("message_delta", []byte(`{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"cache_creation_input_tokens":140,"output_tokens":10}}`))
+
+	u, _, _, ok := agg.Result()
+	if !ok || u == nil {
+		t.Fatalf("expected usage ok")
+	}
+	if u.InputTokens != 140 || u.PromptTokens != 140 || u.OutputTokens != 10 || u.TotalTokens != 150 {
+		t.Fatalf("unexpected usage: %+v", *u)
+	}
+	if u.InputTokenDetails == nil || u.InputTokenDetails.CacheWriteTokens != 140 {
+		t.Fatalf("unexpected input token details: %+v", u.InputTokenDetails)
+	}
+}
+
 func TestStreamMetricsAggregator_AnthropicStreamUsageFallsBackWithoutEvent(t *testing.T) {
 	meta := &dslmeta.Meta{API: "claude.messages", IsStream: true}
 	usageCfg := UsageExtractConfig{

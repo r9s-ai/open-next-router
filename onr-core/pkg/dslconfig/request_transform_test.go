@@ -251,6 +251,7 @@ provider "t" {
         json_set_header_values "$.anthropic_beta" "anthropic-beta";
         json_filter_values "$.anthropic_beta" "computer-use-2025-01-24";
         json_del_with_condition "$.tools" "type" "web_search*" "web_fetch*";
+        json_del_if_missing "$.tool_choice" "$.tools";
       }
     }
   }
@@ -274,14 +275,17 @@ provider "t" {
 	if got := req.Defaults.JSONOps[0].Op; got != "json_del" {
 		t.Fatalf("JSONOps[0].Op=%q", got)
 	}
-	if len(req.Defaults.AfterReqMapJSONOps) != 4 {
-		t.Fatalf("expected 4 after_req_map json ops, got %d", len(req.Defaults.AfterReqMapJSONOps))
+	if len(req.Defaults.AfterReqMapJSONOps) != 5 {
+		t.Fatalf("expected 5 after_req_map json ops, got %d", len(req.Defaults.AfterReqMapJSONOps))
 	}
 	if got := req.Defaults.AfterReqMapJSONOps[0].Op; got != "json_set" {
 		t.Fatalf("AfterReqMapJSONOps[0].Op=%q", got)
 	}
 	if got := req.Defaults.AfterReqMapJSONOps[3].Op; got != "json_del_with_condition" {
 		t.Fatalf("AfterReqMapJSONOps[3].Op=%q", got)
+	}
+	if got := req.Defaults.AfterReqMapJSONOps[4].Op; got != "json_del_if_missing" {
+		t.Fatalf("AfterReqMapJSONOps[4].Op=%q", got)
 	}
 }
 

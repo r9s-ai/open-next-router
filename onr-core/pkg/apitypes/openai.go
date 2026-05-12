@@ -1553,6 +1553,7 @@ func (f *OpenAIFunctionCall) ToMap() (map[string]any, error) {
 
 type OpenAITokenDetails struct {
 	CachedTokens             int `json:"cached_tokens,omitempty"`
+	CacheWriteTokens         int `json:"cache_write_tokens,omitempty"`
 	AudioTokens              int `json:"audio_tokens,omitempty"`
 	ReasoningTokens          int `json:"reasoning_tokens,omitempty"`
 	AcceptedPredictionTokens int `json:"accepted_prediction_tokens,omitempty"`
@@ -1562,6 +1563,10 @@ type OpenAITokenDetails struct {
 func (d *OpenAITokenDetails) FromMap(m map[string]any) error {
 	var err error
 	d.CachedTokens, err = intValue(m, "cached_tokens")
+	if err != nil {
+		return err
+	}
+	d.CacheWriteTokens, err = intValue(m, "cache_write_tokens")
 	if err != nil {
 		return err
 	}
@@ -1584,6 +1589,7 @@ func (d *OpenAITokenDetails) FromMap(m map[string]any) error {
 func (d *OpenAITokenDetails) ToMap() (map[string]any, error) {
 	out := map[string]any{}
 	setMapInt(out, "cached_tokens", d.CachedTokens)
+	setMapInt(out, "cache_write_tokens", d.CacheWriteTokens)
 	setMapInt(out, "audio_tokens", d.AudioTokens)
 	setMapInt(out, "reasoning_tokens", d.ReasoningTokens)
 	setMapInt(out, "accepted_prediction_tokens", d.AcceptedPredictionTokens)
