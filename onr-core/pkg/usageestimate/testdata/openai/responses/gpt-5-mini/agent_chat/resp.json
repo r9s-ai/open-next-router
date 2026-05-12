@@ -1,0 +1,147 @@
+{
+  "id": "resp_0419d59bbd2cb27a006a01c5cfe3548194bd31135bc67bacc2",
+  "object": "response",
+  "created_at": 1778501071,
+  "status": "completed",
+  "background": false,
+  "billing": {
+    "payer": "developer"
+  },
+  "completed_at": 1778501074,
+  "error": null,
+  "frequency_penalty": 0,
+  "incomplete_details": null,
+  "instructions": "你是一个资深 code agent，正在一个 Go relay 服务仓库中帮助用户排查计费 token 估计问题。你可以使用工具读取文件、搜索代码和查看 git diff。回答使用中文，但保留代码标识符、文件路径、函数名和变量名的英文原文。排查时先基于证据，不要臆测；需要更多上下文时调用工具。",
+  "max_output_tokens": 2048,
+  "max_tool_calls": null,
+  "model": "gpt-5-mini-2025-08-07",
+  "moderation": null,
+  "output": [
+    {
+      "id": "rs_0419d59bbd2cb27a006a01c5d0ffcc8194ac82ba68c68f1b39",
+      "type": "reasoning",
+      "summary": []
+    },
+    {
+      "id": "fc_0419d59bbd2cb27a006a01c5d254f881948cc3c783d3fe8db1",
+      "type": "function_call",
+      "status": "completed",
+      "arguments": "{\"end_line\":520,\"path\":\"relay/internal/channel/claudemessages/native_passthrough.go\",\"start_line\":1}",
+      "call_id": "call_39oMcGH7744BatLHbFO4ki6c",
+      "name": "read_file"
+    }
+  ],
+  "parallel_tool_calls": true,
+  "presence_penalty": 0,
+  "previous_response_id": null,
+  "prompt_cache_key": null,
+  "prompt_cache_retention": "in_memory",
+  "reasoning": {
+    "effort": "medium",
+    "summary": null
+  },
+  "safety_identifier": null,
+  "service_tier": "default",
+  "store": true,
+  "temperature": 1,
+  "text": {
+    "format": {
+      "type": "text"
+    },
+    "verbosity": "medium"
+  },
+  "tool_choice": "auto",
+  "tools": [
+    {
+      "type": "function",
+      "description": "Read a repository file and optionally return a selected line range.",
+      "name": "read_file",
+      "parameters": {
+        "properties": {
+          "end_line": {
+            "description": "1-based end line.",
+            "type": "integer"
+          },
+          "path": {
+            "description": "Repository-relative file path.",
+            "type": "string"
+          },
+          "start_line": {
+            "description": "1-based start line.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "end_line",
+          "path",
+          "start_line"
+        ],
+        "type": "object",
+        "additionalProperties": false
+      },
+      "strict": true
+    },
+    {
+      "type": "function",
+      "description": "Search repository code with a ripgrep-compatible pattern and return matching file paths and line snippets.",
+      "name": "search_code",
+      "parameters": {
+        "properties": {
+          "path": {
+            "description": "Optional repository-relative directory.",
+            "type": "string"
+          },
+          "pattern": {
+            "description": "Search pattern.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "pattern"
+        ],
+        "type": "object",
+        "additionalProperties": false
+      },
+      "strict": true
+    },
+    {
+      "type": "function",
+      "description": "Show the current git diff for selected files.",
+      "name": "show_diff",
+      "parameters": {
+        "properties": {
+          "paths": {
+            "description": "Repository-relative file paths. Empty or omitted means all changed files.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "paths"
+        ]
+      },
+      "strict": true
+    }
+  ],
+  "top_logprobs": 0,
+  "top_p": 1,
+  "truncation": "disabled",
+  "usage": {
+    "input_tokens": 1127,
+    "input_tokens_details": {
+      "cached_tokens": 0
+    },
+    "output_tokens": 119,
+    "output_tokens_details": {
+      "reasoning_tokens": 64
+    },
+    "total_tokens": 1246
+  },
+  "user": null,
+  "metadata": {}
+}

@@ -1,0 +1,149 @@
+{
+  "id": "resp_0362791f0f36f1ca006a01c5d44210819386e1f7331fda23f5",
+  "object": "response",
+  "created_at": 1778501076,
+  "status": "completed",
+  "background": false,
+  "billing": {
+    "payer": "developer"
+  },
+  "completed_at": 1778501081,
+  "error": null,
+  "frequency_penalty": 0,
+  "incomplete_details": null,
+  "instructions": "你是一个资深后端工程师，正在一个 Go 微服务仓库中排查 Redis 缓存问题。你可以使用工具读取文件、搜索代码和执行命令。回答使用中文，但保留代码标识符、文件路径、函数名和变量名的英文原文。排查时先基于证据，不要臆测；需要更多上下文时调用工具。",
+  "max_output_tokens": 8192,
+  "max_tool_calls": null,
+  "model": "gpt-5-mini-2025-08-07",
+  "moderation": null,
+  "output": [
+    {
+      "id": "rs_0362791f0f36f1ca006a01c5d4d80c8193b2966fb37febcfa3",
+      "type": "reasoning",
+      "summary": []
+    },
+    {
+      "id": "fc_0362791f0f36f1ca006a01c5d8ef5081939d0c2ea95f57113f",
+      "type": "function_call",
+      "status": "completed",
+      "arguments": "{\"end_line\":220,\"path\":\"internal/cache/redis_store.go\",\"start_line\":1}",
+      "call_id": "call_W6qcW9G6DtKGFnuO2NByaGrc",
+      "name": "read_file"
+    }
+  ],
+  "parallel_tool_calls": true,
+  "presence_penalty": 0,
+  "previous_response_id": null,
+  "prompt_cache_key": null,
+  "prompt_cache_retention": "in_memory",
+  "reasoning": {
+    "effort": "medium",
+    "summary": null
+  },
+  "safety_identifier": null,
+  "service_tier": "default",
+  "store": true,
+  "temperature": 1,
+  "text": {
+    "format": {
+      "type": "text"
+    },
+    "verbosity": "medium"
+  },
+  "tool_choice": "auto",
+  "tools": [
+    {
+      "type": "function",
+      "description": "Read a repository file and optionally return a selected line range.",
+      "name": "read_file",
+      "parameters": {
+        "properties": {
+          "end_line": {
+            "description": "1-based end line.",
+            "type": "integer"
+          },
+          "path": {
+            "description": "Repository-relative file path.",
+            "type": "string"
+          },
+          "start_line": {
+            "description": "1-based start line.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "end_line",
+          "path",
+          "start_line"
+        ],
+        "type": "object",
+        "additionalProperties": false
+      },
+      "strict": true
+    },
+    {
+      "type": "function",
+      "description": "Search repository code with a ripgrep-compatible pattern and return matching file paths and line snippets.",
+      "name": "search_code",
+      "parameters": {
+        "properties": {
+          "path": {
+            "description": "Optional repository-relative directory.",
+            "type": "string"
+          },
+          "pattern": {
+            "description": "Search pattern.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "pattern"
+        ],
+        "type": "object",
+        "additionalProperties": false
+      },
+      "strict": true
+    },
+    {
+      "type": "function",
+      "description": "Run a shell command in the repository and return stdout/stderr.",
+      "name": "execute_command",
+      "parameters": {
+        "properties": {
+          "command": {
+            "description": "Shell command to execute.",
+            "type": "string"
+          },
+          "workdir": {
+            "description": "Working directory for the command.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command",
+          "workdir"
+        ],
+        "type": "object",
+        "additionalProperties": false
+      },
+      "strict": true
+    }
+  ],
+  "top_logprobs": 0,
+  "top_p": 1,
+  "truncation": "disabled",
+  "usage": {
+    "input_tokens": 1944,
+    "input_tokens_details": {
+      "cached_tokens": 1920
+    },
+    "output_tokens": 351,
+    "output_tokens_details": {
+      "reasoning_tokens": 256
+    },
+    "total_tokens": 2295
+  },
+  "user": null,
+  "metadata": {}
+}

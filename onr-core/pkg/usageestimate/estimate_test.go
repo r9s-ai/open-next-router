@@ -355,13 +355,13 @@ func TestEstimate_AnthropicInput(t *testing.T) {
 			want: 4246},
 		{name: "english_agent_1tool",
 			in:   "testdata/anthropic/messages/claude-haiku-4-5/english_agent_1tool/req.json",
-			want: 1686},
+			want: 537},
 		{name: "english_agent_2tool",
 			in:   "testdata/anthropic/messages/claude-haiku-4-5/english_agent_2tool/req.json",
-			want: 1765},
+			want: 570},
 		{name: "english_agent_4tool",
 			in:   "testdata/anthropic/messages/claude-haiku-4-5/english_agent_4tool/req.json",
-			want: 2424},
+			want: 636},
 		{name: "chinese_agent_1tool",
 			in:   "testdata/anthropic/messages/claude-haiku-4-5/chinese_agent_1tool/req.json",
 			want: 1548},
@@ -437,13 +437,13 @@ func TestEstimate_AnthropicOutput(t *testing.T) {
 			want: 1283},
 		{name: "english_agent_1tool",
 			in:   "testdata/anthropic/messages/claude-haiku-4-5/english_agent_1tool/resp.json",
-			want: 736},
+			want: 16},
 		{name: "english_agent_2tool",
 			in:   "testdata/anthropic/messages/claude-haiku-4-5/english_agent_2tool/resp.json",
-			want: 647},
+			want: 16},
 		{name: "english_agent_4tool",
 			in:   "testdata/anthropic/messages/claude-haiku-4-5/english_agent_4tool/resp.json",
-			want: 662},
+			want: 18},
 		{name: "chinese_agent_1tool",
 			in:   "testdata/anthropic/messages/claude-haiku-4-5/chinese_agent_1tool/resp.json",
 			want: 703},
@@ -765,15 +765,249 @@ func Test_stringifyAnthropicRequest(t *testing.T) {
 	if err := json.Unmarshal(rawBody, &req); err != nil {
 		t.Fatal(err.Error())
 	}
-	s, n := stringifyAnthropicRequest(req)
+	ctx := stringifyAnthropicRequest(req)
+	if ctx.text == "" {
+		t.Fatalf("expected normal s,but get \"\"")
+	}
+	if ctx.numTools != 3 {
+		t.Fatalf("expected num of tools is 3 s,but get %d\"\"", ctx.numTools)
+	}
+	t.Log(ctx.text)
+
+}
+
+func Test_stringifyOpenaiResponsesRequest(t *testing.T) {
+
+	rawBody, err := os.ReadFile("testdata/openai/responses/stringfy/test_stringfyRequset.json")
+	if err != nil {
+		t.Fatalf("read testdata: %v", err)
+	}
+	var req map[string]any
+	if err := json.Unmarshal(rawBody, &req); err != nil {
+		t.Fatal(err.Error())
+	}
+	ctx := stringfyOpenaiResponsesRequest(req)
+	if ctx.text == "" {
+		t.Fatalf("expected normal s,but get \"\"")
+	}
+	if ctx.numTools != 4 {
+		t.Fatalf("expected num of tools is 4 s,but get %d\"\"", ctx.numTools)
+	}
+	t.Log(ctx.text)
+
+}
+
+func Test_stringifyOpenaiResponsesResponses(t *testing.T) {
+
+	rawBody, err := os.ReadFile("testdata/openai/responses/stringfy/test_stringfyResponse.json")
+	if err != nil {
+		t.Fatalf("read testdata: %v", err)
+	}
+	s := extractResponseText("responses", rawBody, -1)
 	if s == "" {
 		t.Fatalf("expected normal s,but get \"\"")
 	}
-	if n != 3 {
-		t.Fatalf("expected num of tools is 3 s,but get %d\"\"", n)
-	}
 	t.Log(s)
 
+}
+
+func TestEstimate_OpenaiResponsesInput(t *testing.T) {
+	cfg := &Config{}
+	ApplyDefaults(cfg)
+
+	tests := []struct {
+		name string
+		in   string
+		want int
+	}{
+		{name: "agent_chat",
+			in:   "testdata/openai/responses/gpt-5-mini/agent_chat/req.json",
+			want: 1127},
+		{name: "chinese_chat",
+			in:   "testdata/openai/responses/gpt-5-mini/chinese_chat/req.json",
+			want: 1423},
+		{name: "english_chat",
+			in:   "testdata/openai/responses/gpt-5-mini/english_chat/req.json",
+			want: 1416},
+		{name: "chinese_agent",
+			in:   "testdata/openai/responses/gpt-5-mini/chinese_agent/req.json",
+			want: 1944},
+		{name: "english_agent",
+			in:   "testdata/openai/responses/gpt-5-mini/english_agent/req.json",
+			want: 2795},
+		{name: "english_agent_0tool",
+			in:   "testdata/openai/responses/gpt-5-mini/english_agent_0tool/req.json",
+			want: 7},
+		{name: "english_agent_1tool",
+			in:   "testdata/openai/responses/gpt-5-mini/english_agent_1tool/req.json",
+			want: 32},
+		{name: "english_agent_2tool",
+			in:   "testdata/openai/responses/gpt-5-mini/english_agent_2tool/req.json",
+			want: 41},
+		{name: "english_agent_4tool",
+			in:   "testdata/openai/responses/gpt-5-mini/english_agent_4tool/req.json",
+			want: 59},
+		{name: "english_agent_5tool",
+			in:   "testdata/openai/responses/gpt-5-mini/english_agent_5tool/req.json",
+			want: 68},
+		{name: "chinese_agent_1tool",
+			in:   "testdata/openai/responses/gpt-5-mini/chinese_agent_1tool/req.json",
+			want: 603},
+		{name: "chinese_agent_2tool",
+			in:   "testdata/openai/responses/gpt-5-mini/chinese_agent_2tool/req.json",
+			want: 744},
+		{name: "chinese_chat_short",
+			in:   "testdata/openai/responses/gpt-5-mini/chinese_chat_short/req.json",
+			want: 368},
+		{name: "chinese_chat_long",
+			in:   "testdata/openai/responses/gpt-5-mini/chinese_chat_long/req.json",
+			want: 2415},
+		{name: "english_chat_short",
+			in:   "testdata/openai/responses/gpt-5-mini/english_chat_short/req.json",
+			want: 288},
+		{name: "english_chat_long",
+			in:   "testdata/openai/responses/gpt-5-mini/english_chat_long/req.json",
+			want: 1865},
+		{name: "code_review_chat",
+			in:   "testdata/openai/responses/gpt-5-mini/code_review_chat/req.json",
+			want: 1294},
+		{name: "code_writing_chat",
+			in:   "testdata/openai/responses/gpt-5-mini/code_writing_chat/req.json",
+			want: 1634},
+		{name: "mixed_en_zh_chat",
+			in:   "testdata/openai/responses/gpt-5-mini/mixed_en_zh_chat/req.json",
+			want: 1071},
+	}
+	for _, item := range tests {
+		t.Run(item.name, func(t *testing.T) {
+			data, err := os.ReadFile(item.in)
+			if err != nil {
+				t.Fatalf("read testdata: %v", err)
+			}
+			out := Estimate(cfg, Input{
+				API:           "responses",
+				Model:         "gpt-5-mini",
+				UpstreamUsage: &dslconfig.Usage{InputTokens: 0, OutputTokens: 6, TotalTokens: 6},
+				RequestBody:   data,
+			})
+			if out.Usage == nil {
+				t.Fatalf("usage is nil")
+			}
+			t.Logf("case %s, official input=%d, estimated=%d, deviation=%.1f%%", item.name, item.want, out.Usage.InputTokens, deviation(item.want, out.Usage.InputTokens))
+		})
+	}
+}
+
+func TestEstimate_OpenaiResponsesOutput(t *testing.T) {
+	cfg := &Config{}
+	ApplyDefaults(cfg)
+
+	tests := []struct {
+		name string
+		in   string
+		want int
+	}{
+		{name: "agent_chat",
+			in:   "testdata/openai/responses/gpt-5-mini/agent_chat/resp.json",
+			want: 119},
+		{name: "chinese_chat",
+			in:   "testdata/openai/responses/gpt-5-mini/chinese_chat/resp.json",
+			want: 1119},
+		{name: "english_chat",
+			in:   "testdata/openai/responses/gpt-5-mini/english_chat/resp.json",
+			want: 995},
+		{name: "chinese_agent",
+			in:   "testdata/openai/responses/gpt-5-mini/chinese_agent/resp.json",
+			want: 351},
+		{name: "english_agent",
+			in:   "testdata/openai/responses/gpt-5-mini/english_agent/resp.json",
+			want: 2048},
+		{name: "english_agent_0tool",
+			in:   "testdata/openai/responses/gpt-5-mini/english_agent_0tool/resp.json",
+			want: 72},
+		{name: "english_agent_1tool",
+			in:   "testdata/openai/responses/gpt-5-mini/english_agent_1tool/resp.json",
+			want: 86},
+		{name: "english_agent_2tool",
+			in:   "testdata/openai/responses/gpt-5-mini/english_agent_2tool/resp.json",
+			want: 65},
+		{name: "english_agent_4tool",
+			in:   "testdata/openai/responses/gpt-5-mini/english_agent_4tool/resp.json",
+			want: 85},
+		{name: "english_agent_5tool",
+			in:   "testdata/openai/responses/gpt-5-mini/english_agent_5tool/resp.json",
+			want: 66},
+		{name: "chinese_agent_1tool",
+			in:   "testdata/openai/responses/gpt-5-mini/chinese_agent_1tool/resp.json",
+			want: 1578},
+		{name: "chinese_agent_2tool",
+			in:   "testdata/openai/responses/gpt-5-mini/chinese_agent_2tool/resp.json",
+			want: 1768},
+		{name: "chinese_chat_short",
+			in:   "testdata/openai/responses/gpt-5-mini/chinese_chat_short/resp.json",
+			want: 1291},
+		{name: "chinese_chat_long",
+			in:   "testdata/openai/responses/gpt-5-mini/chinese_chat_long/resp.json",
+			want: 2336},
+		{name: "english_chat_short",
+			in:   "testdata/openai/responses/gpt-5-mini/english_chat_short/resp.json",
+			want: 1545},
+		{name: "english_chat_long",
+			in:   "testdata/openai/responses/gpt-5-mini/english_chat_long/resp.json",
+			want: 2069},
+		{name: "code_review_chat",
+			in:   "testdata/openai/responses/gpt-5-mini/code_review_chat/resp.json",
+			want: 813},
+		{name: "code_writing_chat",
+			in:   "testdata/openai/responses/gpt-5-mini/code_writing_chat/resp.json",
+			want: 3152},
+		{name: "mixed_en_zh_chat",
+			in:   "testdata/openai/responses/gpt-5-mini/mixed_en_zh_chat/resp.json",
+			want: 3302},
+	}
+	for _, item := range tests {
+		t.Run(item.name, func(t *testing.T) {
+			data, err := os.ReadFile(item.in)
+			if err != nil {
+				t.Fatalf("read testdata: %v", err)
+			}
+			out := Estimate(cfg, Input{
+				API:           "responses",
+				Model:         "gpt-5-mini",
+				UpstreamUsage: &dslconfig.Usage{InputTokens: 6, OutputTokens: 0, TotalTokens: 6},
+				ResponseBody:  data,
+			})
+			if out.Usage == nil {
+				t.Fatalf("usage is nil")
+			}
+			reasoningTokens := openAIResponsesReasoningTokens(t, data)
+			visibleWant := item.want - reasoningTokens
+			t.Logf("case %s, official output=%d, reasoning=%d, visible output=%d, estimated=%d, deviation=%.1f%%, visible deviation=%.1f%%",
+				item.name, item.want, reasoningTokens, visibleWant, out.Usage.OutputTokens,
+				deviation(item.want, out.Usage.OutputTokens), deviation(visibleWant, out.Usage.OutputTokens))
+		})
+	}
+}
+
+func openAIResponsesReasoningTokens(t *testing.T, data []byte) int {
+	t.Helper()
+	var root map[string]any
+	if err := json.Unmarshal(data, &root); err != nil {
+		t.Fatalf("unmarshal response body: %v", err)
+	}
+	usage, ok := root["usage"].(map[string]any)
+	if !ok {
+		return 0
+	}
+	details, ok := usage["output_tokens_details"].(map[string]any)
+	if !ok {
+		return 0
+	}
+	v, ok := details["reasoning_tokens"].(float64)
+	if !ok {
+		return 0
+	}
+	return int(v)
 }
 
 func deviation(official, estimated int) float64 {

@@ -1,0 +1,77 @@
+{
+  "id": "resp_07eb327a4b779925006a01c63ec3f88196848bfda737ddaf58",
+  "object": "response",
+  "created_at": 1778501182,
+  "status": "completed",
+  "background": false,
+  "billing": {
+    "payer": "developer"
+  },
+  "completed_at": 1778501198,
+  "error": null,
+  "frequency_penalty": 0,
+  "incomplete_details": null,
+  "instructions": "你是一个细致、耐心的中文助手。回答简洁精准。",
+  "max_output_tokens": 8192,
+  "max_tool_calls": null,
+  "model": "gpt-5-mini-2025-08-07",
+  "moderation": null,
+  "output": [
+    {
+      "id": "rs_07eb327a4b779925006a01c63f6ec08196b812d9390807d876",
+      "type": "reasoning",
+      "summary": []
+    },
+    {
+      "id": "msg_07eb327a4b779925006a01c648be48819691882d2b3220ba76",
+      "type": "message",
+      "status": "completed",
+      "content": [
+        {
+          "type": "output_text",
+          "annotations": [],
+          "logprobs": [],
+          "text": "简单回答：主流分布式数据库大多在 CP（优先一致性）和 AP（优先可用性）之间做权衡；有些系统默认走 CP，有些默认走 AP，还有一些提供可调的一致性策略。\n\n常见分类与例子（并带简短说明）：\n\n- CP（优先一致性，遇到网络分区可能牺牲可用性）\n  - Google Spanner：用 TrueTime + 分布式共识保证强一致性/外部一致性。\n  - etcd / ZooKeeper：用 Raft/Paxos 做一致性存储，放弃分区期间的可用性。\n  - CockroachDB、TiDB、YugabyteDB：基于 Raft/Paxos 的分布式事务/SQL，偏 CP。\n\n- AP（优先可用性，牺牲即时一致性，通常是最终一致）\n  - Cassandra、Amazon DynamoDB（默认 eventual consistency）、Riak：设计为高可用、低延迟，允许异步副本、最终一致。\n  - CouchDB、Couchbase、Elasticsearch 等在默认场景下也更倾向于最终一致。\n\n- 可调一致性（用户可根据场景在可用性与一致性间调整）\n  - Cassandra、DynamoDB：通过设置读/写副本数和 quorum（R+W>N）来获得更强的一致性或更高的可用性。\n  - MongoDB：通过 readConcern/writeConcern/readPreference 可配置一致性与可用性的权衡。\n  - Redis（在某些复制/哨兵/集群配置下）也存在可调行为。\n\n补充说明：\n- CAP 强调的是在网络分区出现时必须在一致性和可用性之间选择；在无分区假设下（理论上的 CA）是可能的，但实际网络不可完全避免分区，所以生产系统通常设计为 CP 或 AP，或提供可调策略。\n- 选型建议：对金融/账务类强一致性场景优先考虑 CP；对社交、缓存、推荐这种能容忍短时不一致的场景可考虑 AP。若需要灵活性，可选支持可调一致性的系统。"
+        }
+      ],
+      "role": "assistant"
+    }
+  ],
+  "parallel_tool_calls": true,
+  "presence_penalty": 0,
+  "previous_response_id": null,
+  "prompt_cache_key": null,
+  "prompt_cache_retention": "in_memory",
+  "reasoning": {
+    "effort": "medium",
+    "summary": null
+  },
+  "safety_identifier": null,
+  "service_tier": "default",
+  "store": true,
+  "temperature": 1,
+  "text": {
+    "format": {
+      "type": "text"
+    },
+    "verbosity": "medium"
+  },
+  "tool_choice": "auto",
+  "tools": [],
+  "top_logprobs": 0,
+  "top_p": 1,
+  "truncation": "disabled",
+  "usage": {
+    "input_tokens": 368,
+    "input_tokens_details": {
+      "cached_tokens": 0
+    },
+    "output_tokens": 1291,
+    "output_tokens_details": {
+      "reasoning_tokens": 768
+    },
+    "total_tokens": 1659
+  },
+  "user": null,
+  "metadata": {}
+}

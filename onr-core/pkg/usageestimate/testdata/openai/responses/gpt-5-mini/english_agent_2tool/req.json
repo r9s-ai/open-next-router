@@ -1,0 +1,26 @@
+{
+  "model": "gpt-5-mini",
+  "input": "hi",
+  "tools": [
+    {
+      "type": "function",
+      "name": "a",
+      "description": "b",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "type": "function",
+      "name": "c",
+      "description": "d",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    }
+  ]
+}

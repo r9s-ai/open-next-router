@@ -1,0 +1,77 @@
+{
+  "id": "resp_0696b96af0399edf006a01c6b1f174819eb80ef496b16dfb6b",
+  "object": "response",
+  "created_at": 1778501297,
+  "status": "completed",
+  "background": false,
+  "billing": {
+    "payer": "developer"
+  },
+  "completed_at": 1778501308,
+  "error": null,
+  "frequency_penalty": 0,
+  "incomplete_details": null,
+  "instructions": "You are a thoughtful, patient, and articulate assistant. When answering, first confirm the core of the question, then provide a clear and well-structured explanation. Use steps or bullet points where helpful. Be precise — do not exaggerate or fabricate.",
+  "max_output_tokens": 2048,
+  "max_tool_calls": null,
+  "model": "gpt-5-mini-2025-08-07",
+  "moderation": null,
+  "output": [
+    {
+      "id": "rs_0696b96af0399edf006a01c6b28e3c819eb3491b7427c3273d",
+      "type": "reasoning",
+      "summary": []
+    },
+    {
+      "id": "msg_0696b96af0399edf006a01c6b6342c819ebf9ed2641c111663",
+      "type": "message",
+      "status": "completed",
+      "content": [
+        {
+          "type": "output_text",
+          "annotations": [],
+          "logprobs": [],
+          "text": "You want a short, shareable summary of the recommendations we discussed. Below is a concise, actionable summary your team can use.\n\nPurpose and high-level principles\n- Know your audience: tailor docs for beginners, integrators, or reference users — not all at once.\n- Lead with the outcome: start each section with what the reader will be able to do.\n- Separate tutorial from reference: tutorials show step-by-step flows; reference lists endpoints/fields succinctly.\n\nWhat to add on top of auto-generated OpenAPI docs\n- One-line purpose for each endpoint (what it actually does).\n- A concrete example request + response (realistic payloads).\n- Common pitfalls / gotchas (pagination type, limits, timezone, retention windows).\n- Quickstart or 5-minute guide that chains 3–4 calls to accomplish a real task.\n- Group endpoints by user task (e.g., “Onboarding a new team member”) rather than only by resource.\n\nSuggested endpoint documentation structure (compact template)\n- Title / one-line summary\n- Quick example (curl or code)\n- Parameters & filtering notes (what values are accepted, default behavior)\n- Pagination behavior (cursor vs offset, how to request next page)\n- Common pitfalls / edge cases\n- Errors and expected error codes (and what to do)\n- Owner / who to contact\n\nExample (how GET /orders should read)\n- One-line: “List orders filtered by status and date range.”\n- Quick example: curl showing query params and auth.\n- Pagination: “cursor-based; response includes next_cursor and has_more.”\n- Filtering notes: allowed status values, date semantics.\n- Common pitfalls: e.g., limit cap, retention window, timezone handling.\n\nKeeping docs up-to-date (practical, high-impact steps)\n- Co-locate docs with code: docs/ in the API repo so PRs can update docs alongside code.\n- CI enforcement: fail PRs when OpenAPI/schema changes but corresponding doc files are not updated.\n- Run doc tests: execute example requests from the docs against a test environment in CI to catch broken examples.\n- Version docs: publish docs per API version (keep last N versions live).\n- Assign an owner: rotate a “docs sheriff” to review doc PRs each sprint.\n\nDocumenting internal-only endpoints\n- Keep minimal but essential: one-line description, auth requirements, request/response schema, error codes, and owner/contact.\n- Aim for ~15 lines per internal endpoint — enough to troubleshoot in an incident.\n\nQuick checklist to get started (first 2–4 actions)\n- Pick 1–2 high-traffic endpoints and rewrite their docs using the template above.\n- Add runnable examples and include them in CI tests.\n- Add a PR check that flags schema-vs-doc mismatches.\n- Add an owner field to each endpoint doc and announce the rotation for the docs owner role.\n\nOffer to help\n- I can rewrite one of your real endpoints into this format, or draft a CI script to run examples from your docs — tell me which you’d prefer.\n\nWould you like a one-page markdown file of this summary that you can drop into your repo?"
+        }
+      ],
+      "role": "assistant"
+    }
+  ],
+  "parallel_tool_calls": true,
+  "presence_penalty": 0,
+  "previous_response_id": null,
+  "prompt_cache_key": null,
+  "prompt_cache_retention": "in_memory",
+  "reasoning": {
+    "effort": "medium",
+    "summary": null
+  },
+  "safety_identifier": null,
+  "service_tier": "default",
+  "store": true,
+  "temperature": 1,
+  "text": {
+    "format": {
+      "type": "text"
+    },
+    "verbosity": "medium"
+  },
+  "tool_choice": "auto",
+  "tools": [],
+  "top_logprobs": 0,
+  "top_p": 1,
+  "truncation": "disabled",
+  "usage": {
+    "input_tokens": 1416,
+    "input_tokens_details": {
+      "cached_tokens": 0
+    },
+    "output_tokens": 995,
+    "output_tokens_details": {
+      "reasoning_tokens": 320
+    },
+    "total_tokens": 2411
+  },
+  "user": null,
+  "metadata": {}
+}

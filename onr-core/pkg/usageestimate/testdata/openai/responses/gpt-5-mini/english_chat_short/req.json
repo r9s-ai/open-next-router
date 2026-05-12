@@ -1,0 +1,32 @@
+{
+  "input": [
+    {
+      "content": "What is the CAP theorem?",
+      "role": "user",
+      "type": "message"
+    },
+    {
+      "content": "The CAP theorem, proposed by Eric Brewer in 2000, states that a distributed system can provide at most two of these three guarantees simultaneously:\n\n- **C (Consistency)**: All nodes see the same data at the same time.\n- **A (Availability)**: Every request receives a non-error response.\n- **P (Partition Tolerance)**: The system continues to operate despite network partitions.\n\nSince network partitions are unavoidable in distributed systems (P is mandatory), the real choice is between C and A when a partition occurs. CP systems like ZooKeeper sacrifice availability for consistency. AP systems like Cassandra sacrifice consistency for availability.",
+      "role": "assistant",
+      "type": "message"
+    },
+    {
+      "content": "Can you give a real-world analogy?",
+      "role": "user",
+      "type": "message"
+    },
+    {
+      "content": "Think of bank branches during a phone line outage:\n\n- The branches can't sync account balances (partition occurs).\n- **CP choice**: All branches stop serving customers — no one can withdraw, ensuring no overdrafts.\n- **AP choice**: Branches keep serving, temporarily allowing overdrafts, reconciling when phones are back.\n\nThat's the CAP trade-off in a nutshell — during a partition, you choose between staying safe (CP) or staying open (AP).",
+      "role": "assistant",
+      "type": "message"
+    },
+    {
+      "content": "Got it. How do modern distributed databases handle this?",
+      "role": "user",
+      "type": "message"
+    }
+  ],
+  "instructions": "You are a thoughtful, patient, and articulate assistant. Be precise.",
+  "max_output_tokens": 8192,
+  "model": "gpt-5-mini"
+}

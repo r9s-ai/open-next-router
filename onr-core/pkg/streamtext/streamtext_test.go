@@ -30,6 +30,18 @@ func TestExtractDeltaText(t *testing.T) {
 			payload: `{"delta":{"text":"bonjour"}}`,
 			want:    "bonjour",
 		},
+		{
+			name:    "claude tool partial json",
+			api:     "claude.messages",
+			payload: `{"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"{\"city\""}}`,
+			want:    `{"city"`,
+		},
+		{
+			name:    "claude tool block name",
+			api:     "claude.messages",
+			payload: `{"type":"content_block_start","content_block":{"type":"tool_use","id":"toolu_123","name":"get_weather","input":{}}}`,
+			want:    "get_weather",
+		},
 	}
 
 	for _, tc := range tests {

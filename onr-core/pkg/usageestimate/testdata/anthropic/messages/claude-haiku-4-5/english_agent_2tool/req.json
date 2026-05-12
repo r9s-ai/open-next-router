@@ -1,132 +1,28 @@
 {
-  "model":"claude-haiku-4-5",
-  "max_tokens": 8192,
-  "thinking": {
-    "type": "enabled",
-    "budget_tokens": 1024
-  },
-  "system": [
+  "model": "claude-haiku-4-5",
+  "max_tokens": 1024,
+  "messages": [
     {
-      "type": "text",
-      "text": "You are a senior software engineer debugging an issue in a codebase. You have access to tools for reading files and searching code. Be thorough and evidence-driven — read code before drawing conclusions."
+      "role": "user",
+      "content": "hi"
     }
   ],
   "tools": [
     {
-      "name": "search_code",
-      "description": "Search repository code with a ripgrep-compatible pattern and return matching file paths and line snippets.",
+      "name": "a",
+      "description": "b",
       "input_schema": {
         "type": "object",
-        "properties": {
-          "pattern": {
-            "type": "string",
-            "description": "Search pattern."
-          },
-          "path": {
-            "type": "string",
-            "description": "Optional repository-relative directory."
-          }
-        },
-        "required": ["pattern"]
+        "properties": {}
       }
     },
     {
-      "name": "read_file",
-      "description": "Read a repository file and optionally return a selected line range.",
+      "name": "c",
+      "description": "d",
       "input_schema": {
         "type": "object",
-        "properties": {
-          "path": {
-            "type": "string",
-            "description": "Repository-relative file path."
-          },
-          "start_line": {
-            "type": "integer",
-            "description": "1-based start line."
-          },
-          "end_line": {
-            "type": "integer",
-            "description": "1-based end line."
-          }
-        },
-        "required": ["path"]
+        "properties": {}
       }
-    }
-  ],
-  "messages": [
-    {
-      "role": "user",
-      "content": "Our production API started returning 500 errors after the latest deployment. The logs show 'connection pool exhausted' errors from the database layer. The deploy only changed the query timeout from 30s to 60s. Can you help find the root cause?"
-    },
-    {
-      "role": "assistant",
-      "content": [
-        {
-          "type": "text",
-          "text": "A connection pool exhaustion after increasing query timeout is suspicious — longer timeouts mean connections are held longer. Let me start by searching the database layer for pool configuration and timeout handling."
-        },
-        {
-          "type": "tool_use",
-          "id": "toolu_search_pool_01",
-          "name": "search_code",
-          "input": {
-            "pattern": "connection.*pool|max.*conn|pool.*size|MaxConns|SetMaxOpenConns|timeout",
-            "path": "internal/database"
-          }
-        }
-      ]
-    },
-    {
-      "role": "user",
-      "content": [
-        {
-          "type": "tool_result",
-          "tool_use_id": "toolu_search_pool_01",
-          "content": "internal/database/pool.go:15: var poolConfig = &PoolConfig{MaxConns: 20, MinConns: 2, MaxIdleTime: 5 * time.Minute}\ninternal/database/pool.go:22: func NewPool(cfg *PoolConfig) (*sql.DB, error) {\ninternal/database/pool.go:28:     db.SetMaxOpenConns(cfg.MaxConns)\ninternal/database/query.go:42: func QueryWithTimeout(ctx context.Context, db *sql.DB, query string, timeout time.Duration) (*sql.Rows, error) {"
-        }
-      ]
-    },
-    {
-      "role": "assistant",
-      "content": [
-        {
-          "type": "text",
-          "text": "Found pool.go — MaxConns=20. Let me read the full pool configuration to check for connection lifetime and acquire timeout settings."
-        },
-        {
-          "type": "tool_use",
-          "id": "toolu_read_pool_01",
-          "name": "read_file",
-          "input": {
-            "path": "internal/database/pool.go",
-            "start_line": 1,
-            "end_line": 60
-          }
-        }
-      ]
-    },
-    {
-      "role": "user",
-      "content": [
-        {
-          "type": "tool_result",
-          "tool_use_id": "toolu_read_pool_01",
-          "content": "package database\n\nimport (\n    \"database/sql\"\n    \"time\"\n)\n\ntype PoolConfig struct {\n    MaxConns    int\n    MinConns    int\n    MaxIdleTime time.Duration\n}\n\nvar poolConfig = &PoolConfig{\n    MaxConns:    20,\n    MinConns:    2,\n    MaxIdleTime: 5 * time.Minute,\n    // Note: ConnMaxLifetime is not set — connections live forever.\n    // Note: No connection acquire timeout is configured.\n}\n\nfunc NewPool(cfg *PoolConfig) (*sql.DB, error) {\n    db, err := sql.Open(\"postgres\", dsn)\n    if err != nil {\n        return nil, err\n    }\n    db.SetMaxOpenConns(cfg.MaxConns)\n    db.SetMaxIdleConns(cfg.MaxConns / 2)\n    db.SetConnMaxIdleTime(cfg.MaxIdleTime)\n    // BUG: ConnMaxLifetime never set — stale connections accumulate.\n    // BUG: No acquire timeout — callers wait indefinitely when pool is exhausted.\n    return db, nil\n}"
-        }
-      ]
-    },
-    {
-      "role": "assistant",
-      "content": [
-        {
-          "type": "text",
-          "text": "Root cause identified. Here's the chain:\n\n1. **MaxConns=20** with no connection acquire timeout means callers wait indefinitely when the pool is exhausted.\n2. **Timeout increased from 30s to 60s** — each connection now holds 2× longer under slow queries.\n3. With 20 slow queries, all connections are occupied for up to 60s.\n4. The 21st caller waits forever → eventually the HTTP layer times out (or the process runs out of goroutines) → 500 errors.\n\n**Fix recommendations**:\n- Set `ConnMaxLifetime` to 30 minutes to prevent stale connections.\n- Add an acquire timeout via `context.WithTimeout` wrapping the pool acquire call.\n- Or increase MaxConns proportionally to the timeout increase (from 20 to 40)."
-        }
-      ]
-    },
-    {
-      "role": "user",
-      "content": "Based on the findings, summarize the root cause chain and your recommended fix, ordered by priority. Don't search further."
     }
   ]
 }

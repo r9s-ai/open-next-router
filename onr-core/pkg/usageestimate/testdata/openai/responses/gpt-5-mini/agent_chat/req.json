@@ -1,0 +1,145 @@
+{
+  "input": [
+    {
+      "content": "我们线上有个问题：Anthropic /v1/messages 流式响应内容正常，但有时 billing 里 output_tokens 是 0。请帮我排查。先不要改代码，先看 token 估计相关逻辑。",
+      "role": "user",
+      "type": "message"
+    },
+    {
+      "content": [
+        {
+          "text": "我会先找 'output_tokens'、'stream_text' 和估计逻辑的入口，确认缺失上游 usage 时是否会从流式文本或 tool_use 内容估计。",
+          "type": "output_text"
+        }
+      ],
+      "role": "assistant",
+      "type": "message"
+    },
+    {
+      "arguments": "{\"path\":\"relay/internal\",\"pattern\":\"ensureEstimatedUsageIfNeeded|StreamText|UpstreamCompletionTokens\"}",
+      "call_id": "toolu_search_estimate_01",
+      "name": "search_code",
+      "type": "function_call"
+    },
+    {
+      "call_id": "toolu_search_estimate_01",
+      "output": "relay/internal/billing/extractor/configfile_extractor.go:55: ensureEstimatedUsageIfNeeded(ctx)\nrelay/internal/billing/extractor/configfile_extractor.go:338: func ensureEstimatedUsageIfNeeded(ctx *gin.Context) {\nrelay/internal/billing/extractor/configfile_extractor.go:390: StreamText: ctx.GetString(meta.StreamText),\nrelay/internal/channel/claudemessages/native_passthrough.go:438: c.Set(meta.UpstreamCompletionTokensEstimated, true)\nrelay/internal/meta/key.go:41: StreamText = \"stream_text\"\nrelay/internal/meta/key.go:76: UpstreamCompletionTokens = \"upstream_completion_tokens\"",
+      "type": "function_call_output"
+    },
+    {
+      "content": [
+        {
+          "text": "入口在 'configfile_extractor.go'，我需要看 'ensureEstimatedUsageIfNeeded' 如何构造估计输入，以及 stream 文本在哪里写入。",
+          "type": "output_text"
+        }
+      ],
+      "role": "assistant",
+      "type": "message"
+    },
+    {
+      "arguments": "{\"end_line\":430,\"path\":\"relay/internal/billing/extractor/configfile_extractor.go\",\"start_line\":338}",
+      "call_id": "toolu_read_configfile_01",
+      "name": "read_file",
+      "type": "function_call"
+    },
+    {
+      "call_id": "toolu_read_configfile_01",
+      "output": "func ensureEstimatedUsageIfNeeded(ctx *gin.Context) {\n    if ctx == nil {\n        return\n    }\n    prompt := ctx.GetInt(meta.UpstreamPromptTokens)\n    completion := ctx.GetInt(meta.UpstreamCompletionTokens)\n    total := ctx.GetInt(meta.UpstreamTotalTokens)\n    if prompt \u003e 0 \u0026\u0026 completion \u003e 0 {\n        return\n    }\n\n    cfg := \u0026onrusageestimate.Config{}\n    onrusageestimate.ApplyDefaults(cfg)\n\n    in := onrusageestimate.Input{\n        Model: ctx.GetString(meta.RequestModel),\n        PromptTokens: prompt,\n        CompletionTokens: completion,\n        TotalTokens: total,\n        RequestBody: ctx.GetString(meta.RequestBody),\n        StreamText: ctx.GetString(meta.StreamText),\n        ResponseBody: ctx.GetString(meta.ResponseBody),\n    }\n    out := onrusageestimate.Estimate(cfg, in)\n    if out.PromptTokens \u003e 0 {\n        ctx.Set(meta.UpstreamPromptTokens, out.PromptTokens)\n    }\n    if out.CompletionTokens \u003e 0 {\n        ctx.Set(meta.UpstreamCompletionTokens, out.CompletionTokens)\n    }\n    if out.TotalTokens \u003e 0 {\n        ctx.Set(meta.UpstreamTotalTokens, out.TotalTokens)\n    }\n}",
+      "type": "function_call_output"
+    },
+    {
+      "content": [
+        {
+          "text": "这里的早退条件是 'prompt \u003e 0 \u0026\u0026 completion \u003e 0'，所以只要 'completion == 0' 仍会进入估计。下一步要确认 'meta.StreamText' 和 'meta.ResponseBody' 是否在 Anthropic stream/tool_use 场景被正确填充。",
+          "type": "output_text"
+        }
+      ],
+      "role": "assistant",
+      "type": "message"
+    },
+    {
+      "arguments": "{\"path\":\"relay/internal/channel\",\"pattern\":\"Set\\\\(meta\\\\.StreamText|StreamText\"}",
+      "call_id": "toolu_search_streamtext_01",
+      "name": "search_code",
+      "type": "function_call"
+    },
+    {
+      "call_id": "toolu_search_streamtext_01",
+      "output": "relay/internal/channel/claudemessages/native_passthrough.go:220: current := c.GetString(meta.StreamText)\nrelay/internal/channel/claudemessages/native_passthrough.go:224: c.Set(meta.StreamText, current + text)\nrelay/internal/channel/claudemessages/native_passthrough.go:246: // tool_use input_json_delta is not appended to StreamText\nrelay/internal/channel/adaptor/configfile/response_phase.go:118: c.Set(meta.ResponseBody, bodyString)",
+      "type": "function_call_output"
+    },
+    {
+      "content": "请继续排查：如果输出是 'tool_use'而不是文本，'completion_tokens' 为 0 的原因可能是什么？请先指出你还要读哪个函数，然后给出你当前的初步判断。",
+      "role": "user",
+      "type": "message"
+    }
+  ],
+  "instructions": "你是一个资深 code agent，正在一个 Go relay 服务仓库中帮助用户排查计费 token 估计问题。你可以使用工具读取文件、搜索代码和查看 git diff。回答使用中文，但保留代码标识符、文件路径、函数名和变量名的英文原文。排查时先基于证据，不要臆测；需要更多上下文时调用工具。",
+  "max_output_tokens": 2048,
+  "model": "gpt-5-mini",
+  "tools": [
+    {
+      "description": "Read a repository file and optionally return a selected line range.",
+      "name": "read_file",
+      "parameters": {
+        "properties": {
+          "end_line": {
+            "description": "1-based end line.",
+            "type": "integer"
+          },
+          "path": {
+            "description": "Repository-relative file path.",
+            "type": "string"
+          },
+          "start_line": {
+            "description": "1-based start line.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "type": "function"
+    },
+    {
+      "description": "Search repository code with a ripgrep-compatible pattern and return matching file paths and line snippets.",
+      "name": "search_code",
+      "parameters": {
+        "properties": {
+          "path": {
+            "description": "Optional repository-relative directory.",
+            "type": "string"
+          },
+          "pattern": {
+            "description": "Search pattern.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pattern"
+        ],
+        "type": "object"
+      },
+      "type": "function"
+    },
+    {
+      "description": "Show the current git diff for selected files.",
+      "name": "show_diff",
+      "parameters": {
+        "properties": {
+          "paths": {
+            "description": "Repository-relative file paths. Empty or omitted means all changed files.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "type": "function"
+    }
+  ]
+}

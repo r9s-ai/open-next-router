@@ -1,0 +1,220 @@
+{
+  "model": "gpt-5.1",
+  "instructions": "You are a professional data analyst. Always respond in Chinese. Use tools when appropriate.",
+  "reasoning": {
+    "effort": "high",
+    "summary": "detailed"
+  },
+  "tools": [
+    {
+      "type": "function",
+      "name": "get_weather",
+      "description": "Get current weather for a city",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city": { "type": "string" },
+          "unit": { "type": "string", "enum": ["celsius", "fahrenheit"] }
+        },
+        "required": ["city"],
+        "additionalProperties": false
+      },
+      "strict": true
+    },
+    {
+      "type": "function",
+      "name": "search_database",
+      "description": "Search internal database",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string" },
+          "limit": { "type": "integer" }
+        },
+        "required": ["query"],
+        "additionalProperties": false
+      },
+      "strict": true
+    },
+    {
+      "type": "custom",
+      "name": "sql_executor",
+      "description": "Execute raw SQL queries against the data warehouse"
+    },
+    {
+      "type": "shell",
+      "name": "data_pipeline",
+      "description": "Run data pipeline shell commands"
+    }
+  ],
+  "max_output_tokens": 8192,
+  "store": true,
+  "input": [
+    {
+      "type": "message",
+      "role": "developer",
+      "content": "Always output data in markdown tables. You are an expert in data analysis."
+    },
+    {
+      "type": "message",
+      "role": "system",
+      "content": "This is a secure corporate environment. Never expose internal database credentials."
+    },
+    {
+      "type": "message",
+      "role": "user",
+      "content": "Hi, I have a few tasks for you."
+    },
+    {
+      "type": "message",
+      "role": "assistant",
+      "content": "Sure, what do you need?"
+    },
+    {
+      "type": "message",
+      "role": "user",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "Please analyze these two images — a revenue chart and a user growth chart — and also summarize the attached PDF report. Then check the weather in Beijing and Shanghai."
+        },
+        {
+          "type": "input_image",
+          "image_url": "https://example.com/revenue_chart.png"
+        },
+        {
+          "type": "input_image",
+          "image_url": "https://example.com/user_growth_chart.png"
+        },
+        {
+          "type": "input_file",
+          "file_id": "file-q3-report-001"
+        }
+      ]
+    },
+    {
+      "type": "reasoning",
+      "id": "rs_round1_001",
+      "summary": [
+        {
+          "type": "summary_text",
+          "text": "User wants image analysis, document summary, and weather data for two cities. Need to call get_weather twice and consider searching the database."
+        }
+      ],
+      "status": "completed"
+    },
+    {
+      "type": "function_call",
+      "id": "fc_001",
+      "call_id": "call_weather_bj",
+      "name": "get_weather",
+      "arguments": "{\"city\":\"Beijing\",\"unit\":\"celsius\"}",
+      "status": "completed"
+    },
+    {
+      "type": "function_call",
+      "id": "fc_002",
+      "call_id": "call_weather_sh",
+      "name": "get_weather",
+      "arguments": "{\"city\":\"Shanghai\",\"unit\":\"celsius\"}",
+      "status": "completed"
+    },
+    {
+      "type": "function_call_output",
+      "call_id": "call_weather_bj",
+      "output": "{\"city\":\"Beijing\",\"temperature\":28,\"condition\":\"sunny\",\"humidity\":35}"
+    },
+    {
+      "type": "function_call_output",
+      "call_id": "call_weather_sh",
+      "output": "{\"city\":\"Shanghai\",\"temperature\":32,\"condition\":\"cloudy\",\"humidity\":70}"
+    },
+    {
+      "type": "message",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "Based on the weather data, Beijing is sunny at 28°C and Shanghai is cloudy at 32°C. The revenue chart shows a steady upward trend, and the user growth chart indicates a 15% increase quarter-over-quarter. Now let me query the database for detailed figures."
+        }
+      ]
+    },
+    {
+      "type": "reasoning",
+      "id": "rs_round2_001",
+      "summary": [
+        {
+          "type": "summary_text",
+          "text": "Weather data obtained. Charts analyzed. User likely wants historical comparison and raw numbers. Need to search database and possibly run a custom SQL query for precise figures."
+        }
+      ],
+      "status": "completed"
+    },
+    {
+      "type": "function_call",
+      "id": "fc_003",
+      "call_id": "call_search_001",
+      "name": "search_database",
+      "arguments": "{\"query\":\"historical weather Beijing Shanghai May\",\"limit\":5}",
+      "status": "completed"
+    },
+    {
+      "type": "function_call_output",
+      "call_id": "call_search_001",
+      "output": "{\"results\":[{\"year\":2025,\"avg_temp\":26},{\"year\":2024,\"avg_temp\":24}]}"
+    },
+    {
+      "type": "custom_tool_call",
+      "id": "ctc_001",
+      "call_id": "call_sql_001",
+      "name": "sql_executor",
+      "input": "SELECT city, date, temperature, humidity FROM weather_history WHERE city IN ('Beijing', 'Shanghai') AND date >= '2025-05-01' ORDER BY date DESC LIMIT 20",
+      "status": "completed"
+    },
+    {
+      "type": "custom_tool_call_output",
+      "call_id": "call_sql_001",
+      "output": "Beijing,2025-05-11,28,35\nBeijing,2025-05-10,30,40\nShanghai,2025-05-11,32,70\nShanghai,2025-05-10,29,65"
+    },
+    {
+      "type": "message",
+      "role": "assistant",
+      "content": "The SQL query returned the raw weather data for the past days. Let me also check the data pipeline status."
+    },
+    {
+      "type": "reasoning",
+      "id": "rs_round3_001",
+      "summary": [
+        {
+          "type": "summary_text",
+          "text": "Raw data obtained. User might also want the latest pipeline status. Running a shell command to check the data pipeline health."
+        }
+      ],
+      "status": "completed"
+    },
+    {
+      "type": "shell_call",
+      "id": "sc_001",
+      "call_id": "call_shell_001",
+      "action": {
+        "type": "execute",
+        "command": "data_pipeline status --environment production --json"
+      },
+      "status": "completed"
+    },
+    {
+      "type": "shell_call_output",
+      "call_id": "call_shell_001",
+      "output": "{\"pipeline\":\"weather_ingest\",\"status\":\"healthy\",\"last_run\":\"2025-05-11T06:00:00Z\",\"records_processed\":15234,\"errors\":0}"
+    },
+    {
+      "type": "message",
+      "role": "user",
+      "content": "Great, now generate a final summary report with all findings."
+    },
+    {
+      "type": "item_reference",
+      "id": "msg_report_summary_001"
+    }
+  ]
+}

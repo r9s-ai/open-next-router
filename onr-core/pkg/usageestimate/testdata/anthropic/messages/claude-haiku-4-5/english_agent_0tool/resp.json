@@ -1,26 +1,26 @@
 {
   "model": "claude-haiku-4-5-20251001",
-  "id": "msg_01UKUNQsXa5ppyXetdCyzMET",
+  "id": "msg_01NxUKJPvWkx1A5PWVppPzEu",
   "type": "message",
   "role": "assistant",
   "content": [
     {
       "type": "text",
-      "text": "Hello! \ud83d\udc4b How can I help you today?"
+      "text": "# Hello! \ud83d\udc4b\n\nHow can I help you today?"
     }
   ],
   "stop_reason": "end_turn",
   "stop_sequence": null,
   "stop_details": null,
   "usage": {
-    "input_tokens": 537,
+    "input_tokens": 8,
     "cache_creation_input_tokens": 0,
     "cache_read_input_tokens": 0,
     "cache_creation": {
       "ephemeral_5m_input_tokens": 0,
       "ephemeral_1h_input_tokens": 0
     },
-    "output_tokens": 16,
+    "output_tokens": 17,
     "service_tier": "standard",
     "inference_geo": "not_available"
   }

@@ -51,6 +51,16 @@ type parsedRequestBody struct {
 	err  error
 }
 
+type tokenEstimateContext struct {
+	text                     string
+	numTools                 int // number of tool definitions
+	numMessages              int
+	numFunctionCalls         int
+	numFunctionCallOutputs   int
+	numCustomToolCalls       int
+	numCustomToolCallOutputs int
+}
+
 func Estimate(cfg *Config, in Input) Output {
 	if cfg == nil || !cfg.IsAPIEnabled(in.API) {
 		u, stage := normalizeUpstreamUsage(in.UpstreamUsage)
@@ -79,7 +89,7 @@ func Estimate(cfg *Config, in Input) Output {
 	}
 
 	reqParsed := parseRequestBody(in.RequestBody, in.RequestRoot, cfg.MaxRequestBytes)
-	reqText, numTools := extractRequestTextFromParsed(in.API, reqParsed)
+	reqCtx := extractRequestTextFromParsed(in.API, reqParsed)
 	respText := ""
 	if len(in.StreamTail) > 0 {
 		respText = extractStreamText(in.API, in.StreamTail, cfg.MaxStreamCollectBytes)
@@ -87,9 +97,10 @@ func Estimate(cfg *Config, in Input) Output {
 		respText = extractResponseText(in.API, in.ResponseBody, cfg.MaxResponseBytes)
 	}
 
+	respCtx := &tokenEstimateContext{text: respText, numTools: reqCtx.numTools}
 	est := &dslconfig.Usage{
-		InputTokens:  EstimateTokenByModel(in.Model, reqText, numTools),
-		OutputTokens: EstimateTokenByModel(in.Model, respText, numTools),
+		InputTokens:  EstimateTokenByModel(in.Model, reqCtx),
+		OutputTokens: EstimateTokenByModel(in.Model, respCtx),
 	}
 	est.TotalTokens = est.InputTokens + est.OutputTokens
 
@@ -116,16 +127,16 @@ func estimateMissingFields(cfg *Config, in Input, u *dslconfig.Usage) (*dslconfi
 	}
 
 	reqParsed := parseRequestBody(in.RequestBody, in.RequestRoot, cfg.MaxRequestBytes)
-	reqText := ""
-	numTools := 0
+	reqCtx := &tokenEstimateContext{}
 	if needPrompt {
-		reqText, numTools = extractRequestTextFromParsed(in.API, reqParsed)
-		if strings.TrimSpace(reqText) == "" {
+		reqCtx = extractRequestTextFromParsed(in.API, reqParsed)
+		if strings.TrimSpace(reqCtx.text) == "" {
 			needPrompt = false
 		}
 	}
 
-	respText := ""
+	respCtx := &tokenEstimateContext{}
+	var respText string
 	if needCompletion {
 		if len(in.StreamTail) > 0 {
 			respText = extractStreamText(in.API, in.StreamTail, cfg.MaxStreamCollectBytes)
@@ -143,10 +154,11 @@ func estimateMissingFields(cfg *Config, in Input, u *dslconfig.Usage) (*dslconfi
 
 	out := *u
 	if needPrompt {
-		out.InputTokens = EstimateTokenByModel(in.Model, reqText, numTools)
+		out.InputTokens = EstimateTokenByModel(in.Model, reqCtx)
 	}
 	if needCompletion {
-		out.OutputTokens = EstimateTokenByModel(in.Model, respText, numTools)
+		respCtx = &tokenEstimateContext{text: respText}
+		out.OutputTokens = EstimateTokenByModel(in.Model, respCtx)
 	}
 	out.TotalTokens = out.InputTokens + out.OutputTokens
 
@@ -203,7 +215,7 @@ func isAllZero(u *dslconfig.Usage) bool {
 		(u.InputTokenDetails == nil || (u.InputTokenDetails.CachedTokens == 0 && u.InputTokenDetails.CacheWriteTokens == 0))
 }
 
-func extractRequestText(api string, body []byte, limit int) (string, int) {
+func extractRequestText(api string, body []byte, limit int) *tokenEstimateContext {
 	return extractRequestTextFromParsed(api, parseRequestBody(body, nil, limit))
 }
 
@@ -223,40 +235,46 @@ func parseRequestBody(body []byte, root map[string]any, limit int) parsedRequest
 	return parsedRequestBody{raw: body, obj: obj, root: m}
 }
 
-func extractRequestTextFromParsed(api string, parsed parsedRequestBody) (string, int) {
+func extractRequestTextFromParsed(api string, parsed parsedRequestBody) *tokenEstimateContext {
+	ctx := &tokenEstimateContext{}
 	if len(bytes.TrimSpace(parsed.raw)) == 0 {
-		return "", 0
+		return ctx
 	}
 	if parsed.err != nil {
-		return string(bytes.TrimSpace(parsed.raw)), 0
+		ctx.text = string(bytes.TrimSpace(parsed.raw))
+		return ctx
 	}
 	m := parsed.root
 	if m == nil {
-		return "", 0
+		return ctx
 	}
 
 	switch normalizeAPI(api) {
-	case apiEmbeddings, apiResponses:
-		// responses can use "input", embeddings uses "input".
+	case apiChatCompletions:
+		return stringfyOpenaiChatCompletionsRequest(m)
+	case apiResponses:
+		return stringfyOpenaiResponsesRequest(m)
+	case apiEmbeddings:
+		// embeddings uses "input".
 		if v, ok := m["input"]; ok {
-			return stringifyAny(v), 0
+			return &tokenEstimateContext{text: stringifyAny(v)}
 		}
 	case apiGeminiGenerateContent, apiGeminiStreamGenerateContent:
 		// Gemini native request: contents[].parts[].text
 		if v, ok := m["contents"]; ok {
-			return stringifyGeminiContents(v), 0
+			return &tokenEstimateContext{text: stringifyGeminiContents(v)}
 		}
 	case apiMessages:
 		return stringifyAnthropicRequest(m)
 
 	}
 	if v, ok := m["prompt"]; ok {
-		return stringifyAny(v), 0
+		return &tokenEstimateContext{text: stringifyAny(v)}
 	}
 	if v, ok := m["input"]; ok {
-		return stringifyAny(v), 0
+		return &tokenEstimateContext{text: stringifyAny(v)}
 	}
-	return "", 0
+	return ctx
 }
 
 func extractResponseText(api string, body []byte, limit int) string {
@@ -332,8 +350,11 @@ func extractResponseText(api string, body []byte, limit int) string {
 		}
 	case apiResponses:
 		// best-effort: output_text or any nested "text"
-		if s, ok := m["output_text"].(string); ok && strings.TrimSpace(s) != "" {
-			return s
+		if output, ok := m["output"].([]any); ok {
+			var b strings.Builder
+			var ctx tokenEstimateContext
+			stringifyInputs(output, &b, &ctx, 0, 10)
+			return b.String()
 		}
 	case apiGeminiGenerateContent, apiGeminiStreamGenerateContent:
 		// Gemini native response: candidates[].content.parts[].text
@@ -416,9 +437,9 @@ func stringifyAny(v any) string {
 }
 
 // extract text content and tool count from Anthropic request body for token estimation
-func stringifyAnthropicRequest(reqBody map[string]any) (string, int) {
+func stringifyAnthropicRequest(reqBody map[string]any) *tokenEstimateContext {
 	var b strings.Builder
-	var numTools int
+	ctx := &tokenEstimateContext{}
 	for k, v := range reqBody {
 		switch k {
 		case "system":
@@ -430,7 +451,7 @@ func stringifyAnthropicRequest(reqBody map[string]any) (string, int) {
 		case "tools":
 			b.WriteString("tools\n")
 			toolList, ok := v.([]any)
-			numTools = len(toolList)
+			ctx.numTools = len(toolList)
 			if !ok {
 				data, _ := json.Marshal(v)
 				b.WriteString(string(data) + "\n")
@@ -450,7 +471,8 @@ func stringifyAnthropicRequest(reqBody map[string]any) (string, int) {
 		}
 
 	}
-	return b.String(), numTools
+	ctx.text = b.String()
+	return ctx
 }
 
 func stringifyAnthropicMessages(v any, b *strings.Builder, deep int, maxDeep int) {
@@ -483,7 +505,7 @@ func stringifyAnthropicMessageObject(t map[string]any, b *strings.Builder, deep 
 	}
 
 	if typeInfo, ok := t["type"].(string); ok {
-		stringifyAnthropicContentBlock(typeInfo, t, b, deep, maxDeep)
+		stringifyAnthropicContentObject(typeInfo, t, b, deep, maxDeep)
 		return
 	}
 
@@ -493,7 +515,7 @@ func stringifyAnthropicMessageObject(t map[string]any, b *strings.Builder, deep 
 	}
 }
 
-func stringifyAnthropicContentBlock(typeInfo string, t map[string]any, b *strings.Builder, deep int, maxDeep int) {
+func stringifyAnthropicContentObject(typeInfo string, t map[string]any, b *strings.Builder, deep int, maxDeep int) {
 	switch typeInfo {
 	case "text": // Text content.
 		if text, ok := t["text"].(string); ok {
@@ -542,6 +564,193 @@ func stringifyAnthropicToolResultContent(content any, b *strings.Builder, deep i
 	default:
 		data, _ := json.Marshal(t)
 		b.Write(data)
+	}
+}
+
+func stringfyOpenaiChatCompletionsRequest(reqBody map[string]any) *tokenEstimateContext {
+	var b strings.Builder
+	var ctx tokenEstimateContext
+	for k, _ := range reqBody {
+		switch k {
+
+		}
+	}
+	ctx.text = b.String()
+	return &ctx
+}
+func stringfyOpenaiResponsesRequest(reqBody map[string]any) *tokenEstimateContext {
+	var b strings.Builder
+	var ctx tokenEstimateContext
+	for k, v := range reqBody {
+		switch k {
+		case "instructions":
+			b.WriteString("instructions\n")
+			str, ok := v.(string)
+			if !ok {
+				break
+			}
+			b.WriteString(str + "\n")
+		case "input":
+			b.WriteString("input\n")
+			stringifyInputs(v, &b, &ctx, 0, 10)
+			b.WriteString("\n")
+
+		case "tools":
+			b.WriteString("tools\n")
+			toolList, ok := v.([]any)
+			ctx.numTools = len(toolList)
+			if !ok {
+				data, _ := json.Marshal(v)
+				b.WriteString(string(data) + "\n")
+				break
+			}
+			for _, item := range toolList {
+				tool, ok := item.(map[string]any)
+				if !ok {
+					data, _ := json.Marshal(item)
+					b.WriteString(string(data) + "\n")
+					break
+				}
+				if functionMap, ok := tool["function"].(map[string]any); ok {
+					b.WriteString("function\n")
+					if name, ok := functionMap["name"].(string); ok {
+						b.WriteString(name + "\n")
+					}
+					if description, ok := functionMap["description"].(string); ok {
+						b.WriteString(description + "\n")
+					}
+					if parameters, ok := functionMap["parameters"].(map[string]any); ok {
+						data, _ := json.Marshal(parameters)
+
+						b.WriteString(string(data) + "\n")
+					}
+				}
+
+			}
+		}
+	}
+	ctx.text = b.String()
+	return &ctx
+
+}
+func stringifyInputs(v any, b *strings.Builder, ctx *tokenEstimateContext, deep int, maxDeep int) {
+	if deep > maxDeep {
+		return
+	}
+	switch t := v.(type) {
+	case []any: // Handle content block list.
+		for _, it := range t {
+			stringifyInputs(it, b, ctx, deep+1, maxDeep)
+		}
+		return
+	case string: // Handle content string.
+		b.WriteString(t)
+		return
+	case map[string]any: // Handle content block.
+		stringifyInputObject(t, b, ctx, deep, maxDeep)
+		return
+
+	default:
+		return
+
+	}
+
+}
+func stringifyInputObject(t map[string]any, b *strings.Builder, ctx *tokenEstimateContext, deep int, maxDeep int) {
+	if role, ok := t["role"].(string); ok { // Role info.
+		b.WriteString("role:" + role + "\n")
+	}
+
+	if typeInfo, ok := t["type"].(string); ok && typeInfo != "message" {
+		stringifyInputContentObject(typeInfo, t, b, ctx, deep, maxDeep)
+		return
+	}
+
+	if content, ok := t["content"]; ok {
+		stringifyInputs(content, b, ctx, deep+1, maxDeep)
+		b.WriteString("\n")
+	}
+}
+
+func stringifyInputContentObject(typeInfo string, t map[string]any, b *strings.Builder, ctx *tokenEstimateContext, deep int, maxDeep int) {
+	switch typeInfo {
+
+	case "input_text", "output_text": // Text content.
+		if text, ok := t["text"].(string); ok {
+			b.WriteString(text)
+		}
+	case "reasoning":
+		if summaryList, ok := t["summary"].([]any); ok {
+			for _, item := range summaryList {
+				if s, ok := item.(map[string]any); ok {
+					typeName, _ := s["type"].(string)
+					if typeName == "summary_text" {
+						if text, ok := s["text"].(string); ok {
+							b.WriteString(text)
+						}
+					}
+				}
+			}
+		}
+	case "code_interpreter_call":
+		if code, ok := t["code"].(string); ok {
+			b.WriteString(code)
+		}
+	case "input_image": // TODO: extract image content.
+		b.WriteString("")
+	case "input_file": // TODO: extract document content.
+		b.WriteString("")
+	case "function_call": // Extract tool call details.
+		ctx.numFunctionCalls += 1
+		b.WriteString(typeInfo + " ")
+		if toolName, ok := t["name"].(string); ok {
+			b.WriteString(toolName + " ")
+		}
+		if input, ok := t["arguments"].(string); ok {
+			b.Write([]byte(input))
+		} else {
+			data, _ := json.Marshal(input)
+			b.Write(data)
+		}
+
+	case "function_call_output", "custom_tool_call_output": // Count custom outputs with function outputs for current calibration.
+		ctx.numFunctionCallOutputs += 1
+		b.WriteString(typeInfo + " ")
+		if content, ok := t["output"]; ok {
+			data, _ := json.Marshal(content)
+			b.Write(data)
+		}
+	case "custom_tool_call":
+		ctx.numCustomToolCalls += 1
+		b.WriteString(typeInfo + " ")
+		if toolName, ok := t["name"].(string); ok {
+			b.WriteString(toolName + " ")
+		}
+		if input, ok := t["input"]; ok {
+			data, _ := json.Marshal(input)
+			b.Write(data)
+		}
+
+		// Tool call types not yet extracted for token estimation.
+	case "shell_call",
+		"shell_call_output",
+		"computer_call",
+		"computer_call_output",
+		"web_search_call",
+		"file_search_call",
+		"mcp_call",
+		"mcp_approval_request",
+		"mcp_approval_response",
+		"mcp_list_tools",
+		"tool_search_output",
+		"apply_patch_call",
+		"apply_patch_call_output",
+		"compaction",
+		"item_reference":
+		b.WriteString("")
+
+	default:
+		b.WriteString("")
 	}
 }
 

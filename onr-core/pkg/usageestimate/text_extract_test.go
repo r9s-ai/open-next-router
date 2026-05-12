@@ -31,9 +31,9 @@ func TestExtractRequestText_GeminiContents(t *testing.T) {
 			{"parts":[{"text":"hello"},{"text":"world"}]}
 		]
 	}`)
-	got, _ := extractRequestText("gemini.generateContent", req, 1024)
-	if !strings.Contains(got, "hello") || !strings.Contains(got, "world") {
-		t.Fatalf("got=%q", got)
+	got := extractRequestText("gemini.generateContent", req, 1024)
+	if !strings.Contains(got.text, "hello") || !strings.Contains(got.text, "world") {
+		t.Fatalf("got=%q", got.text)
 	}
 }
 

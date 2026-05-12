@@ -1,0 +1,77 @@
+{
+  "id": "resp_0c867e9e041a77e1006a01c66034e48191ab71a78f8fa69585",
+  "object": "response",
+  "created_at": 1778501216,
+  "status": "completed",
+  "background": false,
+  "billing": {
+    "payer": "developer"
+  },
+  "completed_at": 1778501254,
+  "error": null,
+  "frequency_penalty": 0,
+  "incomplete_details": null,
+  "instructions": "You are a senior software engineer helping with code implementation. Write clean, idiomatic code with proper error handling.",
+  "max_output_tokens": 8192,
+  "max_tool_calls": null,
+  "model": "gpt-5-mini-2025-08-07",
+  "moderation": null,
+  "output": [
+    {
+      "id": "rs_0c867e9e041a77e1006a01c660b7908191a7641e5785aed165",
+      "type": "reasoning",
+      "summary": []
+    },
+    {
+      "id": "msg_0c867e9e041a77e1006a01c67276048191b015b5b7542b388b",
+      "type": "message",
+      "status": "completed",
+      "content": [
+        {
+          "type": "output_text",
+          "annotations": [],
+          "logprobs": [],
+          "text": "Below is a complete, thread-safe, generic LRU cache with TTL-based expiry, an eviction callback, and metrics (hits, misses, evictions) plus a Stats() method. It avoids calling user callbacks while holding the internal lock to prevent deadlocks, and uses atomics for metrics to reduce contention.\n\nSave as package lru.\n\n```go\npackage lru\n\nimport (\n\t\"container/list\"\n\t\"sync\"\n\t\"sync/atomic\"\n\t\"time\"\n)\n\ntype entry[K comparable, V any] struct {\n\tkey       K\n\tvalue     V\n\texpiresAt time.Time\n}\n\ntype Options[K comparable, V any] struct {\n\tCapacity int           // number of items cache can hold; if <=0 defaults to 1024\n\tTTL      time.Duration // 0 means items don't expire\n\tOnEvict  func(key K, value V)\n}\n\ntype Stats struct {\n\tHits      int64\n\tMisses    int64\n\tEvictions int64\n\tSize      int\n\tCapacity  int\n}\n\ntype Cache[K comparable, V any] struct {\n\tmu       sync.Mutex\n\tcapacity int\n\tttl      time.Duration\n\tonEvict  func(K, V)\n\n\titems map[K]*list.Element\n\torder *list.List\n\n\t// metric counters\n\thits      int64\n\tmisses    int64\n\tevictions int64\n\n\t// cleanup goroutine control\n\tstopCh   chan struct{}\n\tstopOnce sync.Once\n}\n\n// New creates a new LRU cache with the provided options.\n// If opts.Capacity <= 0, it defaults to 1024.\nfunc New[K comparable, V any](opts Options[K, V]) *Cache[K, V] {\n\tif opts.Capacity <= 0 {\n\t\topts.Capacity = 1024\n\t}\n\tc := &Cache[K, V]{\n\t\tcapacity: opts.Capacity,\n\t\tttl:      opts.TTL,\n\t\tonEvict:  opts.OnEvict,\n\t\titems:    make(map[K]*list.Element, opts.Capacity),\n\t\torder:    list.New(),\n\t\tstopCh:   make(chan struct{}),\n\t}\n\n\tif opts.TTL > 0 {\n\t\tgo c.startCleanup()\n\t}\n\n\treturn c\n}\n\n// Get returns the value for the key and true if present and not expired.\n// It updates the LRU ordering on a hit.\nfunc (c *Cache[K, V]) Get(key K) (V, bool) {\n\tvar zero V\n\n\tc.mu.Lock()\n\telem, ok := c.items[key]\n\tif !ok {\n\t\tatomic.AddInt64(&c.misses, 1)\n\t\tc.mu.Unlock()\n\t\treturn zero, false\n\t}\n\n\te := elem.Value.(*entry[K, V])\n\t// Check expiry\n\tif !e.expiresAt.IsZero() && time.Now().After(e.expiresAt) {\n\t\t// Remove expired element (collect to call evict callback after unlocking)\n\t\tk := e.key\n\t\tv := e.value\n\t\tc.removeElementLocked(elem)\n\t\tatomic.AddInt64(&c.misses, 1)\n\t\tatomic.AddInt64(&c.evictions, 1)\n\t\tonEv := c.onEvict\n\t\tc.mu.Unlock()\n\n\t\tif onEv != nil {\n\t\t\tonEv(k, v)\n\t\t}\n\t\treturn zero, false\n\t}\n\n\t// Hit\n\tc.order.MoveToFront(elem)\n\tatomic.AddInt64(&c.hits, 1)\n\tval := e.value\n\tc.mu.Unlock()\n\treturn val, true\n}\n\n// Put inserts or updates the value for the key. If insertion would\n// exceed capacity the least-recently-used item is evicted.\nfunc (c *Cache[K, V]) Put(key K, value V) {\n\tvar evicted []entry[K, V]\n\n\tc.mu.Lock()\n\tif elem, ok := c.items[key]; ok {\n\t\te := elem.Value.(*entry[K, V])\n\t\te.value = value\n\t\tif c.ttl > 0 {\n\t\t\te.expiresAt = time.Now().Add(c.ttl)\n\t\t} else {\n\t\t\te.expiresAt = time.Time{}\n\t\t}\n\t\tc.order.MoveToFront(elem)\n\t\tc.mu.Unlock()\n\t\treturn\n\t}\n\n\t// Evict if needed\n\tif c.order.Len() >= c.capacity {\n\t\toldest := c.order.Back()\n\t\tif oldest != nil {\n\t\t\te := oldest.Value.(*entry[K, V])\n\t\t\tevicted = append(evicted, *e)\n\t\t\tc.removeElementLocked(oldest)\n\t\t\tatomic.AddInt64(&c.evictions, 1)\n\t\t}\n\t}\n\n\tent := &entry[K, V]{\n\t\tkey:   key,\n\t\tvalue: value,\n\t}\n\tif c.ttl > 0 {\n\t\tent.expiresAt = time.Now().Add(c.ttl)\n\t}\n\telem := c.order.PushFront(ent)\n\tc.items[key] = elem\n\tc.mu.Unlock()\n\n\t// Call eviction callback(s) without holding lock\n\tif c.onEvict != nil && len(evicted) > 0 {\n\t\tfor _, ev := range evicted {\n\t\t\tc.onEvict(ev.key, ev.value)\n\t\t}\n\t}\n}\n\n// Len returns the current number of items in the cache.\nfunc (c *Cache[K, V]) Len() int {\n\tc.mu.Lock()\n\tn := c.order.Len()\n\tc.mu.Unlock()\n\treturn n\n}\n\n// Stats returns a snapshot of cache statistics.\nfunc (c *Cache[K, V]) Stats() Stats {\n\ts := Stats{\n\t\tHits:      atomic.LoadInt64(&c.hits),\n\t\tMisses:    atomic.LoadInt64(&c.misses),\n\t\tEvictions: atomic.LoadInt64(&c.evictions),\n\t}\n\tc.mu.Lock()\n\ts.Size = c.order.Len()\n\ts.Capacity = c.capacity\n\tc.mu.Unlock()\n\treturn s\n}\n\n// Close stops the background cleanup goroutine (if any).\nfunc (c *Cache[K, V]) Close() {\n\tc.stopOnce.Do(func() {\n\t\tclose(c.stopCh)\n\t})\n}\n\n// startCleanup runs a goroutine that periodically scans for expired entries.\nfunc (c *Cache[K, V]) startCleanup() {\n\tinterval := c.ttl / 2\n\tif interval <= 0 {\n\t\tinterval = time.Millisecond\n\t}\n\tticker := time.NewTicker(interval)\n\tdefer ticker.Stop()\n\n\tfor {\n\t\tselect {\n\t\tcase <-ticker.C:\n\t\t\tc.cleanupExpired()\n\t\tcase <-c.stopCh:\n\t\t\treturn\n\t\t}\n\t}\n}\n\n// cleanupExpired scans from the back and removes expired entries.\n// Eviction callbacks are invoked outside the lock.\nfunc (c *Cache[K, V]) cleanupExpired() {\n\tnow := time.Now()\n\tvar evicted []entry[K, V]\n\n\tc.mu.Lock()\n\tfor e := c.order.Back(); e != nil; {\n\t\tprev := e.Prev()\n\t\ten := e.Value.(*entry[K, V])\n\t\tif !en.expiresAt.IsZero() && now.After(en.expiresAt) {\n\t\t\tevicted = append(evicted, *en)\n\t\t\tc.removeElementLocked(e)\n\t\t\tatomic.AddInt64(&c.evictions, 1)\n\t\t}\n\t\te = prev\n\t}\n\tc.mu.Unlock()\n\n\tif c.onEvict != nil && len(evicted) > 0 {\n\t\tfor _, ev := range evicted {\n\t\t\tc.onEvict(ev.key, ev.value)\n\t\t}\n\t}\n}\n\n// removeElementLocked removes the element from the lists and map.\n// Caller must hold c.mu.\n// Note: does not invoke callback or update evictions counter.\nfunc (c *Cache[K, V]) removeElementLocked(elem *list.Element) {\n\tif elem == nil {\n\t\treturn\n\t}\n\ten := elem.Value.(*entry[K, V])\n\tdelete(c.items, en.key)\n\tc.order.Remove(elem)\n}\n```\n\nNotes:\n- TTL is global for the cache (per-entry TTL is set at insertion using the cache TTL).\n- Eviction callbacks are executed without holding the internal lock to avoid deadlocks; eviction count is still incremented while holding the lock where removal happens.\n- Metrics (hits, misses, evictions) use atomic counters for low-contention reads via Stats()."
+        }
+      ],
+      "role": "assistant"
+    }
+  ],
+  "parallel_tool_calls": true,
+  "presence_penalty": 0,
+  "previous_response_id": null,
+  "prompt_cache_key": null,
+  "prompt_cache_retention": "in_memory",
+  "reasoning": {
+    "effort": "medium",
+    "summary": null
+  },
+  "safety_identifier": null,
+  "service_tier": "default",
+  "store": true,
+  "temperature": 1,
+  "text": {
+    "format": {
+      "type": "text"
+    },
+    "verbosity": "medium"
+  },
+  "tool_choice": "auto",
+  "tools": [],
+  "top_logprobs": 0,
+  "top_p": 1,
+  "truncation": "disabled",
+  "usage": {
+    "input_tokens": 1634,
+    "input_tokens_details": {
+      "cached_tokens": 0
+    },
+    "output_tokens": 3152,
+    "output_tokens_details": {
+      "reasoning_tokens": 1408
+    },
+    "total_tokens": 4786
+  },
+  "user": null,
+  "metadata": {}
+}

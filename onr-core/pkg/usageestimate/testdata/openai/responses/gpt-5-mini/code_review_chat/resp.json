@@ -1,0 +1,77 @@
+{
+  "id": "resp_099f157529d4f8de006a01c64ffa2481948eade0391d65fdec",
+  "object": "response",
+  "created_at": 1778501199,
+  "status": "completed",
+  "background": false,
+  "billing": {
+    "payer": "developer"
+  },
+  "completed_at": 1778501213,
+  "error": null,
+  "frequency_penalty": 0,
+  "incomplete_details": null,
+  "instructions": "You are a senior software engineer doing code review. Be precise, point out bugs and anti-patterns, and suggest concrete improvements.",
+  "max_output_tokens": 8192,
+  "max_tool_calls": null,
+  "model": "gpt-5-mini-2025-08-07",
+  "moderation": null,
+  "output": [
+    {
+      "id": "rs_099f157529d4f8de006a01c650513c81948e50d218e928d757",
+      "type": "reasoning",
+      "summary": []
+    },
+    {
+      "id": "msg_099f157529d4f8de006a01c653f810819482362e1dcdb6ebc1",
+      "type": "message",
+      "status": "completed",
+      "content": [
+        {
+          "type": "output_text",
+          "annotations": [],
+          "logprobs": [],
+          "text": "- Memory / slice handling\n  - Avoid reusing the same backing array with batch = batch[:0] if older values may be retained; allocate with make([]User, 0, batchSize) or set batch = nil to let GC reclaim memory.\n\n- Error propagation and handling\n  - Propagate processBatch errors (already done), but ensure you handle remaining input (drain or cancel) and avoid leaking goroutines when an error occurs.\n\n- Out channel blocking / backpressure\n  - Sending results with out <- can block indefinitely if the consumer stops. Use a select with ctx.Done() (or a non-blocking send with timeout) to avoid goroutine leaks.\n\n- Context and cancellation\n  - Accept context and check it when receiving and when sending to out. Ensure all blocking ops honor context so the function can stop promptly.\n\n- close(out) semantics\n  - Closing out in defer is fine, but callers must range over out. Be explicit in docs/tests about this contract.\n\n- Batch lifecycle and allocation\n  - Recreate the batch slice after flushing with make([]User, 0, batchSize) to keep capacity bounded and avoid retaining large backing arrays.\n\n- Concurrency and shutdown\n  - On errors or cancellation, ensure you either drain the input channel or otherwise ensure the producer won't block indefinitely (document expected caller behavior).\n\n- API improvements\n  - Consider making flushBatch accept context so it can select on ctx.Done() when sending to out; return errors consistently.\n\nTesting approach (small set of targeted tests)\n- Unit tests for boundary conditions\n  - Empty input (close channel immediately) -> no batches sent.\n  - Exact batch boundary (N items, batchSize N) -> one full batch.\n  - Partial final batch (less than batchSize) -> final flush occurs.\n\n- Error path tests\n  - Mock processBatch to return an error and assert processUsers returns that error and does not hang.\n\n- Cancellation tests\n  - Cancel ctx before or during processing (including while blocked on send to out) and assert the function returns context.Canceled and doesn’t leak.\n\n- Backpressure / blocked consumer tests\n  - Make out unbuffered or a slow consumer; ensure processUsers either blocks until consumer reads or stops when ctx is cancelled (use select-based send in implementation).\n\n- Concurrency & throughput tests\n  - Concurrent producer pushing many users; verify batches emitted correctly (count totals, sizes) and no memory blow-up.\n\n- Integration / property tests\n  - Use a fake processBatch that records inputs/outputs, and assert ordering, total processed count, and that every input maps to a result.\n\n- Use mocks / fakes\n  - Inject a testable processBatch implementation to simulate latency, errors, and inspect what was passed for strong assertions.\n\nThese bullets should guide fixing remaining issues and give a clear test matrix to ensure correctness, resource-safety, and no goroutine leaks."
+        }
+      ],
+      "role": "assistant"
+    }
+  ],
+  "parallel_tool_calls": true,
+  "presence_penalty": 0,
+  "previous_response_id": null,
+  "prompt_cache_key": null,
+  "prompt_cache_retention": "in_memory",
+  "reasoning": {
+    "effort": "medium",
+    "summary": null
+  },
+  "safety_identifier": null,
+  "service_tier": "default",
+  "store": true,
+  "temperature": 1,
+  "text": {
+    "format": {
+      "type": "text"
+    },
+    "verbosity": "medium"
+  },
+  "tool_choice": "auto",
+  "tools": [],
+  "top_logprobs": 0,
+  "top_p": 1,
+  "truncation": "disabled",
+  "usage": {
+    "input_tokens": 1294,
+    "input_tokens_details": {
+      "cached_tokens": 0
+    },
+    "output_tokens": 813,
+    "output_tokens_details": {
+      "reasoning_tokens": 192
+    },
+    "total_tokens": 2107
+  },
+  "user": null,
+  "metadata": {}
+}
