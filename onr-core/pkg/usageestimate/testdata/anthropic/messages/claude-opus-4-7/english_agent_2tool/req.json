@@ -1,0 +1,28 @@
+{
+  "model": "claude-opus-4.7",
+  "max_tokens": 1024,
+  "messages": [
+    {
+      "role": "user",
+      "content": "hi"
+    }
+  ],
+  "tools": [
+    {
+      "name": "a",
+      "description": "b",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "c",
+      "description": "d",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "model": "gpt-4o-mini",
+  "max_tokens": 2048,
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a thoughtful, patient, and articulate assistant. When answering, first confirm the core of the question, then provide a clear and well-structured explanation. Use steps or bullet points where helpful. Be precise — do not exaggerate or fabricate."
+    },
+    {
+      "role": "user",
+      "content": "Hi! I've been trying to get better at writing technical documentation, but I always end up with walls of text that nobody reads. Any advice on where to start?"
+    },
+    {
+      "role": "assistant",
+      "content": "This is a very common problem. The root issue is usually that the writer includes everything they know rather than what the reader needs. I'd suggest starting with three principles:\n\n1) **Know your audience** — Are they onboarding beginners, or are they experienced engineers looking for a reference? The same topic deserves completely different treatment for each.\n2) **Lead with the outcome** — Start each section by stating what the reader will be able to do after reading it. This gives them a reason to keep going.\n3) **Separate tutorial from reference** — A tutorial walks through a task step by step; a reference lists all options with brief explanations. Mixing the two is the #1 cause of unreadable docs.\n\nIf you tell me what kind of docs you're writing, I can give more targeted advice."
+    },
+    {
+      "role": "user",
+      "content": "I mostly write internal API docs for my team. It's a REST API with about 40 endpoints. The current docs are just auto-generated from OpenAPI specs, but nobody finds them useful."
+    },
+    {
+      "role": "assistant",
+      "content": "Auto-generated API docs are a great starting point, but they typically lack the narrative that makes them useful. Here's what I'd layer on top:\n\n**For each endpoint, add:**\n1) A one-sentence summary of what it actually does (the spec says \"GET /users\" — the summary says \"Fetch user profiles by role or team\").\n2) A concrete example request/response pair, not just the schema.\n3) A \"Common Pitfalls\" callout — e.g., \"This endpoint paginates by cursor, not offset. Passing `page=2` does nothing.\"\n\n**For the overall structure:**\n- Group endpoints by user task, not by resource. \"Onboarding a new team member\" might touch `/users`, `/teams`, and `/invites`. Group them together in a guide.\n- Write a 5-minute quickstart that chains 3-4 calls to accomplish something real.\n\nWould you like a concrete example of what this looks like for a single endpoint?"
+    },
+    {
+      "role": "user",
+      "content": "Yes please — take a \"GET /orders\" endpoint and show me how you'd document it."
+    },
+    {
+      "role": "assistant",
+      "content": "Here's a before-and-after for a hypothetical `GET /v2/orders` endpoint:\n\n**Before (auto-generated only):**\n```\nGET /v2/orders\nQuery params: status (string), start_date (string), end_date (string), limit (int), cursor (string)\nResponse: { data: Order[], next_cursor: string, has_more: bool }\n```\n\n**After (with narrative added):**\n\n## List Orders\n\nReturns orders filtered by status and date range. Use this to build order dashboards or trigger fulfillment workflows.\n\n**Quick example** — fetch the first 20 shipped orders from March:\n```bash\ncurl -H \"Authorization: Bearer $TOKEN\" \\\n  \"https://api.example.com/v2/orders?status=shipped&start_date=2026-03-01&end_date=2026-03-31&limit=20\"\n```\n\n**Pagination** — This endpoint uses cursor-based pagination. The response includes `next_cursor` and `has_more`. To get the next page, pass `next_cursor` as the `cursor` parameter. Do not build page-number offsets — they won't work.\n\n**Filtering notes:**\n- `status` accepts: `pending`, `confirmed`, `shipped`, `delivered`, `cancelled`\n- Dates are inclusive and interpreted in the merchant's timezone (set via the `X-Timezone` header).\n- If both `start_date` and `end_date` are omitted, defaults to the last 7 days.\n\n**Common pitfalls:**\n- Cancelled orders are retained for 90 days only. Queries beyond that window return empty results — not an error.\n- `limit` is capped at 100. Passing `limit=1000` silently returns 100 results.\n\nThat structure — quick example first, then pagination details, then filtering notes, then gotchas — works for almost any read endpoint."
+    },
+    {
+      "role": "user",
+      "content": "That's really clear. One more question: how do you keep docs like this updated when the API changes? That's our biggest pain point."
+    },
+    {
+      "role": "assistant",
+      "content": "Stale docs are worse than no docs. Here's a practical approach:\n\n1) **Co-locate docs with code** — Keep the narrative docs in the same repo as the API code, in a `docs/` folder. When a PR changes an endpoint, it must also update the corresponding doc file. Enforce this with a CI check that fails if an endpoint's schema changed but the doc wasn't touched.\n\n2) **Use doc tests** — Write a small script that runs the example curl commands from your docs against a test environment. Run it in CI. If the examples break, the docs are out of date. This single practice catches 80% of staleness.\n\n3) **Version your docs** — Publish docs alongside each API release (e.g., `docs/v2.3/`). Keep the last 3 versions live. This way, even if the latest docs drift, teams on older versions still have accurate references.\n\n4) **Designate an owner** — Rotate a \"docs sheriff\" role among the team each sprint. Their job is to review doc PRs and spot-check a few endpoints manually. It adds maybe 2 hours of work per sprint and dramatically raises quality.\n\nStart with just #1 and #2. Those two alone will prevent most rot."
+    },
+    {
+      "role": "user",
+      "content": "Great advice, thanks. Last thing — should I bother documenting internal-only endpoints that only one other service calls?"
+    },
+    {
+      "role": "assistant",
+      "content": "Yes, but keep it minimal. Internal service-to-service endpoints need at least:\n\n- What the endpoint does (one line).\n- Auth requirements (service account, mTLS, etc.).\n- Expected request/response shape.\n- Error codes and what they mean.\n- Who owns it (team + Slack channel).\n\nThat's maybe 15 lines per endpoint. It feels like overhead now, but when you're oncall at 3 AM and that service starts returning 503s, you'll be glad those 15 lines exist. The \"who owns it\" line alone is worth the effort — it answers the only question that matters in an incident: \"who can fix this?\""
+    },
+    {
+      "role": "user",
+      "content": "Thanks for all the help! Can you give me a quick summary of everything we covered so I can share it with my team?"
+    }
+  ]
+}

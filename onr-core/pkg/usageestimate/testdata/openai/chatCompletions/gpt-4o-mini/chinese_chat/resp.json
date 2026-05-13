@@ -1,0 +1,36 @@
+{
+  "id": "chatcmpl-DefjckiXZTgSuPb67xRjwBOzjDwzl",
+  "object": "chat.completion",
+  "created": 1778585920,
+  "model": "gpt-4o-mini-2024-07-18",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "如果还有其他问题，请随时问我！希望这些建议能帮到你，祝你顺利整理和利用你的笔记！",
+        "refusal": null,
+        "annotations": []
+      },
+      "logprobs": null,
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 1406,
+    "completion_tokens": 29,
+    "total_tokens": 1435,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "service_tier": "default",
+  "system_fingerprint": "fp_9dda724e50"
+}

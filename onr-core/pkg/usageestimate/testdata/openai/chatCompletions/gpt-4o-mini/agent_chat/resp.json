@@ -1,0 +1,46 @@
+{
+  "id": "chatcmpl-Defiux8XawKIzuyhH6WZAxNkfFnUi",
+  "object": "chat.completion",
+  "created": 1778585876,
+  "model": "gpt-4o-mini-2024-07-18",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "我发现了 'native_passthrough.go' 中提到的关于 'tool_use' 的注释提示，尤其是在第 246 行。我需要查看这段代码的逻辑，以确认 'tool_use' 的返回内容是否影响 'CompletionTokens' 估计。接下来的步骤是读取 'native_passthrough.go' 中与流式输出相关的函数，尤其是在 246 行之前的区域。\n\n从当前的观察来看，可能存在以下几种情况导致 'completion_tokens' 为 0：\n\n1. **Output 确实是 tool_use**：如果返回是 tool_use，而非流式文本，可能会导致没有返回实际的 'completion_tokens'。\n2. **上下文信息缺失**：没有正确设置上下文中的 tokens（如 'UpstreamCompletionTokens'），导致估计逻辑无法使用有效的输入数据。\n3. **流式消息时机问题**：在 set 状态中，如果流式返回尚未完全处理，估计时未能捕捉到有效数据。\n\n我将读取 'native_passthrough.go' 中与流式处理和 tool_use 相关的代码。",
+        "tool_calls": [
+          {
+            "id": "call_dEgoYKlHYaKsJyv1YyvgX6LN",
+            "type": "function",
+            "function": {
+              "name": "read_file",
+              "arguments": "{\"end_line\":260,\"path\":\"relay/internal/channel/claudemessages/native_passthrough.go\",\"start_line\":200}"
+            }
+          }
+        ],
+        "refusal": null,
+        "annotations": []
+      },
+      "logprobs": null,
+      "finish_reason": "tool_calls"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 1106,
+    "completion_tokens": 280,
+    "total_tokens": 1386,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "service_tier": "default",
+  "system_fingerprint": "fp_2d3cd316d9"
+}

@@ -1,0 +1,36 @@
+{
+  "id": "chatcmpl-Defjtl2c3NBH3vbbRTqoPM0S5Yoem",
+  "object": "chat.completion",
+  "created": 1778585937,
+  "model": "gpt-4o-mini-2024-07-18",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "主流的分布式数据库在 CAP 定理的基础上，通常根据应用场景选择优先考虑的一项或两项特性。以下是一些常见的分布式数据库及其选择：\n\n1. **Cassandra**：选择 AP（可用性和分区容错性），在网络分区时仍然提供服务，但可能出现数据不一致。\n  \n2. **MongoDB**：默认情况下是 AP，但可以通过配置来增强一致性，适应不同的应用需求。\n\n3. **HBase**：选择 CP（一致性和分区容错性），在遇到分区时，可能会牺牲可用性。\n\n4. **Google Spanner**：在一定程度上实现了三者兼顾，利用时间戳和一致性协议，在分区发生时仍然提供一致性和可用性。\n\n5. **Etcd** 和 **ZooKeeper**：通常被视为 CP，强调数据的一致性和分区容错性，但在碰到分区时会牺牲可用性。\n\n不同数据库根据特定需求和设计架构提供灵活的配置和权衡，以适应不同的使用场景。",
+        "refusal": null,
+        "annotations": []
+      },
+      "logprobs": null,
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 365,
+    "completion_tokens": 258,
+    "total_tokens": 623,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "service_tier": "default",
+  "system_fingerprint": "fp_c2f5782bd4"
+}

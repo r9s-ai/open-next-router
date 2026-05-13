@@ -1,0 +1,44 @@
+{
+  "model": "claude-opus-4.7",
+  "max_tokens": 8192,
+  "thinking": {
+    "type": "enabled",
+    "budget_tokens": 1024
+  },
+  "system": [
+    {
+      "type": "text",
+      "text": "You are a bilingual assistant fluent in both Chinese and English. Help the user with their technical questions, matching the language of each query. Be precise and practical."
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "我在评估两个技术方案：方案 A 是用 Redis Cluster 做分布式缓存，方案 B 是用 etcd 做配置中心 + 本地缓存。场景是一个 read-heavy 的 API 服务，QPS 约 10K。What are the trade-offs?"
+    },
+    {
+      "role": "assistant",
+      "content": "Good question — let me break this down bilingually since you will likely evaluate both Chinese and English documentation.\n\n方案 A: Redis Cluster (distributed cache)\n\nPros:\n- Sub-millisecond latency for cache hits\n- Built-in sharding with hash slots — scales horizontally\n- Rich data structures (hashes, sorted sets for leaderboards)\n- Mature ecosystem, well-understood failure modes\n\nCons:\n- Network hop on every read — at 10K QPS, this adds up (0.5ms per call on same AZ)\n- Cluster mode adds complexity: MOVED/ASK redirects, slot migration\n- Cache invalidation is still hard (your problem, not Redis's)\n\n方案 B: etcd + local cache\n\nPros:\n- Zero network cost for reads — local cache hit is pure memory access (nanoseconds)\n- etcd guarantees strong consistency for config/cache invalidation via watch API\n- Perfect for read-heavy, write-rare workloads\n\nCons:\n- Local cache consumes app memory — at 10K QPS with large values, this can pressure GC\n- Cold start: new instances start with empty cache until they replay etcd events\n- Consistency window: etcd watch has propagation delay, may serve stale data\n- Operational complexity: two systems to maintain\n\nRecommendation for your scenario: If cache values are small (under 1KB) and change infrequently, go with etcd + local cache. If cache values are large or change frequently, Redis Cluster is the safer bet."
+    },
+    {
+      "role": "user",
+      "content": "我倾向于方案 B。但有个问题：如果缓存数据很大（比如 100MB 的用户画像数据），本地缓存会不会导致 GC 压力？内存怎么规划？And how would you handle cache warming on startup?"
+    },
+    {
+      "role": "assistant",
+      "content": "100MB of cached data in Go is manageable but needs careful design.\n\nGC pressure mitigation (Go-specific):\n1) Use []byte instead of string — strings are more expensive for GC scanning\n2) Pre-allocate a large arena, manage with offsets to reduce object count\n3) Use freecache or bigcache libraries — they store data as []byte, zero GC overhead\n4) For complex data structures, consider off-heap with mmap\n\nMemory planning: 100MB x 1.5 (overhead) + 200MB base = 350MB per instance. A 4-core 2GB instance is sufficient.\n\nCache Warming on Startup:\n1) Bulk load snapshot from etcd at a specific revision\n2) Start watch from that revision to catch changes during Phase 1\n3) This ensures no events are lost between load and watch\n\nKey: bulk load snapshot first, then watch from that revision."
+    },
+    {
+      "role": "user",
+      "content": "这个 freecache 方案看起来不错。但我还担心 etcd 的容量限制——etcd 官方建议数据不超过 8GB，存储 100MB 的缓存数据合适吗？Also, what is the failure mode if etcd becomes unavailable?"
+    },
+    {
+      "role": "assistant",
+      "content": "Good concerns.\n\netcd capacity: You should NOT store 100MB of cache data directly in etcd. etcd is a configuration center, not a data store. The correct approach:\n- etcd only stores key list + version metadata (a few KB)\n- Actual data loads from the source (MySQL, S3) into local cache\n- etcd key space example: /cache/users/v1 -> {version: 42, source: mysql, updated_at: ...}\n- This way etcd only holds metadata, all 100MB stays in local cache\n\netcd failure modes:\n\nIf etcd is unavailable, your local cache keeps serving the last-known-good data. This is the core advantage of plan B — etcd is only used for invalidation notifications, not the data path.\n\nFailure modes and mitigations:\n- etcd down: cannot receive invalidation events, but local cache continues serving with last-known version\n- etcd split-brain: may receive stale data, check that revision is monotonically increasing, reject regressions\n- Network partition (app-etcd): same as etcd down, local cache unaffected\n- New instance starts while etcd is unavailable: cannot warm up, fall back to loading directly from MySQL (slower but available)\n\nBottom line: the cache data path should not depend on etcd. etcd is the control plane, the data itself lives in the data plane (local memory). This is the right separation of concerns."
+    },
+    {
+      "role": "user",
+      "content": "Perfect, makes sense. 最后帮我对齐一下方案 B 的实施步骤 (phased rollout plan)，考虑到我们已经有 Redis 在跑了，不想一把梭迁移。"
+    }
+  ]
+}

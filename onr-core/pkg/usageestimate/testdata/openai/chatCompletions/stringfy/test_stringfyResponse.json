@@ -1,0 +1,47 @@
+{
+  "id": "chatcmpl_stringfy_001",
+  "object": "chat.completion",
+  "created": 1756920000,
+  "model": "gpt-4.1-mini",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "## 综合分析报告\n\n北京当前晴朗，28°C，湿度 35%；上海多云，32°C，湿度 70%。历史数据表明两地五月气温均略高于去年同期。收入图表呈现稳步增长，用户增长图表显示季度环比提升 15%。\n\n| 城市 | 当前温度 | 湿度 | 趋势 |\n| --- | --- | --- | --- |\n| 北京 | 28°C | 35% | 稳定 |\n| 上海 | 32°C | 70% | 上升 |"
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "index": 1,
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "id": "call_weather_bj",
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"city\":\"Beijing\",\"unit\":\"celsius\"}"
+            }
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    },
+    {
+      "index": 2,
+      "text": "Legacy text choice fallback for completion-style responses.",
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 2450,
+    "completion_tokens": 720,
+    "total_tokens": 3170,
+    "completion_tokens_details": {
+      "reasoning_tokens": 128
+    }
+  }
+}

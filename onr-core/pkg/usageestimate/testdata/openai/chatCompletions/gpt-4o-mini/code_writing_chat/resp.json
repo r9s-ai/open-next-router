@@ -1,0 +1,36 @@
+{
+  "id": "chatcmpl-Defk7Pms8dleR304xMuUaNExkn9Iz",
+  "object": "chat.completion",
+  "created": 1778585951,
+  "model": "gpt-4o-mini-2024-07-18",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Here’s the complete implementation of the thread-safe LRU cache in Go, with TTL support, eviction callbacks, and the addition of metrics for hits, misses, and evictions:\n\n```go\npackage lru\n\nimport (\n    \"container/list\"\n    \"sync\"\n    \"sync/atomic\"\n    \"time\"\n)\n\ntype entry[K comparable, V any] struct {\n    key       K\n    value     V\n    expiresAt time.Time\n}\n\ntype Options[K comparable, V any] struct {\n    Capacity int\n    TTL      time.Duration // 0 means no expiry\n    OnEvict  func(K, V)    // called when an entry is evicted\n}\n\ntype Stats struct {\n    Hits      int64\n    Misses    int64\n    Evictions int64\n    Size      int\n    Capacity  int\n}\n\ntype Cache[K comparable, V any] struct {\n    mu       sync.Mutex\n    opts     Options[K, V]\n    items    map[K]*list.Element\n    order    *list.List\n    stats    Stats\n    stopCh   chan struct{}\n}\n\nfunc New[K comparable, V any](opts Options[K, V]) *Cache[K, V] {\n    c := &Cache[K, V]{\n        opts:   opts,\n        items:  make(map[K]*list.Element, opts.Capacity),\n        order:  list.New(),\n        stopCh: make(chan struct{}),\n    }\n    if opts.TTL > 0 {\n        go c.startCleanup()\n    }\n    return c\n}\n\nfunc (c *Cache[K, V]) Get(key K) (V, bool) {\n    c.mu.Lock()\n    defer c.mu.Unlock()\n    elem, ok := c.items[key]\n    if !ok {\n        atomic.AddInt64(&c.stats.Misses, 1)\n        var zero V\n        return zero, false\n    }\n\n    e := elem.Value.(*entry[K, V])\n    if !e.expiresAt.IsZero() && time.Now().After(e.expiresAt) {\n        c.removeElement(elem)\n        atomic.AddInt64(&c.stats.Misses, 1)\n        var zero V\n        return zero, false\n    }\n\n    c.order.MoveToFront(elem)\n    atomic.AddInt64(&c.stats.Hits, 1)\n    return e.value, true\n}\n\nfunc (c *Cache[K, V]) Put(key K, value V) {\n    c.mu.Lock()\n    defer c.mu.Unlock()\n    if elem, ok := c.items[key]; ok {\n        e := elem.Value.(*entry[K, V])\n        e.value = value\n        if c.opts.TTL > 0 {\n            e.expiresAt = time.Now().Add(c.opts.TTL)\n        }\n        c.order.MoveToFront(elem)\n        return\n    }\n\n    if c.order.Len() >= c.opts.Capacity {\n        c.evictOldest()\n    }\n    e := &entry[K, V]{key: key, value: value}\n    if c.opts.TTL > 0 {\n        e.expiresAt = time.Now().Add(c.opts.TTL)\n    }\n    elem := c.order.PushFront(e)\n    c.items[key] = elem\n}\n\nfunc (c *Cache[K, V]) evictOldest() {\n    oldest := c.order.Back()\n    if oldest != nil {\n        c.removeElement(oldest)\n    }\n}\n\nfunc (c *Cache[K, V]) removeElement(elem *list.Element) {\n    e := elem.Value.(*entry[K, V])\n    c.order.Remove(elem)\n    delete(c.items, e.key)\n    if c.opts.OnEvict != nil {\n        c.opts.OnEvict(e.key, e.value)\n    }\n    atomic.AddInt64(&c.stats.Evictions, 1)\n}\n\nfunc (c *Cache[K, V]) startCleanup() {\n    ticker := time.NewTicker(c.opts.TTL / 2)\n    defer ticker.Stop()\n    for {\n        select {\n        case <-ticker.C:\n            c.cleanupExpired()\n        case <-c.stopCh:\n            return\n        }\n    }\n}\n\nfunc (c *Cache[K, V]) cleanupExpired() {\n    c.mu.Lock()\n    defer c.mu.Unlock()\n    now := time.Now()\n    for e := c.order.Back(); e != nil; {\n        prev := e.Prev()\n        entry := e.Value.(*entry[K, V])\n        if !entry.expiresAt.IsZero() && now.After(entry.expiresAt) {\n            c.removeElement(e)\n        }\n        e = prev\n    }\n}\n\nfunc (c *Cache[K, V]) Stats() Stats {\n    c.mu.Lock()\n    defer c.mu.Unlock()\n    return Stats{\n        Hits:      atomic.LoadInt64(&c.stats.Hits),\n        Misses:    atomic.LoadInt64(&c.stats.Misses),\n        Evictions: atomic.LoadInt64(&c.stats.Evictions),\n        Size:      c.order.Len(),\n        Capacity:  c.opts.Capacity,\n    }\n}\n\nfunc (c *Cache[K, V]) Close() {\n    close(c.stopCh)\n}\n```\n\n### Key Features Implemented:\n1. **Generic Types**: The cache works with any comparable key type and value type using Go generics.\n2. **TTL Support**: Each entry can have a TTL. When an entry is accessed, it's checked against its expiration time.\n3. **Eviction Callback**: A callback function can be specified to handle the eviction of entries (useful for logging or similar).\n4. **Metrics**: Implements metrics for cache hits, misses, evictions, and current size, wrapped in a `Stats` struct.\n5. **Thread Safety**: The cache is thread-safe, ensuring that concurrent access does not lead to data races or inconsistent states.\n\nThis cache is ready for use in a concurrent environment and can be easily integrated into applications requiring caching functionalities.",
+        "refusal": null,
+        "annotations": []
+      },
+      "logprobs": null,
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 1629,
+    "completion_tokens": 1219,
+    "total_tokens": 2848,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "service_tier": "default",
+  "system_fingerprint": "fp_c2f5782bd4"
+}

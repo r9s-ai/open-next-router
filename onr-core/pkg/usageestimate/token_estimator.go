@@ -34,42 +34,71 @@ type multipliers struct {
 	CustomToolOutputItem   int
 }
 
-var multipliersMap = map[provider]multipliers{
-	providerGemini: {Word: 1.15, Number: 2.8, CJK: 0.68, Symbol: 0.38, MathSymbol: 1.05,
-		URLDelim: 1.2, AtSign: 2.5, Emoji: 1.08, Newline: 1.15, Space: 0.2, BasePad: 0,
-		ToolsExist: 0, PerTool: 0},
-
-	providerClaude: {Word: 1.05, Number: 1.63, CJK: 1.25, Symbol: 0.4, MathSymbol: 4.52,
-		URLDelim: 1.26, AtSign: 2.82, Emoji: 2.6, Newline: 0.89, Space: 0.39, BasePad: 0,
-		ToolsExist: 496, PerTool: 33},
-
-	providerOpenAI: {Word: 1.02, Number: 1.55, CJK: 0.85, Symbol: 0.4, MathSymbol: 2.68,
-		URLDelim: 1.0, AtSign: 2.0, Emoji: 2.12, Newline: 0.5, Space: 0.16, BasePad: 0,
-		ToolsExist: 16, PerTool: 9,
-		FunctionCallItem:       6,
-		FunctionCallOutputItem: 12,
-		CustomToolCallItem:     6,
-		CustomToolOutputItem:   12,
+var multipliersMap = map[provider]map[string]multipliers{
+	providerGemini: {
+		"default": {Word: 1.15, Number: 2.8, CJK: 0.68, Symbol: 0.38, MathSymbol: 1.05,
+			URLDelim: 1.2, AtSign: 2.5, Emoji: 1.08, Newline: 1.15, Space: 0.2, BasePad: 0,
+			ToolsExist: 0, PerTool: 0},
 	},
+
+	providerClaude: {
+		"default": {Word: 1.05, Number: 1.63, CJK: 1.25, Symbol: 0.4, MathSymbol: 4.52,
+			URLDelim: 1.26, AtSign: 2.82, Emoji: 2.6, Newline: 0.89, Space: 0.39, BasePad: 0,
+			ToolsExist: 496, PerTool: 33},
+		"opus-4-7": {Word: 1.15, Number: 1.25, CJK: 0.99, Symbol: 0.25, MathSymbol: 3.56,
+			URLDelim: 0.45, AtSign: 2.42, Emoji: 2.64, Newline: 1.10, Space: 0.29, BasePad: 0,
+			ToolsExist: 0, PerTool: 39},
+		"opus-4-7-output": {Word: 2.25, Number: 2.25, CJK: 1.44, Symbol: 1.88, MathSymbol: 1.88,
+			URLDelim: 1.88, AtSign: 1.88, Emoji: 1.88, Newline: 1.72, Space: 1.72, BasePad: 0,
+			ToolsExist: 0, PerTool: 0},
+	},
+
+	providerOpenAI: {
+		"default": {Word: 1.02, Number: 1.55, CJK: 0.85, Symbol: 0.4, MathSymbol: 2.68,
+			URLDelim: 1.0, AtSign: 2.0, Emoji: 2.12, Newline: 0.5, Space: 0.16, BasePad: 0,
+			ToolsExist: 10, PerTool: 0,
+			FunctionCallItem:       6,
+			FunctionCallOutputItem: 12,
+			CustomToolCallItem:     6,
+			CustomToolOutputItem:   12,
+		},
+	},
+}
+
+func getMultipliers(modelName string, completion bool) multipliers {
+	m := strings.ToLower(strings.TrimSpace(modelName))
+	if strings.Contains(m, "claude") {
+		if isAnthropic47Model(m) {
+			if completion {
+				return multipliersMap[providerClaude]["opus-4-7-output"]
+			}
+			return multipliersMap[providerClaude]["opus-4-7"]
+		}
+		return multipliersMap[providerClaude]["default"]
+	} else if strings.Contains(m, "gpt") {
+		return multipliersMap[providerOpenAI]["default"]
+	} else if strings.Contains(m, "gemini") {
+		return multipliersMap[providerGemini]["default"]
+	}
+	return multipliersMap[providerClaude]["default"]
+
+}
+
+func isAnthropic47Model(modelName string) bool {
+	m := strings.ToLower(strings.TrimSpace(modelName))
+	return strings.Contains(m, "claude") && (strings.Contains(m, "4-7") || strings.Contains(m, "4.7"))
 }
 
 func EstimateTokenByModel(model string, ctx *tokenEstimateContext) int {
 	if strings.TrimSpace(ctx.text) == "" {
 		return 0
 	}
-	m := strings.ToLower(strings.TrimSpace(model))
-	switch {
-	case strings.Contains(m, "gemini"):
-		return estimateToken(providerGemini, ctx)
-	case strings.Contains(m, "claude"):
-		return estimateToken(providerClaude, ctx)
-	default:
-		return estimateToken(providerOpenAI, ctx)
-	}
+	multipliers := getMultipliers(model, ctx.completion)
+	return estimateToken(ctx, multipliers)
+
 }
 
-func estimateToken(p provider, ctx *tokenEstimateContext) int {
-	m := multipliersMap[p]
+func estimateToken(ctx *tokenEstimateContext, m multipliers) int {
 	var count float64
 
 	type wordType int

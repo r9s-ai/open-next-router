@@ -1,0 +1,165 @@
+{
+  "model": "gpt-4.1-mini",
+  "reasoning_effort": "medium",
+  "tool_choice": "auto",
+  "parallel_tool_calls": true,
+  "messages": [
+    {
+      "role": "developer",
+      "content": "You are a professional data analyst. Always respond in Chinese and use tools when needed."
+    },
+    {
+      "role": "system",
+      "content": [
+        {
+          "type": "text",
+          "text": "This is a secure corporate environment. Never expose internal database credentials."
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "name": "alice",
+      "content": "Hi, I have a few analysis tasks for you."
+    },
+    {
+      "role": "assistant",
+      "content": "Sure, what do you need?"
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "Analyze these two charts and summarize the attached report. Then check the weather in Beijing and Shanghai."
+        },
+        {
+          "type": "image_url",
+          "image_url": {
+            "url": "https://example.com/revenue_chart.png",
+            "detail": "high"
+          }
+        },
+        {
+          "type": "image_url",
+          "image_url": {
+            "url": "https://example.com/user_growth_chart.png",
+            "detail": "auto"
+          }
+        },
+        {
+          "type": "input_audio",
+          "input_audio": {
+            "data": "BASE64_AUDIO_DATA",
+            "format": "mp3"
+          }
+        },
+        {
+          "type": "file",
+          "file": {
+            "file_id": "file-q3-report-001",
+            "filename": "Q3_2025_Analytics_Report.pdf"
+          }
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_weather_bj",
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "arguments": "{\"city\":\"Beijing\",\"unit\":\"celsius\"}"
+          }
+        },
+        {
+          "id": "call_weather_sh",
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "arguments": "{\"city\":\"Shanghai\",\"unit\":\"celsius\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_weather_bj",
+      "content": "{\"city\":\"Beijing\",\"temperature\":28,\"condition\":\"sunny\",\"humidity\":35}"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_weather_sh",
+      "content": "{\"city\":\"Shanghai\",\"temperature\":32,\"condition\":\"cloudy\",\"humidity\":70}"
+    },
+    {
+      "role": "assistant",
+      "content": "Weather data is ready. I will search internal records for historical comparison."
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "function_call": {
+        "name": "search_database",
+        "arguments": "{\"query\":\"historical weather Beijing Shanghai May\",\"limit\":5}"
+      }
+    },
+    {
+      "role": "function",
+      "name": "search_database",
+      "content": "{\"results\":[{\"year\":2025,\"avg_temp\":26},{\"year\":2024,\"avg_temp\":24}]}"
+    },
+    {
+      "role": "user",
+      "content": "Great, now generate a final summary report with all findings."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get current weather for a city",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string"
+            },
+            "unit": {
+              "type": "string",
+              "enum": ["celsius", "fahrenheit"]
+            }
+          },
+          "required": ["city"],
+          "additionalProperties": false
+        },
+        "strict": true
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "search_database",
+        "description": "Search internal database",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string"
+            },
+            "limit": {
+              "type": "integer"
+            }
+          },
+          "required": ["query"],
+          "additionalProperties": false
+        },
+        "strict": true
+      }
+    }
+  ]
+}

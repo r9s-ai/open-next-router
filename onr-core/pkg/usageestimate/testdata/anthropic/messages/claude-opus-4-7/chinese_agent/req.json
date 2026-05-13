@@ -1,0 +1,236 @@
+{
+  "model": "claude-opus-4.7",
+  "max_tokens": 8192,
+  "thinking": {
+    "type": "enabled",
+    "budget_tokens": 1024
+  },
+  "system": [
+    {
+      "type": "text",
+      "text": "你是一个资深后端工程师，正在一个 Go 微服务仓库中排查 Redis 缓存问题。你可以使用工具读取文件、搜索代码和执行命令。回答使用中文，但保留代码标识符、文件路径、函数名和变量名的英文原文。排查时先基于证据，不要臆测；需要更多上下文时调用工具。"
+    }
+  ],
+  "tools": [
+    {
+      "name": "read_file",
+      "description": "Read a repository file and optionally return a selected line range.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Repository-relative file path."
+          },
+          "start_line": {
+            "type": "integer",
+            "description": "1-based start line."
+          },
+          "end_line": {
+            "type": "integer",
+            "description": "1-based end line."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "search_code",
+      "description": "Search repository code with a ripgrep-compatible pattern and return matching file paths and line snippets.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "description": "Search pattern."
+          },
+          "path": {
+            "type": "string",
+            "description": "Optional repository-relative directory."
+          }
+        },
+        "required": [
+          "pattern"
+        ]
+      }
+    },
+    {
+      "name": "execute_command",
+      "description": "Run a shell command in the repository and return stdout/stderr.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "Shell command to execute."
+          },
+          "workdir": {
+            "type": "string",
+            "description": "Working directory for the command."
+          }
+        },
+        "required": [
+          "command"
+        ]
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "线上 Redis 缓存命中率从 95% 突然降到 30%，大量请求穿透到 MySQL。请帮我排查 root cause。先不要改代码，先定位问题。"
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "缓存命中率骤降通常有几种可能：缓存 key 过期策略变更、缓存 key 拼写或前缀变化导致未命中、缓存实例容量满触发逐出、或者代码中缓存读取逻辑被绕过。我先从缓存层的代码入口和 Redis 配置入手。"
+        },
+        {
+          "type": "tool_use",
+          "id": "toolu_search_cache_01",
+          "name": "search_code",
+          "input": {
+            "pattern": "redis\\.Get|cache\\.Get|GetCache",
+            "path": "internal/cache"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_search_cache_01",
+          "content": "internal/cache/redis_store.go:42: func (s *RedisStore) Get(ctx context.Context, key string) ([]byte, error) {\ninternal/cache/redis_store.go:78: func (s *RedisStore) Set(ctx context.Context, key string, val []byte, ttl time.Duration) error {\ninternal/cache/redis_store.go:115: func (s *RedisStore) Delete(ctx context.Context, key string) error {\ninternal/cache/user_cache.go:23: func GetUser(ctx context.Context, userID int64) (*model.User, error) {\ninternal/cache/order_cache.go:18: func GetOrder(ctx context.Context, orderID string) (*model.Order, error) {\ninternal/handler/user_handler.go:56: user, err := cache.GetUser(ctx, uid)"
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": "我注意到最近有一个 PR 修改了 user_cache.go 里的 TTL 配置，可能是那个导致的。你能查一下最近的 git 变更吗？"
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "好，我先看 user_cache.go 的当前代码和它的 Get/Set 逻辑，确认 TTL 是怎么设置的。"
+        },
+        {
+          "type": "tool_use",
+          "id": "toolu_read_usercache_01",
+          "name": "read_file",
+          "input": {
+            "path": "internal/cache/user_cache.go",
+            "start_line": 1,
+            "end_line": 80
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_read_usercache_01",
+          "content": "package cache\n\nimport (\n    \"context\"\n    \"encoding/json\"\n    \"fmt\"\n    \"time\"\n\n    \"gitlab.com/company/backend/internal/model\"\n    \"github.com/go-redis/redis/v8\"\n)\n\nvar defaultTTL = 10 * time.Minute\n\nconst userKeyPrefix = \"user:profile:\"\n\nfunc userKey(userID int64) string {\n    return fmt.Sprintf(\"%s%d\", userKeyPrefix, userID)\n}\n\nfunc GetUser(ctx context.Context, userID int64) (*model.User, error) {\n    key := userKey(userID)\n    data, err := redisStore.Get(ctx, key)\n    if err != nil || data == nil {\n        return nil, err\n    }\n    var user model.User\n    if err := json.Unmarshal(data, &user); err != nil {\n        return nil, fmt.Errorf(\"unmarshal user cache: %w\", err)\n    }\n    return &user, nil\n}\n\nfunc SetUser(ctx context.Context, user *model.User) error {\n    key := userKey(user.ID)\n    data, err := json.Marshal(user)\n    if err != nil {\n        return fmt.Errorf(\"marshal user: %w\", err)\n    }\n    return redisStore.Set(ctx, key, data, defaultTTL)\n}\n\nfunc InvalidateUser(ctx context.Context, userID int64) error {\n    return redisStore.Delete(ctx, userKey(userID))\n}"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "TTL 是全局常量 `defaultTTL = 10 * time.Minute`。但我需要确认有没有其他地方覆写了这个 TTL，以及最近的 PR 是否改了它。让我搜一下这个常量的所有引用以及 TTL 相关的近期改动。"
+        },
+        {
+          "type": "tool_use",
+          "id": "toolu_search_ttl_01",
+          "name": "search_code",
+          "input": {
+            "pattern": "defaultTTL|cacheTTL|ttl|TTL",
+            "path": "internal/cache"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_search_ttl_01",
+          "content": "internal/cache/redis_store.go:20: var defaultTTL = 10 * time.Minute\ninternal/cache/redis_store.go:48: // 在 Set 中使用了 defaultTTL\ninternal/cache/redis_store.go:121: func (s *RedisStore) SetWithTTL(ctx context.Context, key string, val []byte, ttl time.Duration) error {\ninternal/cache/user_cache.go:13: var defaultTTL = 10 * time.Minute\ninternal/cache/order_cache.go:12: var orderCacheTTL = 30 * time.Minute\ninternal/cache/product_cache.go:15: var productCacheTTL = 5 * time.Minute\ninternal/cache/config.go:8: var cacheTTLOverride = map[string]time.Duration{\ninternal/cache/config.go:9:     \"user\":  1 * time.Minute,  // 近期降低为 1 分钟，之前为 10 分钟\ninternal/cache/config.go:10:     \"order\": 30 * time.Minute,\ninternal/cache/config.go:11:     \"product\": 5 * time.Minute,\ninternal/cache/config.go:12: }\ninternal/cache/config.go:18: func GetEffectiveTTL(cacheKey string) time.Duration {\ninternal/cache/config.go:19:     if override, ok := cacheTTLOverride[cacheKey]; ok {\ninternal/cache/config.go:20:         return override\ninternal/cache/config.go:21:     }\ninternal/cache/config.go:22:     return defaultTTL\ninternal/cache/config.go:23: }"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "找到关键线索了。`internal/cache/config.go:9` 有一个覆盖配置，把 user 缓存的 TTL 从 10 分钟降到了 1 分钟。而且注释说明这是近期改的。让我看 config.go 的完整代码，确认这个覆盖是如何生效的，以及 user_cache.go 是否使用了 `GetEffectiveTTL`。"
+        },
+        {
+          "type": "tool_use",
+          "id": "toolu_read_config_01",
+          "name": "read_file",
+          "input": {
+            "path": "internal/cache/config.go",
+            "start_line": 1,
+            "end_line": 50
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_read_config_01",
+          "content": "package cache\n\nimport \"time\"\n\n// cacheTTLOverride 允许按业务维度覆盖默认 TTL。\n// 近期因产品需求，user 缓存 TTL 从 10 分钟下调至 1 分钟，以减少用户信息变更后的延迟。\nvar cacheTTLOverride = map[string]time.Duration{\n    \"user\":  1 * time.Minute,\n    \"order\": 30 * time.Minute,\n    \"product\": 5 * time.Minute,\n}\n\n// GetEffectiveTTL 根据缓存类别返回生效的 TTL。\nfunc GetEffectiveTTL(cacheKey string) time.Duration {\n    if override, ok := cacheTTLOverride[cacheKey]; ok {\n        return override\n    }\n    return defaultTTL\n}\n"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "Root cause 已经定位：`config.go` 中 user 缓存的 TTL 被 override 为 1 分钟。但关键问题是 — `SetUser` 函数直接用 `defaultTTL` 而没有调用 `GetEffectiveTTL(\"user\")`，所以即使 override 存在也不生效。让我确认一下 SetUser 的调用情况，以及线上 Redis 内存是否因此被大量 user 缓存占满。"
+        },
+        {
+          "type": "tool_use",
+          "id": "toolu_exec_redis_01",
+          "name": "execute_command",
+          "input": {
+            "command": "redis-cli -h redis-staging INFO keyspace | grep -E \"db0|keyspace\" && redis-cli -h redis-staging INFO stats | grep -E \"evicted_keys|keyspace_hits|keyspace_misses\"",
+            "workdir": "."
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_exec_redis_01",
+          "content": "db0:keys=2850000,expires=2820000,avg_ttl=58000\nevicted_keys:1742000\nkeyspace_hits:3200000\nkeyspace_misses:7800000\n"
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": "Redis 数据显示 evicted_keys 高达 174 万，命中率约 29%。结合之前的代码排查，不要再继续查了，现在就直接总结完整的 root cause 链条并给出修复方案（按优先级排序）。"
+    }
+  ]
+}
