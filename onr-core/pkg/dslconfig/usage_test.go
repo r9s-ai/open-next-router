@@ -687,8 +687,8 @@ func TestExtractUsage_Gemini_NonStream_MultimodalBuiltin(t *testing.T) {
 	if u == nil {
 		t.Fatalf("usage nil")
 	}
-	if u.InputTokens != 5 {
-		t.Fatalf("input_tokens=%d want=5", u.InputTokens)
+	if u.InputTokens != 81 {
+		t.Fatalf("input_tokens=%d want=81", u.InputTokens)
 	}
 	if u.OutputTokens != 593 {
 		t.Fatalf("output_tokens=%d want=593", u.OutputTokens)

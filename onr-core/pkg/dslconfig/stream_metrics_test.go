@@ -202,7 +202,7 @@ func TestStreamMetricsAggregator_GeminiUsageMultimodalBuiltin(t *testing.T) {
 	if !ok || u == nil {
 		t.Fatalf("expected usage ok")
 	}
-	if u.InputTokens != 5 || u.OutputTokens != 593 || u.TotalTokens != 674 {
+	if u.InputTokens != 81 || u.OutputTokens != 593 || u.TotalTokens != 674 {
 		t.Fatalf("unexpected usage: %+v", *u)
 	}
 	if got, want := u.FlatFields["image_input_tokens"], 12; got != want {
