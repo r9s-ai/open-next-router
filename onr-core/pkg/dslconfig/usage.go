@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
-	"github.com/r9s-ai/open-next-router/onr-core/pkg/jsonutil"
 )
 
 type UsageExtractConfig struct {
@@ -90,6 +89,18 @@ func ExtractUsage(meta *dslmeta.Meta, cfg *UsageExtractConfig, respBody []byte) 
 	return extractUsageFromResponseRoot(meta, compiledCfg, respRoot, respBody)
 }
 
+// ExtractUsageObject extracts usage from a decoded JSON response object.
+// ExtractUsageObject requires a selected UsageExtractConfig and is intended
+// for non-stream callers that already have a decoded response object.
+func ExtractUsageObject(meta *dslmeta.Meta, cfg *UsageExtractConfig, root map[string]any) (*Usage, int, error) {
+	compiledCfg := prepareUsageExtractConfig(*cfg)
+	mode := normalizeUsageMode(compiledCfg.Mode)
+	if mode == "" {
+		return nil, 0, nil
+	}
+	return extractUsageFromResponseRoot(meta, compiledCfg, root, nil)
+}
+
 func extractUsageFromResponseRoot(meta *dslmeta.Meta, cfg UsageExtractConfig, respRoot map[string]any, respBody []byte) (*Usage, int, error) {
 	cfg = prepareUsageExtractConfig(cfg)
 	mode := normalizeUsageMode(cfg.Mode)
@@ -98,10 +109,6 @@ func extractUsageFromResponseRoot(meta *dslmeta.Meta, cfg UsageExtractConfig, re
 	}
 	reqRoot := requestRootFromMeta(meta)
 	derivedRoot := derivedRootFromMeta(meta)
-	return extractUsageFromRootsWithEvent(meta, "", cfg, reqRoot, respRoot, derivedRoot, respBody)
-}
-
-func extractUsageFromRoots(meta *dslmeta.Meta, cfg UsageExtractConfig, reqRoot, respRoot, derivedRoot map[string]any, respBody []byte) (*Usage, int, error) {
 	return extractUsageFromRootsWithEvent(meta, "", cfg, reqRoot, respRoot, derivedRoot, respBody)
 }
 
@@ -192,13 +199,6 @@ func derivedRootFromMeta(meta *dslmeta.Meta) map[string]any {
 		return nil
 	}
 	return meta.DerivedUsage
-}
-
-func evalUsageField(root map[string]any, expr *UsageExpr, fallbackPath string) int {
-	if expr != nil {
-		return expr.Eval(root)
-	}
-	return jsonutil.GetIntByPath(root, fallbackPath)
 }
 
 func mergeUsageConfig(base UsageExtractConfig, override UsageExtractConfig) UsageExtractConfig {

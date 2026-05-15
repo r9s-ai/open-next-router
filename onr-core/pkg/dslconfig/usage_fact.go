@@ -52,11 +52,6 @@ type usageFactEval struct {
 	matched  bool
 }
 
-type usageFactSet struct {
-	facts      []usageFactConfig
-	factGroups map[usageFactKey][]usageFactConfig
-}
-
 var defaultUsageDimensionRegistry = NewUsageDimensionRegistry(
 	UsageDimension{Dimension: "input", Unit: "token"},
 	UsageDimension{Dimension: "output", Unit: "token"},
@@ -141,30 +136,6 @@ func legacyUsageFactValue(cfg UsageExtractConfig, key usageFactKey) (usageFactCo
 	}
 }
 
-func legacyUsageFactKeys(cfg UsageExtractConfig) map[usageFactKey]struct{} {
-	candidates := []usageFactKey{
-		{Dimension: "input", Unit: "token"},
-		{Dimension: "output", Unit: "token"},
-		{Dimension: "cache_read", Unit: "token"},
-		{Dimension: "cache_write", Unit: "token"},
-	}
-	out := make(map[usageFactKey]struct{}, len(candidates))
-	for _, key := range candidates {
-		fact, ok := legacyUsageFactValue(cfg, key)
-		if !ok {
-			continue
-		}
-		if strings.TrimSpace(fact.Path) == "" && fact.Expr == nil && strings.TrimSpace(fact.CountPath) == "" && strings.TrimSpace(fact.SumPath) == "" {
-			continue
-		}
-		out[key] = struct{}{}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
 func legacyUsageFactConfigs(cfg UsageExtractConfig, explicitKeys map[usageFactKey]struct{}) []usageFactConfig {
 	candidates := []usageFactKey{
 		{Dimension: "input", Unit: "token"},
@@ -189,50 +160,6 @@ func legacyUsageFactConfigs(cfg UsageExtractConfig, explicitKeys map[usageFactKe
 	return out
 }
 
-func mergeUsageFactKeySets(sets ...map[usageFactKey]struct{}) map[usageFactKey]struct{} {
-	total := 0
-	for _, set := range sets {
-		total += len(set)
-	}
-	if total == 0 {
-		return nil
-	}
-	out := make(map[usageFactKey]struct{}, total)
-	for _, set := range sets {
-		for key := range set {
-			out[key] = struct{}{}
-		}
-	}
-	return out
-}
-
-func usageFactQuantities(reqRoot, respRoot, derivedRoot map[string]any, facts []usageFactConfig) map[usageFactKey]float64 {
-	grouped := groupUsageFactConfigs(facts)
-	out := make(map[usageFactKey]float64, len(grouped))
-	for key, group := range grouped {
-		resolved := evaluateUsageFactGroup(reqRoot, respRoot, derivedRoot, group)
-		total := 0.0
-		for _, r := range resolved {
-			if r.matched {
-				total += r.quantity
-			}
-		}
-		out[key] = total
-	}
-	return out
-}
-
-func newUsageFactSet(facts []usageFactConfig) usageFactSet {
-	return usageFactSet{
-		facts:      facts,
-		factGroups: groupUsageFactConfigs(facts),
-	}
-}
-
-func evaluateUsageFactConfigs(reqRoot, respRoot, derivedRoot map[string]any, facts []usageFactConfig) []usageFactEval {
-	return evaluateUsageFactConfigGroupsWithEvent("", reqRoot, respRoot, derivedRoot, groupUsageFactConfigs(facts), len(facts))
-}
-
 func groupUsageFactConfigs(facts []usageFactConfig) map[usageFactKey][]usageFactConfig {
 	out := make(map[usageFactKey][]usageFactConfig)
 	for _, fact := range facts {
@@ -250,20 +177,12 @@ func usageFactExplicitKeys(facts []usageFactConfig) map[usageFactKey]struct{} {
 	return out
 }
 
-func evaluateUsageFactConfigGroups(reqRoot, respRoot, derivedRoot map[string]any, grouped map[usageFactKey][]usageFactConfig, totalFacts int) []usageFactEval {
-	return evaluateUsageFactConfigGroupsWithEvent("", reqRoot, respRoot, derivedRoot, grouped, totalFacts)
-}
-
 func evaluateUsageFactConfigGroupsWithEvent(event string, reqRoot, respRoot, derivedRoot map[string]any, grouped map[usageFactKey][]usageFactConfig, totalFacts int) []usageFactEval {
 	out := make([]usageFactEval, 0, totalFacts)
 	for _, group := range grouped {
 		out = append(out, evaluateUsageFactGroupWithEvent(event, reqRoot, respRoot, derivedRoot, group)...)
 	}
 	return out
-}
-
-func evaluateUsageFactGroup(reqRoot, respRoot, derivedRoot map[string]any, facts []usageFactConfig) []usageFactEval {
-	return evaluateUsageFactGroupWithEvent("", reqRoot, respRoot, derivedRoot, facts)
 }
 
 func evaluateUsageFactGroupWithEvent(event string, reqRoot, respRoot, derivedRoot map[string]any, facts []usageFactConfig) []usageFactEval {
