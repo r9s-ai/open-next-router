@@ -8,6 +8,12 @@ import (
 func extractRequestText(api string, body []byte, limit int) *tokenEstimateContext {
 	return extractRequestTextFromParsed(api, parseRequestBody(body, nil, limit))
 }
+
+// ExtractRequestText returns the same request text used by token estimation.
+func ExtractRequestText(api string, body []byte, limit int) string {
+	return extractRequestText(api, body, limit).text
+}
+
 func parseRequestBody(body []byte, root map[string]any, limit int) parsedRequestBody {
 	body = clampBytes(body, limit)
 	if root != nil {

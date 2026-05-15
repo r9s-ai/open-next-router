@@ -88,6 +88,58 @@ func TestBuildEstimateInputSSE(t *testing.T) {
 	}
 }
 
+func TestBuildEstimateInputClaudeMessagesAddsCacheInputTokens(t *testing.T) {
+	entry := dumpEntry{
+		ID:      3,
+		Request: dumpSide{Body: dumpBody{Format: "empty"}},
+		Response: dumpSide{Body: dumpBody{
+			Format: "sse",
+			Events: []dumpSSEEvent{
+				{Event: "message_start", Data: []byte(`{"message":{"usage":{"input_tokens":8,"cache_creation_input_tokens":20,"cache_read_input_tokens":30,"output_tokens":1}}}`)},
+				{Event: "message_delta", Data: []byte(`{"usage":{"input_tokens":8,"cache_creation_input_tokens":20,"cache_read_input_tokens":30,"output_tokens":12}}`)},
+			},
+		}},
+	}
+
+	in, err := buildEstimateInput(entry, "claude.messages", "claude-haiku-4-5", false)
+	if err != nil {
+		t.Fatalf("buildEstimateInput failed: %v", err)
+	}
+	if in.UpstreamUsage == nil {
+		t.Fatalf("expected upstream usage")
+	}
+	if in.UpstreamUsage.InputTokens != 58 || in.UpstreamUsage.OutputTokens != 12 || in.UpstreamUsage.TotalTokens != 70 {
+		t.Fatalf("unexpected claude usage: %+v", *in.UpstreamUsage)
+	}
+	if in.UpstreamUsage.InputTokenDetails == nil ||
+		in.UpstreamUsage.InputTokenDetails.CachedTokens != 30 ||
+		in.UpstreamUsage.InputTokenDetails.CacheWriteTokens != 20 {
+		t.Fatalf("unexpected input token details: %+v", in.UpstreamUsage.InputTokenDetails)
+	}
+}
+
+func TestBuildEstimateInputNonClaudeDoesNotAddAnthropicCacheInputTokens(t *testing.T) {
+	entry := dumpEntry{
+		ID:      4,
+		Request: dumpSide{Body: dumpBody{Format: "empty"}},
+		Response: dumpSide{Body: dumpBody{
+			Format:  "json",
+			Content: []byte(`{"usage":{"input_tokens":8,"cache_creation_input_tokens":20,"cache_read_input_tokens":30,"output_tokens":12}}`),
+		}},
+	}
+
+	in, err := buildEstimateInput(entry, "responses", "gpt-5-mini", false)
+	if err != nil {
+		t.Fatalf("buildEstimateInput failed: %v", err)
+	}
+	if in.UpstreamUsage == nil {
+		t.Fatalf("expected upstream usage")
+	}
+	if in.UpstreamUsage.InputTokens != 8 || in.UpstreamUsage.OutputTokens != 12 || in.UpstreamUsage.TotalTokens != 20 {
+		t.Fatalf("unexpected non-claude usage: %+v", *in.UpstreamUsage)
+	}
+}
+
 func TestBuildEstimateInputRejectsTruncated(t *testing.T) {
 	entry := dumpEntry{
 		Request: dumpSide{Body: dumpBody{Format: "json", Truncated: true, Content: []byte(`{"ping":"pong"}`)}},
@@ -151,7 +203,7 @@ func TestRunParsesMultipleEntries(t *testing.T) {
 	out := stdout.String()
 	if !strings.Contains(out, "estimated") ||
 		!strings.Contains(out, "skipped") ||
-		!strings.Contains(out, "incomplete upstream usage") ||
+		!strings.Contains(out, "token usage not detected") ||
 		!strings.Contains(out, "summary entries=2 estimated=1 skipped=1") ||
 		strings.Contains(out, "total: actual=") {
 		t.Fatalf("unexpected stdout: %s", out)
@@ -183,36 +235,86 @@ func TestRunParsesJSONStreamEntries(t *testing.T) {
 	out := stdout.String()
 	if !strings.Contains(out, "estimated") ||
 		!strings.Contains(out, "skipped") ||
-		!strings.Contains(out, "incomplete upstream usage") ||
+		!strings.Contains(out, "token usage not detected") ||
 		!strings.Contains(out, "summary entries=2 estimated=1 skipped=1") ||
 		strings.Contains(out, "total: actual=") {
 		t.Fatalf("unexpected stdout: %s", out)
 	}
 }
 
-func TestRunDebugIDPrintsExtractedOutput(t *testing.T) {
+func TestRunDebugIDWritesExtractedFiles(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dump.json")
+	debugDir := filepath.Join(dir, "debug")
+	if err := os.WriteFile(path, []byte(`[
+  {
+    "id": 7,
+    "request": {"body": {"format": "json", "size": 15, "truncated": false, "content": {"input": "hello"}}},
+    "response": {"body": {"format": "sse", "size": 100, "truncated": false, "events": [
+      {"event": "response.output_text.delta", "data": {"type": "response.output_text.delta", "delta": "hello debug"}},
+      {"event": "response.completed", "data": {"type": "response.completed", "response": {"usage": {"input_tokens": 1, "output_tokens": 2}}}}
+    ]}}
+  },
+  {
+    "id": 8,
+    "request": {"body": {"format": "json", "size": 15, "truncated": false, "content": {"input": "skip"}}},
+    "response": {"body": {"format": "json", "size": 43, "truncated": false, "content": {"ok": true, "usage": {"input_tokens": 1, "output_tokens": 2}}}}
+  }
+]`), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--file", path, "--api", "responses", "--model", "gpt-5-mini", "--debug-id", "7", "--debug-dir", debugDir}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run code=%d stderr=%s", code, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "debug dump id=7") ||
+		!strings.Contains(out, `request_file=`) ||
+		!strings.Contains(out, `request_chars=12`) ||
+		!strings.Contains(out, `response_file=`) ||
+		!strings.Contains(out, "response_chars=11") ||
+		strings.Contains(out, "summary entries=") ||
+		strings.Contains(out, "status") ||
+		strings.Contains(out, "estimated") {
+		t.Fatalf("unexpected stdout: %s", out)
+	}
+	requestPath := filepath.Join(debugDir, "onr-token-estimate-7-request.txt")
+	responsePath := filepath.Join(debugDir, "onr-token-estimate-7-response.txt")
+	requestText, err := os.ReadFile(requestPath)
+	if err != nil {
+		t.Fatalf("read request debug file: %v", err)
+	}
+	responseText, err := os.ReadFile(responsePath)
+	if err != nil {
+		t.Fatalf("read response debug file: %v", err)
+	}
+	if string(requestText) != "input\nhello\n" {
+		t.Fatalf("unexpected request debug file: %q", string(requestText))
+	}
+	if string(responseText) != "hello debug" {
+		t.Fatalf("unexpected response debug file: %q", string(responseText))
+	}
+}
+
+func TestRunDebugIDReturnsNotFound(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "dump.json")
 	if err := os.WriteFile(path, []byte(`{
   "id": 7,
-  "request": {"body": {"format": "json", "size": 15, "truncated": false, "content": {"input": "hello"}}},
-  "response": {"body": {"format": "sse", "size": 100, "truncated": false, "events": [
-    {"event": "response.output_text.delta", "data": {"type": "response.output_text.delta", "delta": "hello debug"}},
-    {"event": "response.completed", "data": {"type": "response.completed", "response": {"usage": {"input_tokens": 1, "output_tokens": 2}}}}
-  ]}}
+  "request": {"body": {"format": "empty", "size": 0, "truncated": false}},
+  "response": {"body": {"format": "empty", "size": 0, "truncated": false}}
 }`), 0o600); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"--file", path, "--api", "responses", "--model", "gpt-5-mini", "--debug-id", "7"}, &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("run code=%d stderr=%s", code, stderr.String())
+	code := run([]string{"--file", path, "--api", "responses", "--model", "gpt-5-mini", "--debug-id", "999"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("run code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}
-	out := stdout.String()
-	if !strings.Contains(out, "debug dump id=7 index=0 extracted_output_chars=11") ||
-		!strings.Contains(out, "hello debug") ||
-		!strings.Contains(out, "summary entries=1 estimated=1 skipped=0") {
-		t.Fatalf("unexpected stdout: %s", out)
+	if stdout.String() != "" || !strings.Contains(stderr.String(), "error: debug dump id 999 not found") {
+		t.Fatalf("unexpected output stdout=%s stderr=%s", stdout.String(), stderr.String())
 	}
 }

@@ -175,12 +175,17 @@ func extractAnthropicDeltaText(payload []byte) string {
 	if block, ok := obj["content_block"].(map[string]any); ok {
 		switch block["type"] {
 		case "tool_use", "server_tool_use":
+			var b strings.Builder
 			if name, ok := block["name"].(string); ok && name != "" {
-				return name
+				b.WriteString(name)
 			}
 			if id, ok := block["id"].(string); ok && id != "" {
-				return id
+				if b.Len() > 0 {
+					b.WriteByte(' ')
+				}
+				b.WriteString(id)
 			}
+			return b.String()
 		}
 	}
 	return ""

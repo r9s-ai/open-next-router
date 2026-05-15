@@ -67,10 +67,16 @@ func TestExtractDeltaText(t *testing.T) {
 			want:    `{"city"`,
 		},
 		{
-			name:    "claude tool block name",
+			name:    "claude tool block name and id",
 			api:     "claude.messages",
 			payload: `{"type":"content_block_start","content_block":{"type":"tool_use","id":"toolu_123","name":"get_weather","input":{}}}`,
-			want:    "get_weather",
+			want:    "get_weather toolu_123",
+		},
+		{
+			name:    "claude tool block id without name",
+			api:     "claude.messages",
+			payload: `{"type":"content_block_start","content_block":{"type":"tool_use","id":"toolu_123","input":{}}}`,
+			want:    "toolu_123",
 		},
 	}
 
@@ -119,7 +125,7 @@ func TestExtractDeltaText_AnthropicMessagesSSE(t *testing.T) {
 		{
 			desc:    "content_block_start",
 			payload: `{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_017jmpbA8vZUd3y6kmm3KHbz","name":"get_weather","input":{},"caller":{"type":"direct"}}}`,
-			want:    "get_weather",
+			want:    "get_weather toolu_017jmpbA8vZUd3y6kmm3KHbz",
 		},
 		{
 			desc:    "ping",

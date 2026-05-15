@@ -12,6 +12,11 @@ func extractResponseText(api string, body []byte, limit int) string {
 	return extractResponseTextForModel(api, "", body, limit)
 }
 
+// ExtractResponseTextForModel returns the same non-stream response text used by token estimation.
+func ExtractResponseTextForModel(api, model string, body []byte, limit int) string {
+	return extractResponseTextForModel(api, model, body, limit)
+}
+
 func extractResponseTextForModel(api, model string, body []byte, limit int) string {
 	body = clampBytes(body, limit)
 	if len(bytes.TrimSpace(body)) == 0 {

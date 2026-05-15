@@ -52,6 +52,8 @@ type tokenEstimateContext struct {
 	text                     string
 	completion               bool // is output
 	numTools                 int  // number of tool definitions
+	numThinkingBlockInput    int
+	numThinkingBlockOutput   int
 	numMessages              int
 	numFunctionCalls         int
 	numFunctionCallOutputs   int
@@ -95,7 +97,7 @@ func Estimate(cfg *Config, in Input) Output {
 		respText = extractResponseTextForModel(in.API, in.Model, in.ResponseBody, cfg.MaxResponseBytes)
 	}
 
-	respCtx := &tokenEstimateContext{text: respText, completion: true, numTools: reqCtx.numTools}
+	respCtx := &tokenEstimateContext{text: respText, completion: true, numTools: 0}
 	est := &dslconfig.Usage{
 		InputTokens:  EstimateTokenByModel(in.Model, reqCtx),
 		OutputTokens: EstimateTokenByModel(in.Model, respCtx),

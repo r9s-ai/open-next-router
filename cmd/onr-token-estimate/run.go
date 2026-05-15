@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
@@ -22,7 +24,7 @@ type options struct {
 	model          string
 	allowTruncated bool
 	debugID        string
-	debugPreview   int
+	debugDir       string
 }
 
 type dumpEntry struct {
@@ -50,7 +52,6 @@ type dumpSSEEvent struct {
 
 type estimateRow struct {
 	Status       string
-	Index        string
 	ID           string
 	Stage        string
 	InputActual  string
@@ -80,24 +81,25 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	if strings.TrimSpace(opts.debugID) != "" {
+		return runDebugDump(entries, api, opts.model, opts.file, opts.debugID, opts.debugDir, stdout, stderr)
+	}
+
 	cfg := &usageestimate.Config{}
 	usageestimate.ApplyDefaults(cfg)
 	processed := 0
 	skipped := 0
 	rows := make([]estimateRow, 0, len(entries))
-	for i, entry := range entries {
-		if shouldDebugEntry(opts.debugID, entry.ID) {
-			printDebugEntry(stdout, api, opts.debugPreview, i, entry)
-		}
+	for _, entry := range entries {
 		in, err := buildEstimateInput(entry, api, opts.model, opts.allowTruncated)
 		if err != nil {
-			rows = append(rows, skippedRow(i, entry.ID, err.Error()))
+			rows = append(rows, skippedRow(entry.ID, err.Error()))
 			skipped++
 			continue
 		}
 		actual := in.UpstreamUsage
 		if !hasCompleteUsage(actual) {
-			rows = append(rows, skippedRow(i, entry.ID, "incomplete upstream usage"))
+			rows = append(rows, skippedRow(entry.ID, "token usage not detected"))
 			skipped++
 			continue
 		}
@@ -106,32 +108,30 @@ func run(args []string, stdout, stderr io.Writer) int {
 		estimateIn.UpstreamUsage = nil
 		estimated := usageestimate.Estimate(cfg, estimateIn)
 		if estimated.Usage == nil {
-			rows = append(rows, skippedRow(i, entry.ID, "estimate unavailable"))
+			rows = append(rows, skippedRow(entry.ID, "estimate unavailable"))
 			skipped++
 			continue
 		}
 
 		processed++
-		rows = append(rows, estimatedRow(i, entry.ID, estimated.Stage, actual, estimated.Usage))
+		rows = append(rows, estimatedRow(entry.ID, estimated.Stage, actual, estimated.Usage))
 	}
 	printRows(stdout, rows)
 	_, _ = fmt.Fprintf(stdout, "summary entries=%d estimated=%d skipped=%d\n", len(entries), processed, skipped)
 	return 0
 }
 
-func skippedRow(index int, id any, reason string) estimateRow {
+func skippedRow(id any, reason string) estimateRow {
 	return estimateRow{
 		Status: "skipped",
-		Index:  fmt.Sprintf("%d", index),
 		ID:     fmt.Sprint(id),
 		Reason: reason,
 	}
 }
 
-func estimatedRow(index int, id any, stage string, actual, estimated *dslconfig.Usage) estimateRow {
+func estimatedRow(id any, stage string, actual, estimated *dslconfig.Usage) estimateRow {
 	return estimateRow{
 		Status:       "estimated",
-		Index:        fmt.Sprintf("%d", index),
 		ID:           fmt.Sprint(id),
 		Stage:        stage,
 		InputActual:  fmt.Sprintf("%d", actual.InputTokens),
@@ -144,7 +144,7 @@ func estimatedRow(index int, id any, stage string, actual, estimated *dslconfig.
 }
 
 func printRows(out io.Writer, rows []estimateRow) {
-	headers := []string{"status", "idx", "id", "stage", "in.actual", "in.est", "in.delta", "out.actual", "out.est", "out.delta", "reason"}
+	headers := []string{"status", "id", "stage", "in.actual", "in.est", "in.delta", "out.actual", "out.est", "out.delta", "reason"}
 	widths := make([]int, len(headers))
 	for i, h := range headers {
 		widths[i] = len(h)
@@ -172,7 +172,6 @@ func printRows(out io.Writer, rows []estimateRow) {
 func rowValues(row estimateRow) []string {
 	return []string{
 		row.Status,
-		row.Index,
 		row.ID,
 		row.Stage,
 		row.InputActual,
@@ -201,7 +200,7 @@ func printTableLine(out io.Writer, values []string, widths []int) {
 
 func isNumericColumn(index int) bool {
 	switch index {
-	case 1, 4, 5, 6, 7, 8, 9:
+	case 1, 3, 4, 5, 6, 7, 8:
 		return true
 	default:
 		return false
@@ -219,8 +218,8 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 	fs.StringVar(&opts.model, "model", "", "model name")
 	fs.StringVar(&opts.model, "m", "", "model name (alias of --model)")
 	fs.BoolVar(&opts.allowTruncated, "allow-truncated", false, "allow truncated dump bodies")
-	fs.StringVar(&opts.debugID, "debug-id", "", "dump id to print extracted output text for")
-	fs.IntVar(&opts.debugPreview, "debug-preview", 800, "max characters to print for --debug-id")
+	fs.StringVar(&opts.debugID, "debug-id", "", "dump id to write extracted request and response text for, without estimating")
+	fs.StringVar(&opts.debugDir, "debug-dir", "", "directory to write --debug-id extracted files; default is dump file directory")
 	if err := fs.Parse(args); err != nil {
 		return options{}, err
 	}
@@ -244,22 +243,82 @@ func shouldDebugEntry(debugID string, id any) bool {
 	return fmt.Sprint(id) == debugID
 }
 
-func printDebugEntry(out io.Writer, api string, preview int, index int, entry dumpEntry) {
-	text, err := extractResponseDebugText(api, entry.Response.Body)
-	if err != nil {
-		_, _ = fmt.Fprintf(out, "debug dump id=%v index=%d error=%q\n", entry.ID, index, err.Error())
-		return
+var debugFileIDReplacer = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
+
+func runDebugDump(entries []dumpEntry, api, model, dumpPath, debugID, debugDir string, stdout, stderr io.Writer) int {
+	for _, entry := range entries {
+		if shouldDebugEntry(debugID, entry.ID) {
+			if err := writeDebugDumpFiles(api, model, dumpPath, debugID, debugDir, entry, stdout); err != nil {
+				_, _ = fmt.Fprintln(stderr, "error: "+err.Error())
+				return 1
+			}
+			return 0
+		}
 	}
-	_, _ = fmt.Fprintf(out, "debug dump id=%v index=%d extracted_output_chars=%d\n", entry.ID, index, len([]rune(text)))
-	previewText := truncateRunes(text, preview)
-	if previewText == "" {
-		_, _ = fmt.Fprintln(out, "debug output preview: <empty>")
-		return
-	}
-	_, _ = fmt.Fprintf(out, "debug output preview:\n%s\n", previewText)
+	_, _ = fmt.Fprintf(stderr, "error: debug dump id %s not found\n", strings.TrimSpace(debugID))
+	return 1
 }
 
-func extractResponseDebugText(api string, body dumpBody) (string, error) {
+func writeDebugDumpFiles(api, model, dumpPath, debugID, debugDir string, entry dumpEntry, out io.Writer) error {
+	requestText, requestErr := extractRequestDebugText(api, entry.Request.Body)
+	if requestErr != nil {
+		return fmt.Errorf("extract request debug text: %w", requestErr)
+	}
+	responseText, responseErr := extractResponseDebugText(api, model, entry.Response.Body)
+	if responseErr != nil {
+		return fmt.Errorf("extract response debug text: %w", responseErr)
+	}
+
+	dir := strings.TrimSpace(debugDir)
+	if dir == "" {
+		dir = filepath.Dir(strings.TrimSpace(dumpPath))
+		if dir == "" || dir == "." {
+			dir = "."
+		}
+	}
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return fmt.Errorf("create debug dir: %w", err)
+	}
+	safeID := safeDebugFileID(debugID)
+	requestPath := filepath.Join(dir, fmt.Sprintf("onr-token-estimate-%s-request.txt", safeID))
+	responsePath := filepath.Join(dir, fmt.Sprintf("onr-token-estimate-%s-response.txt", safeID))
+
+	if err := os.WriteFile(requestPath, []byte(requestText), 0o600); err != nil {
+		return fmt.Errorf("write request debug file: %w", err)
+	}
+	if err := os.WriteFile(responsePath, []byte(responseText), 0o600); err != nil {
+		return fmt.Errorf("write response debug file: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(out, "debug dump id=%v\n", entry.ID)
+	_, _ = fmt.Fprintf(out, "request_file=%s request_chars=%d\n", requestPath, len([]rune(requestText)))
+	_, _ = fmt.Fprintf(out, "response_file=%s response_chars=%d\n", responsePath, len([]rune(responseText)))
+	return nil
+}
+
+func safeDebugFileID(id string) string {
+	safe := strings.Trim(debugFileIDReplacer.ReplaceAllString(strings.TrimSpace(id), "_"), "_")
+	if safe == "" {
+		return "dump"
+	}
+	return safe
+}
+
+func extractRequestDebugText(api string, body dumpBody) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(body.Format)) {
+	case "json":
+		if len(bytes.TrimSpace(body.Content)) == 0 {
+			return "", nil
+		}
+		return usageestimate.ExtractRequestText(api, body.Content, 0), nil
+	case "", "empty":
+		return "", nil
+	default:
+		return "", fmt.Errorf("unsupported request format %q", body.Format)
+	}
+}
+
+func extractResponseDebugText(api, model string, body dumpBody) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(body.Format)) {
 	case "sse":
 		return extractSSEDeltaText(api, body.Events)
@@ -267,23 +326,12 @@ func extractResponseDebugText(api string, body dumpBody) (string, error) {
 		if len(bytes.TrimSpace(body.Content)) == 0 {
 			return "", nil
 		}
-		return string(body.Content), nil
+		return usageestimate.ExtractResponseTextForModel(api, model, body.Content, 0), nil
 	case "", "empty":
 		return "", nil
 	default:
 		return "", fmt.Errorf("unsupported response format %q", body.Format)
 	}
-}
-
-func truncateRunes(s string, limit int) string {
-	if limit <= 0 {
-		return s
-	}
-	runes := []rune(s)
-	if len(runes) <= limit {
-		return s
-	}
-	return string(runes[:limit]) + "\n...<truncated>"
 }
 
 func resolveAPI(apiFlag, routeFlag string) (string, error) {
@@ -404,7 +452,7 @@ func buildEstimateInput(entry dumpEntry, api, model string, allowTruncated bool)
 	return usageestimate.Input{
 		API:           strings.TrimSpace(api),
 		Model:         strings.TrimSpace(model),
-		UpstreamUsage: extractUpstreamUsage(entry),
+		UpstreamUsage: extractUpstreamUsage(entry, api),
 		RequestBody:   req,
 		ResponseBody:  resp,
 		StreamTail:    stream,
@@ -499,10 +547,14 @@ func buildResponseBodyFromText(api, text string) ([]byte, error) {
 	}
 }
 
-func extractUpstreamUsage(entry dumpEntry) *dslconfig.Usage {
+func extractUpstreamUsage(entry dumpEntry, api string) *dslconfig.Usage {
 	usage := &dslconfig.Usage{}
-	mergeUsageFromBody(usage, entry.Response.Body)
+	includeAnthropicCacheInput := isAnthropicMessagesAPI(api)
+	mergeUsageFromBody(usage, entry.Response.Body, includeAnthropicCacheInput)
 	normalizeUsage(usage)
+	if includeAnthropicCacheInput && usage.TotalTokens < usage.InputTokens+usage.OutputTokens {
+		usage.TotalTokens = usage.InputTokens + usage.OutputTokens
+	}
 	if usage.InputTokens == 0 && usage.OutputTokens == 0 && usage.PromptTokens == 0 &&
 		usage.CompletionTokens == 0 && usage.TotalTokens == 0 {
 		return nil
@@ -510,46 +562,58 @@ func extractUpstreamUsage(entry dumpEntry) *dslconfig.Usage {
 	return usage
 }
 
-func mergeUsageFromBody(out *dslconfig.Usage, body dumpBody) {
+func isAnthropicMessagesAPI(api string) bool {
+	return strings.EqualFold(strings.TrimSpace(api), "claude.messages")
+}
+
+func mergeUsageFromBody(out *dslconfig.Usage, body dumpBody, includeAnthropicCacheInput bool) {
 	switch strings.ToLower(strings.TrimSpace(body.Format)) {
 	case "json":
 		var obj any
 		if json.Unmarshal(body.Content, &obj) == nil {
-			mergeUsageFromValue(out, obj)
+			mergeUsageFromValue(out, obj, includeAnthropicCacheInput)
 		}
 	case "sse":
 		for _, ev := range body.Events {
 			var obj any
 			if json.Unmarshal(ev.Data, &obj) == nil {
-				mergeUsageFromValue(out, obj)
+				mergeUsageFromValue(out, obj, includeAnthropicCacheInput)
 			}
 		}
 	}
 }
 
-func mergeUsageFromValue(out *dslconfig.Usage, v any) {
+func mergeUsageFromValue(out *dslconfig.Usage, v any, includeAnthropicCacheInput bool) {
 	switch t := v.(type) {
 	case map[string]any:
 		if hasUsageTokenFields(t) {
-			mergeUsageMap(out, t)
+			mergeUsageMap(out, t, includeAnthropicCacheInput)
 		}
 		for k, vv := range t {
 			if strings.EqualFold(k, "usage") {
 				if m, ok := vv.(map[string]any); ok {
-					mergeUsageMap(out, m)
+					mergeUsageMap(out, m, includeAnthropicCacheInput)
 				}
 			}
-			mergeUsageFromValue(out, vv)
+			mergeUsageFromValue(out, vv, includeAnthropicCacheInput)
 		}
 	case []any:
 		for _, it := range t {
-			mergeUsageFromValue(out, it)
+			mergeUsageFromValue(out, it, includeAnthropicCacheInput)
 		}
 	}
 }
 
 func hasUsageTokenFields(m map[string]any) bool {
-	for _, key := range []string{"input_tokens", "output_tokens", "prompt_tokens", "completion_tokens", "total_tokens"} {
+	for _, key := range []string{
+		"input_tokens",
+		"output_tokens",
+		"prompt_tokens",
+		"completion_tokens",
+		"total_tokens",
+		"cache_creation_input_tokens",
+		"cache_read_input_tokens",
+	} {
 		if _, ok := m[key]; ok {
 			return true
 		}
@@ -557,8 +621,21 @@ func hasUsageTokenFields(m map[string]any) bool {
 	return false
 }
 
-func mergeUsageMap(out *dslconfig.Usage, m map[string]any) {
-	setMax(&out.InputTokens, intField(m, "input_tokens"))
+func mergeUsageMap(out *dslconfig.Usage, m map[string]any, includeAnthropicCacheInput bool) {
+	inputTokens := intField(m, "input_tokens")
+	cacheReadTokens := intField(m, "cache_read_input_tokens")
+	cacheWriteTokens := intField(m, "cache_creation_input_tokens")
+	if includeAnthropicCacheInput {
+		inputTokens += cacheReadTokens + cacheWriteTokens
+		if cacheReadTokens > 0 || cacheWriteTokens > 0 {
+			if out.InputTokenDetails == nil {
+				out.InputTokenDetails = &dslconfig.ResponseTokenDetails{}
+			}
+			setMax(&out.InputTokenDetails.CachedTokens, cacheReadTokens)
+			setMax(&out.InputTokenDetails.CacheWriteTokens, cacheWriteTokens)
+		}
+	}
+	setMax(&out.InputTokens, inputTokens)
 	setMax(&out.OutputTokens, intField(m, "output_tokens"))
 	setMax(&out.PromptTokens, intField(m, "prompt_tokens"))
 	setMax(&out.CompletionTokens, intField(m, "completion_tokens"))

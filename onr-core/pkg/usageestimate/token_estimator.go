@@ -32,6 +32,8 @@ type multipliers struct {
 	FunctionCallOutputItem int
 	CustomToolCallItem     int
 	CustomToolOutputItem   int
+	ThinkingBlockInput     int
+	ThinkingBlockOutput    int
 }
 
 var multipliersMap = map[provider]map[string]multipliers{
@@ -56,11 +58,13 @@ var multipliersMap = map[provider]map[string]multipliers{
 	providerOpenAI: {
 		"default": {Word: 1.02, Number: 1.55, CJK: 0.85, Symbol: 0.4, MathSymbol: 2.68,
 			URLDelim: 1.0, AtSign: 2.0, Emoji: 2.12, Newline: 0.5, Space: 0.16, BasePad: 0,
-			ToolsExist: 10, PerTool: 0,
+			ToolsExist: 10, PerTool: 20,
 			FunctionCallItem:       6,
 			FunctionCallOutputItem: 12,
 			CustomToolCallItem:     6,
 			CustomToolOutputItem:   12,
+			ThinkingBlockInput:     300,
+			ThinkingBlockOutput:    0,
 		},
 	},
 }
@@ -90,12 +94,25 @@ func isAnthropic47Model(modelName string) bool {
 }
 
 func EstimateTokenByModel(model string, ctx *tokenEstimateContext) int {
-	if strings.TrimSpace(ctx.text) == "" {
+	if strings.TrimSpace(ctx.text) == "" && !hasEstimateOnlyCounts(ctx) {
 		return 0
 	}
 	multipliers := getMultipliers(model, ctx.completion)
 	return estimateToken(ctx, multipliers)
 
+}
+
+func hasEstimateOnlyCounts(ctx *tokenEstimateContext) bool {
+	if ctx == nil {
+		return false
+	}
+	return ctx.numTools != 0 ||
+		ctx.numThinkingBlockInput != 0 ||
+		ctx.numThinkingBlockOutput != 0 ||
+		ctx.numFunctionCalls != 0 ||
+		ctx.numFunctionCallOutputs != 0 ||
+		ctx.numCustomToolCalls != 0 ||
+		ctx.numCustomToolCallOutputs != 0
 }
 
 func estimateToken(ctx *tokenEstimateContext, m multipliers) int {
@@ -165,7 +182,9 @@ func estimateToken(ctx *tokenEstimateContext, m multipliers) int {
 	sum += ctx.numFunctionCalls*m.FunctionCallItem +
 		ctx.numFunctionCallOutputs*m.FunctionCallOutputItem +
 		ctx.numCustomToolCalls*m.CustomToolCallItem +
-		ctx.numCustomToolCallOutputs*m.CustomToolOutputItem
+		ctx.numCustomToolCallOutputs*m.CustomToolOutputItem +
+		ctx.numThinkingBlockInput*m.ThinkingBlockInput +
+		ctx.numThinkingBlockOutput*m.ThinkingBlockOutput
 
 	return sum
 }

@@ -27,8 +27,8 @@ go run . -f /path/to/codex.log --api responses -m gpt-5.5
 --route            route alias for API name
 --model, -m        model name
 --allow-truncated  allow truncated dump bodies
---debug-id         print extracted response output text for one dump id
---debug-preview    max characters printed for --debug-id, default 800
+--debug-id         write extracted request/response text for one dump id without estimating
+--debug-dir        directory for --debug-id files, default dump file directory
 ```
 
 Use either `--api` or `--route`.
@@ -167,10 +167,10 @@ Loose arrays with a leading `[` and missing final `]` are tolerated when entries
 The command prints one aligned table.
 
 ```text
-status     idx  id  stage          in.actual  in.est  in.delta  out.actual  out.est  out.delta  reason
----------  ---  --  -------------  ---------  ------  --------  ----------  -------  ---------  -------------------------
-estimated    4  4   estimate_both       9594    9485    -1.14%          60      125   +108.33%
-skipped      6  8                                                                               incomplete upstream usage
+status     id  stage          in.actual  in.est  in.delta  out.actual  out.est  out.delta  reason
+---------  --  -------------  ---------  ------  --------  ----------  -------  ---------  -------------------------
+estimated   4  estimate_both       9594    9485    -1.14%          60      125   +108.33%
+skipped     8                                                                             token usage not detected
 summary entries=12 estimated=5 skipped=7
 ```
 
@@ -179,11 +179,11 @@ Columns:
 - `in.actual` / `out.actual`: official upstream token usage extracted from the response.
 - `in.est` / `out.est`: local estimate from `usageestimate.Estimate`.
 - `in.delta` / `out.delta`: `(estimated - actual) / actual * 100`.
-- `skipped`: record is not estimated. Most commonly the response has incomplete official usage.
+- `skipped`: record is not estimated. Most commonly the response does not expose complete token usage for comparison.
 
 ## Debug
 
-Use `--debug-id` when output estimation looks suspicious. It prints the response output text extracted from the matching dump record before the table.
+Use `--debug-id` when estimation input or output extraction looks suspicious. It writes the extracted request and response text from the matching dump record to files, then exits without estimating any records or printing the summary table.
 
 ```bash
 go run . \
@@ -191,7 +191,22 @@ go run . \
   --api responses \
   -m gpt-5.5 \
   --debug-id 29 \
-  --debug-preview 1200
+  --debug-dir /tmp/onr-token-estimate-debug
 ```
 
-This is useful for checking whether SSE events are missing from `streamtext.ExtractDeltaText`.
+The command prints the generated file paths and extracted character counts:
+
+```text
+debug dump id=29
+request_file=/tmp/onr-token-estimate-debug/onr-token-estimate-29-request.txt request_chars=1234
+response_file=/tmp/onr-token-estimate-debug/onr-token-estimate-29-response.txt response_chars=5678
+```
+
+Without `--debug-dir`, files are written next to the dump file:
+
+```text
+onr-token-estimate-29-request.txt
+onr-token-estimate-29-response.txt
+```
+
+The request file contains the same request text used by `usageestimate` input token estimation. The response file contains the same non-stream response text used by `usageestimate`; for SSE responses it contains text extracted from stream events. This is useful for checking whether request JSON is parsed as expected, or whether SSE events are missing from `streamtext.ExtractDeltaText`.

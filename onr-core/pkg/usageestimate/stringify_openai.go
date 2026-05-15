@@ -259,6 +259,7 @@ func stringifyInputContentObject(typeInfo string, t map[string]any, b *strings.B
 			b.WriteString(text)
 		}
 	case "reasoning":
+		hasSummaryText := false
 		if summaryList, ok := t["summary"].([]any); ok {
 			for _, item := range summaryList {
 				if s, ok := item.(map[string]any); ok {
@@ -266,10 +267,16 @@ func stringifyInputContentObject(typeInfo string, t map[string]any, b *strings.B
 					if typeName == "summary_text" {
 						if text, ok := s["text"].(string); ok {
 							b.WriteString(text)
+							if strings.TrimSpace(text) != "" {
+								hasSummaryText = true
+							}
 						}
 					}
 				}
 			}
+		}
+		if !hasSummaryText {
+			ctx.numThinkingBlockInput += 1
 		}
 	case "code_interpreter_call":
 		if code, ok := t["code"].(string); ok {
