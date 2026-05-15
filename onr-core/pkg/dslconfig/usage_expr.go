@@ -83,13 +83,13 @@ func ParseUsageExpr(s string) (*UsageExpr, error) {
 }
 
 // MustParseUsageExpr returns a non-nil expression or panics.
-func MustParseUsageExpr(s string) *UsageExpr {
-	expr, err := ParseUsageExpr(s)
-	if err != nil {
-		panic(err)
-	}
-	return expr
-}
+// func MustParseUsageExpr(s string) *UsageExpr {
+// 	expr, err := ParseUsageExpr(s)
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// 	return expr
+// }
 
 type usageExprParser struct {
 	src string

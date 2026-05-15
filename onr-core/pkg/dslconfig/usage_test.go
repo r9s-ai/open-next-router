@@ -39,6 +39,38 @@ func TestExtractUsage_OpenAI_NonStream(t *testing.T) {
 	}
 }
 
+func TestExtractUsageObject_OpenAI_NonStream(t *testing.T) {
+	meta := &dslmeta.Meta{API: "chat.completions", IsStream: false}
+	cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
+
+	root := map[string]any{
+		"usage": map[string]any{
+			"input_tokens":  8,
+			"output_tokens": 9,
+			"input_tokens_details": map[string]any{
+				"cached_tokens": 5,
+			},
+		},
+	}
+
+	u, cached, err := ExtractUsageObject(meta, cfg, root)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if u == nil {
+		t.Fatalf("usage nil")
+	}
+	if u.InputTokens != 8 || u.OutputTokens != 9 || u.TotalTokens != 17 {
+		t.Fatalf("unexpected usage: %+v", *u)
+	}
+	if cached != 5 {
+		t.Fatalf("cached=%d want=5", cached)
+	}
+	if u.InputTokenDetails == nil || u.InputTokenDetails.CachedTokens != 5 {
+		t.Fatalf("expected cached token details, got=%+v", u.InputTokenDetails)
+	}
+}
+
 func TestExtractUsage_OpenAI_ImagesGenerations(t *testing.T) {
 	meta := &dslmeta.Meta{API: "images.generations", IsStream: false}
 	cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
