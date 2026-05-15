@@ -2,7 +2,6 @@ package usageestimate
 
 import (
 	"encoding/json"
-	"os"
 	"strings"
 	"testing"
 
@@ -397,300 +396,258 @@ func TestExtractStreamText_ChatCompletionsDelta(t *testing.T) {
 	}
 }
 
-func Test_stringifyAnthropicRequest(t *testing.T) {
-	rawBody := []byte(`{
-  "model":"claude-haiku-4-5",
- "max_tokens": 2048,
-  "thinking": {
-    "type": "enabled",
-    "budget_tokens": 1024
-  },
-  "system": [
-    {
-      "type": "text",
-      "text": "你是一个资深 code agent，正在一个 Go relay 服务仓库中帮助用户排查计费 token 估计问题。你可以使用工具读取文件、搜索代码和查看 git diff。回答使用中文，但保留代码标识符、文件路径、函数名和变量名的英文原文。排查时先基于证据，不要臆测；需要更多上下文时调用工具。"
-    }
-  ],
-  "tools": [
-    {
-      "name": "read_file",
-      "description": "Read a repository file and optionally return a selected line range.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "path": {
-            "type": "string",
-            "description": "Repository-relative file path."
-          },
-          "start_line": {
-            "type": "integer",
-            "description": "1-based start line."
-          },
-          "end_line": {
-            "type": "integer",
-            "description": "1-based end line."
-          }
-        },
-        "required": ["path"]
-      }
-    },
-    {
-      "name": "search_code",
-      "description": "Search repository code with a ripgrep-compatible pattern and return matching file paths and line snippets.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "pattern": {
-            "type": "string",
-            "description": "Search pattern."
-          },
-          "path": {
-            "type": "string",
-            "description": "Optional repository-relative directory."
-          }
-        },
-        "required": ["pattern"]
-      }
-    },
-    {
-      "name": "show_diff",
-      "description": "Show the current git diff for selected files.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "paths": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Repository-relative file paths. Empty or omitted means all changed files."
-          }
-        }
-      }
-    }
-  ],
-   "messages": [
-    {
-      "role": "user",
-      "content": "请帮我查一下上海今天的天气，然后用中文总结。"
-    },
-    {
-      "role": "assistant",
-      "content": [
-        {
-          "type": "text",
-          "text": "我需要先调用天气工具获取实时数据。"
-        },
-        {
-          "type": "thinking",
-          "thinking": "用户想知道上海今天的天气，并要求中文总结。应该调用 get_weather 工具，地点为 Shanghai。"
-        },
-        {
-          "type": "redacted_thinking",
-          "data": "EmUCDCkIAxgCIkB..."
-        },
-        {
-          "type": "tool_use",
-          "id": "toolu_01ABC",
-          "name": "get_weather",
-          "input": {
-            "city": "Shanghai",
-            "country": "CN",
-            "unit": "celsius"
-          }
-        }
-      ]
-    },
-    {
-      "role": "user",
-      "content": [
-        {
-          "type": "tool_result",
-          "tool_use_id": "toolu_01ABC",
-          "content": "上海今天多云，气温 18-24 摄氏度，东南风 3 级。"
-        }
-      ]
-    },
-    {
-      "role": "assistant",
-      "content": [
-        {
-          "type": "text",
-          "text": "上海今天以多云为主，气温大约 18 到 24 摄氏度，体感较舒适。"
-        }
-      ]
-    },
-    {
-      "role": "user",
-      "content": [
-        {
-          "type": "text",
-          "text": "再判断一下是否适合夜跑。"
-        },
-        {
-          "type": "tool_result",
-          "tool_use_id": "toolu_02DEF",
-          "content": [
-            {
-              "type": "text",
-              "text": "空气质量良好，PM2.5 为 22。"
-            },
-            {
-              "type": "text",
-              "text": "夜间降雨概率 10%。"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "role": "assistant",
-      "content": [
-        {
-          "type": "tool_use",
-          "id": "toolu_03XYZ",
-          "name": "calculate_running_score",
-          "input": {
-            "temperature_c": 21,
-            "rain_probability": 0.1,
-            "pm25": 22,
-            "wind_level": 3
-          }
-        },
-        {
-          "type": "text",
-          "text": "我会结合气温、降雨概率、空气质量和风力判断。"
-        }
-      ]
-    },
-    {
-      "role": "user",
-      "content": [
-        {
-          "type": "tool_result",
-          "tool_use_id": "toolu_03XYZ",
-          "is_error": false,
-          "content": {
-            "score": 86,
-            "level": "good",
-            "reason": "气温适中，空气质量良好，降雨概率低。"
-          }
-        }
-      ]
-    },
-    {
-      "role": "assistant",
-      "content": [
-        {
-          "type": "thinking",
-          "thinking": "工具返回 score=86，level=good。应该给出适合夜跑的结论，同时提醒补水和注意风。"
-        },
-        {
-          "type": "text",
-          "text": "今晚整体适合夜跑。建议选择常规强度，注意补水；如果体感风较明显，可以减少高强度间歇。"
-        }
-      ]
-    }
-  ]
-}`)
-	var req map[string]any
-	if err := json.Unmarshal(rawBody, &req); err != nil {
-		t.Fatal(err.Error())
-	}
-	ctx := stringifyAnthropicRequest(req)
-	if ctx.text == "" {
-		t.Fatalf("expected normal s,but get \"\"")
-	}
-	if ctx.numTools != 3 {
-		t.Fatalf("expected num of tools is 3 s,but get %d\"\"", ctx.numTools)
-	}
-	t.Log(ctx.text)
+func TestStringifyAnthropicRequest_SystemOnly(t *testing.T) {
+	ctx := stringifyAnthropicRequest(mustJSONMap(t, `{
+		"system": [{"type": "text", "text": "You are a careful relay debugging agent."}]
+	}`))
 
+	if ctx.numTools != 0 {
+		t.Fatalf("numTools=%d want=0", ctx.numTools)
+	}
+	assertContainsAll(t, ctx.text, "system", "You are a careful relay debugging agent.")
 }
 
-func Test_stringifyOpenaiResponsesRequest(t *testing.T) {
+func TestStringifyAnthropicRequest_ToolsOnly(t *testing.T) {
+	ctx := stringifyAnthropicRequest(mustJSONMap(t, `{
+		"tools": [
+			{
+				"name": "read_file",
+				"description": "Read a repository file.",
+				"input_schema": {
+					"type": "object",
+					"properties": {
+						"path": {"type": "string", "description": "Repository-relative file path."}
+					},
+					"required": ["path"]
+				}
+			},
+			{
+				"name": "search_code",
+				"description": "Search repository code.",
+				"input_schema": {
+					"type": "object",
+					"properties": {
+						"pattern": {"type": "string"}
+					},
+					"required": ["pattern"]
+				}
+			}
+		]
+	}`))
 
-	rawBody, err := os.ReadFile("testdata/openai/responses/stringfy/test_stringfyRequset.json")
-	if err != nil {
-		t.Fatalf("read testdata: %v", err)
-	}
-	var req map[string]any
-	if err := json.Unmarshal(rawBody, &req); err != nil {
-		t.Fatal(err.Error())
-	}
-	ctx := stringfyOpenaiResponsesRequest(req)
-	if ctx.text == "" {
-		t.Fatalf("expected normal s,but get \"\"")
-	}
-	if ctx.numTools != 4 {
-		t.Fatalf("expected num of tools is 4 s,but get %d\"\"", ctx.numTools)
-	}
-	t.Log(ctx.text)
-
-}
-
-func Test_stringifyOpenaiResponsesResponses(t *testing.T) {
-
-	rawBody, err := os.ReadFile("testdata/openai/responses/stringfy/test_stringfyResponse.json")
-	if err != nil {
-		t.Fatalf("read testdata: %v", err)
-	}
-	s := extractResponseText("responses", rawBody, -1)
-	if s == "" {
-		t.Fatalf("expected normal s,but get \"\"")
-	}
-	t.Log(s)
-
-}
-
-func Test_stringifyOpenaiChatCompletionsRequest(t *testing.T) {
-	rawBody, err := os.ReadFile("testdata/openai/chatCompletions/stringfy/test_stringfyRequset.json")
-	if err != nil {
-		t.Fatalf("read testdata: %v", err)
-	}
-	var req map[string]any
-	if err := json.Unmarshal(rawBody, &req); err != nil {
-		t.Fatal(err.Error())
-	}
-	ctx := stringfyOpenaiChatCompletionsRequest(req)
-	if ctx.text == "" {
-		t.Fatalf("expected normal s,but get \"\"")
-	}
 	if ctx.numTools != 2 {
-		t.Fatalf("expected num of tools is 2 s,but get %d\"\"", ctx.numTools)
+		t.Fatalf("numTools=%d want=2", ctx.numTools)
 	}
-	for _, want := range []string{
-		"Analyze these two charts",
-		"get_weather",
-		"Beijing",
-		"search_database",
-		"historical weather Beijing Shanghai May",
-	} {
-		if !strings.Contains(ctx.text, want) {
-			t.Fatalf("expected request text to contain %q, got %q", want, ctx.text)
-		}
-	}
-	t.Log(ctx.text)
+	assertContainsAll(t, ctx.text, "tools", "read_file", "Repository-relative file path", "search_code", "pattern")
 }
 
-func Test_stringifyOpenaiChatCompletionsResponses(t *testing.T) {
-	rawBody, err := os.ReadFile("testdata/openai/chatCompletions/stringfy/test_stringfyResponse.json")
-	if err != nil {
-		t.Fatalf("read testdata: %v", err)
+func TestStringifyAnthropicRequest_MessagesOnly(t *testing.T) {
+	ctx := stringifyAnthropicRequest(mustJSONMap(t, `{
+		"messages": [
+			{"role": "user", "content": "请查询上海天气。"},
+			{
+				"role": "assistant",
+				"content": [
+					{"type": "text", "text": "我会先调用天气工具。"},
+					{"type": "thinking", "thinking": "需要城市 Shanghai。"},
+					{"type": "tool_use", "name": "get_weather", "input": {"city": "Shanghai"}}
+				]
+			},
+			{
+				"role": "user",
+				"content": [
+					{"type": "tool_result", "content": [{"type": "text", "text": "上海多云。"}]}
+				]
+			}
+		]
+	}`))
+
+	if ctx.numTools != 0 {
+		t.Fatalf("numTools=%d want=0", ctx.numTools)
 	}
-	s := extractResponseText("chat.completions", rawBody, -1)
-	if s == "" {
-		t.Fatalf("expected normal s,but get \"\"")
+	assertContainsAll(t, ctx.text, "messages", "role:user", "请查询上海天气。", "thinking 需要城市 Shanghai。", "tool_use get_weather", "city Shanghai", "上海多云。")
+}
+
+func TestStringifyOpenAIResponsesRequest_InstructionsOnly(t *testing.T) {
+	ctx := stringfyOpenaiResponsesRequest(mustJSONMap(t, `{
+		"instructions": "Answer in concise Chinese."
+	}`))
+
+	if ctx.numTools != 0 {
+		t.Fatalf("numTools=%d want=0", ctx.numTools)
 	}
-	for _, want := range []string{
-		"综合分析报告",
-		"get_weather",
-		"Beijing",
-		"Legacy text choice fallback",
-	} {
-		if !strings.Contains(s, want) {
-			t.Fatalf("expected response text to contain %q, got %q", want, s)
+	assertContainsAll(t, ctx.text, "instructions", "Answer in concise Chinese.")
+}
+
+func TestStringifyOpenAIResponsesRequest_ToolsOnly(t *testing.T) {
+	ctx := stringfyOpenaiResponsesRequest(mustJSONMap(t, `{
+		"tools": [
+			{
+				"type": "function",
+				"name": "get_weather",
+				"description": "Get weather by city.",
+				"parameters": {
+					"type": "object",
+					"properties": {"city": {"type": "string"}}
+				}
+			},
+			{
+				"type": "function",
+				"name": "search_database",
+				"description": "Search records.",
+				"parameters": {
+					"type": "object",
+					"properties": {"query": {"type": "string"}}
+				}
+			}
+		]
+	}`))
+
+	if ctx.numTools != 2 {
+		t.Fatalf("numTools=%d want=2", ctx.numTools)
+	}
+	assertContainsAll(t, ctx.text, "tools", "get_weather", "Get weather by city.", "city", "search_database", "Search records.", "query")
+}
+
+func TestStringifyOpenAIResponsesRequest_InputItems(t *testing.T) {
+	ctx := stringfyOpenaiResponsesRequest(mustJSONMap(t, `{
+		"input": [
+			{"role": "user", "content": [{"type": "input_text", "text": "Analyze these two charts."}]},
+			{"type": "reasoning", "summary": [{"type": "summary_text", "text": "Need compare weather trends."}]},
+			{"type": "function_call", "name": "get_weather", "arguments": {"city": "Beijing"}},
+			{"type": "function_call_output", "output": {"temperature": 21}},
+			{"type": "custom_tool_call", "name": "run_sql", "input": "select 1"}
+		]
+	}`))
+
+	if ctx.numFunctionCalls != 1 {
+		t.Fatalf("numFunctionCalls=%d want=1", ctx.numFunctionCalls)
+	}
+	if ctx.numFunctionCallOutputs != 1 {
+		t.Fatalf("numFunctionCallOutputs=%d want=1", ctx.numFunctionCallOutputs)
+	}
+	if ctx.numCustomToolCalls != 1 {
+		t.Fatalf("numCustomToolCalls=%d want=1", ctx.numCustomToolCalls)
+	}
+	assertContainsAll(t, ctx.text, "Analyze these two charts.", "Need compare weather trends.", "function_call get_weather", `"city":"Beijing"`, "function_call_output", "temperature", "custom_tool_call run_sql", "select 1")
+}
+
+func TestExtractResponseText_OpenAIResponses(t *testing.T) {
+	body := []byte(`{
+		"output": [
+			{
+				"type": "message",
+				"content": [{"type": "output_text", "text": "综合分析报告"}]
+			},
+			{
+				"type": "function_call",
+				"name": "get_weather",
+				"arguments": {"city": "Beijing"}
+			}
+		]
+	}`)
+
+	got := extractResponseText("responses", body, -1)
+	assertContainsAll(t, got, "综合分析报告", "function_call get_weather", `"city":"Beijing"`)
+}
+
+func TestStringifyOpenAIChatCompletionsRequest_MessagesOnly(t *testing.T) {
+	ctx := stringfyOpenaiChatCompletionsRequest(mustJSONMap(t, `{
+		"messages": [
+			{"role": "system", "content": "You are helpful."},
+			{"role": "user", "content": [
+				{"type": "text", "text": "Analyze these two charts."},
+				{"type": "image_url", "image_url": {"url": "https://example.com/chart.png"}}
+			]},
+			{"role": "assistant", "tool_calls": [
+				{"type": "function", "function": {"name": "get_weather", "arguments": "{\"city\":\"Beijing\"}"}}
+			]},
+			{"role": "tool", "content": "Beijing is sunny."}
+		]
+	}`))
+
+	if ctx.numTools != 0 {
+		t.Fatalf("numTools=%d want=0", ctx.numTools)
+	}
+	if ctx.numFunctionCalls != 1 {
+		t.Fatalf("numFunctionCalls=%d want=1", ctx.numFunctionCalls)
+	}
+	assertContainsAll(t, ctx.text, "role:system", "You are helpful.", "Analyze these two charts.", "function_call get_weather", `{"city":"Beijing"}`, "Beijing is sunny.")
+}
+
+func TestStringifyOpenAIChatCompletionsRequest_ToolsOnly(t *testing.T) {
+	ctx := stringfyOpenaiChatCompletionsRequest(mustJSONMap(t, `{
+		"tools": [
+			{
+				"type": "function",
+				"function": {
+					"name": "get_weather",
+					"description": "Get weather.",
+					"parameters": {
+						"type": "object",
+						"properties": {"city": {"type": "string"}}
+					}
+				}
+			},
+			{
+				"type": "function",
+				"function": {
+					"name": "search_database",
+					"description": "Search database.",
+					"parameters": {
+						"type": "object",
+						"properties": {"query": {"type": "string"}}
+					}
+				}
+			}
+		]
+	}`))
+
+	if ctx.numTools != 2 {
+		t.Fatalf("numTools=%d want=2", ctx.numTools)
+	}
+	assertContainsAll(t, ctx.text, "tools", "get_weather", "Get weather.", "city", "search_database", "Search database.", "query")
+}
+
+func TestExtractResponseText_OpenAIChatCompletions(t *testing.T) {
+	body := []byte(`{
+		"choices": [
+			{
+				"message": {
+					"content": "综合分析报告",
+					"tool_calls": [
+						{"type": "function", "function": {"name": "get_weather", "arguments": "{\"city\":\"Beijing\"}"}}
+					],
+					"function_call": {"name": "legacy_lookup", "arguments": "{\"query\":\"history\"}"}
+				}
+			},
+			{"text": "Legacy text choice fallback"}
+		]
+	}`)
+
+	got := extractResponseText("chat.completions", body, -1)
+	assertContainsAll(t, got, "综合分析报告", "function_call get_weather", `{"city":"Beijing"}`, "function_call legacy_lookup", `{"query":"history"}`, "Legacy text choice fallback")
+}
+
+func mustJSONMap(t *testing.T, raw string) map[string]any {
+	t.Helper()
+
+	var m map[string]any
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		t.Fatalf("unmarshal json: %v", err)
+	}
+	return m
+}
+
+func assertContainsAll(t *testing.T, got string, wants ...string) {
+	t.Helper()
+
+	if got == "" {
+		t.Fatalf("got empty string, want to contain %v", wants)
+	}
+	for _, want := range wants {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected text to contain %q, got %q", want, got)
 		}
 	}
-	t.Log(s)
 }

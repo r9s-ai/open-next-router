@@ -362,7 +362,7 @@ func resolveAPI(apiFlag, routeFlag string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("unknown route %q", routeFlag)
 	}
-	if api != "" && strings.ToLower(api) != strings.ToLower(mapped) {
+	if api != "" && !strings.EqualFold(api, mapped) {
 		return "", fmt.Errorf("--api %q conflicts with --route %q (%s)", api, routeFlag, mapped)
 	}
 	return mapped, nil

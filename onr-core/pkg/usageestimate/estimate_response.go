@@ -17,6 +17,7 @@ func ExtractResponseTextForModel(api, model string, body []byte, limit int) stri
 	return extractResponseTextForModel(api, model, body, limit)
 }
 
+//gocyclo:ignore
 func extractResponseTextForModel(api, model string, body []byte, limit int) string {
 	body = clampBytes(body, limit)
 	if len(bytes.TrimSpace(body)) == 0 {
