@@ -41,14 +41,20 @@ func TestDirectivesByBlock(t *testing.T) {
 
 	metrics := DirectivesByBlock("metrics")
 	found = false
+	foundUsageRoot := false
 	for _, d := range metrics {
 		if d == "usage_fact" {
 			found = true
-			break
+		}
+		if d == "usage_root" {
+			foundUsageRoot = true
 		}
 	}
 	if !found {
 		t.Fatalf("expected usage_fact in metrics block directives")
+	}
+	if !foundUsageRoot {
+		t.Fatalf("expected usage_root in metrics block directives")
 	}
 
 	upstream := DirectivesByBlock("upstream")
@@ -90,14 +96,20 @@ func TestDirectivesByBlock(t *testing.T) {
 
 	usageMode := DirectivesByBlock("usage_mode")
 	found = false
+	foundUsageRoot = false
 	for _, d := range usageMode {
 		if d == "usage_fact" {
 			found = true
-			break
+		}
+		if d == "usage_root" {
+			foundUsageRoot = true
 		}
 	}
 	if !found {
 		t.Fatalf("expected usage_fact in usage_mode block directives")
+	}
+	if !foundUsageRoot {
+		t.Fatalf("expected usage_root in usage_mode block directives")
 	}
 }
 
@@ -133,6 +145,13 @@ func TestDirectiveHoverForUsageFact(t *testing.T) {
 	hover, ok := DirectiveHover("usage_fact")
 	if !ok || hover == "" {
 		t.Fatalf("expected hover for usage_fact")
+	}
+}
+
+func TestDirectiveHoverForUsageRoot(t *testing.T) {
+	hover, ok := DirectiveHover("usage_root")
+	if !ok || hover == "" {
+		t.Fatalf("expected hover for usage_root")
 	}
 }
 

@@ -215,6 +215,11 @@ func validateResolvedUsageExtractConfig(path, providerName, scope string, cfg Us
 		if len(cfg.facts) > 0 {
 			return fmt.Errorf("provider %q in %q: %s usage_fact requires usage_extract mode", providerName, path, scope)
 		}
+		for i, root := range cfg.usageRoots {
+			if err := validateUsageRootConfig(path, providerName, scope, i, root); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 	switch mode {
@@ -250,6 +255,14 @@ func validateResolvedUsageExtractConfig(path, providerName, scope string, cfg Us
 		if err := validateUsageFactConfig(path, providerName, scope, i, fact); err != nil {
 			return err
 		}
+		if strings.EqualFold(strings.TrimSpace(fact.Source), "usage") && len(cfg.usageRoots) == 0 {
+			return fmt.Errorf("provider %q in %q: %s usage_fact[%d] source=usage requires usage_root", providerName, path, scope, i)
+		}
+	}
+	for i, root := range cfg.usageRoots {
+		if err := validateUsageRootConfig(path, providerName, scope, i, root); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -282,7 +295,7 @@ func validateUsageFactConfig(path, providerName, scope string, idx int, fact usa
 	if !usageFactKeyAllowed(key.Dimension, key.Unit) {
 		return fmt.Errorf("provider %q in %q: %s usage_fact[%d] unsupported dimension/unit %q %q", providerName, path, scope, idx, fact.Dimension, fact.Unit)
 	}
-	if source := strings.ToLower(strings.TrimSpace(fact.Source)); source != "" && source != "response" && source != "request" && source != "derived" {
+	if source := strings.ToLower(strings.TrimSpace(fact.Source)); source != "" && source != "usage" && source != "response" && source != "request" && source != "derived" {
 		return fmt.Errorf("provider %q in %q: %s usage_fact[%d] unsupported source %q", providerName, path, scope, idx, fact.Source)
 	}
 
@@ -321,8 +334,8 @@ func validateUsageFactConfig(path, providerName, scope string, idx int, fact usa
 		if fact.EventOptional {
 			return fmt.Errorf("provider %q in %q: %s usage_fact[%d] event_optional requires event", providerName, path, scope, idx)
 		}
-	} else if strings.ContainsAny(strings.TrimSpace(fact.Event), " \t\r\n") {
-		return fmt.Errorf("provider %q in %q: %s usage_fact[%d] event must not contain whitespace", providerName, path, scope, idx)
+	} else if err := validateUsageEventList(strings.TrimSpace(fact.Event)); err != nil {
+		return fmt.Errorf("provider %q in %q: %s usage_fact[%d] %s", providerName, path, scope, idx, err.Error())
 	}
 	if len(fact.Attrs) > 0 {
 		for k, v := range fact.Attrs {
@@ -332,6 +345,41 @@ func validateUsageFactConfig(path, providerName, scope string, idx int, fact usa
 			if strings.TrimSpace(v) == "" {
 				return fmt.Errorf("provider %q in %q: %s usage_fact[%d] attr.%s is empty", providerName, path, scope, idx, k)
 			}
+		}
+	}
+	return nil
+}
+
+func validateUsageRootConfig(path, providerName, scope string, idx int, root usageRootConfig) error {
+	if strings.TrimSpace(root.Path) == "" {
+		return fmt.Errorf("provider %q in %q: %s usage_root[%d] requires path", providerName, path, scope, idx)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(root.Path), "$.") {
+		return fmt.Errorf("provider %q in %q: %s usage_root[%d] path must start with $. ", providerName, path, scope, idx)
+	}
+	if strings.TrimSpace(root.Event) == "" {
+		if root.EventOptional {
+			return fmt.Errorf("provider %q in %q: %s usage_root[%d] event_optional requires event", providerName, path, scope, idx)
+		}
+		return nil
+	}
+	if err := validateUsageEventList(strings.TrimSpace(root.Event)); err != nil {
+		return fmt.Errorf("provider %q in %q: %s usage_root[%d] %s", providerName, path, scope, idx, err.Error())
+	}
+	return nil
+}
+
+func validateUsageEventList(event string) error {
+	if strings.TrimSpace(event) == "" {
+		return nil
+	}
+	for _, part := range strings.Split(event, "|") {
+		item := strings.TrimSpace(part)
+		if item == "" {
+			return fmt.Errorf("event contains empty name")
+		}
+		if strings.ContainsAny(item, " \t\r\n") {
+			return fmt.Errorf("event must not contain whitespace")
 		}
 	}
 	return nil
