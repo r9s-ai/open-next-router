@@ -652,11 +652,10 @@ metrics {
 metrics {
   usage_extract custom;
 
-  usage_fact input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="TEXT")].tokenCount';
-  usage_fact input token path="$.usageMetadata.promptTokenCount" fallback=true;
-  usage_fact image.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="IMAGE")].tokenCount';
-  usage_fact video.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="VIDEO")].tokenCount';
-  usage_fact audio.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount';
+  usage_fact input token path="$.usageMetadata.promptTokenCount";
+  usage_fact input.image token path='$.usageMetadata.promptTokensDetails[?(@.modality=="IMAGE")].tokenCount';
+  usage_fact input.video token path='$.usageMetadata.promptTokensDetails[?(@.modality=="VIDEO")].tokenCount';
+  usage_fact input.audio token path='$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount';
 
   # Optional: only when the upstream reports real per-modality cached tokens.
   usage_fact cache_read token path='$.usageMetadata.cacheTokensDetails[?(@.modality=="TEXT")].tokenCount' attr.modality="text";
@@ -671,7 +670,7 @@ metrics {
 
 Notes:
 
-- `gemini`: the current default preset behavior can be fully replaced by `custom` configuration; `input token` usually prefers the `TEXT` modality and falls back to `promptTokenCount`, while multimodal details can be emitted as `image.input/audio.input/video.input token` facts.
+- `gemini`: the current default preset behavior can be fully replaced by `custom` configuration; `input token` reads the total `promptTokenCount`, while multimodal details can be emitted as `input.image/input.audio/input.video token` facts.
 - `anthropic`: ONR now treats `input` as the effective input size, so `cache_read_input_tokens` and `cache_creation_input_tokens` should also be included in `input`.
 - `openai`: the example above covers core token/cache extraction. Image/audio/tool supplemental facts and per-modality cache facts still need extra explicit `usage_fact` rules in a custom-first setup.
 - Per-modality cache facts use the existing `cache_read token` dimension with `attr.modality="text|image|audio|video"`. Only configure these fields when the upstream reports real per-modality cached token counts; do not derive them by splitting a total cached token field.

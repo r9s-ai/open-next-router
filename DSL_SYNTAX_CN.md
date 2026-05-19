@@ -21,7 +21,8 @@
   - [5.5 response（响应处理）](#55-response响应处理)
   - [5.6 error（错误归一化）](#56-error错误归一化)
   - [5.7 metrics（用量提取--usage）](#57-metrics用量提取--usage)
-    - [5.7.1 usage_fact（推荐的新写法）](#571-usage_fact推荐的新写法)
+    - [usage_root（先抽取 usage 小 JSON）](#usage_root先抽取-usage-小-json)
+    - [usage_fact（推荐的新写法）](#usage_fact推荐的新写法)
 - [6. 可用的 Context（表达式变量）](#6-可用的-context表达式变量)
 - [7. 指令参考（nginx 风格）](#7-指令参考nginx-风格)
   - [7.1 顶层指令](#71-顶层指令)
@@ -33,7 +34,8 @@
   - [7.7 response（响应）](#77-response响应)
   - [7.8 error（错误归一化）](#78-error错误归一化)
   - [7.9 metrics（用量提取--usage）](#79-metrics用量提取--usage)
-    - [7.9.1 usage_fact](#791-usage_fact)
+    - [usage_root](#usage_root)
+    - [usage_fact](#usage_fact)
 - [8. 内置变量参考](#8-内置变量参考)
 
 ---
@@ -533,8 +535,9 @@ error { error_map openai; }
 
 ```conf
 usage_mode "shared_openai" {
-  usage_fact input token path="$.usage.input_tokens";
-  usage_fact output token path="$.usage.output_tokens";
+  usage_root path="$.usage";
+  usage_fact input token path="$.input_tokens";
+  usage_fact output token path="$.output_tokens";
 }
 ```
 
@@ -543,7 +546,7 @@ usage_mode "shared_openai" {
 - `usage_mode` 是顶层指令，用来给整个 providers 配置集合声明一个可复用的全局 usage 预设。
 - 推荐把这类全局 DSL 预设单独放在 `config/modes/usage_modes.conf` 这类文件里，再由 `config/onr.conf` 通过 `include modes/*.conf;` 在 `include providers;` 之前先引入。
 - 它可以单独放在一个没有 `provider {}` 的 `.conf` 文件里；这类文件在 `config/providers/` 中是合法的，但不会出现在 provider 列表里。
-- `usage_mode` 块内支持和 `metrics` 相同的 usage 指令：`usage_extract`、`usage_fact`、`*_tokens_path`、`*_tokens_expr`。
+- `usage_mode` 块内支持和 `metrics` 相同的 usage 指令：`usage_extract`、`usage_root`、`usage_fact`、`*_tokens_path`、`*_tokens_expr`。
 - `usage_mode` 内部也可以继续通过 `usage_extract <other_mode>;` 引用另一个 `usage_mode`，用于组合更大的预设；递归引用会报错。
 - 在同一个 providers 目录或合并后的 providers 文件中，`usage_mode` 名字是全局唯一的；重名会在校验期报错。
 - 本仓库默认的 `config/modes/usage_modes.conf` 会定义 `openai_chat_completions`、`openai_prompt_completion`、`openai_responses`、`openai_responses_stream`、`anthropic_messages`、`anthropic_messages_stream`、`gemini_generate_content`、`gemini_generate_content_stream` 这类按 API / 路径拆分的全局 `usage_mode` 预设；如果你在 DSL 里声明同名 `usage_mode`，就会覆盖这份默认预设。
@@ -609,8 +612,9 @@ balance_mode "openai" {
 ```conf
 usage_mode "shared_openai" {
   usage_extract custom;
-  usage_fact input token path="$.usage.input_tokens";
-  usage_fact output token path="$.usage.output_tokens";
+  usage_root path="$.usage";
+  usage_fact input token path="$.input_tokens";
+  usage_fact output token path="$.output_tokens";
 }
 
 provider "openai" {
@@ -632,6 +636,7 @@ metrics { usage_extract custom; }
 - 仓库默认配置现在只保留更具体的 API / 路径级预设，例如 `openai_chat_completions`、`openai_prompt_completion`、`openai_responses`、`openai_responses_stream`、`anthropic_messages`、`anthropic_messages_stream`、`gemini_generate_content`、`gemini_generate_content_stream`。
 - `openai` / `anthropic` / `gemini` 这类泛化名字不再是特殊的 DSL 内置 `usage_extract` mode；如果你想继续用这些名字，需要自己显式定义对应的全局 `usage_mode` 预设。
 - 用户自定义 `usage_mode` 也会先完成解析，再编译进同一套统一 fact-based 执行计划。
+- `usage_root` 可先从响应 JSON / SSE event payload 中抽出较小的 usage 对象，并合并到内部 usage 对象；后续 `usage_fact` 默认从合并后的 usage 对象中读取相对路径。需要读取原始响应 JSON 时显式写 `source=response`。
 - 在 `metrics` 里，如果声明了 `usage_fact`、`*_tokens_path` 或 `*_tokens_expr`，但没有写 `usage_extract`，ONR 会自动按 `usage_extract custom;` 处理。
 - 若在代码侧做 introspection，建议区分三层：
   - declared：用户显式写的 `usage_fact`
@@ -644,21 +649,22 @@ metrics { usage_extract custom; }
 ```conf
 metrics {
   usage_extract custom;
+  usage_root path="$.usage";
 
-  usage_fact input token path="$.usage.prompt_tokens";
-  usage_fact input token path="$.usage.input_tokens" fallback=true;
+  usage_fact input token path="$.prompt_tokens";
+  usage_fact input token path="$.input_tokens" fallback=true;
 
-  usage_fact output token path="$.usage.completion_tokens";
-  usage_fact output token path="$.usage.output_tokens" fallback=true;
+  usage_fact output token path="$.completion_tokens";
+  usage_fact output token path="$.output_tokens" fallback=true;
 
-  usage_fact cache_read token path="$.usage.prompt_tokens_details.cached_tokens";
-  usage_fact cache_read token path="$.usage.input_tokens_details.cached_tokens" fallback=true;
-  usage_fact cache_read token path="$.usage.cached_tokens" fallback=true;
+  usage_fact cache_read token path="$.prompt_tokens_details.cached_tokens";
+  usage_fact cache_read token path="$.input_tokens_details.cached_tokens" fallback=true;
+  usage_fact cache_read token path="$.cached_tokens" fallback=true;
 
   # 可选：仅当上游真实返回分模态 cached token 时配置。
-  usage_fact cache_read token path="$.usage.cache_details.text.cached_tokens" attr.modality="text";
-  usage_fact cache_read token path="$.usage.cache_details.image.cached_tokens" attr.modality="image";
-  usage_fact cache_read token path="$.usage.cache_details.audio.cached_tokens" attr.modality="audio";
+  usage_fact cache_read token path="$.cache_details.text.cached_tokens" attr.modality="text";
+  usage_fact cache_read token path="$.cache_details.image.cached_tokens" attr.modality="image";
+  usage_fact cache_read token path="$.cache_details.audio.cached_tokens" attr.modality="audio";
 }
 ```
 
@@ -666,15 +672,17 @@ metrics {
 
 ```conf
 metrics {
-  usage_fact input token path="$.usage.input_tokens";
-  usage_fact input token path="$.usage.cache_read_input_tokens";
-  usage_fact input token path="$.usage.cache_creation_input_tokens";
-  usage_fact output token path="$.usage.output_tokens";
-  usage_fact cache_read token path="$.usage.cache_read_input_tokens";
+  usage_root path="$.usage";
 
-  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
-  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
-  usage_fact cache_write token path="$.usage.cache_creation_input_tokens" fallback=true;
+  usage_fact input token path="$.input_tokens";
+  usage_fact input token path="$.cache_read_input_tokens";
+  usage_fact input token path="$.cache_creation_input_tokens";
+  usage_fact output token path="$.output_tokens";
+  usage_fact cache_read token path="$.cache_read_input_tokens";
+
+  usage_fact cache_write token path="$.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
+  usage_fact cache_write token path="$.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
+  usage_fact cache_write token path="$.cache_creation_input_tokens" fallback=true;
 }
 ```
 
@@ -683,27 +691,27 @@ metrics {
 ```conf
 metrics {
   usage_extract custom;
+  usage_root path="$.usageMetadata";
 
-  usage_fact input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="TEXT")].tokenCount';
-  usage_fact input token path="$.usageMetadata.promptTokenCount" fallback=true;
-  usage_fact image.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="IMAGE")].tokenCount';
-  usage_fact video.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="VIDEO")].tokenCount';
-  usage_fact audio.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount';
+  usage_fact input token path="$.promptTokenCount";
+  usage_fact input.image token path='$.promptTokensDetails[?(@.modality=="IMAGE")].tokenCount';
+  usage_fact input.video token path='$.promptTokensDetails[?(@.modality=="VIDEO")].tokenCount';
+  usage_fact input.audio token path='$.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount';
 
   # 可选：仅当上游真实返回分模态 cached token 时配置。
-  usage_fact cache_read token path='$.usageMetadata.cacheTokensDetails[?(@.modality=="TEXT")].tokenCount' attr.modality="text";
-  usage_fact cache_read token path='$.usageMetadata.cacheTokensDetails[?(@.modality=="IMAGE")].tokenCount' attr.modality="image";
-  usage_fact cache_read token path='$.usageMetadata.cacheTokensDetails[?(@.modality=="AUDIO")].tokenCount' attr.modality="audio";
-  usage_fact cache_read token path='$.usageMetadata.cacheTokensDetails[?(@.modality=="VIDEO")].tokenCount' attr.modality="video";
+  usage_fact cache_read token path='$.cacheTokensDetails[?(@.modality=="TEXT")].tokenCount' attr.modality="text";
+  usage_fact cache_read token path='$.cacheTokensDetails[?(@.modality=="IMAGE")].tokenCount' attr.modality="image";
+  usage_fact cache_read token path='$.cacheTokensDetails[?(@.modality=="AUDIO")].tokenCount' attr.modality="audio";
+  usage_fact cache_read token path='$.cacheTokensDetails[?(@.modality=="VIDEO")].tokenCount' attr.modality="video";
 
-  usage_fact output token path="$.usageMetadata.candidatesTokenCount";
-  usage_fact output token path="$.usageMetadata.thoughtsTokenCount";
+  usage_fact output token path="$.candidatesTokenCount";
+  usage_fact output token path="$.thoughtsTokenCount";
 }
 ```
 
 注意：
 
-- `gemini`：当前默认预设行为已经可以用 `custom` 配置完整平替；`input token` 通常优先取 `TEXT` 模态，再 fallback 到 `promptTokenCount`
+- `gemini`：当前默认预设行为已经可以用 `custom` 配置完整平替；`input token` 取总输入 `promptTokenCount`，分模态输入 token 通过 `input.* token` 补充
 - `anthropic`：ONR 现在将 `input` 视为包含 cache 的有效输入总量，因此 `cache_read_input_tokens` 与 `cache_creation_input_tokens` 也应并入 `input`
 - `openai`：上述配置只覆盖核心 token / cache 提取；图片、音频、tool usage 以及分模态 cache 等 API-specific supplemental facts 仍需额外显式写 `usage_fact`
 - 分模态 cache 复用现有 `cache_read token` 维度，并通过 `attr.modality="text|image|audio|video"` 标识真实模态。只有当上游明确返回分模态 cached token 时才应配置这些字段；不要把一个总 cached token 字段按比例拆分后上报为分模态事实。
@@ -715,29 +723,28 @@ Anthropic 流式场景的 `custom` 写法示意：
 
 ```conf
 metrics {
-  usage_fact input token path="$.message.usage.input_tokens" event="message_start";
-  usage_fact input token path="$.message.usage.cache_read_input_tokens" event="message_start";
-  usage_fact input token path="$.message.usage.cache_creation_input_tokens" event="message_start";
-  usage_fact input token path="$.usage.cache_read_input_tokens" event="message_delta";
-  usage_fact input token path="$.usage.cache_creation_input_tokens" event="message_delta";
+  usage_root path="$.message.usage" event="message_start" event_optional=true;
+  usage_root path="$.usage" event="message_delta" event_optional=true;
 
-  usage_fact output token path="$.usage.output_tokens" event="message_delta";
+  usage_fact input token path="$.input_tokens";
+  usage_fact input token path="$.cache_read_input_tokens";
+  usage_fact input token path="$.cache_creation_input_tokens";
 
-  usage_fact cache_read token path="$.message.usage.cache_read_input_tokens" event="message_start";
-  usage_fact cache_read token path="$.usage.cache_read_input_tokens" event="message_delta";
+  usage_fact output token path="$.output_tokens";
 
-  usage_fact cache_write token path="$.message.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m" event="message_start";
-  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m" event="message_delta";
-  usage_fact cache_write token path="$.message.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h" event="message_start";
-  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h" event="message_delta";
-  usage_fact cache_write token path="$.message.usage.cache_creation_input_tokens" fallback=true event="message_start";
-  usage_fact cache_write token path="$.usage.cache_creation_input_tokens" fallback=true event="message_delta";
+  usage_fact cache_read token path="$.cache_read_input_tokens";
+
+  usage_fact cache_write token path="$.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
+  usage_fact cache_write token path="$.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
+  usage_fact cache_write token path="$.cache_creation_input_tokens" fallback=true;
 }
 ```
 
 - 这类配置可以覆盖 Anthropic stream 的主要 usage 事件
-- `event="..."` 可以把 `usage_fact` 限制在指定的 SSE `event:` 名上，只在流式提取时生效
-- `event_optional=true` 可与 `event="..."` 搭配使用：如果上游没有返回 `event:`，这条规则会退化为普通 chunk 匹配；如果有 `event:`，仍然必须匹配指定名字
+- `event="..."` 可以把 `usage_root` 或 `usage_fact` 限制在指定的 SSE `event:` 名上，只在流式提取时生效
+- `event="a|b"` 表示匹配任一候选事件，适合 `response.completed|response.incomplete` 这种互斥终态事件
+- `event_optional=true` 可与 `event="..."` 搭配使用：如果上游没有返回 `event:`，这条规则会退化为普通 chunk 匹配；如果有 `event:`，必须匹配其中一个候选事件
+- Anthropic stream 中 `message_start` 的 usage 位于 `$.message.usage`，包含 cache TTL 明细；`message_delta` 的 usage 位于 `$.usage`，通常包含最终 output 以及部分 input/cache 汇总。多条 `usage_root` 会合并到同一个内部 usage 对象：后续事件里存在的字段覆盖旧值，缺失字段保留旧值。
 - 相比旧的泛化 `anthropic` mode，主要差异在于配置更长、更容易漏掉某一种事件路径
 
 OpenAI supplemental facts 的 `custom` 补充示意：
@@ -746,17 +753,19 @@ OpenAI supplemental facts 的 `custom` 补充示意：
 # responses: web search tool calls
 metrics {
   usage_extract custom;
-  usage_fact input token path="$.usage.input_tokens";
-  usage_fact output token path="$.usage.output_tokens";
-  usage_fact server_tool.web_search call count_path="$.output[*]" type="web_search_call" status="completed";
+  usage_root path="$.usage";
+  usage_fact input token path="$.input_tokens";
+  usage_fact output token path="$.output_tokens";
+  usage_fact server_tool.web_search call source=response count_path="$.output[*]" type="web_search_call" status="completed";
 }
 
 # images.generations
 metrics {
   usage_extract custom;
-  usage_fact input token path="$.usage.input_tokens";
-  usage_fact output token path="$.usage.output_tokens";
-  usage_fact image.generate image count_path="$.data[*]";
+  usage_root path="$.usage";
+  usage_fact input token path="$.input_tokens";
+  usage_fact output token path="$.output_tokens";
+  usage_fact image.generate image source=response count_path="$.data[*]";
 }
 
 # audio.speech
@@ -798,12 +807,47 @@ metrics {
 - 当路径写在 DSL 双引号字符串里时，filter 里的内部双引号需要转义，例如：
 
 ```conf
-usage_fact audio.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount';
+usage_fact input.audio token path='$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount';
 ```
 
 多条与覆盖规则：
 
 - 这些字段都是“可选覆盖项”，同字段重复出现时以后者为准
+
+#### usage_root（先抽取 usage 小 JSON）
+
+```conf
+metrics {
+  usage_extract custom;
+
+  usage_root path="$.usage";
+  usage_fact input token path="$.input_tokens";
+  usage_fact output token path="$.output_tokens";
+}
+```
+
+```conf
+metrics {
+  usage_extract custom;
+
+  usage_root path="$.response.usage" event="response.completed|response.incomplete" event_optional=true;
+  usage_fact input token path="$.input_tokens";
+  usage_fact output token path="$.output_tokens";
+
+  # tool call 不属于 usage 小 JSON，显式从原始响应 JSON 读取。
+  usage_fact server_tool.web_search call source=response count_path="$.response.output[*]" type="web_search_call" status="completed" event="response.completed|response.incomplete" event_optional=true;
+}
+```
+
+- `usage_root` 用于先从响应 JSON 或 SSE event payload 中提取一个较小的对象，并合并到内部 usage 对象；后续 `usage_fact` 默认在该对象上执行相对路径。
+- `usage_fact source` 为空时读取合并后的 usage 对象。如果没有声明 `usage_root`，则兼容旧语义，默认读取原始 `response` JSON。
+- 可声明多条 `usage_root`。非 fallback root 命中时会把提取结果作为 patch merge 到内部 usage 对象；对象字段递归合并，scalar / array 字段按“字段存在即覆盖”处理，字段缺失时保留旧值。
+- `fallback=true` 表示前面的 root 都没有命中时才尝试该 root，常见用法是先写 envelope 路径，再写 flat fallback 路径，例如 `$.response.usage` 后接 `$.usage fallback=true`。
+- 流式场景中，`usage_root` 负责随目标 SSE event 累积 usage 对象；`usage_fact` 通常在 billing 阶段基于最终合并对象执行一次，避免每个 chunk 重复累计。
+- `source=response` 始终表示读取原始响应 JSON；适用于 tool call、annotations、`data[*]` 等不属于 usage 小对象的字段。
+- `source=request` 与 `source=derived` 保持原有语义，不受 `usage_root` 影响。
+- `event` / `event_optional` 可写在 `usage_root` 上，用于流式场景先按 SSE 事件筛选，再抽取 usage 小 JSON，减少对普通 delta chunk 的重复解析。`event` 支持用 `|` 分隔多个候选事件，例如 `event="response.completed|response.incomplete"`。
+- 若 `usage_fact` 自身也写了 `event`，它会继续作为该 fact 的事件限制；通常有 `usage_root event=...` 时，root 内的普通 token/cache fact 不再需要重复写同样的 event。
 
 #### usage_fact（推荐的新写法）
 
@@ -811,14 +855,16 @@ usage_fact audio.input token path='$.usageMetadata.promptTokensDetails[?(@.modal
 metrics {
   usage_extract custom;
 
-  usage_fact input token path="$.usage.input_tokens";
-  usage_fact output token path="$.usage.output_tokens";
-  usage_fact cache_read token path="$.usage.cache_read_input_tokens";
-  usage_fact cache_read token path="$.usage.cache_details.image_cached_tokens" attr.modality="image";
+  usage_root path="$.usage";
 
-  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
-  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
-  usage_fact cache_write token path="$.usage.cache_creation_input_tokens" fallback=true;
+  usage_fact input token path="$.input_tokens";
+  usage_fact output token path="$.output_tokens";
+  usage_fact cache_read token path="$.cache_read_input_tokens";
+  usage_fact cache_read token path="$.cache_details.image_cached_tokens" attr.modality="image";
+
+  usage_fact cache_write token path="$.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
+  usage_fact cache_write token path="$.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
+  usage_fact cache_write token path="$.cache_creation_input_tokens" fallback=true;
 }
 ```
 
@@ -826,15 +872,14 @@ metrics {
 - 在 `metrics` 里，只写 `usage_fact` 而省略 `usage_extract`，等价于 `usage_extract custom;`
 - 命名 preset 现在也会先编译成同一套内部 fact-based 执行计划，再叠加显式 `usage_fact`
 - 第一批支持 `path` / `count_path` / `sum_path` / `expr`
-- `event="..."` 可选，用于把 `usage_fact` 限制在指定 SSE 事件，例如 `message_start` / `message_delta`
+- `event="..."` 可选，用于把 `usage_fact` 限制在指定 SSE 事件，例如 `message_start` / `message_delta`；也可以用 `|` 分隔多个候选事件，例如 `response.completed|response.incomplete`
 - `event_optional=true` 可选，需要与 `event="..."` 一起使用，用于兼容“有时有 event、有时没有 event”的上游
 - `attr.ttl` 用于区分 Anthropic 的 `5m` / `1h` cache write
 - `attr.modality="text|image|audio|video"` 可用于 `cache_read token`，表示上游真实返回的分模态 cached token。Relay 会用它生成 `openai_cache` / `gemini_cache` 这类 provider cache detail 字段。
 - 同一 `dimension + unit` 可声明多条 `usage_fact`；所有命中的非 fallback 规则会按声明顺序累计求和
 - `fallback=true` 用于在更具体的事实不存在时回退到总量字段
-- `source` 默认是 `response`，当前支持 `response` / `request` / `derived`
+- `source` 为空时优先读取合并后的 usage 对象；没有 `usage_root` 时兼容旧逻辑，读取原始 `response` JSON
 - `source=response` 表示从当前响应 JSON 提取；`source=request` 表示从当前请求 JSON 提取；`source=derived` 表示从 ONR 运行时派生出的聚合结果提取
-- 当前不支持除 `response` / `request` / `derived` 之外的其他 `source`
 - `dimension` 是 registry 中的扁平命名空间字符串，`.` 只是名称的一部分，不表示嵌套结构
 - 当前支持的 `dimension` 与 `dimension + unit` 固定 registry，完整列表见后文 [`usage_fact`](#usage_fact) 指令说明
 - 仓库内置的 OpenAI API-specific 预设通常会补齐这些 canonical facts：
@@ -851,7 +896,7 @@ metrics {
 metrics {
   usage_extract openai_responses;
 
-  usage_fact server_tool.web_search call count_path="$.output[*]" type="web_search_call" status="completed";
+  usage_fact server_tool.web_search call source=response count_path="$.output[*]" type="web_search_call" status="completed";
 }
 ```
 
@@ -859,7 +904,7 @@ metrics {
 metrics {
   usage_extract openai_images_generations;
 
-  usage_fact image.generate image count_path="$.data[*]";
+  usage_fact image.generate image source=response count_path="$.data[*]";
   usage_fact image.generate image source=request expr="$.n" fallback=true;
 }
 ```
@@ -876,7 +921,8 @@ metrics {
 metrics {
   usage_extract custom;
 
-  usage_fact audio.tts second path='$.usage.details[?(@.modality=="AUDIO")].seconds';
+  usage_root path="$.usage";
+  usage_fact audio.tts second path='$.details[?(@.modality=="AUDIO")].seconds';
 }
 ```
 
@@ -891,15 +937,15 @@ metrics {
 ```conf
 metrics {
   usage_extract custom;
+  usage_root path="$.usageMetadata";
 
-  usage_fact input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="TEXT")].tokenCount';
-  usage_fact input token path="$.usageMetadata.promptTokenCount" fallback=true;
-  usage_fact image.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="IMAGE")].tokenCount';
-  usage_fact video.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="VIDEO")].tokenCount';
-  usage_fact audio.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount';
+  usage_fact input token path="$.promptTokenCount";
+  usage_fact input.image token path='$.promptTokensDetails[?(@.modality=="IMAGE")].tokenCount';
+  usage_fact input.video token path='$.promptTokensDetails[?(@.modality=="VIDEO")].tokenCount';
+  usage_fact input.audio token path='$.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount';
 
-  usage_fact output token path="$.usageMetadata.candidatesTokenCount";
-  usage_fact output token path="$.usageMetadata.thoughtsTokenCount";
+  usage_fact output token path="$.candidatesTokenCount";
+  usage_fact output token path="$.thoughtsTokenCount";
 }
 ```
 
@@ -912,7 +958,7 @@ metrics {
 
 后续范围说明：
 
-- Gemini Live / Realtime 的 `audio.input second`、`audio.output second`、`vision.input second`
+- Gemini Live / Realtime 的 `input.audio second`、`output.audio second`、`input.vision second`
 - 其他厂商 realtime 接口的通用 meter-based facts
 - 需要 `source=derived` 的 runtime 聚合场景
 
@@ -1036,7 +1082,7 @@ metrics {
 - 作为兜底：当某些 provider 把 finish_reason 暴露在自定义位置时，可用该字段覆盖提取路径。
 - 允许声明多条 `finish_reason_path`。
 - `fallback=true` 表示只有在前面的非 fallback 路径都没有提取到非空值时，这条路径才会生效。
-- `event="<name>"` 可把某条路径限定在特定 SSE event 上，例如 `response.completed` 或 `message_delta`。
+- `event="<name>"` 可把某条路径限定在特定 SSE event 上，例如 `response.completed` 或 `message_delta`；也可用 `|` 分隔多个候选事件，例如 `response.completed|response.incomplete`。
 - `event_optional=true` 允许这条带事件的规则在“没有 event 上下文”的普通 JSON 提取场景继续作为回退规则生效。
 
 示例：
@@ -1551,6 +1597,22 @@ Multiple: no
 
 - 目前支持：`openai` / `anthropic` / `gemini` / `custom`。
 
+#### usage_root
+
+```text
+Syntax:  usage_root path="<jsonpath>" [fallback=true] [event="<name>[|<name>...]"] [event_optional=true];
+Default: —
+Context: metrics
+Multiple: yes
+```
+
+- `usage_root` 用于先从响应 JSON 或 SSE event payload 中抽取一个较小的 usage 对象，并 merge 到内部 usage 对象；后续 `usage_fact` 默认在合并后的 usage 对象上执行相对路径。
+- 可声明多条 root。命中的 root 会把提取结果作为 patch 写入内部 usage 对象；对象字段递归合并，scalar / array 字段按“字段存在即覆盖”处理，字段缺失时保留旧值。
+- `fallback=true` 表示前面的 root 都没有命中时才使用该 root，适合兼容 envelope 与 flat 两种结构。
+- 流式场景中，root 会随目标 SSE event 累积，`usage_fact` 通常面向最终合并对象执行一次，避免按 chunk 重复计数。
+- `event` / `event_optional` 可把 root 限定在指定 SSE 事件上，适合 OpenAI Responses stream、Anthropic Messages stream 这类 usage 只出现在少数事件中的场景。`event` 支持用 `|` 分隔多个候选事件，例如 `response.completed|response.incomplete`。
+- `path` 支持和 `usage_fact path` 相同的受限 JSONPath 子集。
+
 #### usage_fact
 
 ```text
@@ -1560,7 +1622,7 @@ Context: metrics
 Multiple: yes
 ```
 
-- 仅建议配合 `usage_extract custom;` 使用。
+- 仅建议配合 `usage_extract custom;` 或 `usage_mode` 内的自定义用量配置使用。
 - 第一批支持固定 registry 维度，不开放任意自定义维度。
 - 支持 `path` / `count_path` / `sum_path` / `expr` 四类原语。
 - `count_path` 可搭配 `type` / `status` 过滤。
@@ -1570,46 +1632,42 @@ Multiple: yes
 - `attr.modality` 对 `cache_read token` 有特殊含义，用于表达上游真实返回的分模态 cached token。支持值为 `text` / `image` / `audio` / `video`；OpenAI cache detail 使用 text/image/audio，Gemini cache detail 使用 text/image/audio/video。
 - 同一 `dimension + unit` 可以出现多条规则；所有命中的非 fallback 规则会累计求和。
 - `fallback=true` 表示在同一 `dimension + unit` 没有更具体事实时再生效。
-- `source` 默认是 `response`，当前支持 `response` / `request` / `derived`。
-- `response` / `request` / `derived` 之外的其他 `source` 会在校验阶段直接报错。
+- `source` 为空时优先读取合并后的 usage 对象；没有 `usage_root` 时兼容旧配置，读取原始 `response` JSON。
+- `source=response` 表示读取原始响应 JSON；`source=request` 表示读取原始请求 JSON；`source=derived` 表示读取 ONR 运行时派生出的聚合结果。
 - `dimension` 是扁平字符串键，`.` 只是名称的一部分，不表示嵌套。
-- 实时多模态的 meter-based facts（例如 `audio.input second`）属于计划中的目标能力；若文档其他位置出现相关示例，应视为预览写法，不代表当前 registry 已开放。
+- 实时多模态的 meter-based facts（例如 `input.audio second`）属于计划中的目标能力；若文档其他位置出现相关示例，应视为预览写法，不代表当前 registry 已开放。
 - `path` / `count_path` / `sum_path` / `expr` 既可以用双引号，也可以用单引号包裹。
 - 当使用双引号字符串时，filter 内部的双引号需要写成 `\"`。
 - 当使用单引号字符串时，可以直接写：
   - `path='$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount'`
-- 当前支持的 `dimension`：
-  - `input`
-  - `output`
-  - `image.input`
-  - `video.input`
-  - `audio.input`
-  - `cache_read`
-  - `cache_write`
-  - `server_tool.web_search`
-  - `server_tool.file_search`
-  - `image.generate`
-  - `image.edit`
-  - `image.variation`
-  - `audio.tts`
-  - `audio.stt`
-  - `audio.translate`
-- 当前固定 registry 包括：
-  - `input token`
-  - `output token`
-  - `image.input token`
-  - `video.input token`
-  - `audio.input token`
-  - `cache_read token`
-  - `cache_write token`
-  - `server_tool.web_search call`
-  - `server_tool.file_search call`
-  - `image.generate image`
-  - `image.edit image`
-  - `image.variation image`
-  - `audio.tts second`
-  - `audio.stt second`
-  - `audio.translate second`
+- 当前固定 registry 包括以下 `dimension + unit`：
+
+| dimension | unit | 含义 | 常见来源 / 备注 |
+| --- | --- | --- | --- |
+| `input` | `token` | 顶层输入 token 总量，包含文本、图片、音频、视频等所有输入模态。 | OpenAI `prompt_tokens` / `input_tokens`，Gemini `promptTokenCount`，Anthropic `input_tokens`。Anthropic 的有效 input 口径通常还会额外累加 cache read/write 输入。 |
+| `output` | `token` | 顶层输出 token。 | OpenAI `completion_tokens` / `output_tokens`，Gemini `candidatesTokenCount` + `thoughtsTokenCount`，Anthropic `output_tokens`。 |
+| `input.image` | `token` | 图片输入 token 分量，属于 `input token` 总量的一部分。 | Gemini `promptTokensDetails[IMAGE]`，或上游返回的图片输入 token 明细。有 details 时，文本输入计费按 `input - input.image - input.audio - input.video` 计算。 |
+| `input.video` | `token` | 视频输入 token 分量，属于 `input token` 总量的一部分。 | Gemini `promptTokensDetails[VIDEO]`，或上游返回的视频输入 token 明细。有 details 时从顶层 `input` 中扣减后，剩余 input 按文本价计费。 |
+| `input.audio` | `token` | 音频输入 token 分量，属于 `input token` 总量的一部分。 | Gemini `promptTokensDetails[AUDIO]`，或上游返回的音频输入 token 明细。有 details 时从顶层 `input` 中扣减后，剩余 input 按文本价计费。 |
+| `output.image` | `token` | 图片输出 token 分量。 | OpenAI images / Gemini image output token 明细。用于 output 图片 token 单价；图片张数计费仍使用 `image.generate image` / `image.edit image`。 |
+| `cache_read` | `token` | 缓存命中的输入 token。 | OpenAI cached tokens、Gemini cached content tokens、Anthropic `cache_read_input_tokens`。可用 `attr.modality` 标注 `text/image/audio/video` 分模态 cache。 |
+| `cache_write` | `token` | 写入缓存的输入 token。 | Anthropic `cache_creation_input_tokens` 或 `cache_creation.ephemeral_*_input_tokens`。可用 `attr.ttl="5m|1h"` 标注缓存 TTL。 |
+| `server_tool.web_search` | `call` | 服务端 web search 工具调用次数。 | OpenAI Responses `web_search_call` output item、Anthropic `server_tool_use.web_search_requests`、Codex `tool_usage.web_search.num_requests`。 |
+| `server_tool.file_search` | `call` | 服务端 file search 工具调用次数。 | OpenAI / 兼容上游的 file search tool call 计数。 |
+| `image.generate` | `image` | 图片生成张数。 | Images generations 的 `data[*]` 数量，或请求侧 `n` 回退。计价单位会映射到图片张数。 |
+| `image.edit` | `image` | 图片编辑张数。 | Images edits 的 `data[*]` 数量。 |
+| `image.variation` | `image` | 图片变体生成张数。 | Images variations 的 `data[*]` 数量。 |
+| `audio.tts` | `second` | TTS 输出音频秒数。 | 运行时派生的音频时长，例如 `source=derived path="$.audio_duration_seconds"`。 |
+| `audio.stt` | `second` | STT 输入音频秒数。 | Audio transcriptions 的音频时长。 |
+| `audio.translate` | `second` | 音频翻译输入秒数。 | Audio translations 的音频时长。 |
+
+说明：
+
+- 这里的 `dimension` 是扁平字符串键，`.` 不表示 JSON 嵌套。
+- `input token` 表达总输入 token，天然包含 `input.image token` / `input.audio token` / `input.video token` 这些分量；`total_tokens` 聚合仍按顶层 `input + output` 计算，不会把 `input.*` 再加一遍。
+- 若没有任何 `input.* token` 明细，全部 input 按文本输入单价计费，兼容只返回总 input 的上游。
+- 若存在 `input.* token` 明细，文本输入计费量为 `max(input - input.image - input.audio - input.video, 0)`；最终费用按“文本净输入 * 文本单价 + 各分模态 input.* token * 对应模态单价”计算。
+- `input.* token` 应来自上游真实 details，不应从总 input 中人为拆分；同一个分模态字段不要同时写入 `input token` 和 `input.* token`，否则会污染总 input 口径。
 
 #### finish_reason_extract
 
@@ -1633,14 +1691,14 @@ Multiple: no
 #### finish_reason_path
 
 ```text
-Syntax:  finish_reason_path <jsonpath> [fallback=true|false] [event="<name>"] [event_optional=true|false];
+Syntax:  finish_reason_path <jsonpath> [fallback=true|false] [event="<name>[|<name>...]"] [event_optional=true|false];
 Default: —
 Context: metrics
 Multiple: yes
 ```
 
 - 可选覆盖项；当使用 `finish_reason_extract custom;` 时为必填。
-- 支持在路径后追加 `fallback=true|false`、`event="<name>"`、`event_optional=true|false` 元数据。
+- 支持在路径后追加 `fallback=true|false`、`event="<name>"`、`event_optional=true|false` 元数据；`event` 可用 `|` 分隔多个候选事件。
 - `event` 适用于 SSE 按事件名筛选的场景；命中事件时才会尝试这条 `finish_reason_path`。
 - `event_optional=true` 仅可和 `event` 一起使用，表示当运行时没有提供事件名上下文时，仍允许这条规则按普通 JSON 匹配回退执行。
 - JSONPath 子集：`$.a.b.c` / `$.items[0].x` / `$.items[*].x` / `$.items[?(@.field=="VALUE")].x`（`[*]` 或 filter 命中多项时取第一个非空字符串）。
