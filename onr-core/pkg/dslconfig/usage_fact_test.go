@@ -1267,6 +1267,208 @@ func TestExtractUsage_UsageFactRequestSource(t *testing.T) {
 	}
 }
 
+func TestExtractUsage_UsageRootDefaultSource(t *testing.T) {
+	cfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		usageRoots: []usageRootConfig{
+			{Path: "$.usage"},
+		},
+		facts: []usageFactConfig{
+			{Dimension: "input", Unit: "token", Path: "$.input_tokens"},
+			{Dimension: "output", Unit: "token", Path: "$.output_tokens"},
+		},
+	}
+
+	body := []byte(`{
+	  "usage": {
+	    "input_tokens": 11,
+	    "output_tokens": 13
+	  },
+	  "input_tokens": 99,
+	  "output_tokens": 99
+	}`)
+
+	usage, _, err := ExtractUsage(&dslmeta.Meta{}, &cfg, body)
+	if err != nil {
+		t.Fatalf("ExtractUsage: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage")
+	}
+	if got, want := usage.InputTokens, 11; got != want {
+		t.Fatalf("InputTokens got %d, want %d", got, want)
+	}
+	if got, want := usage.OutputTokens, 13; got != want {
+		t.Fatalf("OutputTokens got %d, want %d", got, want)
+	}
+	if got, want := len(usage.DebugFacts), 2; got != want {
+		t.Fatalf("DebugFacts len got %d, want %d", got, want)
+	}
+	for _, fact := range usage.DebugFacts {
+		if got, want := fact.Source, "usage"; got != want {
+			t.Fatalf("debug fact source got %q, want %q", got, want)
+		}
+	}
+}
+
+func TestExtractUsage_UsageRootResponseSourceBypass(t *testing.T) {
+	cfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		usageRoots: []usageRootConfig{
+			{Path: "$.response.usage"},
+		},
+		facts: []usageFactConfig{
+			{Dimension: "input", Unit: "token", Path: "$.input_tokens"},
+			{Dimension: "output", Unit: "token", Path: "$.output_tokens"},
+			{Dimension: "server_tool.web_search", Unit: "call", Source: "response", Path: "$.response.tool_usage.web_search.num_requests"},
+		},
+	}
+
+	body := []byte(`{
+	  "response": {
+	    "usage": {
+	      "input_tokens": 5,
+	      "output_tokens": 7
+	    },
+	    "tool_usage": {
+	      "web_search": {
+	        "num_requests": 2
+	      }
+	    }
+	  }
+	}`)
+
+	usage, _, err := ExtractUsage(&dslmeta.Meta{}, &cfg, body)
+	if err != nil {
+		t.Fatalf("ExtractUsage: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage")
+	}
+	if got, want := usage.InputTokens, 5; got != want {
+		t.Fatalf("InputTokens got %d, want %d", got, want)
+	}
+	if got, want := usage.FlatFields["server_tool_web_search_calls"], 2; got != want {
+		t.Fatalf("server_tool_web_search_calls got %v, want %v", got, want)
+	}
+}
+
+func TestExtractUsage_UsageRootMissingSkipsDefaultFactsButRunsResponseFacts(t *testing.T) {
+	cfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		usageRoots: []usageRootConfig{
+			{Path: "$.missing.usage"},
+		},
+		facts: []usageFactConfig{
+			{Dimension: "input", Unit: "token", Path: "$.input_tokens"},
+			{Dimension: "server_tool.web_search", Unit: "call", Source: "response", Path: "$.tool_usage.web_search.num_requests"},
+		},
+	}
+
+	body := []byte(`{
+	  "input_tokens": 99,
+	  "tool_usage": {
+	    "web_search": {
+	      "num_requests": 2
+	    }
+	  }
+	}`)
+
+	usage, _, err := ExtractUsage(&dslmeta.Meta{}, &cfg, body)
+	if err != nil {
+		t.Fatalf("ExtractUsage: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage")
+	}
+	if got := usage.InputTokens; got != 0 {
+		t.Fatalf("InputTokens got %d, want 0 because default facts require usage_root", got)
+	}
+	if got, want := usage.FlatFields["server_tool_web_search_calls"], 2; got != want {
+		t.Fatalf("server_tool_web_search_calls got %v, want %v", got, want)
+	}
+}
+
+func TestExtractUsage_UsageRootMergesMultipleRoots(t *testing.T) {
+	cfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		usageRoots: []usageRootConfig{
+			{Path: "$.message.usage"},
+			{Path: "$.delta.usage"},
+		},
+		facts: []usageFactConfig{
+			{Dimension: "input", Unit: "token", Path: "$.input_tokens"},
+			{Dimension: "output", Unit: "token", Path: "$.output_tokens"},
+			{Dimension: "cache_read", Unit: "token", Path: "$.cache_read_input_tokens"},
+		},
+	}
+	root := map[string]any{
+		"message": map[string]any{
+			"usage": map[string]any{
+				"input_tokens":            3,
+				"cache_read_input_tokens": 0,
+			},
+		},
+		"delta": map[string]any{
+			"usage": map[string]any{
+				"input_tokens":            99,
+				"output_tokens":           9,
+				"cache_read_input_tokens": 4,
+			},
+		},
+	}
+
+	usage, cached, err := extractUsageFromRootsWithEvent(nil, "", cfg, nil, root, nil, nil)
+	if err != nil {
+		t.Fatalf("extractUsageFromRootsWithEvent: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage")
+	}
+	if got, want := usage.InputTokens, 3; got != want {
+		t.Fatalf("InputTokens got %d, want %d", got, want)
+	}
+	if got, want := usage.OutputTokens, 9; got != want {
+		t.Fatalf("OutputTokens got %d, want %d", got, want)
+	}
+	if got, want := cached, 4; got != want {
+		t.Fatalf("cached got %d, want %d", got, want)
+	}
+}
+
+func TestExtractUsage_UsageRootNestedMergeDoesNotOverwriteNonZero(t *testing.T) {
+	cfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		usageRoots: []usageRootConfig{
+			{Path: "$.first"},
+			{Path: "$.second"},
+		},
+		facts: []usageFactConfig{
+			{Dimension: "cache_read", Unit: "token", Path: "$.input_tokens_details.cached_tokens"},
+		},
+	}
+	root := map[string]any{
+		"first": map[string]any{
+			"input_tokens_details": map[string]any{
+				"cached_tokens": 3,
+			},
+		},
+		"second": map[string]any{
+			"input_tokens_details": map[string]any{
+				"cached_tokens": 99,
+			},
+		},
+	}
+
+	_, cached, err := extractUsageFromRootsWithEvent(nil, "", cfg, nil, root, nil, nil)
+	if err != nil {
+		t.Fatalf("extractUsageFromRootsWithEvent: %v", err)
+	}
+	if got, want := cached, 3; got != want {
+		t.Fatalf("cached got %d, want %d", got, want)
+	}
+}
+
 func TestExtractUsage_UsageFactDerivedSourceWithNonJSONResponse(t *testing.T) {
 	cfg := UsageExtractConfig{
 		Mode: usageModeCustom,
@@ -1650,6 +1852,31 @@ provider "invalid-request-source" {
 	}
 }
 
+func TestValidateProviderFile_UsageFactUsageSourceRequiresUsageRoot(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage-source-invalid.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "usage-source-invalid" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_fact input token source="usage" path="$.input_tokens";
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if _, err := ValidateProviderFile(path); err == nil || !strings.Contains(err.Error(), "source=usage requires usage_root") {
+		t.Fatalf("ValidateProviderFile err=%v, want source=usage requires usage_root", err)
+	}
+}
+
 func TestValidateProviderFile_UsageFactEventOption(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "event-option.conf")
@@ -1687,6 +1914,130 @@ provider "event-option" {
 	}
 	if !facts[1].EventOptional {
 		t.Fatalf("facts[1].EventOptional got false want true")
+	}
+}
+
+func TestValidateProviderFile_UsageRootOption(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage-root.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "usage-root" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_root path="$.usage";
+      usage_fact input token path="$.input_tokens";
+      usage_fact output token path="$.output_tokens";
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+	roots := pf.Usage.Defaults.CompiledPlan(nil).UsageRoots
+	if len(roots) != 1 {
+		t.Fatalf("usage roots len=%d want=1", len(roots))
+	}
+	if got, want := roots[0].Path, "$.usage"; got != want {
+		t.Fatalf("usage root path=%q want=%q", got, want)
+	}
+	facts := pf.Usage.Defaults.CompiledPlan(nil).Facts
+	if len(facts) != 2 {
+		t.Fatalf("facts len=%d want=2", len(facts))
+	}
+	for _, fact := range facts {
+		if got, want := fact.Source, "usage"; got != want {
+			t.Fatalf("compiled fact source got %q, want %q", got, want)
+		}
+	}
+}
+
+func TestValidateProviderFile_UsageRootOnlyDoesNotSelectUsage(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage-root-only.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "usage-root-only" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_root path="$.usage";
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+	if _, ok := pf.Usage.Select(&dslmeta.Meta{API: "chat.completions"}); ok {
+		t.Fatalf("expected usage_root-only metrics to produce no usage selection")
+	}
+}
+
+func TestValidateProviderFile_UsageRootOnlyStillValidatesPath(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage-root-only-invalid.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "usage-root-only-invalid" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_root path="usage";
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if _, err := ValidateProviderFile(path); err == nil || !strings.Contains(err.Error(), "usage_root[0] path must start with $.") {
+		t.Fatalf("ValidateProviderFile err=%v, want usage_root path validation", err)
+	}
+}
+
+func TestValidateProviderFile_CustomUsageRootOnlyInvalid(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "custom-usage-root-only.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "custom-usage-root-only" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_extract custom;
+      usage_root path="$.usage";
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if _, err := ValidateProviderFile(path); err == nil || !strings.Contains(err.Error(), "custom usage_extract requires") {
+		t.Fatalf("ValidateProviderFile err=%v, want custom usage_extract requires", err)
 	}
 }
 
@@ -1735,6 +2086,74 @@ func TestExtractUsage_UsageFactEventFilter(t *testing.T) {
 	}
 	if got := usage.InputTokens; got != 0 {
 		t.Fatalf("InputTokens got %d want 0", got)
+	}
+	if got, want := usage.OutputTokens, 7; got != want {
+		t.Fatalf("OutputTokens got %d want %d", got, want)
+	}
+}
+
+func TestExtractUsage_UsageRootEventList(t *testing.T) {
+	cfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		usageRoots: []usageRootConfig{
+			{Path: "$.response.usage", Event: "response.completed|response.incomplete", EventOptional: true},
+		},
+		facts: []usageFactConfig{
+			{Dimension: "input", Unit: "token", Path: "$.input_tokens"},
+			{Dimension: "output", Unit: "token", Path: "$.output_tokens"},
+		},
+	}
+	root := map[string]any{
+		"response": map[string]any{
+			"usage": map[string]any{
+				"input_tokens":  5,
+				"output_tokens": 8,
+			},
+		},
+	}
+
+	usage, _, err := extractUsageFromRootsWithEvent(nil, "response.incomplete", cfg, nil, root, nil, nil)
+	if err != nil {
+		t.Fatalf("extractUsageFromRootsWithEvent: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage")
+	}
+	if got, want := usage.InputTokens, 5; got != want {
+		t.Fatalf("InputTokens got %d want %d", got, want)
+	}
+	if got, want := usage.OutputTokens, 8; got != want {
+		t.Fatalf("OutputTokens got %d want %d", got, want)
+	}
+
+	usage, _, err = extractUsageFromRootsWithEvent(nil, "response.created", cfg, nil, root, nil, nil)
+	if err != nil {
+		t.Fatalf("extractUsageFromRootsWithEvent mismatch: %v", err)
+	}
+	if usage != nil && !isAllZeroUsage(usage) {
+		t.Fatalf("expected no usage for mismatched event, got %+v", *usage)
+	}
+}
+
+func TestExtractUsage_UsageFactEventList(t *testing.T) {
+	cfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		facts: []usageFactConfig{
+			{Dimension: "output", Unit: "token", Path: "$.usage.output_tokens", Event: "response.completed|response.incomplete"},
+		},
+	}
+	root := map[string]any{
+		"usage": map[string]any{
+			"output_tokens": 7,
+		},
+	}
+
+	usage, _, err := extractUsageFromRootsWithEvent(nil, "response.completed", cfg, nil, root, nil, nil)
+	if err != nil {
+		t.Fatalf("extractUsageFromRootsWithEvent: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage")
 	}
 	if got, want := usage.OutputTokens, 7; got != want {
 		t.Fatalf("OutputTokens got %d want %d", got, want)

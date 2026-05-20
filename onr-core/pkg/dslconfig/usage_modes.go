@@ -74,6 +74,10 @@ func parseUsageModeBlock(s *scanner) (string, UsageExtractConfig, error) {
 				if err := parseUsageFactStmt(s, &cfg); err != nil {
 					return "", UsageExtractConfig{}, err
 				}
+			case "usage_root":
+				if err := parseUsageRootStmt(s, &cfg); err != nil {
+					return "", UsageExtractConfig{}, err
+				}
 			case "input_tokens_expr", "output_tokens_expr", "cache_read_tokens_expr", "cache_write_tokens_expr", "total_tokens_expr":
 				if err := parseUsageExtractAssignStmt(s, &cfg, tok.text); err != nil {
 					return "", UsageExtractConfig{}, err

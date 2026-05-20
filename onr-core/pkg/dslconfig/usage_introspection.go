@@ -8,7 +8,11 @@ import (
 
 func (cfg UsageExtractConfig) DeclaredFacts() []UsageFact {
 	cfg = prepareUsageExtractConfig(cfg)
-	return cloneUsageFactsForIntrospection(cfg.facts)
+	return cloneUsageFactsForIntrospection(cfg.facts, false)
+}
+
+func (cfg UsageExtractConfig) DeclaredUsageRoots() []UsageRoot {
+	return cloneUsageRootsForIntrospection(cfg.usageRoots)
 }
 
 func (cfg UsageExtractConfig) BuiltinFacts() []UsageFact {
@@ -18,16 +22,32 @@ func (cfg UsageExtractConfig) BuiltinFacts() []UsageFact {
 
 func (cfg UsageExtractConfig) CompiledFacts(meta *dslmeta.Meta) []UsageFact {
 	compiled := compileUsageExtractConfig(meta, cfg)
-	return cloneUsageFactsForIntrospection(compiled.facts)
+	return cloneUsageFactsForIntrospection(compiled.facts, len(compiled.usageRoots) > 0)
 }
 
 func (cfg UsageExtractConfig) CompiledPlan(meta *dslmeta.Meta) UsageExecutionPlan {
 	compiled := compileUsageExtractConfig(meta, cfg)
 	return UsageExecutionPlan{
 		Mode:            compiled.Mode,
-		Facts:           cloneUsageFactsForIntrospection(compiled.facts),
+		UsageRoots:      cloneUsageRootsForIntrospection(compiled.usageRoots),
+		Facts:           cloneUsageFactsForIntrospection(compiled.facts, len(compiled.usageRoots) > 0),
 		TotalTokensExpr: usageExprString(compiled.TotalTokensExpr),
 	}
+}
+
+func cloneUsageRootsForIntrospection(roots []usageRootConfig) []UsageRoot {
+	if len(roots) == 0 {
+		return nil
+	}
+	out := make([]UsageRoot, 0, len(roots))
+	for _, root := range roots {
+		out = append(out, UsageRoot{
+			Path:          root.Path,
+			Event:         root.Event,
+			EventOptional: root.EventOptional,
+		})
+	}
+	return out
 }
 
 func (p ProviderUsage) CompiledPlans() ProviderUsageExecutionPlan {
@@ -57,7 +77,7 @@ func (p ProviderUsage) CompiledPlans() ProviderUsageExecutionPlan {
 	return out
 }
 
-func cloneUsageFactsForIntrospection(facts []usageFactConfig) []UsageFact {
+func cloneUsageFactsForIntrospection(facts []usageFactConfig, usageRootConfigured bool) []UsageFact {
 	if len(facts) == 0 {
 		return nil
 	}
@@ -66,7 +86,7 @@ func cloneUsageFactsForIntrospection(facts []usageFactConfig) []UsageFact {
 		item := UsageFact{
 			Dimension:     fact.Dimension,
 			Unit:          fact.Unit,
-			Source:        fact.Source,
+			Source:        effectiveUsageFactSource(fact.Source, usageRootConfigured),
 			Fallback:      fact.Fallback,
 			Event:         fact.Event,
 			EventOptional: fact.EventOptional,
