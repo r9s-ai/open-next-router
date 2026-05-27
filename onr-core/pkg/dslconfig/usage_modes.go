@@ -215,6 +215,10 @@ func validateAndBuildProviderFile(path string, content string, usageModes usageM
 	if err != nil {
 		return ProviderFile{}, false, err
 	}
+	metadata, err := parseProviderMetadataFromContent(path, content, providerName)
+	if err != nil {
+		return ProviderFile{}, false, err
+	}
 	if err := validateProviderBaseURL(path, providerName, routing); err != nil {
 		return ProviderFile{}, false, err
 	}
@@ -250,6 +254,7 @@ func validateAndBuildProviderFile(path string, content string, usageModes usageM
 		Name:     providerName,
 		Path:     path,
 		Content:  content,
+		Metadata: metadata,
 		Routing:  routing,
 		Headers:  headers,
 		Request:  req,

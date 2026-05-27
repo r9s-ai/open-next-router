@@ -14,6 +14,7 @@ type ProviderFile struct {
 	Name     string
 	Path     string
 	Content  string
+	Metadata ProviderMetadata
 	Routing  ProviderRouting
 	Headers  ProviderHeaders
 	Request  ProviderRequestTransform

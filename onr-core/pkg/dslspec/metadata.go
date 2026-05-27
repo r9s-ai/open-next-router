@@ -38,6 +38,10 @@ var directiveMetadata = []DirectiveMetadata{
 
 	{Name: "defaults", Block: "provider", Hover: "`defaults { ... }`\n\nDefault phases shared by all `match` rules unless overridden."},
 	{Name: "match", Block: "provider", Hover: "`match api = \"...\" [stream = true|false] { ... }`\n\nRoute rule. First match wins."},
+	{Name: "metadata", Block: "provider", Hover: "`metadata { provider_family <family>; signal_profile <profile>; }`\n\nDeclares provider identity and capacity signal profile metadata."},
+
+	{Name: "provider_family", Block: "metadata", Hover: "`provider_family <family>;`\n\nProvider family used for operations, debug output, and later capacity-signal grouping."},
+	{Name: "signal_profile", Block: "metadata", Hover: "`signal_profile <profile>;`\n\nSignal profile used by later provider capacity signal adaptors."},
 
 	{Name: "upstream_config", Block: "defaults", Hover: "`upstream_config { base_url = \"...\"; }`\n\nProvider-level upstream base URL config."},
 	{Name: "auth", Block: "defaults", Hover: "`auth { ... }`\n\nAuthentication directives for upstream requests."},

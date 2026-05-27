@@ -70,6 +70,10 @@ func parseProviderBody(s *scanner) (ProviderRouting, ProviderHeaders, ProviderRe
 			return routing, headers, req, response, perr, usage, finish, balance, models, nil
 		case tokIdent:
 			switch tok.text {
+			case "metadata":
+				if err := skipStmtOrBlock(s); err != nil {
+					return ProviderRouting{}, ProviderHeaders{}, ProviderRequestTransform{}, ProviderResponse{}, ProviderError{}, ProviderUsage{}, ProviderFinishReason{}, ProviderBalance{}, ProviderModels{}, err
+				}
 			case "defaults":
 				if err := parseDefaultsBlock(s, &routing, &headers, &req, &response, &perr, &usage, &finish, &balance, &models); err != nil {
 					return ProviderRouting{}, ProviderHeaders{}, ProviderRequestTransform{}, ProviderResponse{}, ProviderError{}, ProviderUsage{}, ProviderFinishReason{}, ProviderBalance{}, ProviderModels{}, err

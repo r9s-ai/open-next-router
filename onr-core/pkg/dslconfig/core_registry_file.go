@@ -137,7 +137,11 @@ func parseProvidersFromMergedFile(path string, content string, inherited modeReg
 			if err != nil {
 				return nil, nil, err
 			}
-			pf, err := buildMergedProviderFile(path, providerName, routing, headers, req, response, perr, usage, finish, balance, models, resolved)
+			metadata, err := parseProviderMetadataFromContent(path, content, providerName)
+			if err != nil {
+				return nil, nil, err
+			}
+			pf, err := buildMergedProviderFile(path, providerName, metadata, routing, headers, req, response, perr, usage, finish, balance, models, resolved)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -152,7 +156,7 @@ func parseProvidersFromMergedFile(path string, content string, inherited modeReg
 	return next, loaded, nil
 }
 
-func buildMergedProviderFile(path, providerName string, routing ProviderRouting, headers ProviderHeaders, req ProviderRequestTransform, response ProviderResponse, perr ProviderError, usage ProviderUsage, finish ProviderFinishReason, balance ProviderBalance, models ProviderModels, resolved modeRegistryState) (ProviderFile, error) {
+func buildMergedProviderFile(path, providerName string, metadata ProviderMetadata, routing ProviderRouting, headers ProviderHeaders, req ProviderRequestTransform, response ProviderResponse, perr ProviderError, usage ProviderUsage, finish ProviderFinishReason, balance ProviderBalance, models ProviderModels, resolved modeRegistryState) (ProviderFile, error) {
 	if err := validateProviderBaseURL(path, providerName, routing); err != nil {
 		return ProviderFile{}, err
 	}
@@ -182,6 +186,7 @@ func buildMergedProviderFile(path, providerName string, routing ProviderRouting,
 		Name:     providerName,
 		Path:     path,
 		Content:  "",
+		Metadata: metadata,
 		Routing:  routing,
 		Headers:  headers,
 		Request:  req,
