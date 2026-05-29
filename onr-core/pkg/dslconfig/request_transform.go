@@ -145,4 +145,6 @@ type JSONOp struct {
 	FieldName  string
 	Patterns   []string
 	Separator  string
+	Event      string
+	MaxCount   int
 }

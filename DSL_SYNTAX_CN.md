@@ -341,11 +341,12 @@ request {
 - 当没有任何 `model_map <from> ...;` 命中时，使用该默认表达式作为 `$request.model_mapped`
 - 如未配置该指令：`$request.model_mapped` 默认等于 `$request.model`
 
-#### json_set / json_set_if_absent / json_del / json_rename / json_wrap_input_text / json_set_header_values / json_filter_values / json_del_with_condition（可多条）
+#### json_set / json_replace / json_set_if_absent / json_del / json_rename / json_wrap_input_text / json_set_header_values / json_filter_values / json_del_with_condition（可多条）
 
 ```conf
 request {
   json_set "$.stream" true;
+  json_replace "$.model" $request.model;
   json_set_if_absent "$.instructions" "";
   json_set "$.user" "alice";
   json_rename "$.max_tokens" "$.max_completion_tokens";
@@ -365,6 +366,8 @@ request {
 - 用途：对“已生成的上游请求 JSON”做轻量变换（在旧 adaptor 的 `ConvertRequest` 之后执行）
 - JSONPath（v0.1）仅支持对象路径：`$.a.b.c`（不支持数组下标 `[]`）
 - `json_set` 的值表达式支持：`true/false/null`、整数、字符串字面量、变量/concat
+- `json_set`：设置字段；不存在的对象路径会自动创建
+- `json_replace`：仅当目标路径已存在时替换字段；路径不存在时为 no-op，不会创建缺失对象或字段
 - `json_set_if_absent`：仅当路径不存在时写入；已存在值会保留
 - `json_wrap_input_text`：当路径值是字符串时，将其包装成 OpenAI Responses `input` message 列表；路径不存在或值已经是数组时为 no-op，其他类型会报错
 - `json_set_header_values`：从原始下游用户请求 header 中读取条目并写成 JSON 字符串数组，不读取 request header 规则准备发送给上游的 header。默认按逗号拆分，可用 `separator="<sep>"` 覆盖；不接受额外过滤参数，需要过滤时在后面显式配置 `json_filter_values`
@@ -478,7 +481,7 @@ response { sse_parse <mode>; }
 - `openai_responses_to_openai_chat`（`resp_map`）：OpenAI/Azure `/responses` JSON → OpenAI `chat.completions` JSON
 - `openai_responses_to_openai_chat_chunks`（`sse_parse`）：OpenAI/Azure `/responses` SSE → OpenAI `chat.completions` SSE chunks
 
-#### json_del / json_set / json_set_if_absent / json_rename（响应 JSON 操作）
+#### json_del / json_set / json_replace / json_set_if_absent / json_rename（响应 JSON 操作）
 
 这些指令会对下游响应体做**尽力而为（best-effort）**的 JSON 变换：
 
@@ -486,6 +489,7 @@ response { sse_parse <mode>; }
 response {
   json_del "$.usage";
   json_set "$.foo" "bar";
+  json_replace "$.model" $request.model;
   json_set_if_absent "$.bar" "baz";
   json_rename "$.a" "$.b";
 }
@@ -497,6 +501,21 @@ response {
 - 流式 SSE（`text/event-stream`）：对每个 SSE event 拼接后的 `data:` JSON **对象**做变换
 - 非 JSON / 非对象负载：保持原样透传
 - 执行顺序：按配置块内出现顺序依次执行
+- `json_set` 会创建缺失路径；`json_replace` 只替换已存在路径，适合替换上游响应中的 `model` 字段而不污染其它事件。
+- 流式 SSE 中，`json_set`、`json_replace`、`json_set_if_absent`、`json_del`、`json_rename` 可追加 `event="<name|name2>"`，按 SSE `event:` 名过滤执行。
+- response JSON 操作可追加 `max_count=<n>` 限制单条指令在一次响应处理周期内的最大生效次数；默认 `max_count=0` 表示不限次数。
+
+```conf
+response {
+  resp_passthrough;
+  json_replace "$.message.model" $request.model event="message_start" max_count=1;
+  json_replace "$.response.model" $request.model event="response.created|response.completed|response.incomplete";
+}
+```
+
+- `event="..."` 只影响 SSE JSON event；非流式 JSON 响应没有 event 上下文，带 event 的响应 JSON 操作会跳过。
+- `max_count` 按单条指令计数：非流式 JSON 最多处理一次对象；SSE 会跨整个 stream 累计。只有实际修改成功才计数，例如 `json_replace` 路径不存在时不计数。
+- 响应 JSON 操作不支持 `event_optional=true`；需要兼容缺失 `event:` 的上游时，应使用不带 event 的指令或在上游映射阶段补齐 event。
 
 限制（v0.1）：
 
@@ -1362,20 +1381,38 @@ Multiple: yes
 #### json_set
 
 ```text
-Syntax:  json_set <jsonpath> <expr>;
+Syntax:  json_set <jsonpath> <expr> [event="<name|name2>"] [max_count=<n>];
 Default: —
-Context: request
+Context: request/response
 Multiple: yes
 ```
 
-- 对“已生成的上游请求 JSON”设置字段；不存在的对象路径会自动创建。
+- 设置 JSON 字段；不存在的对象路径会自动创建。
 - JSONPath（v0.1）仅支持对象路径：`$.a.b.c`（不支持数组下标 `[]`）。
 - `<expr>` 在此处支持：`true/false/null`、整数、字符串字面量、变量/concat。
+- `event="..."` 仅在 `response` 的 SSE JSON 操作中有效，用于按 SSE `event:` 名过滤执行。
+- `max_count=<n>` 仅在 `response` 中有效；`0` 表示不限次数，`n > 0` 表示本指令在一次响应处理周期内最多实际修改 `n` 次。
+
+#### json_replace
+
+```text
+Syntax:  json_replace <jsonpath> <expr> [event="<name|name2>"] [max_count=<n>];
+Default: —
+Context: request/response
+Multiple: yes
+```
+
+- 仅当目标路径已存在时替换 JSON 字段；路径不存在时为 no-op。
+- 不会创建缺失的父对象或叶子字段。
+- JSONPath（v0.1）仅支持对象路径：`$.a.b.c`（不支持数组下标 `[]`）。
+- `<expr>` 支持同 `json_set`。
+- `event="..."` 仅在 `response` 的 SSE JSON 操作中有效，用于按 SSE `event:` 名过滤执行。
+- `max_count=<n>` 仅在 `response` 中有效，语义同 `json_set`。
 
 #### json_set_if_absent
 
 ```text
-Syntax:  json_set_if_absent <jsonpath> <expr>;
+Syntax:  json_set_if_absent <jsonpath> <expr> [event="<name|name2>"] [max_count=<n>];
 Default: —
 Context: request/response
 Multiple: yes
@@ -1383,30 +1420,36 @@ Multiple: yes
 
 - 仅当路径不存在时设置字段。
 - 若路径已存在（包括值为 `null`），则保留原值不覆盖。
+- `event="..."` 仅在 `response` 的 SSE JSON 操作中有效。
+- `max_count=<n>` 仅在 `response` 中有效，语义同 `json_set`。
 
 #### json_del
 
 ```text
-Syntax:  json_del <jsonpath>;
+Syntax:  json_del <jsonpath> [event="<name|name2>"] [max_count=<n>];
 Default: —
-Context: request
+Context: request/response
 Multiple: yes
 ```
 
 - 删除字段；字段不存在时为 no-op。
 - JSONPath（v0.1）仅支持对象路径：`$.a.b.c`（不支持数组下标 `[]`）。
+- `event="..."` 仅在 `response` 的 SSE JSON 操作中有效。
+- `max_count=<n>` 仅在 `response` 中有效，语义同 `json_set`。
 
 #### json_rename
 
 ```text
-Syntax:  json_rename <from-jsonpath> <to-jsonpath>;
+Syntax:  json_rename <from-jsonpath> <to-jsonpath> [event="<name|name2>"] [max_count=<n>];
 Default: —
-Context: request
+Context: request/response
 Multiple: yes
 ```
 
 - 将字段从 `<from-jsonpath>` 移动到 `<to-jsonpath>`；源字段不存在时为 no-op。
 - JSONPath（v0.1）仅支持对象路径：`$.a.b.c`（不支持数组下标 `[]`）。
+- `event="..."` 仅在 `response` 的 SSE JSON 操作中有效。
+- `max_count=<n>` 仅在 `response` 中有效，语义同 `json_set`。
 
 #### json_wrap_input_text
 

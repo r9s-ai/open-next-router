@@ -8,6 +8,7 @@ const (
 	exprRequestMapped    = "$request.model_mapped"
 
 	jsonOpSet           = "json_set"
+	jsonOpReplace       = "json_replace"
 	jsonOpSetIfAbsent   = "json_set_if_absent"
 	jsonOpDel           = "json_del"
 	jsonOpDelIfMissing  = "json_del_if_missing"

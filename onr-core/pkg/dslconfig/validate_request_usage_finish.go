@@ -64,7 +64,7 @@ func validateRequestJSONOps(path, providerName, scope string, ops []JSONOp) erro
 			if len(op.Patterns) == 0 {
 				return fmt.Errorf("provider %q in %q: %s json_del_with_condition requires at least one pattern", providerName, path, opScope)
 			}
-		case jsonOpSet, jsonOpSetIfAbsent, jsonOpDel, jsonOpWrapInputText:
+		case jsonOpSet, jsonOpReplace, jsonOpSetIfAbsent, jsonOpDel, jsonOpWrapInputText:
 			if _, err := parseObjectPath(op.Path); err != nil {
 				return fmt.Errorf("provider %q in %q: %s invalid json path: %w", providerName, path, opScope, err)
 			}

@@ -329,11 +329,12 @@ request {
 - If no `model_map <from> ...;` matches, the default expression is used for `$request.model_mapped`.
 - If not configured, `$request.model_mapped` defaults to `$request.model`.
 
-#### json_set / json_set_if_absent / json_del / json_rename / json_wrap_input_text / json_set_header_values / json_filter_values / json_del_with_condition (multiple allowed)
+#### json_set / json_replace / json_set_if_absent / json_del / json_rename / json_wrap_input_text / json_set_header_values / json_filter_values / json_del_with_condition (multiple allowed)
 
 ```conf
 request {
   json_set "$.stream" true;
+  json_replace "$.model" $request.model;
   json_set_if_absent "$.instructions" "";
   json_set "$.user" "alice";
   json_rename "$.max_tokens" "$.max_completion_tokens";
@@ -351,6 +352,8 @@ request {
 - Applies lightweight transforms to the upstream request JSON.
 - JSONPath (v0.1) supports an object-path subset: `$.a.b.c` (no array indices for these request ops).
 - `json_set` value expressions support: `true/false/null`, integer, string literal, variable, `concat(...)`.
+- `json_set` sets a field and creates missing object-path parents.
+- `json_replace` only replaces an existing target path; missing paths are no-op and no parent object or leaf field is created.
 - `json_set_if_absent` only sets when the path does not exist; existing values are preserved.
 - `json_wrap_input_text` wraps a string value as an OpenAI Responses `input` message list. Missing paths and already-array values are no-op; other types are rejected.
 - `json_set_header_values` sets a JSON array from downstream request header values. Values are split by comma unless `separator="<sep>"` is provided.
@@ -459,7 +462,7 @@ Available modes depend on the built-in implementation. v0.1 includes:
 - `openai_responses_to_openai_chat` (`resp_map`): OpenAI/Azure `/responses` JSON → OpenAI `chat.completions` JSON
 - `openai_responses_to_openai_chat_chunks` (`sse_parse`): OpenAI/Azure `/responses` SSE → OpenAI `chat.completions` SSE chunks
 
-#### json_del / json_set / json_set_if_absent / json_rename (response JSON ops)
+#### json_del / json_set / json_replace / json_set_if_absent / json_rename (response JSON ops)
 
 These directives apply **best-effort** JSON mutations to the downstream response body.
 
@@ -467,6 +470,7 @@ These directives apply **best-effort** JSON mutations to the downstream response
 response {
   json_del "$.usage";
   json_set "$.foo" "bar";
+  json_replace "$.model" $request.model;
   json_set_if_absent "$.bar" "baz";
   json_rename "$.a" "$.b";
 }
@@ -478,6 +482,21 @@ Semantics:
 - Streaming SSE (`text/event-stream`): apply to each SSE event's joined `data:` JSON **object** payload.
 - Non-JSON / non-object payloads are passed through unchanged.
 - Execution order follows the order in the config block.
+- `json_set` creates missing paths; `json_replace` only replaces existing paths, which is useful for replacing upstream `model` fields without polluting unrelated events.
+- In streaming SSE, `json_set`, `json_replace`, `json_set_if_absent`, `json_del`, and `json_rename` may add `event="<name|name2>"` to run only for matching SSE `event:` names.
+- Response JSON ops may add `max_count=<n>` to limit how many times one directive can take effect during one response handling cycle. The default `max_count=0` means unlimited.
+
+```conf
+response {
+  resp_passthrough;
+  json_replace "$.message.model" $request.model event="message_start" max_count=1;
+  json_replace "$.response.model" $request.model event="response.created|response.completed|response.incomplete";
+}
+```
+
+- `event="..."` only affects SSE JSON events. Non-streaming JSON responses have no event context, so response JSON ops with `event` are skipped.
+- `max_count` is tracked per directive. Non-streaming JSON has at most one object to process; SSE counts across the whole stream. Only actual changes are counted, so a `json_replace` with a missing path does not increment the count.
+- Response JSON ops do not support `event_optional=true`. To support upstreams that omit `event:` framing, use an unscoped directive or add event names during upstream mapping.
 
 Limitations (v0.1):
 
@@ -1326,19 +1345,37 @@ Multiple: yes
 #### json_set
 
 ```text
-Syntax:  json_set <jsonpath> <value-expr>;
+Syntax:  json_set <jsonpath> <value-expr> [event="<name|name2>"] [max_count=<n>];
 Default: —
-Context: request
+Context: request/response
 Multiple: yes
 ```
 
-- Sets a JSON value on the upstream request payload.
+- Sets a JSON value and creates missing object-path parents.
 - JSONPath is limited to object paths: `$.a.b.c`.
+- `event="..."` only applies to response SSE JSON ops and filters by SSE `event:` name.
+- `max_count=<n>` only applies in `response`; `0` means unlimited, `n > 0` means this directive can make at most `n` actual changes during one response handling cycle.
+
+#### json_replace
+
+```text
+Syntax:  json_replace <jsonpath> <value-expr> [event="<name|name2>"] [max_count=<n>];
+Default: —
+Context: request/response
+Multiple: yes
+```
+
+- Replaces a JSON value only when the target path already exists.
+- Missing paths are no-op; missing parent objects or leaf fields are not created.
+- JSONPath is limited to object paths: `$.a.b.c`.
+- `<value-expr>` supports the same expression forms as `json_set`.
+- `event="..."` only applies to response SSE JSON ops and filters by SSE `event:` name.
+- `max_count=<n>` only applies in `response`, with the same semantics as `json_set`.
 
 #### json_set_if_absent
 
 ```text
-Syntax:  json_set_if_absent <jsonpath> <value-expr>;
+Syntax:  json_set_if_absent <jsonpath> <value-expr> [event="<name|name2>"] [max_count=<n>];
 Default: —
 Context: request/response
 Multiple: yes
@@ -1346,30 +1383,36 @@ Multiple: yes
 
 - Sets a JSON value only when the path does not exist.
 - If the path already exists (including `null`), the original value is kept.
+- `event="..."` only applies to response SSE JSON ops.
+- `max_count=<n>` only applies in `response`, with the same semantics as `json_set`.
 
 #### json_del
 
 ```text
-Syntax:  json_del <jsonpath>;
+Syntax:  json_del <jsonpath> [event="<name|name2>"] [max_count=<n>];
 Default: —
-Context: request
+Context: request/response
 Multiple: yes
 ```
 
-- Deletes a JSON field on the upstream request payload.
+- Deletes a JSON field.
 - JSONPath is limited to object paths: `$.a.b.c`.
+- `event="..."` only applies to response SSE JSON ops.
+- `max_count=<n>` only applies in `response`, with the same semantics as `json_set`.
 
 #### json_rename
 
 ```text
-Syntax:  json_rename <from-jsonpath> <to-jsonpath>;
+Syntax:  json_rename <from-jsonpath> <to-jsonpath> [event="<name|name2>"] [max_count=<n>];
 Default: —
-Context: request
+Context: request/response
 Multiple: yes
 ```
 
-- Renames a JSON field on the upstream request payload.
+- Renames a JSON field.
 - JSONPath is limited to object paths: `$.a.b.c`.
+- `event="..."` only applies to response SSE JSON ops.
+- `max_count=<n>` only applies in `response`, with the same semantics as `json_set`.
 
 #### json_wrap_input_text
 
