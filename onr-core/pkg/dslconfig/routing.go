@@ -124,12 +124,12 @@ func evalStringExpr(expr string, meta *dslmeta.Meta) string {
 	case exprOAuthAccessToken:
 		return meta.OAuthAccessToken
 	case exprRequestModel:
-		return meta.ActualModelName
+		return meta.OriginModelName
 	case exprRequestMapped:
 		if meta.DSLModelMapped != "" {
 			return meta.DSLModelMapped
 		}
-		return meta.ActualModelName
+		return meta.OriginModelName
 	default:
 		return raw
 	}

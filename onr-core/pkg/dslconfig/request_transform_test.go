@@ -11,7 +11,7 @@ func TestJSONOps_SetDelRename(t *testing.T) {
 	m := &dslmeta.Meta{
 		API:             "chat.completions",
 		IsStream:        false,
-		ActualModelName: "gpt-4o-mini",
+		OriginModelName: "gpt-4o-mini",
 		DSLModelMapped:  "gpt-4o-mini",
 	}
 
@@ -76,7 +76,7 @@ provider "azure-openai" {
 	m := &dslmeta.Meta{
 		API:             "chat.completions",
 		IsStream:        false,
-		ActualModelName: "gpt-4o-mini",
+		OriginModelName: "gpt-4o-mini",
 		RequestURLPath:  "/v1/chat/completions",
 		BaseURL:         "https://example.azure.com",
 	}

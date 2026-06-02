@@ -104,7 +104,7 @@ func cloneMetaForQuery(src *dslmeta.Meta) *dslmeta.Meta {
 		APIKey:           src.APIKey,
 		OAuthAccessToken: src.OAuthAccessToken,
 		OAuthCacheKey:    src.OAuthCacheKey,
-		ActualModelName:  src.ActualModelName,
+		OriginModelName:  src.OriginModelName,
 		DSLModelMapped:   src.DSLModelMapped,
 		RequestURLPath:   src.RequestURLPath,
 		StartTime:        src.StartTime,
@@ -216,14 +216,14 @@ func evalHeaderExpr(expr string, meta *dslmeta.Meta) string {
 		}
 	case "$request.model":
 		if meta != nil {
-			return meta.ActualModelName
+			return meta.OriginModelName
 		}
 	case "$request.model_mapped":
 		if meta != nil {
 			if meta.DSLModelMapped != "" {
 				return meta.DSLModelMapped
 			}
-			return meta.ActualModelName
+			return meta.OriginModelName
 		}
 	}
 	return raw

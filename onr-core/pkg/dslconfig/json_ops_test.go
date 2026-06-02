@@ -13,7 +13,7 @@ func TestApplyJSONOps_TableDriven(t *testing.T) {
 
 	meta := &dslmeta.Meta{
 		API:             "chat.completions",
-		ActualModelName: "gpt-4o-mini",
+		OriginModelName: "gpt-4o-mini",
 		RequestHeaders: http.Header{
 			"Anthropic-Beta": []string{" computer-use-2025-01-24 , unknown , CONTEXT-MANAGEMENT-2025-06-27 "},
 		},

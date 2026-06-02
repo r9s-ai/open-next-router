@@ -78,7 +78,7 @@ func TestTransformSSEEventDataJSON_EventAndMaxCount(t *testing.T) {
 	err := TransformSSEEventDataJSON(
 		bytes.NewBufferString(in),
 		&out,
-		&dslmeta.Meta{ActualModelName: "meta-model"},
+		&dslmeta.Meta{OriginModelName: "meta-model"},
 		nil,
 		ops,
 	)
