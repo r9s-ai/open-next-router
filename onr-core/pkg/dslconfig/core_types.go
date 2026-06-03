@@ -13,6 +13,7 @@ type Usage struct {
 
 	FlatFields map[string]any `json:"-"`
 	DebugFacts []UsageFact    `json:"-"`
+	UsageRoot  map[string]any `json:"-"`
 }
 
 type ResponseTokenDetails struct {
@@ -40,10 +41,18 @@ type UsageFact struct {
 	Status        string `json:"status,omitempty"`
 }
 
+// UsageRoot describes one usage_root extraction rule in DSL/runtime.
+type UsageRoot struct {
+	Path          string `json:"path,omitempty"`
+	Event         string `json:"event,omitempty"`
+	EventOptional bool   `json:"event_optional,omitempty"`
+}
+
 // UsageExecutionPlan is the normalized internal plan used after usage_extract
 // syntax sugar and compatibility-layer fields are compiled into explicit rules.
 type UsageExecutionPlan struct {
 	Mode            string      `json:"mode,omitempty"`
+	UsageRoots      []UsageRoot `json:"usage_roots,omitempty"`
 	Facts           []UsageFact `json:"facts,omitempty"`
 	TotalTokensExpr string      `json:"total_tokens_expr,omitempty"`
 }

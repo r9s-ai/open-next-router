@@ -652,7 +652,7 @@ func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey
 	m := &dslmeta.Meta{
 		API:                strings.TrimSpace(api),
 		IsStream:           stream,
-		ActualModelName:    strings.TrimSpace(model),
+		OriginModelName:    strings.TrimSpace(model),
 		APIKey:             strings.TrimSpace(key.Value),
 		BaseURL:            normalizeUpstreamBaseURL(key.BaseURLOverride),
 		RequestURLPath:     gc.Request.URL.RequestURI(),
@@ -1053,7 +1053,7 @@ func (c *Client) computeCost(
 	}
 	model := strings.TrimSpace(meta.DSLModelMapped)
 	if model == "" {
-		model = strings.TrimSpace(meta.ActualModelName)
+		model = strings.TrimSpace(meta.OriginModelName)
 	}
 	out, ok := resolver.Compute(provider, keyName, model, usage)
 	if !ok || out == nil {

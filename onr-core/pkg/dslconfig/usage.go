@@ -22,6 +22,7 @@ type UsageExtractConfig struct {
 	CacheWriteTokensExpr *UsageExpr
 	TotalTokensExpr      *UsageExpr
 
+	usageRoots       []usageRootConfig
 	facts            []usageFactConfig
 	factGroups       map[usageFactKey][]usageFactConfig
 	explicitFactKeys map[usageFactKey]struct{}
@@ -185,6 +186,7 @@ func compileUsageExtractConfig(meta *dslmeta.Meta, cfg UsageExtractConfig) Usage
 			Mode:            usageModeCustom,
 			TotalTokensExpr: cfg.TotalTokensExpr,
 		}
+		compiled.usageRoots = cloneUsageRootConfigs(cfg.usageRoots)
 		compiled.facts = append(compiled.facts, legacyUsageFactConfigs(cfg, cfg.explicitFactKeys)...)
 		compiled.facts = append(compiled.facts, cloneUsageFactConfigs(cfg.facts)...)
 		return prepareUsageExtractConfig(compiled)
@@ -234,6 +236,12 @@ func mergeUsageConfig(base UsageExtractConfig, override UsageExtractConfig) Usag
 	}
 	if override.TotalTokensExpr != nil {
 		out.TotalTokensExpr = override.TotalTokensExpr
+	}
+	if len(override.usageRoots) > 0 {
+		combined := make([]usageRootConfig, 0, len(base.usageRoots)+len(override.usageRoots))
+		combined = append(combined, base.usageRoots...)
+		combined = append(combined, override.usageRoots...)
+		out.usageRoots = combined
 	}
 	if len(override.facts) > 0 {
 		combined := make([]usageFactConfig, 0, len(base.facts)+len(override.facts))

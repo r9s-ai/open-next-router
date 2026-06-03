@@ -42,6 +42,15 @@ func (b *sseEventBuf) payload() []byte {
 	return bytes.TrimSpace(bytes.Join(b.dataParts, []byte{'\n'}))
 }
 
+func (b *sseEventBuf) eventName() string {
+	for _, line := range b.metaLines {
+		if bytes.HasPrefix(line, []byte("event:")) {
+			return string(bytes.TrimSpace(bytes.TrimPrefix(line, []byte("event:"))))
+		}
+	}
+	return ""
+}
+
 func (b *sseEventBuf) writeRaw(w io.Writer) error {
 	for _, l := range b.rawLines {
 		if _, err := w.Write(l); err != nil {
@@ -74,7 +83,7 @@ func (b *sseEventBuf) writeNormalizedJSON(w io.Writer, jsonBytes []byte) error {
 	return err
 }
 
-func (b *sseEventBuf) flush(w io.Writer, meta *dslmeta.Meta, rules []SSEJSONDelIfRule, ops []JSONOp) error {
+func (b *sseEventBuf) flush(w io.Writer, meta *dslmeta.Meta, rules []SSEJSONDelIfRule, ops []JSONOp, counts []int) error {
 	if b.isEmpty() {
 		return nil
 	}
@@ -89,7 +98,7 @@ func (b *sseEventBuf) flush(w io.Writer, meta *dslmeta.Meta, rules []SSEJSONDelI
 	}
 
 	applySSEJSONDelIf(obj, rules)
-	if err := applyJSONOpsToObject(meta, obj, ops); err != nil {
+	if err := applyJSONOpsToObject(meta, obj, ops, b.eventName(), counts); err != nil {
 		return err
 	}
 	outJSON, err := json.Marshal(obj)
@@ -125,6 +134,7 @@ func TransformSSEEventDataJSON(r io.Reader, w io.Writer, meta *dslmeta.Meta, rul
 
 	br := bufio.NewReader(r)
 	var ev sseEventBuf
+	counts := make([]int, len(ops))
 
 	for {
 		line, err := br.ReadBytes('\n')
@@ -134,7 +144,7 @@ func TransformSSEEventDataJSON(r io.Reader, w io.Writer, meta *dslmeta.Meta, rul
 		}
 
 		if len(bytes.TrimSpace(line)) == 0 {
-			if err2 := ev.flush(w, meta, rules, ops); err2 != nil {
+			if err2 := ev.flush(w, meta, rules, ops, counts); err2 != nil {
 				return err2
 			}
 			ev.reset()
@@ -145,7 +155,7 @@ func TransformSSEEventDataJSON(r io.Reader, w io.Writer, meta *dslmeta.Meta, rul
 		if err != nil {
 			if err == io.EOF {
 				if !ev.isEmpty() {
-					if err2 := ev.flush(w, meta, rules, ops); err2 != nil {
+					if err2 := ev.flush(w, meta, rules, ops, counts); err2 != nil {
 						return err2
 					}
 				}
@@ -197,28 +207,60 @@ func jsonGet(root map[string]any, path string) (any, bool) {
 	return v, ok
 }
 
-func applyJSONOpsToObject(meta *dslmeta.Meta, obj map[string]any, ops []JSONOp) error {
+func applyJSONOpsToObject(meta *dslmeta.Meta, obj map[string]any, ops []JSONOp, event string, counts []int) error {
 	if obj == nil || len(ops) == 0 {
 		return nil
 	}
-	for _, op := range ops {
+	for i, op := range ops {
+		if shouldSkipJSONOp(event, op, counts, i) {
+			continue
+		}
+		changed := false
 		switch op.Op {
 		case jsonOpSet:
 			val := evalJSONValueExpr(meta, op.ValueExpr)
-			if _, err := jsonSet(obj, op.Path, val); err != nil {
+			opChanged, err := jsonSet(obj, op.Path, val)
+			if err != nil {
 				return err
 			}
+			changed = opChanged
+		case jsonOpReplace:
+			val := evalJSONValueExpr(meta, op.ValueExpr)
+			opChanged, err := jsonReplace(obj, op.Path, val)
+			if err != nil {
+				return err
+			}
+			changed = opChanged
+		case jsonOpSetIfAbsent:
+			exists, err := jsonPathExists(obj, op.Path)
+			if err != nil {
+				return err
+			}
+			if exists {
+				continue
+			}
+			val := evalJSONValueExpr(meta, op.ValueExpr)
+			opChanged, err := jsonSet(obj, op.Path, val)
+			if err != nil {
+				return err
+			}
+			changed = opChanged
 		case jsonOpDel:
-			if _, err := jsonDel(obj, op.Path); err != nil {
+			opChanged, err := jsonDel(obj, op.Path)
+			if err != nil {
 				return err
 			}
+			changed = opChanged
 		case jsonOpRename:
-			if _, err := jsonRename(obj, op.FromPath, op.ToPath); err != nil {
+			opChanged, err := jsonRename(obj, op.FromPath, op.ToPath)
+			if err != nil {
 				return err
 			}
+			changed = opChanged
 		default:
 			// validated at load time; ignore unknown here
 		}
+		recordJSONOpChange(changed, op, counts, i)
 	}
 	return nil
 }

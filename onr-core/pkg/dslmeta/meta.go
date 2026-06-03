@@ -29,8 +29,8 @@ type Meta struct {
 	// OAuthCacheKey is the runtime cache identity for OAuth token refresh/invalidation.
 	OAuthCacheKey string
 
-	// ActualModelName is the original request model.
-	ActualModelName string
+	// OriginModelName is the original request model.
+	OriginModelName string
 
 	// DSLModelMapped is the mapped model name after applying model_map.
 	DSLModelMapped string

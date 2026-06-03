@@ -118,6 +118,61 @@ func BenchmarkStreamMetricsAggregator_CustomLegacyEvent_Old(b *testing.B) {
 	}
 }
 
+func BenchmarkStreamMetricsAggregator_UsageRootFinalManyChunks(b *testing.B) {
+	meta := &dslmeta.Meta{API: "responses", IsStream: true}
+	usagePayload := []byte(`{"type":"response.completed","response":{"usage":{"input_tokens":123,"output_tokens":45,"input_tokens_details":{"cached_tokens":11}},"output":[{"type":"web_search_call","status":"completed"}]}}`)
+	deltaPayload := []byte(`{"type":"response.output_text.delta","delta":"hello"}`)
+
+	oldCfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		facts: []usageFactConfig{
+			{Dimension: "input", Unit: "token", Source: "response", Path: "$.response.usage.input_tokens", Event: "response.completed|response.incomplete", EventOptional: true},
+			{Dimension: "output", Unit: "token", Source: "response", Path: "$.response.usage.output_tokens", Event: "response.completed|response.incomplete", EventOptional: true},
+			{Dimension: "cache_read", Unit: "token", Source: "response", Path: "$.response.usage.input_tokens_details.cached_tokens", Event: "response.completed|response.incomplete", EventOptional: true},
+			{Dimension: "server_tool.web_search", Unit: "call", Source: "response", CountPath: "$.response.output[*]", Type: "web_search_call", Status: "completed", Event: "response.completed|response.incomplete", EventOptional: true},
+		},
+	}
+	newCfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		usageRoots: []usageRootConfig{
+			{Path: "$.response.usage", Event: "response.completed|response.incomplete", EventOptional: true},
+		},
+		facts: []usageFactConfig{
+			{Dimension: "input", Unit: "token", Path: "$.input_tokens"},
+			{Dimension: "output", Unit: "token", Path: "$.output_tokens"},
+			{Dimension: "cache_read", Unit: "token", Path: "$.input_tokens_details.cached_tokens"},
+			{Dimension: "server_tool.web_search", Unit: "call", Source: "response", CountPath: "$.response.output[*]", Type: "web_search_call", Status: "completed", Event: "response.completed|response.incomplete", EventOptional: true},
+		},
+	}
+
+	bench := func(b *testing.B, cfg *UsageExtractConfig) {
+		b.Helper()
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			agg := NewStreamMetricsAggregator(meta, cfg, nil)
+			for j := 0; j < 128; j++ {
+				if err := agg.OnSSEEventDataJSON("response.output_text.delta", deltaPayload); err != nil {
+					b.Fatalf("OnSSEEventDataJSON delta: %v", err)
+				}
+			}
+			if err := agg.OnSSEEventDataJSON("response.completed", usagePayload); err != nil {
+				b.Fatalf("OnSSEEventDataJSON usage: %v", err)
+			}
+			u, cached, _, ok := agg.Result()
+			if !ok || u == nil || u.InputTokens != 123 || u.OutputTokens != 45 || cached != 11 {
+				b.Fatalf("unexpected result usage=%+v cached=%d ok=%v", u, cached, ok)
+			}
+		}
+	}
+
+	b.Run("legacy_response_facts_each_chunk", func(b *testing.B) {
+		bench(b, &oldCfg)
+	})
+	b.Run("usage_root_final_facts", func(b *testing.B) {
+		bench(b, &newCfg)
+	})
+}
+
 // benchmarkLegacyOnSSEDataJSON requires a valid StreamMetricsAggregator receiver.
 func benchmarkLegacyOnSSEDataJSON(a *StreamMetricsAggregator, payload []byte) error {
 	payload = bytes.TrimSpace(payload)

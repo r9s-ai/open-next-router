@@ -82,6 +82,7 @@ func parserDirectiveSources() []parserDirectiveSource {
 		{block: "top", fn: "parseGlobalModelsModes", kind: parserDirectiveSwitch},
 		{block: "top", fn: "parseGlobalBalanceModes", kind: parserDirectiveSwitch},
 		{block: "provider", fn: "parseProviderBody", kind: parserDirectiveSwitch},
+		{block: "metadata", fn: "parseMetadataBlock", kind: parserDirectiveSwitch},
 		{block: "upstream_config", fn: "parseUpstreamConfigBlock", kind: parserDirectiveStringEqual},
 		{block: "auth", fn: "parseAuthPhase", kind: parserDirectiveHandlerMap},
 		{block: "request", fn: "parseRequestPhaseWithTransform", kind: parserDirectiveHandlerMap},

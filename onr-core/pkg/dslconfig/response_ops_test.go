@@ -23,6 +23,7 @@ provider "t" {
     response {
       json_del "$.usage";
       json_set "$.foo" "bar";
+      json_replace "$.model" $request.model event="message_start" max_count=1;
       json_set_if_absent "$.bar" "baz";
       json_rename "$.a" "$.b";
       sse_json_del_if "$.type" "message_delta" "$.usage";
@@ -35,23 +36,78 @@ provider "t" {
 	require.NoError(t, err)
 
 	d := pf.Response.Defaults
-	require.Len(t, d.JSONOps, 4)
+	require.Len(t, d.JSONOps, 5)
 	require.Equal(t, "json_del", d.JSONOps[0].Op)
 	require.Equal(t, "$.usage", d.JSONOps[0].Path)
 	require.Equal(t, "json_set", d.JSONOps[1].Op)
 	require.Equal(t, "$.foo", d.JSONOps[1].Path)
 	require.Equal(t, "\"bar\"", d.JSONOps[1].ValueExpr)
-	require.Equal(t, "json_set_if_absent", d.JSONOps[2].Op)
-	require.Equal(t, "$.bar", d.JSONOps[2].Path)
-	require.Equal(t, "\"baz\"", d.JSONOps[2].ValueExpr)
-	require.Equal(t, "json_rename", d.JSONOps[3].Op)
-	require.Equal(t, "$.a", d.JSONOps[3].FromPath)
-	require.Equal(t, "$.b", d.JSONOps[3].ToPath)
+	require.Equal(t, "json_replace", d.JSONOps[2].Op)
+	require.Equal(t, "$.model", d.JSONOps[2].Path)
+	require.Equal(t, "$request.model", d.JSONOps[2].ValueExpr)
+	require.Equal(t, "message_start", d.JSONOps[2].Event)
+	require.Equal(t, 1, d.JSONOps[2].MaxCount)
+	require.Equal(t, "json_set_if_absent", d.JSONOps[3].Op)
+	require.Equal(t, "$.bar", d.JSONOps[3].Path)
+	require.Equal(t, "\"baz\"", d.JSONOps[3].ValueExpr)
+	require.Equal(t, "json_rename", d.JSONOps[4].Op)
+	require.Equal(t, "$.a", d.JSONOps[4].FromPath)
+	require.Equal(t, "$.b", d.JSONOps[4].ToPath)
 
 	require.Len(t, d.SSEJSONDelIf, 1)
 	require.Equal(t, "$.type", d.SSEJSONDelIf[0].CondPath)
 	require.Equal(t, "message_delta", d.SSEJSONDelIf[0].Equals)
 	require.Equal(t, "$.usage", d.SSEJSONDelIf[0].DelPath)
+}
+
+func TestTransformSSEEventDataJSON_EventAndMaxCount(t *testing.T) {
+	in := "" +
+		"event: message_start\n" +
+		"data: {\"message\":{\"model\":\"upstream-1\"}}\n\n" +
+		"event: message_delta\n" +
+		"data: {\"usage\":{\"output_tokens\":1}}\n\n" +
+		"event: message_start\n" +
+		"data: {\"message\":{\"model\":\"upstream-2\"}}\n\n" +
+		"data: [DONE]\n\n"
+
+	ops := []JSONOp{
+		{Op: "json_replace", Path: "$.message.model", ValueExpr: "$request.model", Event: "message_start", MaxCount: 1},
+	}
+
+	var out bytes.Buffer
+	err := TransformSSEEventDataJSON(
+		bytes.NewBufferString(in),
+		&out,
+		&dslmeta.Meta{OriginModelName: "meta-model"},
+		nil,
+		ops,
+	)
+	require.NoError(t, err)
+
+	var payloads []map[string]any
+	for _, ev := range bytes.Split(out.Bytes(), []byte("\n\n")) {
+		for _, line := range bytes.Split(ev, []byte("\n")) {
+			line = bytes.TrimSpace(line)
+			if !bytes.HasPrefix(line, []byte("data:")) {
+				continue
+			}
+			raw := bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
+			if len(raw) == 0 || bytes.Equal(raw, []byte("[DONE]")) {
+				continue
+			}
+			var obj map[string]any
+			require.NoError(t, json.Unmarshal(raw, &obj))
+			payloads = append(payloads, obj)
+		}
+	}
+	require.Len(t, payloads, 3)
+
+	msg0 := payloads[0]["message"].(map[string]any)
+	require.Equal(t, "meta-model", msg0["model"])
+	_, deltaHasMessage := payloads[1]["message"]
+	require.False(t, deltaHasMessage)
+	msg2 := payloads[2]["message"].(map[string]any)
+	require.Equal(t, "upstream-2", msg2["model"])
 }
 
 func TestValidateProviderFile_SSEJSONDelIf_RejectsEmptyEquals(t *testing.T) {

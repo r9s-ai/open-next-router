@@ -320,14 +320,14 @@ func evalHeaderExpr(expr string, meta *dslmeta.Meta) string {
 		}
 	case "$request.model":
 		if meta != nil {
-			return meta.ActualModelName
+			return meta.OriginModelName
 		}
 	case "$request.model_mapped":
 		if meta != nil {
 			if meta.DSLModelMapped != "" {
 				return meta.DSLModelMapped
 			}
-			return meta.ActualModelName
+			return meta.OriginModelName
 		}
 	}
 	return raw

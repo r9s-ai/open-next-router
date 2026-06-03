@@ -58,12 +58,12 @@ func TestValidateProviderFile_OpenAIUsageFacts(t *testing.T) {
 		"chat.completions": {
 			dimension: "input",
 			unit:      "token",
-			path:      "$.usage.prompt_tokens",
+			path:      "$.prompt_tokens",
 		},
 		"completions": {
 			dimension: "input",
 			unit:      "token",
-			path:      "$.usage.prompt_tokens",
+			path:      "$.prompt_tokens",
 		},
 		"responses": {
 			dimension: "server_tool.web_search",
@@ -94,17 +94,17 @@ func TestValidateProviderFile_OpenAIUsageFacts(t *testing.T) {
 		"audio.transcriptions": {
 			dimension: "audio.stt",
 			unit:      "second",
-			path:      "$.usage.seconds",
+			path:      "$.seconds",
 		},
 		"audio.translations": {
 			dimension: "audio.translate",
 			unit:      "second",
-			path:      "$.usage.seconds",
+			path:      "$.seconds",
 		},
 		"claude.messages": {
 			dimension: "input",
 			unit:      "token",
-			path:      "$.usage.prompt_tokens",
+			path:      "$.prompt_tokens",
 		},
 	}
 	for api, want := range usageCases {
@@ -174,15 +174,25 @@ func TestValidateProviderFile_OpenAIResponsesStreamUsageFacts(t *testing.T) {
 		t.Fatalf("expected usage config for responses stream")
 	}
 	responsesStreamFacts := responsesStreamUsageCfg.CompiledFacts(&dslmeta.Meta{API: "responses", IsStream: true})
+	responsesStreamRoots := responsesStreamUsageCfg.CompiledPlan(&dslmeta.Meta{API: "responses", IsStream: true}).UsageRoots
+	var foundResponseUsageRoot bool
 	var foundCompletedUsage bool
 	var foundCompletedEventOptional bool
+	for _, root := range responsesStreamRoots {
+		if root.Path == "$.response.usage" && root.Event == "response.completed|response.incomplete" && root.EventOptional {
+			foundResponseUsageRoot = true
+		}
+	}
 	for _, fact := range responsesStreamFacts {
-		if fact.Dimension == "input" && fact.Unit == "token" && fact.Path == "$.response.usage.input_tokens" && fact.Event == "response.completed" {
+		if fact.Dimension == "input" && fact.Unit == "token" && fact.Path == "$.input_tokens" {
 			foundCompletedUsage = true
 		}
-		if fact.Dimension == "input" && fact.Unit == "token" && fact.Path == "$.response.usage.input_tokens" && fact.Event == "response.completed" && fact.EventOptional {
+		if fact.Dimension == "server_tool.web_search" && fact.Unit == "call" && fact.Event == "response.completed|response.incomplete" && fact.EventOptional {
 			foundCompletedEventOptional = true
 		}
+	}
+	if !foundResponseUsageRoot {
+		t.Fatalf("responses stream compiled plan missing response usage root: %#v", responsesStreamRoots)
 	}
 	if !foundCompletedUsage {
 		t.Fatalf("responses stream compiled facts missing response.completed usage fact: %#v", responsesStreamFacts)

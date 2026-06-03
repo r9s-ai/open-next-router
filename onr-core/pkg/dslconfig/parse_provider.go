@@ -70,6 +70,10 @@ func parseProviderBody(s *scanner) (ProviderRouting, ProviderHeaders, ProviderRe
 			return routing, headers, req, response, perr, usage, finish, balance, models, nil
 		case tokIdent:
 			switch tok.text {
+			case "metadata":
+				if err := skipStmtOrBlock(s); err != nil {
+					return ProviderRouting{}, ProviderHeaders{}, ProviderRequestTransform{}, ProviderResponse{}, ProviderError{}, ProviderUsage{}, ProviderFinishReason{}, ProviderBalance{}, ProviderModels{}, err
+				}
 			case "defaults":
 				if err := parseDefaultsBlock(s, &routing, &headers, &req, &response, &perr, &usage, &finish, &balance, &models); err != nil {
 					return ProviderRouting{}, ProviderHeaders{}, ProviderRequestTransform{}, ProviderResponse{}, ProviderError{}, ProviderUsage{}, ProviderFinishReason{}, ProviderBalance{}, ProviderModels{}, err
@@ -332,6 +336,10 @@ func parseMetricsPhase(s *scanner, usage *UsageExtractConfig, finish *FinishReas
 				if err := parseUsageFactStmt(s, usage); err != nil {
 					return err
 				}
+			case "usage_root":
+				if err := parseUsageRootStmt(s, usage); err != nil {
+					return err
+				}
 			case "input_tokens_expr", "output_tokens_expr", "cache_read_tokens_expr", "cache_write_tokens_expr", "total_tokens_expr":
 				if err := parseUsageExtractAssignStmt(s, usage, tok.text); err != nil {
 					return err
@@ -592,6 +600,53 @@ func parseUsageFactStmt(s *scanner, cfg *UsageExtractConfig) error {
 			}
 		default:
 			return s.errAt(tok, "expected usage_fact option or ';'")
+		}
+	}
+}
+
+func parseUsageRootStmt(s *scanner, cfg *UsageExtractConfig) error {
+	root := usageRootConfig{}
+	for {
+		tok := s.nextNonTrivia()
+		switch tok.kind {
+		case tokEOF:
+			return s.errAt(tok, "unexpected EOF in usage_root")
+		case tokSemicolon:
+			if strings.TrimSpace(root.Path) == "" {
+				return s.errAt(tok, "usage_root requires path")
+			}
+			cfg.usageRoots = append(cfg.usageRoots, root)
+			return nil
+		case tokIdent:
+			key := strings.ToLower(strings.TrimSpace(tok.text))
+			if err := consumeEquals(s); err != nil {
+				return err
+			}
+			valTok := s.nextNonTrivia()
+			switch key {
+			case "path":
+				val, err := parseUsageFactStringValue(s, valTok, "path")
+				if err != nil {
+					return err
+				}
+				root.Path = val
+			case "event":
+				val, err := parseUsageFactStringValue(s, valTok, "event")
+				if err != nil {
+					return err
+				}
+				root.Event = val
+			case "event_optional":
+				val, err := parseUsageFactBoolValue(s, valTok)
+				if err != nil {
+					return s.errAt(valTok, "event_optional expects true or false")
+				}
+				root.EventOptional = val
+			default:
+				return s.errAt(tok, "unsupported usage_root option "+key)
+			}
+		default:
+			return s.errAt(tok, "expected usage_root option or ';'")
 		}
 	}
 }

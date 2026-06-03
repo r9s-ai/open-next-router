@@ -38,6 +38,10 @@ var directiveMetadata = []DirectiveMetadata{
 
 	{Name: "defaults", Block: "provider", Hover: "`defaults { ... }`\n\nDefault phases shared by all `match` rules unless overridden."},
 	{Name: "match", Block: "provider", Hover: "`match api = \"...\" [stream = true|false] { ... }`\n\nRoute rule. First match wins."},
+	{Name: "metadata", Block: "provider", Hover: "`metadata { provider_family <family>; signal_profile <profile>; }`\n\nDeclares provider identity and capacity signal profile metadata."},
+
+	{Name: "provider_family", Block: "metadata", Hover: "`provider_family <family>;`\n\nProvider family used for operations, debug output, and later capacity-signal grouping."},
+	{Name: "signal_profile", Block: "metadata", Hover: "`signal_profile <profile>;`\n\nSignal profile used by later provider capacity signal adaptors."},
 
 	{Name: "upstream_config", Block: "defaults", Hover: "`upstream_config { base_url = \"...\"; }`\n\nProvider-level upstream base URL config."},
 	{Name: "auth", Block: "defaults", Hover: "`auth { ... }`\n\nAuthentication directives for upstream requests."},
@@ -56,7 +60,8 @@ var directiveMetadata = []DirectiveMetadata{
 	{Name: "metrics", Block: "match", Hover: "`metrics { ... }`\n\nToken usage and finish reason extraction rules."},
 
 	{Name: "usage_extract", Block: "usage_mode", Hover: "`usage_extract <mode>;`\n\nSelects `custom` or inherits another reusable `usage_mode` preset.", Modes: []string{"custom"}, ModeRegistryBlock: "usage_mode"},
-	{Name: "usage_fact", Block: "usage_mode", Hover: "`usage_fact <dimension> <unit> path=\"$.path\"|count_path=\"$.path\"|sum_path=\"$.path\"|expr=\"<expr>\" ...;`\n\nAdds one usage fact extraction rule to a reusable `usage_mode` preset.\n\nCurrent `source` values: `response`, `request`, `derived`.\nRestricted filter JSONPath is supported, for example `$.usageMetadata.promptTokensDetails[?(@.modality==\\\"AUDIO\\\")].tokenCount`."},
+	{Name: "usage_root", Block: "usage_mode", Hover: "`usage_root path=\"$.usage\" [event=\"a|b\"] [event_optional=true];`\n\nExtracts and merges the upstream usage JSON object before `usage_fact` rules run. When a mode has `usage_root`, `usage_fact` without `source` reads from that merged usage object."},
+	{Name: "usage_fact", Block: "usage_mode", Hover: "`usage_fact <dimension> <unit> path=\"$.path\"|count_path=\"$.path\"|sum_path=\"$.path\"|expr=\"<expr>\" ...;`\n\nAdds one usage fact extraction rule to a reusable `usage_mode` preset.\n\nCurrent `source` values: `usage`, `response`, `request`, `derived`. Empty `source` reads from `usage_root` when configured, otherwise from `response`.\nRestricted filter JSONPath is supported, for example `$.usageMetadata.promptTokensDetails[?(@.modality==\\\"AUDIO\\\")].tokenCount`."},
 	{Name: "input_tokens_expr", Block: "usage_mode", Hover: "`input_tokens_expr = <expr>;`\n\nCustom extraction expression for input/prompt tokens in a reusable `usage_mode` preset."},
 	{Name: "output_tokens_expr", Block: "usage_mode", Hover: "`output_tokens_expr = <expr>;`\n\nCustom extraction expression for output/completion tokens in a reusable `usage_mode` preset."},
 	{Name: "cache_read_tokens_expr", Block: "usage_mode", Hover: "`cache_read_tokens_expr = <expr>;`\n\nCustom extraction expression for cache read tokens in a reusable `usage_mode` preset."},
@@ -124,6 +129,7 @@ var directiveMetadata = []DirectiveMetadata{
 	{Name: "model_map", Block: "request", Hover: "`model_map <from> <expr>;`\n\nMaps input model name to upstream model expression."},
 	{Name: "model_map_default", Block: "request", Hover: "`model_map_default <expr>;`\n\nFallback mapped model expression when no rule matches."},
 	{Name: "json_set", Block: "request", Hover: "`json_set <jsonpath> <expr>;`\n\nSets one request JSON field value."},
+	{Name: "json_replace", Block: "request", Hover: "`json_replace <jsonpath> <expr>;`\n\nReplaces one request JSON field only when the path already exists."},
 	{Name: "json_set_if_absent", Block: "request", Hover: "`json_set_if_absent <jsonpath> <expr>;`\n\nSets JSON field only when target field is absent."},
 	{Name: "json_del", Block: "request", Hover: "`json_del <jsonpath>;`\n\nDeletes one request JSON field."},
 	{Name: "json_rename", Block: "request", Hover: "`json_rename <from-jsonpath> <to-jsonpath>;`\n\nRenames/moves one request JSON field."},
@@ -138,16 +144,18 @@ var directiveMetadata = []DirectiveMetadata{
 	{Name: "resp_passthrough", Block: "response", Hover: "`resp_passthrough;`\n\nPasses upstream response through without schema mapping."},
 	{Name: "resp_map", Block: "response", Hover: "`resp_map <mode>;`\n\nMap non-stream response JSON.", Modes: []string{"openai_responses_to_openai_chat", "anthropic_to_openai_chat", "gemini_to_openai_chat", "openai_to_anthropic_messages", "openai_to_gemini_chat", "openai_to_gemini_generate_content"}},
 	{Name: "sse_parse", Block: "response", Hover: "`sse_parse <mode>;`\n\nMap streaming SSE events/chunks.", Modes: []string{"openai_responses_to_openai_chat_chunks", "anthropic_to_openai_chunks", "openai_to_anthropic_chunks", "openai_to_gemini_chunks", "gemini_to_openai_chat_chunks"}},
-	{Name: "json_set", Block: "response", Hover: "`json_set <jsonpath> <expr>;`\n\nSets one downstream response JSON field value (best-effort)."},
-	{Name: "json_set_if_absent", Block: "response", Hover: "`json_set_if_absent <jsonpath> <expr>;`\n\nSets response JSON field only when absent (best-effort)."},
-	{Name: "json_del", Block: "response", Hover: "`json_del <jsonpath>;`\n\nDeletes one downstream response JSON field (best-effort)."},
-	{Name: "json_rename", Block: "response", Hover: "`json_rename <from-jsonpath> <to-jsonpath>;`\n\nRenames/moves one downstream response JSON field (best-effort)."},
+	{Name: "json_set", Block: "response", Hover: "`json_set <jsonpath> <expr> [event=\"a|b\"] [max_count=n];`\n\nSets one downstream response JSON field value (best-effort)."},
+	{Name: "json_replace", Block: "response", Hover: "`json_replace <jsonpath> <expr> [event=\"a|b\"] [max_count=n];`\n\nReplaces one downstream response JSON field only when the path already exists."},
+	{Name: "json_set_if_absent", Block: "response", Hover: "`json_set_if_absent <jsonpath> <expr> [event=\"a|b\"] [max_count=n];`\n\nSets response JSON field only when absent (best-effort)."},
+	{Name: "json_del", Block: "response", Hover: "`json_del <jsonpath> [event=\"a|b\"] [max_count=n];`\n\nDeletes one downstream response JSON field (best-effort)."},
+	{Name: "json_rename", Block: "response", Hover: "`json_rename <from-jsonpath> <to-jsonpath> [event=\"a|b\"] [max_count=n];`\n\nRenames/moves one downstream response JSON field (best-effort)."},
 	{Name: "sse_json_del_if", Block: "response", Hover: "`sse_json_del_if <cond-jsonpath> <equals-string> <del-jsonpath>;`\n\nFor SSE JSON event payloads, conditionally delete one field."},
 
 	{Name: "error_map", Block: "error", Hover: "`error_map <mode>;`\n\nNormalize upstream error payload into target error schema.", Modes: []string{"openai", "common", "passthrough"}},
 
 	{Name: "usage_extract", Block: "metrics", Hover: "`usage_extract <mode>;`\n\nExtract usage token fields from response/SSE payload. Supports `custom` and user-defined global `usage_mode` presets.", Modes: []string{"custom"}, ModeRegistryBlock: "usage_mode"},
-	{Name: "usage_fact", Block: "metrics", Hover: "`usage_fact <dimension> <unit> path=\"$.path\"|count_path=\"$.path\"|sum_path=\"$.path\"|expr=\"<expr>\" ...;`\n\nCustom usage fact extraction rule with optional `attr.*` and `fallback=true`.\n\nCurrent `source` values: `response`, `request`, `derived`.\nRestricted filter JSONPath is supported, for example `$.usageMetadata.promptTokensDetails[?(@.modality==\\\"AUDIO\\\")].tokenCount`."},
+	{Name: "usage_root", Block: "metrics", Hover: "`usage_root path=\"$.usage\" [event=\"a|b\"] [event_optional=true];`\n\nExtracts and merges the upstream usage JSON object before `usage_fact` rules run. When a metrics block has `usage_root`, `usage_fact` without `source` reads from that merged usage object."},
+	{Name: "usage_fact", Block: "metrics", Hover: "`usage_fact <dimension> <unit> path=\"$.path\"|count_path=\"$.path\"|sum_path=\"$.path\"|expr=\"<expr>\" ...;`\n\nCustom usage fact extraction rule with optional `attr.*` and `fallback=true`.\n\nCurrent `source` values: `usage`, `response`, `request`, `derived`. Empty `source` reads from `usage_root` when configured, otherwise from `response`.\nRestricted filter JSONPath is supported, for example `$.usageMetadata.promptTokensDetails[?(@.modality==\\\"AUDIO\\\")].tokenCount`."},
 	{Name: "input_tokens_expr", Block: "metrics", Hover: "`input_tokens_expr = <expr>;`\n\nCustom extraction expression for input/prompt tokens."},
 	{Name: "output_tokens_expr", Block: "metrics", Hover: "`output_tokens_expr = <expr>;`\n\nCustom extraction expression for output/completion tokens."},
 	{Name: "cache_read_tokens_expr", Block: "metrics", Hover: "`cache_read_tokens_expr = <expr>;`\n\nCustom extraction expression for cache read tokens."},

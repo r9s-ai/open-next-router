@@ -165,11 +165,11 @@ func validateResponseDirective(path, providerName, scope string, d ResponseDirec
 	for i, op := range d.JSONOps {
 		opScope := fmt.Sprintf("%s.json_op[%d]", scope, i)
 		switch strings.ToLower(strings.TrimSpace(op.Op)) {
-		case "json_set", "json_set_if_absent", "json_del":
+		case jsonOpSet, jsonOpReplace, jsonOpSetIfAbsent, jsonOpDel:
 			if _, err := parseObjectPath(op.Path); err != nil {
 				return fmt.Errorf("provider %q in %q: %s invalid json path: %w", providerName, path, opScope, err)
 			}
-		case "json_rename":
+		case jsonOpRename:
 			if _, err := parseObjectPath(op.FromPath); err != nil {
 				return fmt.Errorf("provider %q in %q: %s invalid from path: %w", providerName, path, opScope, err)
 			}
@@ -178,6 +178,9 @@ func validateResponseDirective(path, providerName, scope string, d ResponseDirec
 			}
 		default:
 			return fmt.Errorf("provider %q in %q: %s unsupported json op %q", providerName, path, opScope, op.Op)
+		}
+		if op.MaxCount < 0 {
+			return fmt.Errorf("provider %q in %q: %s max_count must be non-negative", providerName, path, opScope)
 		}
 	}
 	return nil

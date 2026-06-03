@@ -26,6 +26,7 @@ type StreamMetricsAggregator struct {
 	usageCfg  *UsageExtractConfig
 	finishCfg *FinishReasonExtractConfig
 	extract   streamUsageExtractFunc
+	finalCfg  *UsageExtractConfig
 
 	inputIncludesCache  bool
 	maxFreshInputTokens int
@@ -33,6 +34,7 @@ type StreamMetricsAggregator struct {
 	// merged usage snapshot across SSE events
 	lastUsage        *Usage
 	lastCachedTokens int
+	mergedUsageRoot  map[string]any
 
 	// finish reason (first non-empty)
 	finishReason string
@@ -42,16 +44,25 @@ type streamUsageExtractFunc func(event string, respRoot map[string]any, respBody
 
 // NewStreamMetricsAggregator returns a non-nil aggregator.
 func NewStreamMetricsAggregator(meta *dslmeta.Meta, usageCfg *UsageExtractConfig, finishCfg *FinishReasonExtractConfig) *StreamMetricsAggregator {
+	var finalCfg *UsageExtractConfig
+	var fullCfg *UsageExtractConfig
 	if usageCfg != nil {
 		compiled := prepareUsageExtractConfig(*usageCfg)
+		fullCfg = &compiled
 		usageCfg = &compiled
+		streamCfg, final := splitStreamUsageConfig(meta, *usageCfg)
+		usageCfg = &streamCfg
+		if len(final.facts) > 0 {
+			finalCfg = &final
+		}
 	}
 	return &StreamMetricsAggregator{
 		meta:               meta,
 		usageCfg:           usageCfg,
 		finishCfg:          finishCfg,
 		extract:            newStreamUsageExtractFunc(meta, usageCfg),
-		inputIncludesCache: usageConfigInputIncludesCache(meta, usageCfg),
+		finalCfg:           finalCfg,
+		inputIncludesCache: usageConfigInputIncludesCache(meta, fullCfg),
 	}
 }
 
@@ -88,6 +99,7 @@ func (a *StreamMetricsAggregator) OnSSEEventDataJSON(event string, payload []byt
 	if mode == "" {
 		return nil
 	}
+	a.mergeUsageRootForEvent(event, root)
 
 	u, cachedTokens, err := a.extract(event, root, payload)
 	if err != nil {
@@ -136,6 +148,7 @@ func (a *StreamMetricsAggregator) OnSSETail(sse []byte) {
 func (a *StreamMetricsAggregator) Result() (usage *Usage, cachedTokens int, finishReason string, usageOk bool) {
 	finishReason = strings.TrimSpace(a.finishReason)
 
+	a.applyFinalUsageFacts()
 	if a.lastUsage == nil || isAllZeroUsage(a.lastUsage) {
 		return nil, 0, finishReason, false
 	}
@@ -145,6 +158,41 @@ func (a *StreamMetricsAggregator) Result() (usage *Usage, cachedTokens int, fini
 		a.lastUsage.TotalTokens = a.lastUsage.InputTokens + a.lastUsage.OutputTokens
 	}
 	return a.lastUsage, a.lastCachedTokens, finishReason, true
+}
+
+func (a *StreamMetricsAggregator) mergeUsageRootForEvent(event string, respRoot map[string]any) {
+	if a.usageCfg == nil || len(a.usageCfg.usageRoots) == 0 || len(respRoot) == 0 {
+		return
+	}
+	usageRoot := extractUsageRootWithEvent(event, respRoot, a.usageCfg.usageRoots)
+	if len(usageRoot) == 0 {
+		return
+	}
+	if a.mergedUsageRoot == nil {
+		a.mergedUsageRoot = map[string]any{}
+	}
+	mergeUsageRootLatestNonZero(a.mergedUsageRoot, usageRoot)
+}
+
+func (a *StreamMetricsAggregator) applyFinalUsageFacts() {
+	if a.finalCfg == nil || len(a.mergedUsageRoot) == 0 {
+		return
+	}
+	reqRoot := requestRootFromMeta(a.meta)
+	derivedRoot := derivedRootFromMeta(a.meta)
+	u, cachedTokens, err := extractCustomUsageFromMergedUsageRoot(reqRoot, a.mergedUsageRoot, derivedRoot, *a.finalCfg)
+	if err != nil || u == nil || isAllZeroUsage(u) {
+		return
+	}
+	a.recordFreshInputTokens(u)
+	if a.lastUsage == nil {
+		a.lastUsage = u
+	} else {
+		mergeUsagePreferNonZero(a.lastUsage, u)
+	}
+	if cachedTokens > 0 {
+		a.lastCachedTokens = cachedTokens
+	}
 }
 
 func isAllZeroUsage(u *Usage) bool {
@@ -204,6 +252,9 @@ func mergeUsagePreferNonZero(dst *Usage, src *Usage) {
 	}
 	mergeUsageFlatFieldsPreferNonZero(dst, src)
 	mergeUsageDebugFactsPreferNonZero(dst, src)
+	if len(src.UsageRoot) > 0 {
+		dst.UsageRoot = cloneUsageRootValue(src.UsageRoot)
+	}
 
 	normalizeUsageFields(dst)
 }
@@ -287,6 +338,20 @@ func usageFactMergeSignature(fact usageFactConfig) string {
 
 func shouldRecomputeMergedTotal(cfg UsageExtractConfig) bool {
 	return strings.EqualFold(strings.TrimSpace(cfg.Mode), usageModeCustom) && cfg.TotalTokensExpr == nil
+}
+
+func splitStreamUsageConfig(meta *dslmeta.Meta, cfg UsageExtractConfig) (UsageExtractConfig, UsageExtractConfig) {
+	compiled := compileUsageExtractConfig(meta, cfg)
+	if normalizeUsageMode(compiled.Mode) != usageModeCustom || len(compiled.usageRoots) == 0 {
+		return compiled, UsageExtractConfig{}
+	}
+	streamCfg := filterUsageFactConfigForStream(compiled, func(fact usageFactConfig) bool {
+		return !usageFactReadsUsageRoot(fact, true)
+	})
+	finalCfg := filterUsageFactConfigForStream(compiled, func(fact usageFactConfig) bool {
+		return usageFactReadsUsageRoot(fact, true)
+	})
+	return streamCfg, finalCfg
 }
 
 func newStreamUsageExtractFunc(meta *dslmeta.Meta, cfg *UsageExtractConfig) streamUsageExtractFunc {

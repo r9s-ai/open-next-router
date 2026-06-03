@@ -329,11 +329,12 @@ request {
 - If no `model_map <from> ...;` matches, the default expression is used for `$request.model_mapped`.
 - If not configured, `$request.model_mapped` defaults to `$request.model`.
 
-#### json_set / json_set_if_absent / json_del / json_rename / json_wrap_input_text / json_set_header_values / json_filter_values / json_del_with_condition (multiple allowed)
+#### json_set / json_replace / json_set_if_absent / json_del / json_rename / json_wrap_input_text / json_set_header_values / json_filter_values / json_del_with_condition (multiple allowed)
 
 ```conf
 request {
   json_set "$.stream" true;
+  json_replace "$.model" $request.model;
   json_set_if_absent "$.instructions" "";
   json_set "$.user" "alice";
   json_rename "$.max_tokens" "$.max_completion_tokens";
@@ -351,6 +352,8 @@ request {
 - Applies lightweight transforms to the upstream request JSON.
 - JSONPath (v0.1) supports an object-path subset: `$.a.b.c` (no array indices for these request ops).
 - `json_set` value expressions support: `true/false/null`, integer, string literal, variable, `concat(...)`.
+- `json_set` sets a field and creates missing object-path parents.
+- `json_replace` only replaces an existing target path; missing paths are no-op and no parent object or leaf field is created.
 - `json_set_if_absent` only sets when the path does not exist; existing values are preserved.
 - `json_wrap_input_text` wraps a string value as an OpenAI Responses `input` message list. Missing paths and already-array values are no-op; other types are rejected.
 - `json_set_header_values` sets a JSON array from downstream request header values. Values are split by comma unless `separator="<sep>"` is provided.
@@ -459,7 +462,7 @@ Available modes depend on the built-in implementation. v0.1 includes:
 - `openai_responses_to_openai_chat` (`resp_map`): OpenAI/Azure `/responses` JSON → OpenAI `chat.completions` JSON
 - `openai_responses_to_openai_chat_chunks` (`sse_parse`): OpenAI/Azure `/responses` SSE → OpenAI `chat.completions` SSE chunks
 
-#### json_del / json_set / json_set_if_absent / json_rename (response JSON ops)
+#### json_del / json_set / json_replace / json_set_if_absent / json_rename (response JSON ops)
 
 These directives apply **best-effort** JSON mutations to the downstream response body.
 
@@ -467,6 +470,7 @@ These directives apply **best-effort** JSON mutations to the downstream response
 response {
   json_del "$.usage";
   json_set "$.foo" "bar";
+  json_replace "$.model" $request.model;
   json_set_if_absent "$.bar" "baz";
   json_rename "$.a" "$.b";
 }
@@ -478,6 +482,21 @@ Semantics:
 - Streaming SSE (`text/event-stream`): apply to each SSE event's joined `data:` JSON **object** payload.
 - Non-JSON / non-object payloads are passed through unchanged.
 - Execution order follows the order in the config block.
+- `json_set` creates missing paths; `json_replace` only replaces existing paths, which is useful for replacing upstream `model` fields without polluting unrelated events.
+- In streaming SSE, `json_set`, `json_replace`, `json_set_if_absent`, `json_del`, and `json_rename` may add `event="<name|name2>"` to run only for matching SSE `event:` names.
+- Response JSON ops may add `max_count=<n>` to limit how many times one directive can take effect during one response handling cycle. The default `max_count=0` means unlimited.
+
+```conf
+response {
+  resp_passthrough;
+  json_replace "$.message.model" $request.model event="message_start" max_count=1;
+  json_replace "$.response.model" $request.model event="response.created|response.completed|response.incomplete";
+}
+```
+
+- `event="..."` only affects SSE JSON events. Non-streaming JSON responses have no event context, so response JSON ops with `event` are skipped.
+- `max_count` is tracked per directive. Non-streaming JSON has at most one object to process; SSE counts across the whole stream. Only actual changes are counted, so a `json_replace` with a missing path does not increment the count.
+- Response JSON ops do not support `event_optional=true`. To support upstreams that omit `event:` framing, use an unscoped directive or add event names during upstream mapping.
 
 Limitations (v0.1):
 
@@ -519,7 +538,7 @@ usage_mode "shared_openai" {
 - `usage_mode` is a top-level directive. It defines a reusable global usage preset for the whole providers config set.
 - The recommended location for global DSL presets is a separate file under `config/modes/`, such as `config/modes/usage_modes.conf`, then let `config/onr.conf` include `modes/*.conf` before `include providers;`.
 - It may appear in a dedicated `.conf` file that contains no `provider {}` block; such files are valid in `config/providers/` and are ignored by provider listing.
-- Inside the block, you can use the same usage directives supported by `metrics`: `usage_extract`, `usage_fact`, `*_tokens_path`, and `*_tokens_expr`.
+- Inside the block, you can use the same usage directives supported by `metrics`: `usage_extract`, `usage_root`, `usage_fact`, `*_tokens_path`, and `*_tokens_expr`.
 - Another `usage_mode` may be referenced from inside the block via `usage_extract <other_mode>;`, so larger presets can be composed. Recursive references are rejected.
 - Names are global within a providers directory or merged providers file. Duplicate `usage_mode` names are validation errors.
 - This repository's default `config/modes/usage_modes.conf` defines API-specific presets such as `openai_chat_completions`, `openai_prompt_completion`, `openai_responses`, `openai_responses_stream`, `anthropic_messages`, `anthropic_messages_stream`, `gemini_generate_content`, and `gemini_generate_content_stream`. Defining the same name in DSL overrides that preset.
@@ -600,7 +619,7 @@ metrics { usage_extract custom; }
 - The default repository config now focuses on API/path-specific presets such as `openai_chat_completions`, `openai_prompt_completion`, `openai_responses`, `openai_responses_stream`, `anthropic_messages`, `anthropic_messages_stream`, `gemini_generate_content`, and `gemini_generate_content_stream`.
 - Generic names such as `openai`, `anthropic`, and `gemini` are no longer special builtin `usage_extract` modes. If you want those names, define them explicitly as global `usage_mode` presets.
 - user-defined `usage_mode` names are resolved before execution, then compiled into the same normalized fact-based plan.
-- Inside `metrics`, if you declare `usage_fact`, `*_tokens_path`, or `*_tokens_expr` without `usage_extract`, ONR treats the block as `usage_extract custom;`.
+- Inside `metrics`, if you declare `usage_fact`, `*_tokens_path`, or `*_tokens_expr` without `usage_extract`, ONR treats the block as `usage_extract custom;`. Declaring only `usage_root` does not start usage extraction because it only supplies the root object for `usage_fact`.
 - For code-side introspection, it helps to distinguish three layers:
   - declared: explicit user-authored `usage_fact` rules
   - compiled: the final normalized usage plan that actually executes
@@ -759,20 +778,44 @@ Multiple/override rules:
 
 - These fields are optional overrides; if the same field appears multiple times, the last one wins.
 
+#### usage_root (recommended with usage_fact)
+
+```conf
+metrics {
+  usage_extract custom;
+
+  usage_root path="$.usage";
+
+  usage_fact input token path="$.input_tokens";
+  usage_fact output token path="$.output_tokens";
+}
+```
+
+- `usage_root` extracts a nested usage JSON object before `usage_fact` rules run.
+- When `usage_root` is configured, `usage_fact` rules without `source` read from the merged usage object. Without `usage_root`, the old default still reads from the raw response.
+- Multiple `usage_root` rules are merged into a single usage object.
+- For stream extraction, ONR merges `usage_root` from each chunk first, then runs default-source / `source=usage` facts once at stream end. Explicit `source=response`, `request`, and `derived` facts still run during chunk processing according to their own source and event filters.
+- `event="a|b"` may match multiple SSE event names.
+- `event_optional=true` must be used together with `event="..."`.
+- `usage_root` does not support `name`.
+- Use `source="response"` on a `usage_fact` that must still read from the raw response payload.
+
 #### usage_fact (recommended new form)
 
 ```conf
 metrics {
   usage_extract custom;
 
-  usage_fact input token path="$.usage.input_tokens";
-  usage_fact output token path="$.usage.output_tokens";
-  usage_fact cache_read token path="$.usage.cache_read_input_tokens";
-  usage_fact cache_read token path="$.usage.cache_details.image_cached_tokens" attr.modality="image";
+  usage_root path="$.usage";
 
-  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
-  usage_fact cache_write token path="$.usage.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
-  usage_fact cache_write token path="$.usage.cache_creation_input_tokens" fallback=true;
+  usage_fact input token path="$.input_tokens";
+  usage_fact output token path="$.output_tokens";
+  usage_fact cache_read token path="$.cache_read_input_tokens";
+  usage_fact cache_read token path="$.cache_details.image_cached_tokens" attr.modality="image";
+
+  usage_fact cache_write token path="$.cache_creation.ephemeral_5m_input_tokens" attr.ttl="5m";
+  usage_fact cache_write token path="$.cache_creation.ephemeral_1h_input_tokens" attr.ttl="1h";
+  usage_fact cache_write token path="$.cache_creation_input_tokens" fallback=true;
 }
 ```
 
@@ -781,13 +824,14 @@ metrics {
 - Named presets are compiled into the same internal fact-based execution plan and may still be supplemented with extra `usage_fact` rules.
 - Supported primitives: `path`, `count_path`, `sum_path`, `expr`.
 - `count_path` can be combined with `type` and `status`.
-- `event="..."` optionally restricts a `usage_fact` rule to SSE events such as `message_start` or `message_delta`.
+- `event="..."` optionally restricts a `usage_fact` rule to SSE events such as `message_start`, `message_delta`, or `response.completed|response.incomplete`.
 - `event_optional=true` may be used together with `event="..."` when a provider sometimes omits SSE `event:` names.
 - `attr.ttl` distinguishes Anthropic cache-write tiers.
 - `attr.modality="text|image|audio|video"` may be used with `cache_read token` when the upstream reports real per-modality cached token counts. Relay uses this metadata to build provider cache detail fields such as `openai_cache` / `gemini_cache`.
 - Multiple `usage_fact` rules may share the same `dimension + unit`; all matched non-fallback rules are summed in declaration order.
 - `fallback=true` applies only when no more specific fact exists for the same `dimension + unit`.
-- `source` defaults to `response` and currently supports `response`, `request`, and `derived`.
+- `source` defaults to `usage` when `usage_root` is configured, otherwise it defaults to `response`.
+- `source` currently supports `usage`, `response`, `request`, and `derived`.
 - `dimension` is a flat registry key; `.` is part of the name and does not imply nested structure.
 - Supported `dimension` values and `dimension + unit` pairs are fixed by registry; see the later [`usage_fact`](#usage_fact) directive reference for the complete list.
 - `path`, `count_path`, `sum_path`, and `expr` may use either double-quoted or single-quoted strings.
@@ -1301,19 +1345,37 @@ Multiple: yes
 #### json_set
 
 ```text
-Syntax:  json_set <jsonpath> <value-expr>;
+Syntax:  json_set <jsonpath> <value-expr> [event="<name|name2>"] [max_count=<n>];
 Default: —
-Context: request
+Context: request/response
 Multiple: yes
 ```
 
-- Sets a JSON value on the upstream request payload.
+- Sets a JSON value and creates missing object-path parents.
 - JSONPath is limited to object paths: `$.a.b.c`.
+- `event="..."` only applies to response SSE JSON ops and filters by SSE `event:` name.
+- `max_count=<n>` only applies in `response`; `0` means unlimited, `n > 0` means this directive can make at most `n` actual changes during one response handling cycle.
+
+#### json_replace
+
+```text
+Syntax:  json_replace <jsonpath> <value-expr> [event="<name|name2>"] [max_count=<n>];
+Default: —
+Context: request/response
+Multiple: yes
+```
+
+- Replaces a JSON value only when the target path already exists.
+- Missing paths are no-op; missing parent objects or leaf fields are not created.
+- JSONPath is limited to object paths: `$.a.b.c`.
+- `<value-expr>` supports the same expression forms as `json_set`.
+- `event="..."` only applies to response SSE JSON ops and filters by SSE `event:` name.
+- `max_count=<n>` only applies in `response`, with the same semantics as `json_set`.
 
 #### json_set_if_absent
 
 ```text
-Syntax:  json_set_if_absent <jsonpath> <value-expr>;
+Syntax:  json_set_if_absent <jsonpath> <value-expr> [event="<name|name2>"] [max_count=<n>];
 Default: —
 Context: request/response
 Multiple: yes
@@ -1321,30 +1383,36 @@ Multiple: yes
 
 - Sets a JSON value only when the path does not exist.
 - If the path already exists (including `null`), the original value is kept.
+- `event="..."` only applies to response SSE JSON ops.
+- `max_count=<n>` only applies in `response`, with the same semantics as `json_set`.
 
 #### json_del
 
 ```text
-Syntax:  json_del <jsonpath>;
+Syntax:  json_del <jsonpath> [event="<name|name2>"] [max_count=<n>];
 Default: —
-Context: request
+Context: request/response
 Multiple: yes
 ```
 
-- Deletes a JSON field on the upstream request payload.
+- Deletes a JSON field.
 - JSONPath is limited to object paths: `$.a.b.c`.
+- `event="..."` only applies to response SSE JSON ops.
+- `max_count=<n>` only applies in `response`, with the same semantics as `json_set`.
 
 #### json_rename
 
 ```text
-Syntax:  json_rename <from-jsonpath> <to-jsonpath>;
+Syntax:  json_rename <from-jsonpath> <to-jsonpath> [event="<name|name2>"] [max_count=<n>];
 Default: —
-Context: request
+Context: request/response
 Multiple: yes
 ```
 
-- Renames a JSON field on the upstream request payload.
+- Renames a JSON field.
 - JSONPath is limited to object paths: `$.a.b.c`.
+- `event="..."` only applies to response SSE JSON ops.
+- `max_count=<n>` only applies in `response`, with the same semantics as `json_set`.
 
 #### json_wrap_input_text
 
@@ -1705,6 +1773,21 @@ Multiple: yes
 - Shorthand for `cache_write_tokens_expr = <jsonpath>;` (single JSONPath only; no arithmetic).
 - Compatibility-layer shorthand: it is compiled into equivalent internal fact-based rules before execution.
 
+#### usage_root
+
+```text
+Syntax:  usage_root path="$.usage" [event="a|b"] [event_optional=true];
+Default: —
+Context: metrics, usage_mode
+Multiple: yes
+```
+
+- `path` is required and must start with `$.`.
+- `event` is optional and only applies to stream extraction.
+- `event_optional=true` requires `event`.
+- Multiple matched usage roots are merged into one usage object.
+- `usage_root` does not support `name`.
+
 #### usage_fact
 
 ```text
@@ -1722,7 +1805,7 @@ Multiple: yes
 - `attr.modality` is meaningful for `cache_read token` when an upstream reports real per-modality cached token counts. Supported values are `text`, `image`, `audio`, and `video`; OpenAI cache detail uses text/image/audio, while Gemini cache detail uses text/image/audio/video.
 - Multiple rules may share the same `dimension + unit`; all matched non-fallback rules are summed.
 - `fallback=true` means the fact applies only when no more specific fact exists for the same `dimension + unit`.
-- `source` defaults to `response` and currently supports `response`, `request`, and `derived`.
+- `source` defaults to `usage` when `usage_root` is configured, otherwise it defaults to `response`; current values are `usage`, `response`, `request`, and `derived`.
 - `dimension` is a flat string key; `.` is part of the name and does not imply nesting.
 - Supported `dimension` values:
   - `input`

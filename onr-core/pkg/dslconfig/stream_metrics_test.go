@@ -286,6 +286,41 @@ func TestStreamMetricsAggregator_OpenAIResponsesStreamUsageUsesSSEEventFilter(t 
 	}
 }
 
+func TestStreamMetricsAggregator_UsageRootFactsRunAtResult(t *testing.T) {
+	meta := &dslmeta.Meta{API: "responses", IsStream: true}
+	usageCfg, finishCfg := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
+	agg := NewStreamMetricsAggregator(meta, usageCfg, finishCfg)
+
+	_ = agg.OnSSEEventDataJSON("response.completed", []byte(`{
+	  "type":"response.completed",
+	  "response":{
+	    "usage":{"input_tokens":11,"output_tokens":5},
+	    "output":[{"type":"web_search_call","status":"completed"}]
+	  }
+	}`))
+
+	if agg.lastUsage == nil {
+		t.Fatalf("expected stream-time response fact usage before Result")
+	}
+	if got := agg.lastUsage.InputTokens; got != 0 {
+		t.Fatalf("stream-time InputTokens got %d, want 0 before final usage_root extraction", got)
+	}
+	if got, want := agg.lastUsage.FlatFields["server_tool_web_search_calls"], 1; got != want {
+		t.Fatalf("stream-time web search calls got %v, want %v", got, want)
+	}
+
+	u, _, _, ok := agg.Result()
+	if !ok || u == nil {
+		t.Fatalf("expected usage ok")
+	}
+	if got, want := u.InputTokens, 11; got != want {
+		t.Fatalf("final InputTokens got %d, want %d", got, want)
+	}
+	if got, want := u.OutputTokens, 5; got != want {
+		t.Fatalf("final OutputTokens got %d, want %d", got, want)
+	}
+}
+
 func TestStreamMetricsAggregator_FinishReasonUsesSSEEventFilter(t *testing.T) {
 	meta := &dslmeta.Meta{API: "responses", IsStream: true}
 	finishCfg := FinishReasonExtractConfig{Mode: usageModeCustom}

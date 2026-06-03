@@ -12,7 +12,8 @@ func TestApplyJSONOps_TableDriven(t *testing.T) {
 	t.Parallel()
 
 	meta := &dslmeta.Meta{
-		API: "chat.completions",
+		API:             "chat.completions",
+		OriginModelName: "gpt-4o-mini",
 		RequestHeaders: http.Header{
 			"Anthropic-Beta": []string{" computer-use-2025-01-24 , unknown , CONTEXT-MANAGEMENT-2025-06-27 "},
 		},
@@ -48,6 +49,22 @@ func TestApplyJSONOps_TableDriven(t *testing.T) {
 				{Op: "json_set_if_absent", Path: "$.instructions", ValueExpr: "\"\""},
 			},
 			want: map[string]any{"instructions": "keep-me"},
+		},
+		{
+			name: "json_replace_updates_existing_path",
+			in:   map[string]any{"model": "upstream"},
+			ops: []JSONOp{
+				{Op: "json_replace", Path: "$.model", ValueExpr: "$request.model"},
+			},
+			want: map[string]any{"model": "gpt-4o-mini"},
+		},
+		{
+			name: "json_replace_missing_path_is_noop",
+			in:   map[string]any{"a": 1},
+			ops: []JSONOp{
+				{Op: "json_replace", Path: "$.message.model", ValueExpr: "\"meta\""},
+			},
+			want: map[string]any{"a": 1},
 		},
 		{
 			name: "json_del_missing_is_ok",

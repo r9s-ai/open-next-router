@@ -18,7 +18,12 @@ func ApplyJSONOps(meta *dslmeta.Meta, in map[string]any, ops []JSONOp) (map[stri
 		return nil, fmt.Errorf("request json root is nil")
 	}
 
-	for _, op := range ops {
+	counts := make([]int, len(ops))
+	for i, op := range ops {
+		if shouldSkipJSONOp("", op, counts, i) {
+			continue
+		}
+		changed := false
 		switch op.Op {
 		case jsonOpSet:
 			val := evalJSONValueExpr(meta, op.ValueExpr)
@@ -26,7 +31,14 @@ func ApplyJSONOps(meta *dslmeta.Meta, in map[string]any, ops []JSONOp) (map[stri
 			if err != nil {
 				return nil, err
 			}
-			_ = opChanged
+			changed = opChanged
+		case jsonOpReplace:
+			val := evalJSONValueExpr(meta, op.ValueExpr)
+			opChanged, err := jsonReplace(obj, op.Path, val)
+			if err != nil {
+				return nil, err
+			}
+			changed = opChanged
 		case jsonOpSetIfAbsent:
 			exists, err := jsonPathExists(obj, op.Path)
 			if err != nil {
@@ -40,13 +52,13 @@ func ApplyJSONOps(meta *dslmeta.Meta, in map[string]any, ops []JSONOp) (map[stri
 			if err != nil {
 				return nil, err
 			}
-			_ = opChanged
+			changed = opChanged
 		case jsonOpDel:
 			opChanged, err := jsonDel(obj, op.Path)
 			if err != nil {
 				return nil, err
 			}
-			_ = opChanged
+			changed = opChanged
 		case jsonOpDelIfMissing:
 			exists, err := jsonPathExists(obj, op.FromPath)
 			if err != nil {
@@ -59,19 +71,19 @@ func ApplyJSONOps(meta *dslmeta.Meta, in map[string]any, ops []JSONOp) (map[stri
 			if err != nil {
 				return nil, err
 			}
-			_ = opChanged
+			changed = opChanged
 		case jsonOpRename:
 			opChanged, err := jsonRename(obj, op.FromPath, op.ToPath)
 			if err != nil {
 				return nil, err
 			}
-			_ = opChanged
+			changed = opChanged
 		case jsonOpWrapInputText:
 			opChanged, err := jsonWrapInputText(obj, op.Path)
 			if err != nil {
 				return nil, err
 			}
-			_ = opChanged
+			changed = opChanged
 		case jsonOpSetHeaderVals:
 			// Filtering is intentionally handled by a following json_filter_values op.
 			// The parser rejects extra value patterns on json_set_header_values so
@@ -84,24 +96,39 @@ func ApplyJSONOps(meta *dslmeta.Meta, in map[string]any, ops []JSONOp) (map[stri
 			if err != nil {
 				return nil, err
 			}
-			_ = opChanged
+			changed = opChanged
 		case jsonOpFilterValues:
 			opChanged, err := jsonFilterValues(obj, op.Path, op.Patterns)
 			if err != nil {
 				return nil, err
 			}
-			_ = opChanged
+			changed = opChanged
 		case jsonOpDelWithCond:
 			opChanged, err := jsonDelWithCondition(obj, op.Path, op.FieldName, op.Patterns)
 			if err != nil {
 				return nil, err
 			}
-			_ = opChanged
+			changed = opChanged
 		default:
 			return nil, fmt.Errorf("unsupported json op %q", op.Op)
 		}
+		recordJSONOpChange(changed, op, counts, i)
 	}
 	return obj, nil
+}
+
+func shouldSkipJSONOp(event string, op JSONOp, counts []int, idx int) bool {
+	if strings.TrimSpace(op.Event) != "" && !matchesUsageEvent(event, op.Event, false) {
+		return true
+	}
+	return op.MaxCount > 0 && counts != nil && idx >= 0 && idx < len(counts) && counts[idx] >= op.MaxCount
+}
+
+func recordJSONOpChange(changed bool, op JSONOp, counts []int, idx int) {
+	if !changed || op.MaxCount <= 0 || counts == nil || idx < 0 || idx >= len(counts) {
+		return
+	}
+	counts[idx]++
 }
 
 // headerValuesForJSON reads header values from the original downstream user request.
@@ -198,6 +225,38 @@ func jsonSet(root map[string]any, path string, val any) (bool, error) {
 	last := parts[len(parts)-1]
 	if old, ok := cur[last]; ok && reflect.DeepEqual(old, val) {
 		return changed, nil
+	}
+	cur[last] = val
+	return true, nil
+}
+
+func jsonReplace(root map[string]any, path string, val any) (bool, error) {
+	parts, err := parseObjectPath(path)
+	if err != nil {
+		return false, err
+	}
+	if len(parts) == 0 {
+		return false, nil
+	}
+	cur := root
+	for i := 0; i < len(parts)-1; i++ {
+		next, ok := cur[parts[i]]
+		if !ok {
+			return false, nil
+		}
+		m, ok := next.(map[string]any)
+		if !ok || m == nil {
+			return false, nil
+		}
+		cur = m
+	}
+	last := parts[len(parts)-1]
+	old, ok := cur[last]
+	if !ok {
+		return false, nil
+	}
+	if reflect.DeepEqual(old, val) {
+		return false, nil
 	}
 	cur[last] = val
 	return true, nil

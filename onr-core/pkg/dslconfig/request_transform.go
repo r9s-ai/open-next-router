@@ -114,14 +114,14 @@ func mergeRequestTransform(base, override RequestTransform) RequestTransform {
 // write back into the shared provider config or registry state.
 func (t *RequestTransform) Apply(meta *dslmeta.Meta) {
 	if meta.DSLModelMapped == "" {
-		meta.DSLModelMapped = meta.ActualModelName
+		meta.DSLModelMapped = meta.OriginModelName
 	}
 	m := t.ModelMap
 	if len(m.Map) == 0 && strings.TrimSpace(m.DefaultExpr) == "" {
 		return
 	}
 
-	key := strings.TrimSpace(meta.ActualModelName)
+	key := strings.TrimSpace(meta.OriginModelName)
 	if key == "" {
 		return
 	}
@@ -145,4 +145,6 @@ type JSONOp struct {
 	FieldName  string
 	Patterns   []string
 	Separator  string
+	Event      string
+	MaxCount   int
 }

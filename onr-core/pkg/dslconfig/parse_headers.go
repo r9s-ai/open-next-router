@@ -130,6 +130,12 @@ func parseRequestPhaseWithTransform(s *scanner, phase *PhaseHeaders, transform *
 			}
 			return parseJSONSetStmt(s, t, jsonOpSet)
 		},
+		"json_replace": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
+			if t == nil {
+				return skipStmtOrBlock(s)
+			}
+			return parseJSONSetStmt(s, t, jsonOpReplace)
+		},
 		"json_set_if_absent": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
 			if t == nil {
 				return skipStmtOrBlock(s)
@@ -254,6 +260,10 @@ func parseRequestJSONOpsOnlyBlock(s *scanner, t *RequestTransform, blockName str
 			switch tok.text {
 			case "json_set":
 				if err := parseJSONSetStmt(s, t, jsonOpSet); err != nil {
+					return err
+				}
+			case "json_replace":
+				if err := parseJSONSetStmt(s, t, jsonOpReplace); err != nil {
 					return err
 				}
 			case "json_set_if_absent":
