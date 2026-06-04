@@ -307,6 +307,62 @@ func TestE2EMock_ChatCompletions_AzureResponses_StreamCompletedEarly(t *testing.
 	assertGolden(t, "golden/azure_responses_stream_completed_early_openai_chat.sse", normalizeForGolden(body))
 }
 
+func TestE2EMock_ChatCompletions_OpenAIResponses_SSECollectToNonStreamChat(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockResp := mustReadTestData(t, "mock_upstream/azure_response/responses_stream_completed_early.sse")
+	fixtureReq := mustReadTestData(t, "fixtures/chat_nonstream_request.json")
+
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/responses" {
+			http.NotFound(w, r)
+			return
+		}
+		var req map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode upstream request: %v", err)
+		}
+		if stream, ok := req["stream"].(bool); ok && stream {
+			t.Fatalf("unexpected upstream stream=true in collected non-stream route")
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(mockResp)
+	}))
+	t.Cleanup(mock.Close)
+
+	c := newMockE2EClient(t, map[string]string{
+		"openai.conf": providerConfOpenAIResponsesSSECollect(mock.URL),
+	})
+	gc, rec := newGinJSONRequest(t, fixtureReq)
+	res, err := c.ProxyJSON(gc, "openai", ProviderKey{Name: "openai-key", Value: "mock-key"}, "chat.completions", false)
+	if err != nil {
+		t.Fatalf("proxy error: %v", err)
+	}
+	if res == nil || res.Status != http.StatusOK {
+		t.Fatalf("unexpected result: %#v", res)
+	}
+	if res.Stream {
+		t.Fatalf("result should remain non-stream")
+	}
+	if got := strings.ToLower(rec.Header().Get("Content-Type")); !strings.Contains(got, "application/json") {
+		t.Fatalf("Content-Type=%q want application/json", got)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode downstream body: %v", err)
+	}
+	choices, _ := out["choices"].([]any)
+	if len(choices) != 1 {
+		t.Fatalf("choices len=%d want=1, body=%s", len(choices), rec.Body.String())
+	}
+	ch0, _ := choices[0].(map[string]any)
+	msg, _ := ch0["message"].(map[string]any)
+	if msg["content"] != "Hello" || ch0["finish_reason"] != "stop" {
+		t.Fatalf("unexpected chat response: %#v", out)
+	}
+}
+
 func TestE2EMock_ChatCompletions_OpenAI_StreamFinalUsageChunk(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -1503,6 +1559,39 @@ provider "openai" {
     }
     response {
       sse_parse openai_responses_to_openai_chat_chunks;
+    }
+  }
+}
+`, baseURL)
+}
+
+func providerConfOpenAIResponsesSSECollect(baseURL string) string {
+	return fmt.Sprintf(`syntax "next-router/0.1";
+
+provider "openai" {
+  defaults {
+    upstream_config {
+      base_url = %q;
+    }
+    auth {
+      auth_bearer;
+    }
+    response {
+      resp_passthrough;
+    }
+  }
+
+  match api = "chat.completions" stream = false {
+    request {
+      req_map openai_chat_to_openai_responses;
+      set_header "Accept-Encoding" "identity";
+    }
+    upstream {
+      set_path "/v1/responses";
+    }
+    response {
+      sse_collect openai_responses;
+      resp_map openai_responses_to_openai_chat;
     }
   }
 }
