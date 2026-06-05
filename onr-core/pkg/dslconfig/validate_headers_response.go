@@ -3,15 +3,35 @@ package dslconfig
 import (
 	"fmt"
 	"strings"
+
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/ssecollect"
 )
 
 func validateProviderResponse(path, providerName string, resp ProviderResponse) error {
 	if err := validateResponseDirective(path, providerName, "defaults.response", resp.Defaults); err != nil {
 		return err
 	}
+	if strings.TrimSpace(resp.Defaults.SSECollectMode) != "" {
+		return validationIssue(
+			fmt.Errorf("provider %q in %q: defaults.response sse_collect must be configured in an explicit stream = false match", providerName, path),
+			"defaults.response",
+			"sse_collect",
+		)
+	}
 	for i, m := range resp.Matches {
 		scope := fmt.Sprintf("match[%d].response", i)
 		if err := validateResponseDirective(path, providerName, scope, m.Response); err != nil {
+			return err
+		}
+		if m.Stream != nil && *m.Stream && strings.TrimSpace(m.Response.SSECollectMode) != "" {
+			return validationIssue(
+				fmt.Errorf("provider %q in %q: %s sse_collect is only valid for stream = false matches", providerName, path, scope),
+				scope,
+				"sse_collect",
+			)
+		}
+		mergedScope := fmt.Sprintf("match[%d].response(effective)", i)
+		if err := validateResponseDirective(path, providerName, mergedScope, mergeResponseDirective(resp.Defaults, m.Response)); err != nil {
 			return err
 		}
 	}
@@ -150,6 +170,23 @@ func validateOAuthConfig(path, providerName, scope string, cfg OAuthConfig) erro
 }
 
 func validateResponseDirective(path, providerName, scope string, d ResponseDirective) error {
+	if mode := strings.TrimSpace(d.SSECollectMode); mode != "" {
+		if !ssecollect.SupportsMode(mode) {
+			return validationIssue(
+				fmt.Errorf("provider %q in %q: %s unsupported sse_collect mode %q", providerName, path, scope, mode),
+				scope,
+				"sse_collect",
+			)
+		}
+		switch strings.TrimSpace(d.Op) {
+		case "sse_parse", "resp_passthrough":
+			return validationIssue(
+				fmt.Errorf("provider %q in %q: %s sse_collect cannot be combined with %s", providerName, path, scope, d.Op),
+				scope,
+				"sse_collect",
+			)
+		}
+	}
 	for i, r := range d.SSEJSONDelIf {
 		rs := fmt.Sprintf("%s.sse_json_del_if[%d]", scope, i)
 		if strings.TrimSpace(r.Equals) == "" {

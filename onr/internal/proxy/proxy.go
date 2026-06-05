@@ -25,6 +25,7 @@ import (
 	onraudio "github.com/r9s-ai/open-next-router/onr-core/pkg/providerusage/audio"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/requestcanon"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/requesttransform"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/ssecollect"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/trafficdump"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/usageestimate"
 	"github.com/r9s-ai/open-next-router/onr/internal/auth"
@@ -133,7 +134,7 @@ func (c *Client) ProxyJSON(
 	}()
 
 	// If upstream returns SSE, treat it as streaming regardless of client "stream" flag.
-	effectiveStream := isEffectiveStream(stream, resp)
+	effectiveStream := isEffectiveStream(stream, resp, respDir)
 
 	if !effectiveStream {
 		return c.handleNonStreamResponse(gc, provider, key, api, stream, start, pf, m, model, reqBody, respDir, resp)
@@ -168,7 +169,7 @@ func (c *Client) handleNonStreamResponse(
 		trafficdump.AppendUpstreamResponse(gc, resp.Status, resp.Header, limited, binary, truncated)
 	}
 
-	respOutBody, respOutObj, outCT, didTransform, err := mapNonStreamResponse(respBody, resp, respDir)
+	respOutBody, respOutObj, outCT, didTransform, err := mapNonStreamResponse(gc.Request.Context(), respBody, resp, respDir)
 	if err != nil {
 		return nil, err
 	}
@@ -246,10 +247,30 @@ func (c *Client) handleNonStreamResponse(
 }
 
 // mapNonStreamResponse requires a non-nil upstream response from the non-stream proxy path.
-func mapNonStreamResponse(respBody []byte, resp *http.Response, respDir *dslconfig.ResponseDirective) ([]byte, map[string]any, string, bool, error) {
+func mapNonStreamResponse(ctx context.Context, respBody []byte, resp *http.Response, respDir *dslconfig.ResponseDirective) ([]byte, map[string]any, string, bool, error) {
 	respOutBody := respBody
 	outCT := resp.Header.Get("Content-Type")
+	var root map[string]any
+	if shouldCollectSSE(respDir, resp) {
+		if resp.StatusCode >= http.StatusBadRequest {
+			return respOutBody, nil, outCT, false, nil
+		}
+		decoded, _, err := apitransform.DecodeResponseBody(respBody, resp.Header.Get("Content-Encoding"))
+		if err != nil {
+			return nil, nil, outCT, false, err
+		}
+		collected, err := ssecollect.CollectByMode(ctx, respDir.SSECollectMode, bytes.NewReader(decoded), ssecollect.Options{})
+		if err != nil {
+			return nil, nil, outCT, false, err
+		}
+		root = collected
+		respOutBody = nil
+		outCT = contentTypeJSON
+	}
 	if respDir == nil || respDir.Op != "resp_map" {
+		if root != nil {
+			return nil, root, outCT, true, nil
+		}
 		return respOutBody, nil, outCT, false, nil
 	}
 	if resp.StatusCode >= http.StatusBadRequest {
@@ -258,13 +279,14 @@ func mapNonStreamResponse(respBody []byte, resp *http.Response, respDir *dslconf
 	if !apitransform.SupportsResponseMapMode(respDir.Mode) {
 		return respOutBody, nil, outCT, false, nil
 	}
-	decoded, _, err := apitransform.DecodeResponseBody(respBody, resp.Header.Get("Content-Encoding"))
-	if err != nil {
-		return nil, nil, outCT, false, err
-	}
-	var root map[string]any
-	if err := json.Unmarshal(decoded, &root); err != nil {
-		return nil, nil, outCT, false, err
+	if root == nil {
+		decoded, _, err := apitransform.DecodeResponseBody(respBody, resp.Header.Get("Content-Encoding"))
+		if err != nil {
+			return nil, nil, outCT, false, err
+		}
+		if err := json.Unmarshal(decoded, &root); err != nil {
+			return nil, nil, outCT, false, err
+		}
 	}
 	outObj, outCT, changed, err := apitransform.TransformNonStreamResponseBody(
 		resp.StatusCode,
@@ -276,9 +298,20 @@ func mapNonStreamResponse(respBody []byte, resp *http.Response, respDir *dslconf
 		return nil, nil, outCT, changed, err
 	}
 	if !changed {
+		if respOutBody == nil && root != nil {
+			return nil, root, outCT, true, nil
+		}
 		return respOutBody, outObj, outCT, false, nil
 	}
 	return nil, outObj, outCT, true, nil
+}
+
+func shouldCollectSSE(respDir *dslconfig.ResponseDirective, resp *http.Response) bool {
+	if respDir == nil || strings.TrimSpace(respDir.SSECollectMode) == "" || resp == nil {
+		return false
+	}
+	upstreamCT := strings.ToLower(resp.Header.Get("Content-Type"))
+	return strings.Contains(upstreamCT, "text/event-stream")
 }
 
 func estimateNonStreamUsage(
@@ -857,9 +890,12 @@ func (c *Client) doUpstreamRequest(gc *gin.Context, provider string, pf *dslconf
 	return lastResp, cancel, nil
 }
 
-func isEffectiveStream(clientStream bool, resp *http.Response) bool {
+func isEffectiveStream(clientStream bool, resp *http.Response, respDir *dslconfig.ResponseDirective) bool {
 	if clientStream {
 		return true
+	}
+	if shouldCollectSSE(respDir, resp) {
+		return false
 	}
 	upstreamCT := strings.ToLower(resp.Header.Get("Content-Type"))
 	return strings.Contains(upstreamCT, "text/event-stream")

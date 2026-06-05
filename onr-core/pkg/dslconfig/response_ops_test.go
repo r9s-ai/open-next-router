@@ -130,6 +130,87 @@ provider "t" {
 	require.Error(t, err)
 }
 
+func TestValidateProviderFile_SSECollectWithRespMap(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "t.conf")
+	require.NoError(t, os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "t" {
+  defaults {
+    upstream_config { base_url = "https://t.example.com"; }
+    response { resp_passthrough; }
+  }
+
+  match api = "chat.completions" stream = false {
+    response {
+      sse_collect openai_responses;
+      resp_map openai_responses_to_openai_chat;
+    }
+  }
+}
+`), 0o600))
+
+	pf, err := ValidateProviderFile(path)
+	require.NoError(t, err)
+
+	stream := false
+	d, ok := pf.Response.Select(&dslmeta.Meta{API: "chat.completions", IsStream: stream})
+	require.True(t, ok)
+	require.Equal(t, "openai_responses", d.SSECollectMode)
+	require.Equal(t, "resp_map", d.Op)
+	require.Equal(t, "openai_responses_to_openai_chat", d.Mode)
+}
+
+func TestValidateProviderFile_SSECollectRejectsStreamTrue(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "t.conf")
+	require.NoError(t, os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "t" {
+  defaults {
+    upstream_config { base_url = "https://t.example.com"; }
+  }
+
+  match api = "chat.completions" stream = true {
+    response {
+      sse_collect openai_responses;
+    }
+  }
+}
+`), 0o600))
+
+	_, err := ValidateProviderFile(path)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "stream = false")
+}
+
+func TestValidateProviderFile_SSECollectRejectsSSEParse(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "t.conf")
+	require.NoError(t, os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "t" {
+  defaults {
+    upstream_config { base_url = "https://t.example.com"; }
+  }
+
+  match api = "chat.completions" stream = false {
+    response {
+      sse_collect openai_responses;
+      sse_parse openai_responses_to_openai_chat_chunks;
+    }
+  }
+}
+`), 0o600))
+
+	_, err := ValidateProviderFile(path)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cannot be combined")
+}
+
 func TestTransformSSEEventDataJSON_ConditionalDelAndJSONOps(t *testing.T) {
 	in := "" +
 		"event: message\n" +

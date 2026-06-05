@@ -10,6 +10,10 @@ type ResponseDirective struct {
 	Op   string
 	Mode string
 
+	// SSECollectMode collects an upstream SSE response into the same upstream
+	// protocol's non-stream JSON object before optional resp_map/JSONOps.
+	SSECollectMode string
+
 	// JSONOps are optional JSON mutations applied to the downstream response body (best-effort).
 	//
 	// - Non-stream: applied to the whole JSON object response.
@@ -49,7 +53,7 @@ func (p *ProviderResponse) Select(meta *dslmeta.Meta) (*ResponseDirective, bool)
 	if m, ok := p.selectMatch(api, meta.IsStream); ok {
 		out = mergeResponseDirective(out, m.Response)
 	}
-	if strings.TrimSpace(out.Op) == "" && len(out.JSONOps) == 0 && len(out.SSEJSONDelIf) == 0 {
+	if strings.TrimSpace(out.Op) == "" && strings.TrimSpace(out.SSECollectMode) == "" && len(out.JSONOps) == 0 && len(out.SSEJSONDelIf) == 0 {
 		return nil, false
 	}
 	return &out, true
@@ -82,6 +86,13 @@ func mergeResponseDirective(base ResponseDirective, override ResponseDirective) 
 	}
 	if strings.TrimSpace(override.Mode) != "" {
 		out.Mode = override.Mode
+	}
+	if strings.TrimSpace(override.SSECollectMode) != "" {
+		out.SSECollectMode = override.SSECollectMode
+		if strings.TrimSpace(out.Op) == "resp_passthrough" {
+			out.Op = ""
+			out.Mode = ""
+		}
 	}
 	if len(override.SSEJSONDelIf) > 0 {
 		out.SSEJSONDelIf = append(out.SSEJSONDelIf, override.SSEJSONDelIf...)

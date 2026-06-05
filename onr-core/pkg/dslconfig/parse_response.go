@@ -31,6 +31,10 @@ func parseResponsePhase(s *scanner, resp *ResponseDirective) error {
 				if err := parseSSEParse(s, resp); err != nil {
 					return err
 				}
+			case "sse_collect":
+				if err := parseSSECollect(s, resp); err != nil {
+					return err
+				}
 			case jsonOpSet:
 				if err := parseRespJSONSetStmt(s, resp, jsonOpSet); err != nil {
 					return err
@@ -93,6 +97,15 @@ func parseSSEParse(s *scanner, resp *ResponseDirective) error {
 	}
 	resp.Op = "sse_parse"
 	resp.Mode = mode
+	return nil
+}
+
+func parseSSECollect(s *scanner, resp *ResponseDirective) error {
+	mode, err := parseModeArgStmt(s, "sse_collect")
+	if err != nil {
+		return err
+	}
+	resp.SSECollectMode = mode
 	return nil
 }
 

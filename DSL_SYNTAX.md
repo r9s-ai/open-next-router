@@ -423,7 +423,7 @@ upstream {
 
 ### 5.5 response
 
-This phase selects a response strategy. If multiple directives are present, **the last one wins**.
+This phase selects a response strategy. For `resp_passthrough` / `resp_map` / `sse_parse`, if multiple strategy directives are present, **the last one wins**. `sse_collect` is a separate pre-mapping collection step for non-stream routes and may be followed by `resp_map`.
 
 #### resp_passthrough
 
@@ -448,6 +448,26 @@ response { sse_parse <mode>; }
 ```
 
 Streaming SSE mapping (e.g. vendor SSE → OpenAI stream chunks).
+
+#### sse_collect
+
+```conf
+response { sse_collect <mode>; }
+```
+
+Collect upstream `text/event-stream` into the same upstream protocol's non-stream JSON object. This is for non-stream downstream routes whose upstream returns SSE.
+
+- `sse_collect` does not perform cross-protocol conversion.
+- After collection, optional `resp_map` and response JSON ops run on the collected JSON.
+- `resp_map` is optional; without it, ONR returns the collected same-protocol JSON.
+- `sse_collect` cannot be combined with `sse_parse` or `resp_passthrough`.
+- `sse_collect` is only valid for `stream = false` matches.
+
+Supported modes:
+
+- `openai_responses`: OpenAI/Azure Responses SSE → Responses JSON
+- `anthropic_messages`: Anthropic Messages SSE → Message JSON
+- `gemini_generate_content`: Gemini `streamGenerateContent` SSE → `GenerateContentResponse` JSON
 
 Available modes depend on the built-in implementation. v0.1 includes:
 
@@ -1601,6 +1621,19 @@ Multiple: yes
 ```
 
 - Streaming SSE mapping; modes are built-in.
+
+#### sse_collect
+
+```text
+Syntax:  sse_collect <mode>;
+Default: —
+Context: response
+Multiple: yes
+```
+
+- Collects upstream SSE into same-protocol non-stream JSON before optional `resp_map`.
+- Supported modes: `openai_responses`, `anthropic_messages`, `gemini_generate_content`.
+- Only valid for `stream = false` matches; cannot be combined with `sse_parse` or `resp_passthrough`.
 
 ### 7.8 error
 

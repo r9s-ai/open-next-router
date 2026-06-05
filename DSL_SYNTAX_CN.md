@@ -442,7 +442,7 @@ upstream {
 
 ### 5.5 response（响应处理）
 
-该 phase 目前语义是“选择一个响应策略”。如写多条，**最后一条生效**。
+该 phase 会选择响应策略。对 `resp_passthrough` / `resp_map` / `sse_parse` 这类策略指令，如写多条，**最后一条生效**。`sse_collect` 是独立的非流式前置聚合步骤，可以后接 `resp_map`。
 
 #### resp_passthrough
 
@@ -467,6 +467,26 @@ response { sse_parse <mode>; }
 ```
 
 用途：流式 SSE 映射（例如把某供应商 SSE 映射为 OpenAI stream chunks）。
+
+#### sse_collect
+
+```conf
+response { sse_collect <mode>; }
+```
+
+用途：把上游 `text/event-stream` 聚合成同上游协议的非流式 JSON 对象，适用于下游非流式、但上游返回 SSE 的路由。
+
+- `sse_collect` 不做跨协议转换。
+- 聚合后可继续执行可选的 `resp_map` 和响应 JSON 操作。
+- `resp_map` 不是必需的；没有 `resp_map` 时，ONR 直接返回聚合后的同协议 JSON。
+- `sse_collect` 不能和 `sse_parse` 或 `resp_passthrough` 组合使用。
+- `sse_collect` 只允许用于 `stream = false` 的 match。
+
+支持的模式：
+
+- `openai_responses`：OpenAI/Azure Responses SSE → Responses JSON
+- `anthropic_messages`：Anthropic Messages SSE → Message JSON
+- `gemini_generate_content`：Gemini `streamGenerateContent` SSE → `GenerateContentResponse` JSON
 
 `mode` 的可用值取决于内置实现；当前 v0.1 已内置：
 
@@ -1596,6 +1616,19 @@ Multiple: yes
 ```
 
 - 流式 SSE 映射；`mode` 取决于内置实现。
+
+#### sse_collect
+
+```text
+Syntax:  sse_collect <mode>;
+Default: —
+Context: response
+Multiple: yes
+```
+
+- 把上游 SSE 聚合成同协议非流式 JSON，再可选执行 `resp_map`。
+- 支持的 `mode`：`openai_responses`、`anthropic_messages`、`gemini_generate_content`。
+- 只允许用于 `stream = false` 的 match；不能和 `sse_parse` 或 `resp_passthrough` 组合。
 
 ### 7.8 error（错误归一化）
 
