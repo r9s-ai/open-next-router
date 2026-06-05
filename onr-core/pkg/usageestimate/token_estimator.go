@@ -47,6 +47,9 @@ var multipliersMap = map[provider]map[string]multipliers{
 		"default": {Word: 1.05, Number: 1.63, CJK: 1.25, Symbol: 0.4, MathSymbol: 4.52,
 			URLDelim: 1.26, AtSign: 2.82, Emoji: 2.6, Newline: 0.89, Space: 0.39, BasePad: 0,
 			ToolsExist: 496, PerTool: 33},
+		"default-output": {Word: 1.2, Number: 1.85, CJK: 1.35, Symbol: 0.52, MathSymbol: 4.52,
+			URLDelim: 1.26, AtSign: 2.82, Emoji: 2.6, Newline: 1.0, Space: 0.45, BasePad: 24,
+			ToolsExist: 0, PerTool: 0},
 		"opus-4-7": {Word: 1.15, Number: 1.25, CJK: 0.99, Symbol: 0.25, MathSymbol: 3.56,
 			URLDelim: 0.45, AtSign: 2.42, Emoji: 2.64, Newline: 1.10, Space: 0.29, BasePad: 0,
 			ToolsExist: 0, PerTool: 39},
@@ -66,6 +69,16 @@ var multipliersMap = map[provider]map[string]multipliers{
 			ThinkingBlockInput:     300,
 			ThinkingBlockOutput:    0,
 		},
+		"default-output": {Word: 1.02, Number: 1.55, CJK: 0.85, Symbol: 0.4, MathSymbol: 2.68,
+			URLDelim: 1.0, AtSign: 2.0, Emoji: 2.12, Newline: 0.5, Space: 0.16, BasePad: 12,
+			ToolsExist: 0, PerTool: 0,
+			FunctionCallItem:       6,
+			FunctionCallOutputItem: 12,
+			CustomToolCallItem:     6,
+			CustomToolOutputItem:   12,
+			ThinkingBlockInput:     300,
+			ThinkingBlockOutput:    0,
+		},
 	},
 }
 
@@ -78,8 +91,14 @@ func getMultipliers(modelName string, completion bool) multipliers {
 			}
 			return multipliersMap[providerClaude]["opus-4-7"]
 		}
+		if completion {
+			return multipliersMap[providerClaude]["default-output"]
+		}
 		return multipliersMap[providerClaude]["default"]
 	} else if strings.Contains(m, "gpt") {
+		if completion {
+			return multipliersMap[providerOpenAI]["default-output"]
+		}
 		return multipliersMap[providerOpenAI]["default"]
 	} else if strings.Contains(m, "gemini") {
 		return multipliersMap[providerGemini]["default"]
@@ -125,9 +144,24 @@ func estimateToken(ctx *tokenEstimateContext, m multipliers) int {
 		number
 	)
 	cur := none
+	runLen := 0
+
+	flushRun := func() {
+		if runLen == 0 {
+			return
+		}
+		switch cur {
+		case number:
+			count += estimateNumberRun(runLen, m, ctx.completion)
+		case latin:
+			count += estimateLatinRun(runLen, m, ctx.completion)
+		}
+		runLen = 0
+	}
 
 	for _, r := range ctx.text {
 		if unicode.IsSpace(r) {
+			flushRun()
 			cur = none
 			if r == '\n' || r == '\t' {
 				count += m.Newline
@@ -137,11 +171,13 @@ func estimateToken(ctx *tokenEstimateContext, m multipliers) int {
 			continue
 		}
 		if isCJK(r) {
+			flushRun()
 			cur = none
 			count += m.CJK
 			continue
 		}
 		if isEmoji(r) {
+			flushRun()
 			cur = none
 			count += m.Emoji
 			continue
@@ -153,16 +189,14 @@ func estimateToken(ctx *tokenEstimateContext, m multipliers) int {
 				newType = number
 			}
 			if cur == none || cur != newType {
-				if newType == number {
-					count += m.Number
-				} else {
-					count += m.Word
-				}
+				flushRun()
 				cur = newType
 			}
+			runLen++
 			continue
 		}
 
+		flushRun()
 		cur = none
 		switch {
 		case isMathSymbol(r):
@@ -175,7 +209,13 @@ func estimateToken(ctx *tokenEstimateContext, m multipliers) int {
 			count += m.Symbol
 		}
 	}
-	sum := int(math.Ceil(count)) + m.BasePad
+	flushRun()
+	sum := int(math.Ceil(count))
+	if ctx.completion {
+		sum += completionBasePad(sum, m.BasePad)
+	} else {
+		sum += m.BasePad
+	}
 	if ctx.numTools != 0 { // add tool token estimate
 		sum += m.ToolsExist + ctx.numTools*m.PerTool
 	}
@@ -187,6 +227,48 @@ func estimateToken(ctx *tokenEstimateContext, m multipliers) int {
 		ctx.numThinkingBlockOutput*m.ThinkingBlockOutput
 
 	return sum
+}
+
+func completionBasePad(sum, pad int) int {
+	if pad <= 0 {
+		return 0
+	}
+	if sum >= 25 {
+		return pad
+	}
+	return 0
+}
+
+// estimateLatinRun keeps short words close to the legacy one-word estimate,
+// while making long identifiers, code symbols and URL chunks scale with length.
+// The input is expected to be a contiguous run of unicode letters/numbers that
+// has already been split by whitespace and punctuation.
+func estimateLatinRun(runeLen int, m multipliers, completion bool) float64 {
+	if runeLen <= 0 {
+		return 0
+	}
+	if runeLen <= 8 {
+		return m.Word
+	}
+	if completion {
+		return m.Word + float64(runeLen-8)/8.0*m.Word
+	}
+	return m.Word + float64(runeLen-8)/6.0*m.Word
+}
+
+// estimateNumberRun treats long numeric spans such as timestamps, IDs and
+// decimal fragments as multiple token-like units instead of one flat segment.
+func estimateNumberRun(runeLen int, m multipliers, completion bool) float64 {
+	if runeLen <= 0 {
+		return 0
+	}
+	if runeLen <= 4 {
+		return m.Number
+	}
+	if completion {
+		return m.Number + float64(runeLen-4)/4.0*m.Number
+	}
+	return m.Number + float64(runeLen-4)/3.0*m.Number
 }
 
 func isCJK(r rune) bool {
