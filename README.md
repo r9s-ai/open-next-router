@@ -207,7 +207,7 @@ The command validates the provider DSL before writing. If validation fails, no o
 
 ```bash
 # install git hooks (force-replace if pre-commit hooks already exist)
-prek install -f
+prek install -f -t pre-commit -t commit-msg
 
 # run all hooks manually
 prek run --all-files
