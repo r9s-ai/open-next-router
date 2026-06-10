@@ -133,3 +133,27 @@ provider "openai" {
 		t.Fatalf("stdout=%q should not contain bundle summary", stdout.String())
 	}
 }
+
+func TestRun_VersionCommand(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"version"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run code=%d stderr=%q", code, stderr.String())
+	}
+	if strings.TrimSpace(stdout.String()) == "" {
+		t.Fatalf("stdout should contain version")
+	}
+}
+
+func TestRun_VersionFlag(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"--version"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run code=%d stderr=%q", code, stderr.String())
+	}
+	if strings.TrimSpace(stdout.String()) == "" {
+		t.Fatalf("stdout should contain version")
+	}
+}

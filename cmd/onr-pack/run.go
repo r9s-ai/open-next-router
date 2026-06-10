@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
@@ -13,6 +14,11 @@ import (
 )
 
 func run(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "version" {
+		_, _ = fmt.Fprintln(stdout, detectVersion())
+		return 0
+	}
+
 	opts := packOptions{}
 	fs := flag.NewFlagSet("onr-pack", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -21,9 +27,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&opts.providersPath, "providers", "", "provider DSL source path (dir or merged file)")
 	fs.StringVar(&opts.outPath, "out", "providers.conf", "output merged providers file")
 	fs.StringVar(&opts.outPath, "o", "providers.conf", "output merged providers file (alias of --out)")
+	fs.BoolVar(&opts.versionOnly, "version", false, "print version and exit")
 	fs.BoolVar(&opts.checkOnly, "check-only", false, "validate provider DSL only; do not write bundled output")
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	if opts.versionOnly {
+		_, _ = fmt.Fprintln(stdout, detectVersion())
+		return 0
 	}
 	if fs.NArg() > 0 {
 		_, _ = fmt.Fprintln(stderr, "error: unexpected positional arguments")
@@ -87,6 +98,32 @@ type packOptions struct {
 	providersPath string
 	outPath       string
 	checkOnly     bool
+	versionOnly   bool
+}
+
+func detectVersion() string {
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "unknown"
+	}
+
+	if bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		return bi.Main.Version
+	}
+
+	for _, setting := range bi.Settings {
+		if setting.Key == "vcs.revision" && setting.Value != "" {
+			if len(setting.Value) > 12 {
+				return "devel+" + setting.Value[:12]
+			}
+			return "devel+" + setting.Value
+		}
+	}
+
+	if bi.Main.Version != "" {
+		return bi.Main.Version
+	}
+	return "unknown"
 }
 
 func resolveProviderSource(opts packOptions) (string, error) {
