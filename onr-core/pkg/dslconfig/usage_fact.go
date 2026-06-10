@@ -55,9 +55,12 @@ type usageFactEval struct {
 var defaultUsageDimensionRegistry = NewUsageDimensionRegistry(
 	UsageDimension{Dimension: "input", Unit: "token"},
 	UsageDimension{Dimension: "output", Unit: "token"},
-	UsageDimension{Dimension: "image.input", Unit: "token"},
-	UsageDimension{Dimension: "video.input", Unit: "token"},
-	UsageDimension{Dimension: "audio.input", Unit: "token"},
+	UsageDimension{Dimension: "input.image", Unit: "token"},
+	UsageDimension{Dimension: "input.video", Unit: "token"},
+	UsageDimension{Dimension: "input.audio", Unit: "token"},
+	UsageDimension{Dimension: "output.image", Unit: "token"},
+	UsageDimension{Dimension: "output.audio", Unit: "token"},
+	UsageDimension{Dimension: "output.video", Unit: "token"},
 	UsageDimension{Dimension: "cache_read", Unit: "token"},
 	UsageDimension{Dimension: "cache_write", Unit: "token"},
 	UsageDimension{Dimension: "server_tool.web_search", Unit: "call"},
@@ -71,9 +74,12 @@ var defaultUsageDimensionRegistry = NewUsageDimensionRegistry(
 )
 
 func NewUsageDimensionRegistry(keys ...UsageDimension) UsageDimensionRegistry {
-	reg := UsageDimensionRegistry{allowed: make(map[usageFactKey]struct{}, len(keys))}
+	reg := UsageDimensionRegistry{
+		allowed: make(map[usageFactKey]struct{}, len(keys)),
+	}
 	for _, key := range keys {
-		reg.allowed[normalizeUsageFactKey(key.Dimension, key.Unit)] = struct{}{}
+		normalized := normalizeUsageFactKey(key.Dimension, key.Unit)
+		reg.allowed[normalized] = struct{}{}
 	}
 	return reg
 }

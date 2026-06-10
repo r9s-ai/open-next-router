@@ -205,14 +205,14 @@ func TestStreamMetricsAggregator_GeminiUsageMultimodalBuiltin(t *testing.T) {
 	if u.InputTokens != 81 || u.OutputTokens != 593 || u.TotalTokens != 674 {
 		t.Fatalf("unexpected usage: %+v", *u)
 	}
-	if got, want := u.FlatFields["image_input_tokens"], 12; got != want {
-		t.Fatalf("image_input_tokens=%v want=%v", got, want)
+	if got, want := u.FlatFields["input_image_tokens"], 12; got != want {
+		t.Fatalf("input_image_tokens=%v want=%v", got, want)
 	}
-	if got, want := u.FlatFields["video_input_tokens"], 34; got != want {
-		t.Fatalf("video_input_tokens=%v want=%v", got, want)
+	if got, want := u.FlatFields["input_video_tokens"], 34; got != want {
+		t.Fatalf("input_video_tokens=%v want=%v", got, want)
 	}
-	if got, want := u.FlatFields["audio_input_tokens"], 76; got != want {
-		t.Fatalf("audio_input_tokens=%v want=%v", got, want)
+	if got, want := u.FlatFields["input_audio_tokens"], 76; got != want {
+		t.Fatalf("input_audio_tokens=%v want=%v", got, want)
 	}
 	if fr != "STOP" {
 		t.Fatalf("unexpected finish_reason: %q", fr)

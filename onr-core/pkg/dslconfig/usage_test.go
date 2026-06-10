@@ -115,15 +115,24 @@ func TestExtractUsage_OpenAI_ImagesGenerations(t *testing.T) {
 	if got, want := u.FlatFields["image_generate_images"], 1; got != want {
 		t.Fatalf("image_generate_images=%v want=%v", got, want)
 	}
+	if got, want := u.FlatFields["output_image_tokens"], 4096; got != want {
+		t.Fatalf("output_image_tokens=%v want=%v", got, want)
+	}
 	found := false
+	foundOutputImage := false
 	for _, fact := range u.DebugFacts {
 		if fact.Dimension == "image.generate" && fact.Unit == "image" && fact.Quantity == 1 {
 			found = true
-			break
+		}
+		if fact.Dimension == "output.image" && fact.Unit == "token" && fact.Quantity == 4096 {
+			foundOutputImage = true
 		}
 	}
 	if !found {
 		t.Fatalf("expected image.generate image fact, got=%#v", u.DebugFacts)
+	}
+	if !foundOutputImage {
+		t.Fatalf("expected output.image token fact, got=%#v", u.DebugFacts)
 	}
 }
 
@@ -728,14 +737,14 @@ func TestExtractUsage_Gemini_NonStream_MultimodalBuiltin(t *testing.T) {
 	if u.TotalTokens != 674 {
 		t.Fatalf("total_tokens=%d want=674", u.TotalTokens)
 	}
-	if got, want := u.FlatFields["image_input_tokens"], 12; got != want {
-		t.Fatalf("image_input_tokens=%v want=%v", got, want)
+	if got, want := u.FlatFields["input_image_tokens"], 12; got != want {
+		t.Fatalf("input_image_tokens=%v want=%v", got, want)
 	}
-	if got, want := u.FlatFields["video_input_tokens"], 34; got != want {
-		t.Fatalf("video_input_tokens=%v want=%v", got, want)
+	if got, want := u.FlatFields["input_video_tokens"], 34; got != want {
+		t.Fatalf("input_video_tokens=%v want=%v", got, want)
 	}
-	if got, want := u.FlatFields["audio_input_tokens"], 76; got != want {
-		t.Fatalf("audio_input_tokens=%v want=%v", got, want)
+	if got, want := u.FlatFields["input_audio_tokens"], 76; got != want {
+		t.Fatalf("input_audio_tokens=%v want=%v", got, want)
 	}
 }
 
@@ -767,9 +776,12 @@ func TestExtractUsage_Gemini_NonStream_SnakeCaseUsageIgnored(t *testing.T) {
 func TestUsageDimensionRegistry_AllowsKnownPairs(t *testing.T) {
 	reg := NewUsageDimensionRegistry(
 		UsageDimension{Dimension: "input", Unit: "token"},
-		UsageDimension{Dimension: "image.input", Unit: "token"},
-		UsageDimension{Dimension: "video.input", Unit: "token"},
-		UsageDimension{Dimension: "audio.input", Unit: "token"},
+		UsageDimension{Dimension: "input.image", Unit: "token"},
+		UsageDimension{Dimension: "input.video", Unit: "token"},
+		UsageDimension{Dimension: "input.audio", Unit: "token"},
+		UsageDimension{Dimension: "output.image", Unit: "token"},
+		UsageDimension{Dimension: "output.audio", Unit: "token"},
+		UsageDimension{Dimension: "output.video", Unit: "token"},
 		UsageDimension{Dimension: "server_tool.web_search", Unit: "call"},
 		UsageDimension{Dimension: "image.generate", Unit: "image"},
 		UsageDimension{Dimension: "audio.tts", Unit: "second"},
@@ -778,14 +790,29 @@ func TestUsageDimensionRegistry_AllowsKnownPairs(t *testing.T) {
 	if !reg.Allows("input", "token") {
 		t.Fatalf("expected input token allowed")
 	}
-	if !reg.Allows("IMAGE.INPUT", "TOKEN") {
-		t.Fatalf("expected image.input token allowed")
+	if !reg.Allows("INPUT.IMAGE", "TOKEN") {
+		t.Fatalf("expected input.image token allowed")
 	}
-	if !reg.Allows("video.input", "token") {
-		t.Fatalf("expected video.input token allowed")
+	if !reg.Allows("input.video", "token") {
+		t.Fatalf("expected input.video token allowed")
 	}
-	if !reg.Allows("audio.input", "token") {
-		t.Fatalf("expected audio.input token allowed")
+	if !reg.Allows("input.audio", "token") {
+		t.Fatalf("expected input.audio token allowed")
+	}
+	if reg.Allows("image.input", "token") {
+		t.Fatalf("did not expect image.input token allowed")
+	}
+	if !reg.Allows("OUTPUT.IMAGE", "TOKEN") {
+		t.Fatalf("expected output.image token allowed")
+	}
+	if !reg.Allows("output.audio", "token") {
+		t.Fatalf("expected output.audio token allowed")
+	}
+	if !reg.Allows("output.video", "token") {
+		t.Fatalf("expected output.video token allowed")
+	}
+	if reg.Allows("image.output", "token") {
+		t.Fatalf("expected image.output token not allowed")
 	}
 	if !reg.Allows("SERVER_TOOL.WEB_SEARCH", "CALL") {
 		t.Fatalf("expected server_tool.web_search call allowed")

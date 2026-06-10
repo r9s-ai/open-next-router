@@ -693,9 +693,9 @@ metrics {
 
   usage_fact input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="TEXT")].tokenCount';
   usage_fact input token path="$.usageMetadata.promptTokenCount" fallback=true;
-  usage_fact image.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="IMAGE")].tokenCount';
-  usage_fact video.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="VIDEO")].tokenCount';
-  usage_fact audio.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount';
+  usage_fact input.image token path='$.usageMetadata.promptTokensDetails[?(@.modality=="IMAGE")].tokenCount';
+  usage_fact input.video token path='$.usageMetadata.promptTokensDetails[?(@.modality=="VIDEO")].tokenCount';
+  usage_fact input.audio token path='$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount';
 
   # Optional: only when the upstream reports real per-modality cached tokens.
   usage_fact cache_read token path='$.usageMetadata.cacheTokensDetails[?(@.modality=="TEXT")].tokenCount' attr.modality="text";
@@ -705,16 +705,17 @@ metrics {
 
   usage_fact output token path="$.usageMetadata.candidatesTokenCount";
   usage_fact output token path="$.usageMetadata.thoughtsTokenCount";
+  usage_fact output.image token path='$.usageMetadata.candidatesTokensDetails[?(@.modality=="IMAGE")].tokenCount';
 }
 ```
 
 Notes:
 
-- `gemini`: the current default preset behavior can be fully replaced by `custom` configuration; `input token` usually prefers the `TEXT` modality and falls back to `promptTokenCount`, while multimodal details can be emitted as `image.input/audio.input/video.input token` facts.
+- `gemini`: the current default preset behavior can be fully replaced by `custom` configuration; `input token` usually prefers the `TEXT` modality and falls back to `promptTokenCount`, while multimodal details can be emitted as `input.image/input.audio/input.video token` and `output.image token` facts.
 - `anthropic`: ONR now treats `input` as the effective input size, so `cache_read_input_tokens` and `cache_creation_input_tokens` should also be included in `input`.
 - `openai`: the example above covers core token/cache extraction. Image/audio/tool supplemental facts and per-modality cache facts still need extra explicit `usage_fact` rules in a custom-first setup.
 - Per-modality cache facts use the existing `cache_read token` dimension with `attr.modality="text|image|audio|video"`. Only configure these fields when the upstream reports real per-modality cached token counts; do not derive them by splitting a total cached token field.
-- Gemini output tokens intentionally include both `candidatesTokenCount` and `thoughtsTokenCount`; you can express that either by multiple same-dimension `usage_fact` rules that sum together, or more explicitly with `output_tokens_expr = $.usageMetadata.candidatesTokenCount + $.usageMetadata.thoughtsTokenCount;`.
+- Gemini `candidatesTokenCount` is a candidate-output aggregate. Downstream billing should treat per-modality output facts such as `output.image token` as components of generic output and avoid charging the same token twice.
 - `total_tokens` is derived from `input + output` by default; in most cases you should avoid setting `total_tokens_expr` explicitly, because that introduces a second total fact source.
 - Gemini native usage fields are handled in camelCase: `usageMetadata.promptTokenCount`, `candidatesTokenCount`, `thoughtsTokenCount`, and `totalTokenCount`.
 
@@ -1843,6 +1844,12 @@ Multiple: yes
 - Supported `dimension` values:
   - `input`
   - `output`
+  - `input.image`
+  - `input.video`
+  - `input.audio`
+  - `output.image`
+  - `output.audio`
+  - `output.video`
   - `cache_read`
   - `cache_write`
   - `server_tool.web_search`
@@ -1856,6 +1863,12 @@ Multiple: yes
 - Supported `dimension + unit` pairs are:
   - `input token`
   - `output token`
+  - `input.image token`
+  - `input.video token`
+  - `input.audio token`
+  - `output.image token`
+  - `output.audio token`
+  - `output.video token`
   - `cache_read token`
   - `cache_write token`
   - `server_tool.web_search call`

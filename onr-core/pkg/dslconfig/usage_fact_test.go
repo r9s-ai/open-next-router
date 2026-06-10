@@ -263,11 +263,12 @@ provider "demo" {
     metrics {
       usage_extract custom;
       usage_fact input token path="$.usageMetadata.promptTokensDetails[?(@.modality==\"TEXT\")].tokenCount";
-      usage_fact image.input token path="$.usageMetadata.promptTokensDetails[?(@.modality==\"IMAGE\")].tokenCount";
-      usage_fact video.input token path="$.usageMetadata.promptTokensDetails[?(@.modality==\"VIDEO\")].tokenCount";
-      usage_fact audio.input token path="$.usageMetadata.promptTokensDetails[?(@.modality==\"AUDIO\")].tokenCount";
+      usage_fact input.image token path="$.usageMetadata.promptTokensDetails[?(@.modality==\"IMAGE\")].tokenCount";
+      usage_fact input.video token path="$.usageMetadata.promptTokensDetails[?(@.modality==\"VIDEO\")].tokenCount";
+      usage_fact input.audio token path="$.usageMetadata.promptTokensDetails[?(@.modality==\"AUDIO\")].tokenCount";
       usage_fact output token path="$.usageMetadata.candidatesTokenCount";
       usage_fact output token path="$.usageMetadata.thoughtsTokenCount";
+      usage_fact output.image token path="$.usageMetadata.candidatesTokensDetails[?(@.modality==\"IMAGE\")].tokenCount";
     }
   }
 }
@@ -287,6 +288,9 @@ provider "demo" {
 	      {"modality": "IMAGE", "tokenCount": 12},
 	      {"modality": "VIDEO", "tokenCount": 34},
 	      {"modality": "AUDIO", "tokenCount": 76}
+	    ],
+	    "candidatesTokensDetails": [
+	      {"modality": "IMAGE", "tokenCount": 1120}
 	    ],
 	    "candidatesTokenCount": 40,
 	    "thoughtsTokenCount": 553
@@ -309,14 +313,17 @@ provider "demo" {
 	if usage.FlatFields == nil {
 		t.Fatalf("expected flat fields")
 	}
-	if got, want := usage.FlatFields["image_input_tokens"], 12; got != want {
-		t.Fatalf("image_input_tokens got %v, want %v", got, want)
+	if got, want := usage.FlatFields["input_image_tokens"], 12; got != want {
+		t.Fatalf("input_image_tokens got %v, want %v", got, want)
 	}
-	if got, want := usage.FlatFields["video_input_tokens"], 34; got != want {
-		t.Fatalf("video_input_tokens got %v, want %v", got, want)
+	if got, want := usage.FlatFields["input_video_tokens"], 34; got != want {
+		t.Fatalf("input_video_tokens got %v, want %v", got, want)
 	}
-	if got, want := usage.FlatFields["audio_input_tokens"], 76; got != want {
-		t.Fatalf("audio_input_tokens got %v, want %v", got, want)
+	if got, want := usage.FlatFields["input_audio_tokens"], 76; got != want {
+		t.Fatalf("input_audio_tokens got %v, want %v", got, want)
+	}
+	if got, want := usage.FlatFields["output_image_tokens"], 1120; got != want {
+		t.Fatalf("output_image_tokens got %v, want %v", got, want)
 	}
 }
 
@@ -336,7 +343,7 @@ provider "demo" {
     metrics {
       usage_extract custom;
       usage_fact input token path='$.usageMetadata.promptTokenCount';
-      usage_fact audio.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount';
+      usage_fact input.audio token path='$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount';
       usage_fact output token path='$.usageMetadata.candidatesTokenCount';
     }
   }
@@ -371,11 +378,37 @@ provider "demo" {
 	if got, want := usage.InputTokens, 81; got != want {
 		t.Fatalf("InputTokens got %d, want %d", got, want)
 	}
-	if got, want := usage.FlatFields["audio_input_tokens"], 76; got != want {
-		t.Fatalf("audio_input_tokens got %v, want %v", got, want)
+	if got, want := usage.FlatFields["input_audio_tokens"], 76; got != want {
+		t.Fatalf("input_audio_tokens got %v, want %v", got, want)
 	}
 	if got, want := usage.OutputTokens, 7; got != want {
 		t.Fatalf("OutputTokens got %d, want %d", got, want)
+	}
+}
+
+func TestValidateProviderFile_UsageFactRejectsReverseInputModality(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.conf")
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "demo" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_extract custom;
+      usage_fact image.input token path="$.usage.image_tokens";
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if _, err := ValidateProviderFile(path); err == nil {
+		t.Fatalf("expected image.input token to be rejected")
 	}
 }
 
@@ -555,6 +588,98 @@ provider "demo" {
 	      usage_fact output token path="$.usage.output_tokens";
 	    }
 	  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if _, err := ValidateProviderFile(path); err == nil {
+		t.Fatalf("expected validation error")
+	}
+}
+
+func TestValidateProviderFile_UsageFactAllowsOutputImageToken(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.conf")
+	// #nosec G306 -- test data file.
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "demo" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_extract custom;
+      usage_fact output token path="$.usage.output_tokens";
+      usage_fact output.image token path="$.usage.output_image_tokens";
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+
+	body := []byte(`{
+	  "usage": {
+	    "output_tokens": 7,
+	    "output_image_tokens": 1120
+	  }
+	}`)
+	usage, _, err := ExtractUsage(&dslmeta.Meta{}, &pf.Usage.Defaults, body)
+	if err != nil {
+		t.Fatalf("ExtractUsage: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage")
+	}
+	if got, want := usage.OutputTokens, 7; got != want {
+		t.Fatalf("OutputTokens got %d, want %d", got, want)
+	}
+	if got, want := usage.TotalTokens, 7; got != want {
+		t.Fatalf("TotalTokens got %d, want %d", got, want)
+	}
+	if usage.FlatFields == nil {
+		t.Fatalf("expected FlatFields")
+	}
+	if got, want := usage.FlatFields["output_image_tokens"], 1120; got != want {
+		t.Fatalf("output_image_tokens got %v, want %v", got, want)
+	}
+	var found bool
+	for _, fact := range usage.DebugFacts {
+		if fact.Dimension == "output.image" && fact.Unit == "token" && fact.Quantity == 1120 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected output.image token debug fact, got %#v", usage.DebugFacts)
+	}
+}
+
+func TestValidateProviderFile_UsageFactRejectsImageOutputToken(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.conf")
+	// #nosec G306 -- test data file.
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "demo" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_extract custom;
+      usage_fact image.output token path="$.usage.output_image_tokens";
+      usage_fact output token path="$.usage.output_tokens";
+    }
+  }
 }
 `), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)

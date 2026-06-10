@@ -727,9 +727,9 @@ metrics {
 
   usage_fact input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="TEXT")].tokenCount';
   usage_fact input token path="$.usageMetadata.promptTokenCount" fallback=true;
-  usage_fact image.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="IMAGE")].tokenCount';
-  usage_fact video.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="VIDEO")].tokenCount';
-  usage_fact audio.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount';
+  usage_fact input.image token path='$.usageMetadata.promptTokensDetails[?(@.modality=="IMAGE")].tokenCount';
+  usage_fact input.video token path='$.usageMetadata.promptTokensDetails[?(@.modality=="VIDEO")].tokenCount';
+  usage_fact input.audio token path='$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount';
 
   # 可选：仅当上游真实返回分模态 cached token 时配置。
   usage_fact cache_read token path='$.usageMetadata.cacheTokensDetails[?(@.modality=="TEXT")].tokenCount' attr.modality="text";
@@ -739,6 +739,7 @@ metrics {
 
   usage_fact output token path="$.usageMetadata.candidatesTokenCount";
   usage_fact output token path="$.usageMetadata.thoughtsTokenCount";
+  usage_fact output.image token path='$.usageMetadata.candidatesTokensDetails[?(@.modality=="IMAGE")].tokenCount';
 }
 ```
 
@@ -748,7 +749,7 @@ metrics {
 - `anthropic`：ONR 现在将 `input` 视为包含 cache 的有效输入总量，因此 `cache_read_input_tokens` 与 `cache_creation_input_tokens` 也应并入 `input`
 - `openai`：上述配置只覆盖核心 token / cache 提取；图片、音频、tool usage 以及分模态 cache 等 API-specific supplemental facts 仍需额外显式写 `usage_fact`
 - 分模态 cache 复用现有 `cache_read token` 维度，并通过 `attr.modality="text|image|audio|video"` 标识真实模态。只有当上游明确返回分模态 cached token 时才应配置这些字段；不要把一个总 cached token 字段按比例拆分后上报为分模态事实。
-- `gemini` 的输出 token 会把 `candidatesTokenCount` 与 `thoughtsTokenCount` 一并计入 `output`；这里既可以像示例一样写多条同维度 `usage_fact` 让系统自动求和，也可以直接写成 `output_tokens_expr = $.usageMetadata.candidatesTokenCount + $.usageMetadata.thoughtsTokenCount;`
+- Gemini 的 `candidatesTokenCount` 是候选输出总量。下游计费应将 `output.image token` 等分模态输出事实视为普通 output 的组成分量，避免同一批 token 被重复收费。
 - `total_tokens` 默认会由 `input + output` 自动聚合；通常不建议再显式配置 `total_tokens_expr`，避免引入多个事实源
 - 当前 Gemini 原生 usage 字段按驼峰命名处理：`usageMetadata.promptTokenCount` / `candidatesTokenCount` / `thoughtsTokenCount` / `totalTokenCount`
 
@@ -839,7 +840,7 @@ metrics {
 - 当路径写在 DSL 双引号字符串里时，filter 里的内部双引号需要转义，例如：
 
 ```conf
-usage_fact audio.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount';
+usage_fact input.audio token path='$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount';
 ```
 
 多条与覆盖规则：
@@ -963,12 +964,13 @@ metrics {
 
   usage_fact input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="TEXT")].tokenCount';
   usage_fact input token path="$.usageMetadata.promptTokenCount" fallback=true;
-  usage_fact image.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="IMAGE")].tokenCount';
-  usage_fact video.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="VIDEO")].tokenCount';
-  usage_fact audio.input token path='$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount';
+  usage_fact input.image token path='$.usageMetadata.promptTokensDetails[?(@.modality=="IMAGE")].tokenCount';
+  usage_fact input.video token path='$.usageMetadata.promptTokensDetails[?(@.modality=="VIDEO")].tokenCount';
+  usage_fact input.audio token path='$.usageMetadata.promptTokensDetails[?(@.modality=="AUDIO")].tokenCount';
 
   usage_fact output token path="$.usageMetadata.candidatesTokenCount";
   usage_fact output token path="$.usageMetadata.thoughtsTokenCount";
+  usage_fact output.image token path='$.usageMetadata.candidatesTokensDetails[?(@.modality=="IMAGE")].tokenCount';
 }
 ```
 
@@ -981,7 +983,7 @@ metrics {
 
 后续范围说明：
 
-- Gemini Live / Realtime 的 `audio.input second`、`audio.output second`、`vision.input second`
+- Gemini Live / Realtime 的 `input.audio second`、`output.audio second`、`input.vision second`
 - 其他厂商 realtime 接口的通用 meter-based facts
 - 需要 `source=derived` 的 runtime 聚合场景
 
@@ -1694,7 +1696,7 @@ Multiple: yes
 - `source` 在配置了 `usage_root` 时默认是 `usage`，否则默认是 `response`；当前支持 `usage` / `response` / `request` / `derived`。
 - `usage` / `response` / `request` / `derived` 之外的其他 `source` 会在校验阶段直接报错。
 - `dimension` 是扁平字符串键，`.` 只是名称的一部分，不表示嵌套。
-- 实时多模态的 meter-based facts（例如 `audio.input second`）属于计划中的目标能力；若文档其他位置出现相关示例，应视为预览写法，不代表当前 registry 已开放。
+- 实时多模态的 meter-based facts（例如 `input.audio second`）属于计划中的目标能力；若文档其他位置出现相关示例，应视为预览写法，不代表当前 registry 已开放。
 - `path` / `count_path` / `sum_path` / `expr` 既可以用双引号，也可以用单引号包裹。
 - 当使用双引号字符串时，filter 内部的双引号需要写成 `\"`。
 - 当使用单引号字符串时，可以直接写：
@@ -1702,9 +1704,12 @@ Multiple: yes
 - 当前支持的 `dimension`：
   - `input`
   - `output`
-  - `image.input`
-  - `video.input`
-  - `audio.input`
+  - `input.image`
+  - `input.video`
+  - `input.audio`
+  - `output.image`
+  - `output.audio`
+  - `output.video`
   - `cache_read`
   - `cache_write`
   - `server_tool.web_search`
@@ -1718,9 +1723,12 @@ Multiple: yes
 - 当前固定 registry 包括：
   - `input token`
   - `output token`
-  - `image.input token`
-  - `video.input token`
-  - `audio.input token`
+  - `input.image token`
+  - `input.video token`
+  - `input.audio token`
+  - `output.image token`
+  - `output.audio token`
+  - `output.video token`
   - `cache_read token`
   - `cache_write token`
   - `server_tool.web_search call`
