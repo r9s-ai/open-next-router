@@ -13,104 +13,13 @@ func TestModesByDirective(t *testing.T) {
 }
 
 func TestDirectivesByBlock(t *testing.T) {
-	got := DirectivesByBlock("auth")
-	if len(got) == 0 {
-		t.Fatalf("expected auth directives, got none")
-	}
-	found := false
-	for _, d := range got {
-		if d == "oauth_mode" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("expected oauth_mode in auth block directives")
-	}
-
-	found = false
-	for _, d := range got {
-		if d == "pass_header" {
-			found = true
-			break
-		}
-	}
-	if found {
-		t.Fatalf("pass_header should not appear in auth block directives")
-	}
-
-	metrics := DirectivesByBlock("metrics")
-	found = false
-	foundUsageRoot := false
-	for _, d := range metrics {
-		if d == "usage_fact" {
-			found = true
-		}
-		if d == "usage_root" {
-			foundUsageRoot = true
-		}
-	}
-	if !found {
-		t.Fatalf("expected usage_fact in metrics block directives")
-	}
-	if !foundUsageRoot {
-		t.Fatalf("expected usage_root in metrics block directives")
-	}
-
-	upstream := DirectivesByBlock("upstream")
-	found = false
-	for _, d := range upstream {
-		if d == "filter_header_values" {
-			found = true
-			break
-		}
-	}
-	if found {
-		t.Fatalf("filter_header_values should not appear in upstream block directives")
-	}
-
-	request := DirectivesByBlock("request")
-	foundPassHeader := false
-	foundFilterHeaderValues := false
-	foundWrapInputText := false
-	for _, d := range request {
-		if d == "pass_header" {
-			foundPassHeader = true
-		}
-		if d == "filter_header_values" {
-			foundFilterHeaderValues = true
-		}
-		if d == "json_wrap_input_text" {
-			foundWrapInputText = true
-		}
-	}
-	if !foundPassHeader {
-		t.Fatalf("expected pass_header in request block directives")
-	}
-	if !foundFilterHeaderValues {
-		t.Fatalf("expected filter_header_values in request block directives")
-	}
-	if !foundWrapInputText {
-		t.Fatalf("expected json_wrap_input_text in request block directives")
-	}
-
-	usageMode := DirectivesByBlock("usage_mode")
-	found = false
-	foundUsageRoot = false
-	for _, d := range usageMode {
-		if d == "usage_fact" {
-			found = true
-		}
-		if d == "usage_root" {
-			foundUsageRoot = true
-		}
-	}
-	if !found {
-		t.Fatalf("expected usage_fact in usage_mode block directives")
-	}
-	if !foundUsageRoot {
-		t.Fatalf("expected usage_root in usage_mode block directives")
-	}
+	assertSetContains(t, "auth directives", DirectivesByBlock("auth"), []string{"oauth_mode"})
+	assertSetExcludes(t, "auth directives", DirectivesByBlock("auth"), []string{"pass_header"})
+	assertSetContains(t, "metrics directives", DirectivesByBlock("metrics"), []string{"usage_fact", "usage_root"})
+	assertSetExcludes(t, "upstream directives", DirectivesByBlock("upstream"), []string{"filter_header_values"})
+	assertSetContains(t, "request directives", DirectivesByBlock("request"), []string{"pass_header", "filter_header_values", "json_wrap_input_text", "after_req_map"})
+	assertSetContains(t, "after_req_map directives", DirectivesByBlock("after_req_map"), []string{"json_set"})
+	assertSetContains(t, "usage_mode directives", DirectivesByBlock("usage_mode"), []string{"usage_fact", "usage_root"})
 }
 
 func TestDirectiveHover(t *testing.T) {
@@ -214,6 +123,14 @@ func TestMetadata_ModeOptionsConsistency(t *testing.T) {
 	assertSetEqual(t, "error_map", ModesByDirective("error_map"), []string{"openai", "common", "passthrough"})
 }
 
+func TestMetadata_ContextualModeOptions(t *testing.T) {
+	assertSetEqual(t, "models_mode.models", ModesByDirectiveInBlock("models_mode", "models"), []string{"openai", "gemini", "custom"})
+	assertSetEqual(t, "models_mode.top", ModesByDirectiveInBlock("models_mode", "top"), nil)
+	assertSetEqual(t, "balance_mode.balance", ModesByDirectiveInBlock("balance_mode", "balance"), []string{"openai", "custom"})
+	assertSetEqual(t, "balance_mode.top", ModesByDirectiveInBlock("balance_mode", "top"), nil)
+	assertSetEqual(t, "req_map.request", ModesByDirectiveInBlock("req_map", "request"), []string{"openai_chat_to_openai_responses", "openai_chat_to_anthropic_messages", "openai_chat_to_gemini_generate_content", "anthropic_to_openai_chat", "gemini_to_openai_chat"})
+}
+
 func TestMetadata_EnumArgOptionsConsistency(t *testing.T) {
 	assertSetEqual(t, "oauth_method.auth", DirectiveArgEnumValuesInBlock("oauth_method", "auth", 0), []string{"GET", "POST"})
 	assertSetEqual(t, "oauth_content_type.auth", DirectiveArgEnumValuesInBlock("oauth_content_type", "auth", 0), []string{"form", "json"})
@@ -238,6 +155,13 @@ func TestModeDirectiveNames(t *testing.T) {
 	}
 }
 
+func TestModeDirectiveNamesInBlock(t *testing.T) {
+	assertSetEqual(t, "mode directives top", ModeDirectiveNamesInBlock("top"), nil)
+	assertSetEqual(t, "mode directives models", ModeDirectiveNamesInBlock("models"), []string{"models_mode"})
+	assertSetEqual(t, "mode directives balance", ModeDirectiveNamesInBlock("balance"), []string{"balance_mode"})
+	assertSetEqual(t, "mode directives request", ModeDirectiveNamesInBlock("request"), []string{"req_map"})
+}
+
 func TestDirectiveModeRegistryBlock(t *testing.T) {
 	if got := DirectiveModeRegistryBlock("usage_extract", "metrics"); got != "usage_mode" {
 		t.Fatalf("expected usage_extract.metrics registry block usage_mode, got %q", got)
@@ -253,6 +177,21 @@ func TestDirectiveModeRegistryBlock(t *testing.T) {
 	}
 	if got := DirectiveModeRegistryBlock("req_map", "request"); got != "" {
 		t.Fatalf("expected req_map.request to have no registry block, got %q", got)
+	}
+}
+
+func TestDirectiveModeRegistryBlockInBlock(t *testing.T) {
+	if got := DirectiveModeRegistryBlockInBlock("models_mode", "models"); got != "models_mode" {
+		t.Fatalf("expected models.models_mode registry block models_mode, got %q", got)
+	}
+	if got := DirectiveModeRegistryBlockInBlock("models_mode", "top"); got != "" {
+		t.Fatalf("expected top.models_mode to have no registry block, got %q", got)
+	}
+	if !DirectiveHasDynamicModeRegistryInBlock("models_mode", "models") {
+		t.Fatalf("expected models.models_mode to support dynamic mode registry")
+	}
+	if DirectiveHasDynamicModeRegistryInBlock("models_mode", "top") {
+		t.Fatalf("did not expect top.models_mode to support dynamic mode registry")
 	}
 }
 
@@ -273,6 +212,7 @@ func TestDirectiveAllowedBlocks(t *testing.T) {
 	assertSetEqual(t, "set_header", DirectiveAllowedBlocks("set_header"), []string{"request", "balance", "models", "balance_mode", "models_mode"})
 	assertSetEqual(t, "pass_header", DirectiveAllowedBlocks("pass_header"), []string{"request"})
 	assertSetEqual(t, "req_map", DirectiveAllowedBlocks("req_map"), []string{"request"})
+	assertSetEqual(t, "after_req_map", DirectiveAllowedBlocks("after_req_map"), []string{"request"})
 	assertSetEqual(t, "filter_header_values", DirectiveAllowedBlocks("filter_header_values"), []string{"request"})
 	assertSetEqual(t, "include", DirectiveAllowedBlocks("include"), []string{"top"})
 	assertSetEqual(t, "provider", DirectiveAllowedBlocks("provider"), []string{"top"})
@@ -286,10 +226,13 @@ func TestBlockDirectiveNamesAndIsBlockDirective(t *testing.T) {
 	if IsBlockDirective("request") != true {
 		t.Fatalf("request should be a block directive")
 	}
+	if IsBlockDirective("after_req_map") != true {
+		t.Fatalf("after_req_map should be a block directive")
+	}
 	if IsBlockDirective("req_map") != false {
 		t.Fatalf("req_map should not be a block directive")
 	}
-	for _, must := range []string{"provider", "defaults", "match", "request", "response", "usage_mode", "finish_reason_mode", "models_mode", "balance_mode"} {
+	for _, must := range []string{"provider", "defaults", "match", "request", "after_req_map", "response", "usage_mode", "finish_reason_mode", "models_mode", "balance_mode"} {
 		found := false
 		for _, b := range blocks {
 			if b == must {
@@ -300,6 +243,43 @@ func TestBlockDirectiveNamesAndIsBlockDirective(t *testing.T) {
 		if !found {
 			t.Fatalf("expected block directive %q in %v", must, blocks)
 		}
+	}
+}
+
+func TestDirectiveBlockShapeIsContextSensitive(t *testing.T) {
+	if !DirectiveIsBlockInBlock("provider", "top") {
+		t.Fatalf("provider should be a top-level block directive")
+	}
+	if !DirectiveBlockHasHeaderInBlock("provider", "top") {
+		t.Fatalf("provider block should consume a header before '{'")
+	}
+	if !DirectiveIsBlockInBlock("match", "provider") {
+		t.Fatalf("match should be a provider block directive")
+	}
+	if !DirectiveBlockHasHeaderInBlock("match", "provider") {
+		t.Fatalf("match block should consume a header before '{'")
+	}
+	if !DirectiveIsBlockInBlock("after_req_map", "request") {
+		t.Fatalf("after_req_map should be a request block directive")
+	}
+	if DirectiveBlockHasHeaderInBlock("after_req_map", "request") {
+		t.Fatalf("after_req_map should not consume a header before '{'")
+	}
+	if DirectiveIsBlockInBlock("req_map", "request") {
+		t.Fatalf("req_map should be a request statement directive")
+	}
+
+	if !DirectiveIsBlockInBlock("models_mode", "top") {
+		t.Fatalf("top-level models_mode should be a block directive")
+	}
+	if !DirectiveBlockHasHeaderInBlock("models_mode", "top") {
+		t.Fatalf("top-level models_mode should consume a header before '{'")
+	}
+	if DirectiveIsBlockInBlock("models_mode", "models") {
+		t.Fatalf("models.models_mode should be a statement directive")
+	}
+	if DirectiveBlockHasHeaderInBlock("models_mode", "models") {
+		t.Fatalf("models.models_mode should not consume a block header")
 	}
 }
 
@@ -319,6 +299,34 @@ func assertSetEqual(t *testing.T, name string, got, want []string) {
 	for v := range wantSet {
 		if _, ok := gotSet[v]; !ok {
 			t.Fatalf("%s missing value %q, got=%v want=%v", name, v, got, want)
+		}
+	}
+}
+
+func assertSetContains(t *testing.T, name string, got, want []string) {
+	t.Helper()
+	gotSet := make(map[string]struct{}, len(got))
+	for _, v := range got {
+		gotSet[strings.TrimSpace(v)] = struct{}{}
+	}
+	for _, v := range want {
+		key := strings.TrimSpace(v)
+		if _, ok := gotSet[key]; !ok {
+			t.Fatalf("%s missing value %q, got=%v", name, key, got)
+		}
+	}
+}
+
+func assertSetExcludes(t *testing.T, name string, got, excluded []string) {
+	t.Helper()
+	gotSet := make(map[string]struct{}, len(got))
+	for _, v := range got {
+		gotSet[strings.TrimSpace(v)] = struct{}{}
+	}
+	for _, v := range excluded {
+		key := strings.TrimSpace(v)
+		if _, ok := gotSet[key]; ok {
+			t.Fatalf("%s should not contain value %q, got=%v", name, key, got)
 		}
 	}
 }

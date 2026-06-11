@@ -48,6 +48,11 @@ func TestParserDirectivesHaveMetadata(t *testing.T) {
 	}
 }
 
+func TestAfterReqMapMetadataMatchesParser(t *testing.T) {
+	parsed := collectParserDirectives(t)
+	assertStringSetEqual(t, "after_req_map parser directives", parsed["after_req_map"], stringSet(DirectivesByBlock("after_req_map")))
+}
+
 func collectParserDirectives(t *testing.T) map[string]map[string]struct{} {
 	t.Helper()
 
@@ -86,6 +91,7 @@ func parserDirectiveSources() []parserDirectiveSource {
 		{block: "upstream_config", fn: "parseUpstreamConfigBlock", kind: parserDirectiveStringEqual},
 		{block: "auth", fn: "parseAuthPhase", kind: parserDirectiveHandlerMap},
 		{block: "request", fn: "parseRequestPhaseWithTransform", kind: parserDirectiveHandlerMap},
+		{block: "after_req_map", fn: "parseRequestJSONOpsOnlyBlock", kind: parserDirectiveSwitch},
 		{block: "upstream", fn: "parseUpstreamPhase", kind: parserDirectiveSwitch},
 		{block: "response", fn: "parseResponsePhase", kind: parserDirectiveSwitch},
 		{block: "error", fn: "parseErrorPhase", kind: parserDirectiveSwitch},
@@ -309,4 +315,25 @@ func stringSet(values []string) map[string]struct{} {
 		out[value] = struct{}{}
 	}
 	return out
+}
+
+func assertStringSetEqual(t *testing.T, name string, got, want map[string]struct{}) {
+	t.Helper()
+	var missing []string
+	for key := range want {
+		if _, ok := got[key]; !ok {
+			missing = append(missing, key)
+		}
+	}
+	var extra []string
+	for key := range got {
+		if _, ok := want[key]; !ok {
+			extra = append(extra, key)
+		}
+	}
+	sort.Strings(missing)
+	sort.Strings(extra)
+	if len(missing) > 0 || len(extra) > 0 {
+		t.Fatalf("%s mismatch: missing=%v extra=%v", name, missing, extra)
+	}
 }

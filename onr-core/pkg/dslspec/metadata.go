@@ -13,6 +13,8 @@ type DirectiveMetadata struct {
 	Name              string
 	Block             string
 	Hover             string
+	IsBlock           bool
+	BlockHeader       bool
 	Modes             []string
 	ModeRegistryBlock string
 	Args              []DirectiveArg
@@ -30,34 +32,34 @@ type DirectiveArg struct {
 var directiveMetadata = []DirectiveMetadata{
 	{Name: "syntax", Block: "top", Hover: "`syntax \"next-router/0.1\";`\n\nDeclares DSL syntax version for this file."},
 	{Name: "include", Block: "top", Hover: "`include path.conf;`\n\nIncludes another DSL fragment file before parsing. Supports unquoted nginx-style paths like `providers;` and `providers/*.conf;`."},
-	{Name: "provider", Block: "top", Hover: "`provider \"name\" { ... }`\n\nDefines one provider DSL block. File name should match provider name."},
-	{Name: "usage_mode", Block: "top", Hover: "`usage_mode \"name\" { ... }`\n\nDefines one reusable global usage extraction preset."},
-	{Name: "finish_reason_mode", Block: "top", Hover: "`finish_reason_mode \"name\" { ... }`\n\nDefines one reusable global finish reason extraction preset."},
-	{Name: "models_mode", Block: "top", Hover: "`models_mode \"name\" { ... }`\n\nDefines one reusable global models query preset."},
-	{Name: "balance_mode", Block: "top", Hover: "`balance_mode \"name\" { ... }`\n\nDefines one reusable global balance query preset."},
+	{Name: "provider", Block: "top", Hover: "`provider \"name\" { ... }`\n\nDefines one provider DSL block. File name should match provider name.", IsBlock: true, BlockHeader: true},
+	{Name: "usage_mode", Block: "top", Hover: "`usage_mode \"name\" { ... }`\n\nDefines one reusable global usage extraction preset.", IsBlock: true, BlockHeader: true},
+	{Name: "finish_reason_mode", Block: "top", Hover: "`finish_reason_mode \"name\" { ... }`\n\nDefines one reusable global finish reason extraction preset.", IsBlock: true, BlockHeader: true},
+	{Name: "models_mode", Block: "top", Hover: "`models_mode \"name\" { ... }`\n\nDefines one reusable global models query preset.", IsBlock: true, BlockHeader: true},
+	{Name: "balance_mode", Block: "top", Hover: "`balance_mode \"name\" { ... }`\n\nDefines one reusable global balance query preset.", IsBlock: true, BlockHeader: true},
 
-	{Name: "defaults", Block: "provider", Hover: "`defaults { ... }`\n\nDefault phases shared by all `match` rules unless overridden."},
-	{Name: "match", Block: "provider", Hover: "`match api = \"...\" [stream = true|false] { ... }`\n\nRoute rule. First match wins."},
-	{Name: "metadata", Block: "provider", Hover: "`metadata { provider_family <family>; signal_profile <profile>; }`\n\nDeclares provider identity and capacity signal profile metadata."},
+	{Name: "defaults", Block: "provider", Hover: "`defaults { ... }`\n\nDefault phases shared by all `match` rules unless overridden.", IsBlock: true},
+	{Name: "match", Block: "provider", Hover: "`match api = \"...\" [stream = true|false] { ... }`\n\nRoute rule. First match wins.", IsBlock: true, BlockHeader: true},
+	{Name: "metadata", Block: "provider", Hover: "`metadata { provider_family <family>; signal_profile <profile>; }`\n\nDeclares provider identity and capacity signal profile metadata.", IsBlock: true},
 
 	{Name: "provider_family", Block: "metadata", Hover: "`provider_family <family>;`\n\nProvider family used for operations, debug output, and later capacity-signal grouping."},
 	{Name: "signal_profile", Block: "metadata", Hover: "`signal_profile <profile>;`\n\nSignal profile used by later provider capacity signal adaptors."},
 
-	{Name: "upstream_config", Block: "defaults", Hover: "`upstream_config { base_url = \"...\"; }`\n\nProvider-level upstream base URL config."},
-	{Name: "auth", Block: "defaults", Hover: "`auth { ... }`\n\nAuthentication directives for upstream requests."},
-	{Name: "request", Block: "defaults", Hover: "`request { ... }`\n\nRequest rewrite/transform directives."},
-	{Name: "response", Block: "defaults", Hover: "`response { ... }`\n\nDownstream response mapping/transformation directives."},
-	{Name: "error", Block: "defaults", Hover: "`error { error_map <mode>; }`\n\nNormalize upstream error payloads."},
-	{Name: "metrics", Block: "defaults", Hover: "`metrics { ... }`\n\nToken usage and finish reason extraction rules."},
-	{Name: "balance", Block: "defaults", Hover: "`balance { ... }`\n\nBalance query and extraction directives."},
-	{Name: "models", Block: "defaults", Hover: "`models { ... }`\n\nProvider models list query and mapping directives."},
+	{Name: "upstream_config", Block: "defaults", Hover: "`upstream_config { base_url = \"...\"; }`\n\nProvider-level upstream base URL config.", IsBlock: true},
+	{Name: "auth", Block: "defaults", Hover: "`auth { ... }`\n\nAuthentication directives for upstream requests.", IsBlock: true},
+	{Name: "request", Block: "defaults", Hover: "`request { ... }`\n\nRequest rewrite/transform directives.", IsBlock: true},
+	{Name: "response", Block: "defaults", Hover: "`response { ... }`\n\nDownstream response mapping/transformation directives.", IsBlock: true},
+	{Name: "error", Block: "defaults", Hover: "`error { error_map <mode>; }`\n\nNormalize upstream error payloads.", IsBlock: true},
+	{Name: "metrics", Block: "defaults", Hover: "`metrics { ... }`\n\nToken usage and finish reason extraction rules.", IsBlock: true},
+	{Name: "balance", Block: "defaults", Hover: "`balance { ... }`\n\nBalance query and extraction directives.", IsBlock: true},
+	{Name: "models", Block: "defaults", Hover: "`models { ... }`\n\nProvider models list query and mapping directives.", IsBlock: true},
 
-	{Name: "upstream", Block: "match", Hover: "`upstream { ... }`\n\nUpstream path/query routing directives."},
-	{Name: "auth", Block: "match", Hover: "`auth { ... }`\n\nAuthentication directives for upstream requests."},
-	{Name: "request", Block: "match", Hover: "`request { ... }`\n\nRequest rewrite/transform directives."},
-	{Name: "response", Block: "match", Hover: "`response { ... }`\n\nDownstream response mapping/transformation directives."},
-	{Name: "error", Block: "match", Hover: "`error { error_map <mode>; }`\n\nNormalize upstream error payloads."},
-	{Name: "metrics", Block: "match", Hover: "`metrics { ... }`\n\nToken usage and finish reason extraction rules."},
+	{Name: "upstream", Block: "match", Hover: "`upstream { ... }`\n\nUpstream path/query routing directives.", IsBlock: true},
+	{Name: "auth", Block: "match", Hover: "`auth { ... }`\n\nAuthentication directives for upstream requests.", IsBlock: true},
+	{Name: "request", Block: "match", Hover: "`request { ... }`\n\nRequest rewrite/transform directives.", IsBlock: true},
+	{Name: "response", Block: "match", Hover: "`response { ... }`\n\nDownstream response mapping/transformation directives.", IsBlock: true},
+	{Name: "error", Block: "match", Hover: "`error { error_map <mode>; }`\n\nNormalize upstream error payloads.", IsBlock: true},
+	{Name: "metrics", Block: "match", Hover: "`metrics { ... }`\n\nToken usage and finish reason extraction rules.", IsBlock: true},
 
 	{Name: "usage_extract", Block: "usage_mode", Hover: "`usage_extract <mode>;`\n\nSelects `custom` or inherits another reusable `usage_mode` preset.", Modes: []string{"custom"}, ModeRegistryBlock: "usage_mode"},
 	{Name: "usage_root", Block: "usage_mode", Hover: "`usage_root path=\"$.usage\" [event=\"a|b\"] [event_optional=true];`\n\nExtracts and merges the upstream usage JSON object before `usage_fact` rules run. When a mode has `usage_root`, `usage_fact` without `source` reads from that merged usage object."},
@@ -138,8 +140,19 @@ var directiveMetadata = []DirectiveMetadata{
 	{Name: "json_filter_values", Block: "request", Hover: "`json_filter_values <jsonpath> <pattern>...;`\n\nFilters one request JSON string array field by allowed values."},
 	{Name: "json_del_with_condition", Block: "request", Hover: "`json_del_with_condition <jsonpath> <field> <pattern>...;`\n\nDeletes an object, or matching objects from an array, when the object's field matches one of the patterns."},
 	{Name: "json_del_if_missing", Block: "request", Hover: "`json_del_if_missing <target-jsonpath> <required-jsonpath>;`\n\nDeletes the target request JSON field when the required JSON path is missing."},
-	{Name: "after_req_map", Block: "request", Hover: "`after_req_map { ... }`\n\nRuns nested request JSON operations after req_map. If no req_map is configured, runs after normal request JSON operations."},
+	{Name: "after_req_map", Block: "request", Hover: "`after_req_map { ... }`\n\nRuns nested request JSON operations after req_map. If no req_map is configured, runs after normal request JSON operations.", IsBlock: true},
 	{Name: "req_map", Block: "request", Hover: "`req_map <mode>;`\n\nMap request JSON between API schemas.", Modes: []string{"openai_chat_to_openai_responses", "openai_chat_to_anthropic_messages", "openai_chat_to_gemini_generate_content", "anthropic_to_openai_chat", "gemini_to_openai_chat"}},
+
+	{Name: "json_set", Block: "after_req_map", Hover: "`json_set <jsonpath> <expr>;`\n\nSets one request JSON field value after req_map."},
+	{Name: "json_replace", Block: "after_req_map", Hover: "`json_replace <jsonpath> <expr>;`\n\nReplaces one request JSON field after req_map only when the path already exists."},
+	{Name: "json_set_if_absent", Block: "after_req_map", Hover: "`json_set_if_absent <jsonpath> <expr>;`\n\nSets one request JSON field after req_map only when target field is absent."},
+	{Name: "json_del", Block: "after_req_map", Hover: "`json_del <jsonpath>;`\n\nDeletes one request JSON field after req_map."},
+	{Name: "json_rename", Block: "after_req_map", Hover: "`json_rename <from-jsonpath> <to-jsonpath>;`\n\nRenames/moves one request JSON field after req_map."},
+	{Name: "json_wrap_input_text", Block: "after_req_map", Hover: "`json_wrap_input_text <jsonpath>;`\n\nWraps a string field as an OpenAI Responses `input` message list after req_map."},
+	{Name: "json_set_header_values", Block: "after_req_map", Hover: "`json_set_header_values <jsonpath> <Header-Name> [separator=\"<sep>\"];`\n\nSets one request JSON array field from downstream header values after req_map."},
+	{Name: "json_filter_values", Block: "after_req_map", Hover: "`json_filter_values <jsonpath> <pattern>...;`\n\nFilters one request JSON string array field by allowed values after req_map."},
+	{Name: "json_del_with_condition", Block: "after_req_map", Hover: "`json_del_with_condition <jsonpath> <field> <pattern>...;`\n\nDeletes matching request JSON objects after req_map when the object's field matches one of the patterns."},
+	{Name: "json_del_if_missing", Block: "after_req_map", Hover: "`json_del_if_missing <target-jsonpath> <required-jsonpath>;`\n\nDeletes the target request JSON field after req_map when the required JSON path is missing."},
 
 	{Name: "resp_passthrough", Block: "response", Hover: "`resp_passthrough;`\n\nPasses upstream response through without schema mapping."},
 	{Name: "resp_map", Block: "response", Hover: "`resp_map <mode>;`\n\nMap non-stream response JSON.", Modes: []string{"openai_responses_to_openai_chat", "anthropic_to_openai_chat", "gemini_to_openai_chat", "openai_to_anthropic_messages", "openai_to_gemini_chat", "openai_to_gemini_generate_content"}},
@@ -275,12 +288,56 @@ func ModesByDirective(name string) []string {
 	return out
 }
 
+// ModesByDirectiveInBlock returns allowed mode values for one directive in a
+// specific parent block.
+func ModesByDirectiveInBlock(name, block string) []string {
+	key := strings.TrimSpace(name)
+	if key == "" {
+		return nil
+	}
+	b := normalizeMetaBlock(block)
+	for _, d := range directiveMetadata {
+		if d.Name != key || normalizeMetaBlock(d.Block) != b {
+			continue
+		}
+		return append([]string(nil), d.Modes...)
+	}
+	return nil
+}
+
 // ModeDirectiveNames returns directive names that accept built-in mode values.
 func ModeDirectiveNames() []string {
 	seen := map[string]struct{}{}
 	out := make([]string, 0, 16)
 	for _, d := range directiveMetadata {
 		if len(d.Modes) == 0 {
+			continue
+		}
+		name := strings.TrimSpace(d.Name)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// ModeDirectiveNamesInBlock returns directive names that accept built-in mode
+// values in a specific parent block.
+func ModeDirectiveNamesInBlock(block string) []string {
+	b := normalizeMetaBlock(block)
+	if b == "" {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, 8)
+	for _, d := range directiveMetadata {
+		if normalizeMetaBlock(d.Block) != b || len(d.Modes) == 0 {
 			continue
 		}
 		name := strings.TrimSpace(d.Name)
@@ -311,6 +368,17 @@ func DirectiveModeRegistryBlock(name, block string) string {
 	return directiveModeRegistryBlock(key, b, false)
 }
 
+// DirectiveModeRegistryBlockInBlock returns the top-level preset block name
+// used to resolve user-defined mode values for a directive in a specific parent
+// block.
+func DirectiveModeRegistryBlockInBlock(name, block string) string {
+	key := strings.TrimSpace(name)
+	if key == "" {
+		return ""
+	}
+	return directiveModeRegistryBlock(key, normalizeMetaBlock(block), true)
+}
+
 // DirectiveHasDynamicModeRegistry reports whether this directive can resolve
 // additional mode names from top-level reusable preset blocks.
 func DirectiveHasDynamicModeRegistry(name string) bool {
@@ -325,6 +393,12 @@ func DirectiveHasDynamicModeRegistry(name string) bool {
 		return true
 	}
 	return false
+}
+
+// DirectiveHasDynamicModeRegistryInBlock reports whether this directive can
+// resolve additional mode names in a specific parent block.
+func DirectiveHasDynamicModeRegistryInBlock(name, block string) bool {
+	return DirectiveModeRegistryBlockInBlock(name, block) != ""
 }
 
 // DirectiveAllowedBlocks returns block names where this directive is allowed.
@@ -354,20 +428,53 @@ func DirectiveAllowedBlocks(name string) []string {
 	return out
 }
 
-// BlockDirectiveNames returns block directive keywords (excluding "top").
+// DirectiveIsBlockInBlock reports whether name opens a nested block in parent block.
+func DirectiveIsBlockInBlock(name, block string) bool {
+	key := strings.TrimSpace(name)
+	if key == "" {
+		return false
+	}
+	b := normalizeMetaBlock(block)
+	for _, d := range directiveMetadata {
+		if d.Name != key || normalizeMetaBlock(d.Block) != b {
+			continue
+		}
+		return d.IsBlock
+	}
+	return false
+}
+
+// DirectiveBlockHasHeaderInBlock reports whether a block directive consumes
+// header arguments before its opening brace, for example provider "name" { ... }.
+func DirectiveBlockHasHeaderInBlock(name, block string) bool {
+	key := strings.TrimSpace(name)
+	if key == "" {
+		return false
+	}
+	b := normalizeMetaBlock(block)
+	for _, d := range directiveMetadata {
+		if d.Name != key || normalizeMetaBlock(d.Block) != b {
+			continue
+		}
+		return d.IsBlock && d.BlockHeader
+	}
+	return false
+}
+
+// BlockDirectiveNames returns block directive keywords.
 func BlockDirectiveNames() []string {
 	seen := map[string]struct{}{}
 	out := make([]string, 0, 16)
 	for _, d := range directiveMetadata {
-		block := normalizeMetaBlock(d.Block)
-		if block == "" || block == "top" {
+		name := strings.TrimSpace(d.Name)
+		if name == "" || !d.IsBlock {
 			continue
 		}
-		if _, ok := seen[block]; ok {
+		if _, ok := seen[name]; ok {
 			continue
 		}
-		seen[block] = struct{}{}
-		out = append(out, block)
+		seen[name] = struct{}{}
+		out = append(out, name)
 	}
 	sort.Strings(out)
 	return out
@@ -379,8 +486,8 @@ func IsBlockDirective(name string) bool {
 	if key == "" {
 		return false
 	}
-	for _, block := range BlockDirectiveNames() {
-		if block == key {
+	for _, d := range directiveMetadata {
+		if d.Name == key && d.IsBlock {
 			return true
 		}
 	}
