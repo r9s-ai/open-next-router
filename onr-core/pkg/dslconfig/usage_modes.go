@@ -225,6 +225,9 @@ func validateAndBuildProviderFile(path string, content string, usageModes usageM
 	if err := validateProviderMatchAPIs(path, providerName, routing); err != nil {
 		return ProviderFile{}, false, err
 	}
+	if err := validateProviderRouting(path, providerName, routing); err != nil {
+		return ProviderFile{}, false, err
+	}
 	if err := validateProviderRequestTransform(path, providerName, req); err != nil {
 		return ProviderFile{}, false, err
 	}

@@ -23,6 +23,34 @@ provider "b" { defaults { upstream_config { base_url = "https://b.example.com"; 
 	require.Equal(t, []string{"a", "b"}, res.LoadedProviders)
 }
 
+func TestValidateProvidersFile_RejectsInvalidSetPathTemplateVariable(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "providers.conf")
+	require.NoError(t, os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "a" {
+  defaults {
+    upstream_config { base_url = "https://a.example.com"; }
+  }
+  match api = "chat.completions" {
+    upstream {
+      set_path template("/v1/${request.unknown}/chat/completions");
+    }
+  }
+}
+`), 0o600))
+
+	_, err := ValidateProvidersFile(path)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unsupported template variable")
+
+	reg := NewRegistry()
+	_, err = reg.ReloadFromFile(path)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unsupported template variable")
+}
+
 func TestReloadFromFile_DuplicateProviderRejected(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "providers.conf")

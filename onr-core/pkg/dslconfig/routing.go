@@ -103,6 +103,13 @@ func evalStringExpr(expr string, meta *dslmeta.Meta) string {
 	if raw == "" {
 		return ""
 	}
+	if strings.HasPrefix(raw, "template(") && strings.HasSuffix(raw, ")") {
+		args := splitTopLevelArgs(strings.TrimSuffix(strings.TrimPrefix(raw, "template("), ")"))
+		if len(args) != 1 || !isQuotedStringExpr(args[0]) {
+			return raw
+		}
+		return evalTemplateString(unquoteString(strings.TrimSpace(args[0])), meta)
+	}
 	// Minimal concat support used by auth_bearer implementation.
 	if strings.HasPrefix(raw, "concat(") && strings.HasSuffix(raw, ")") {
 		inner := strings.TrimSuffix(strings.TrimPrefix(raw, "concat("), ")")
@@ -113,7 +120,7 @@ func evalStringExpr(expr string, meta *dslmeta.Meta) string {
 		}
 		return b.String()
 	}
-	if strings.HasPrefix(raw, "\"") && strings.HasSuffix(raw, "\"") {
+	if isQuotedStringExpr(raw) {
 		return unquoteString(raw)
 	}
 	switch raw {
@@ -133,6 +140,64 @@ func evalStringExpr(expr string, meta *dslmeta.Meta) string {
 	default:
 		return raw
 	}
+}
+
+func evalTemplateString(tmpl string, meta *dslmeta.Meta) string {
+	var b strings.Builder
+	for i := 0; i < len(tmpl); {
+		if strings.HasPrefix(tmpl[i:], `\${`) {
+			b.WriteString("${")
+			i += len(`\${`)
+			continue
+		}
+		if !strings.HasPrefix(tmpl[i:], "${") {
+			b.WriteByte(tmpl[i])
+			i++
+			continue
+		}
+		end := strings.IndexByte(tmpl[i+2:], '}')
+		if end < 0 {
+			b.WriteString(tmpl[i:])
+			break
+		}
+		name := strings.TrimSpace(tmpl[i+2 : i+2+end])
+		if expr, ok := normalizeTemplateVariable(name); ok {
+			b.WriteString(evalStringExpr(expr, meta))
+		}
+		i += 2 + end + 1
+	}
+	return b.String()
+}
+
+func normalizeTemplateVariable(name string) (string, bool) {
+	n := strings.TrimSpace(name)
+	if n == "" {
+		return "", false
+	}
+	if !strings.HasPrefix(n, "$") {
+		n = "$" + n
+	}
+	if isBuiltinStringVariable(n) {
+		return n, true
+	}
+	return "", false
+}
+
+func isBuiltinStringVariable(expr string) bool {
+	switch strings.TrimSpace(expr) {
+	case exprChannelBaseURL, exprChannelKey, exprOAuthAccessToken, exprRequestModel, exprRequestMapped:
+		return true
+	default:
+		return false
+	}
+}
+
+func isQuotedStringExpr(expr string) bool {
+	raw := strings.TrimSpace(expr)
+	if len(raw) < 2 {
+		return false
+	}
+	return (raw[0] == '"' && raw[len(raw)-1] == '"') || (raw[0] == '\'' && raw[len(raw)-1] == '\'')
 }
 
 func splitTopLevelArgs(s string) []string {

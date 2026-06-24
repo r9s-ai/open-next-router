@@ -391,6 +391,20 @@ upstream {
 ```
 
 - Sets the upstream request path (overrides the original path).
+- Supports string expressions. Use `template("...")` when a path string should expand built-in variables:
+
+```conf
+upstream {
+  set_path template("/v1beta/models/${request.model_mapped}:generateContent");
+}
+```
+
+- Template placeholders use built-in variable names without the leading `$` by convention.
+  `${$request.model_mapped}` is also accepted.
+- Plain string literals do not expand variables. For example, `"/v1/$request.model_mapped"` is a literal path.
+- Use `\${...}` inside a template when a literal `${...}` sequence is required.
+- `set_path` values must be path-shaped and start with `/`. Variable-only paths are not accepted; embed variables in
+  `template(...)` or `concat(...)` with a static `/` prefix.
 
 #### set_query (multiple allowed)
 
@@ -1091,6 +1105,12 @@ Expression forms (v0.1):
 - String literal: `"abc"`
 - Variable: `$channel.key`
 - Concatenation: `concat("Bearer ", $channel.key)`
+- Template string: `template("/v1/${request.model_mapped}")`
+
+`template(...)` accepts exactly one string literal argument. Template placeholders are resolved at runtime using the
+same built-in variables as bare expressions. Placeholder names normally omit the leading `$`, for example
+`${request.model_mapped}`. `${$request.model_mapped}` is also accepted. Unknown placeholder names are invalid during
+provider validation.
 
 > v0.1 intentionally keeps expressions minimal; there is no general-purpose scripting language.
 
@@ -1565,6 +1585,15 @@ Multiple: yes
 ```
 
 - Sets upstream path.
+- `set_path` supports path string literals, `concat(...)`, and `template(...)`.
+- `template(...)` is the recommended form when embedding variables inside a path-shaped string:
+
+```conf
+set_path template("/openai/deployments/${request.model_mapped}/chat/completions");
+```
+
+- The configured path expression must be path-shaped and start with `/`; use `template(...)` or `concat(...)` when
+  embedding variables.
 
 #### set_query
 
@@ -2089,5 +2118,8 @@ auth {
 upstream {
   # Example: build a path using model_mapped (string concatenation demo)
   set_path concat("/v1/", $request.model_mapped, "/chat/completions");
+
+  # Example: equivalent path template form
+  set_path template("/v1/${request.model_mapped}/chat/completions");
 }
 ```

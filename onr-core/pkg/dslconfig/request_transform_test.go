@@ -98,6 +98,202 @@ provider "azure-openai" {
 	}
 }
 
+func TestSetPathTemplate_AppliesVariables(t *testing.T) {
+	conf := `
+syntax "next-router/0.1";
+
+provider "templated" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    request {
+      model_map "gpt-4o-mini" "gpt4o-mini-prod";
+    }
+  }
+
+  match api = "chat.completions" {
+    upstream {
+      set_path template("/openai/deployments/${request.model_mapped}/chat/completions");
+    }
+  }
+}
+`
+	pf, hasProvider, err := validateAndBuildProviderFile("templated.conf", conf, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("validateAndBuildProviderFile: %v", err)
+	}
+	if !hasProvider {
+		t.Fatalf("expected provider")
+	}
+
+	m := &dslmeta.Meta{
+		API:             "chat.completions",
+		IsStream:        false,
+		OriginModelName: "gpt-4o-mini",
+		RequestURLPath:  "/v1/chat/completions?api-version=2024-10-01",
+		BaseURL:         "https://example.azure.com",
+	}
+	if tcfg, ok := pf.Request.Select(m); !ok {
+		t.Fatalf("expected request transform selected")
+	} else {
+		tcfg.Apply(m)
+	}
+	if err := pf.Routing.Apply(m); err != nil {
+		t.Fatalf("routing.Apply: %v", err)
+	}
+	if m.RequestURLPath != "/openai/deployments/gpt4o-mini-prod/chat/completions?api-version=2024-10-01" {
+		t.Fatalf("unexpected RequestURLPath: %q", m.RequestURLPath)
+	}
+}
+
+func TestSetPathTemplate_RejectsUnknownVariable(t *testing.T) {
+	conf := `
+syntax "next-router/0.1";
+
+provider "templated" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+  }
+
+  match api = "chat.completions" {
+    upstream {
+      set_path template("/v1/${request.unknown}/chat/completions");
+    }
+  }
+}
+`
+	_, _, err := validateAndBuildProviderFile("templated.conf", conf, nil, nil, nil, nil)
+	if err == nil {
+		t.Fatalf("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "unsupported template variable") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSetPathTemplate_EscapesLiteralPlaceholder(t *testing.T) {
+	conf := `
+syntax "next-router/0.1";
+
+provider "templated" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+  }
+
+  match api = "chat.completions" {
+    upstream {
+      set_path template("/literal/\${request.model_mapped}");
+    }
+  }
+}
+`
+	pf, hasProvider, err := validateAndBuildProviderFile("templated.conf", conf, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("validateAndBuildProviderFile: %v", err)
+	}
+	if !hasProvider {
+		t.Fatalf("expected provider")
+	}
+	m := &dslmeta.Meta{
+		API:             "chat.completions",
+		IsStream:        false,
+		OriginModelName: "gpt-4o-mini",
+		RequestURLPath:  "/v1/chat/completions",
+	}
+	if err := pf.Routing.Apply(m); err != nil {
+		t.Fatalf("routing.Apply: %v", err)
+	}
+	if m.RequestURLPath != "/literal/$%7Brequest.model_mapped%7D" {
+		t.Fatalf("unexpected RequestURLPath: %q", m.RequestURLPath)
+	}
+}
+
+func TestSetPathTemplate_RejectsNonPathTemplate(t *testing.T) {
+	conf := `
+syntax "next-router/0.1";
+
+provider "templated" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+  }
+
+  match api = "chat.completions" {
+    upstream {
+      set_path template("v1/${request.model_mapped}/chat/completions");
+    }
+  }
+}
+`
+	_, _, err := validateAndBuildProviderFile("templated.conf", conf, nil, nil, nil, nil)
+	if err == nil {
+		t.Fatalf("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "path must start with '/'") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSetPath_RejectsBareVariable(t *testing.T) {
+	conf := `
+syntax "next-router/0.1";
+
+provider "templated" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+  }
+
+  match api = "chat.completions" {
+    upstream {
+      set_path $request.model_mapped;
+    }
+  }
+}
+`
+	_, _, err := validateAndBuildProviderFile("templated.conf", conf, nil, nil, nil, nil)
+	if err == nil {
+		t.Fatalf("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "bare variables are not valid set_path expressions") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSetPath_RejectsUnquotedPathWithVariable(t *testing.T) {
+	conf := `
+syntax "next-router/0.1";
+
+provider "templated" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+  }
+
+  match api = "chat.completions" {
+    upstream {
+      set_path /v1/$request.model_mapped/chat/completions;
+    }
+  }
+}
+`
+	_, _, err := validateAndBuildProviderFile("templated.conf", conf, nil, nil, nil, nil)
+	if err == nil {
+		t.Fatalf("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "unquoted path literals cannot contain '$'") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestRequestJSONSetIfAbsent_Parsed(t *testing.T) {
 	conf := `
 syntax "next-router/0.1";

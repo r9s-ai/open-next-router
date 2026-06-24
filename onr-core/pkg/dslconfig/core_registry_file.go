@@ -163,6 +163,9 @@ func buildMergedProviderFile(path, providerName string, metadata ProviderMetadat
 	if err := validateProviderMatchAPIs(path, providerName, routing); err != nil {
 		return ProviderFile{}, err
 	}
+	if err := validateProviderRouting(path, providerName, routing); err != nil {
+		return ProviderFile{}, err
+	}
 	if err := validateProviderHeaders(path, providerName, headers); err != nil {
 		return ProviderFile{}, err
 	}

@@ -407,6 +407,20 @@ upstream {
 说明：
 
 - 设置上游请求路径（会覆盖原路径）
+- 支持字符串表达式。当需要在 path 字符串内部展开内置变量时，使用 `template("...")`：
+
+```conf
+upstream {
+  set_path template("/v1beta/models/${request.model_mapped}:generateContent");
+}
+```
+
+- 模板占位符按约定使用不带 `$` 前缀的内置变量名。
+  `${$request.model_mapped}` 也可使用。
+- 普通字符串字面量不会展开变量。例如，`"/v1/$request.model_mapped"` 会被当作普通 path 字面量。
+- 如需在模板中保留字面量 `${...}`，可写成 `\${...}`。
+- `set_path` 的值必须是 path 形态并以 `/` 开头。不接受纯变量 path；如需变量，请在带有静态 `/`
+  前缀的 `template(...)` 或 `concat(...)` 中嵌入变量。
 
 #### set_query（可多条）
 
@@ -1141,6 +1155,11 @@ metrics {
 - 字符串字面量：`"abc"`
 - 变量引用：`$channel.key`
 - 连接：`concat("Bearer ", $channel.key)`
+- 模板字符串：`template("/v1/${request.model_mapped}")`
+
+`template(...)` 只接受一个字符串字面量参数。模板占位符会在运行期使用与裸表达式相同的内置变量求值。
+占位符名称通常省略开头的 `$`，例如 `${request.model_mapped}`。`${$request.model_mapped}` 也可使用。
+未知占位符名称会在 provider 校验阶段报错。
 
 > 注意：除上述最小能力外，v0.1 不支持更复杂的函数/运算。
 
@@ -1558,6 +1577,14 @@ Multiple: yes
 ```
 
 - 设置上游请求路径（覆盖原 path）。
+- `set_path` 支持 path 字符串字面量、`concat(...)` 与 `template(...)`。
+- 当需要把变量嵌入 path 形态的字符串中时，推荐使用 `template(...)`：
+
+```conf
+set_path template("/openai/deployments/${request.model_mapped}/chat/completions");
+```
+
+- 配置的 path 表达式必须是 path 形态并以 `/` 开头；嵌入变量时请使用 `template(...)` 或 `concat(...)`。
 
 #### set_query
 
@@ -2097,5 +2124,8 @@ auth {
 upstream {
   # 示例：把 model 拼进 path（注意这只是字符串拼接示例）
   set_path concat("/v1/", $request.model_mapped, "/chat/completions");
+
+  # 示例：等价的 path 模板写法
+  set_path template("/v1/${request.model_mapped}/chat/completions");
 }
 ```
