@@ -105,8 +105,8 @@ github.com/pelletier/go-toml/v2 v2.2.2/go.mod h1:1t835xjRzz80PqgE6HHgN2JOsmgYu/h
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 h1:Jamvg5psRIccs7FGNTlIRMkT8wgtp5eCXdBlqhYGL6U=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
-github.com/r9s-ai/open-next-router/onr-core v1.12.1 h1:2FaYgBdlLQzF3Zy1Q/pps1n1p+Nrd1HERItUgoUrjN4=
-github.com/r9s-ai/open-next-router/onr-core v1.12.1/go.mod h1:1fANJBkzK/7vVWqxTcfDHo0B4kvjP4C72/kBDY3L1vY=
+github.com/r9s-ai/open-next-router/onr-core v1.13.0 h1:lZDo+JuvqtCBIU4b6PaY+DQ7PxTyaOVceuFz7H7z6H0=
+github.com/r9s-ai/open-next-router/onr-core v1.13.0/go.mod h1:1fANJBkzK/7vVWqxTcfDHo0B4kvjP4C72/kBDY3L1vY=
 github.com/rivo/uniseg v0.4.7 h1:WUdvkW8uEhrYfLC4ZzdpI2ztxP1I582+49Oc5Mq64VQ=
 github.com/rivo/uniseg v0.4.7/go.mod h1:FN3SvrM+Zdj16jyLfmOkMNblXMcoc8DfTHruCPUcx88=
 github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0tI/otEQ=
