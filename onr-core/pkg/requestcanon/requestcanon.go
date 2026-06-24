@@ -25,6 +25,15 @@ type Snapshot struct {
 	ContentType string
 }
 
+func AllowNonJSONRequestBodyAPI(api string) bool {
+	switch strings.ToLower(strings.TrimSpace(api)) {
+	case "images.edits", "audio.transcriptions", "audio.translations":
+		return true
+	default:
+		return false
+	}
+}
+
 func Inspect(body []byte, contentType string, opts InspectOptions) (*Snapshot, error) {
 	snapshot := &Snapshot{
 		Body:        body,

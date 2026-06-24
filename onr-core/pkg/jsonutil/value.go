@@ -38,31 +38,79 @@ func CoerceString(v any) string {
 	}
 }
 
+// CoerceScalarString converts common scalar values to string.
+func CoerceScalarString(v any) string {
+	switch t := v.(type) {
+	case string:
+		return t
+	case json.Number:
+		return t.String()
+	case float64:
+		return strconv.FormatFloat(t, 'f', -1, 64)
+	case bool:
+		if t {
+			return "true"
+		}
+		return "false"
+	default:
+		return ""
+	}
+}
+
 // CoerceInt converts common numeric-like values to int.
 func CoerceInt(v any) int {
+	i, _ := CoerceIntOK(v)
+	return i
+}
+
+// CoerceIntOK converts common numeric-like values to int and reports success.
+func CoerceIntOK(v any) (int, bool) {
 	switch t := v.(type) {
 	case float64:
-		return int(t)
+		return int(t), true
+	case float32:
+		return int(t), true
 	case int:
-		return t
+		return t, true
+	case int8:
+		return int(t), true
+	case int16:
+		return int(t), true
+	case int32:
+		return int(t), true
 	case int64:
-		return int(t)
+		return int(t), true
+	case uint:
+		return int(t), true
+	case uint8:
+		return int(t), true
+	case uint16:
+		return int(t), true
+	case uint32:
+		return int(t), true
+	case uint64:
+		return int(t), true
 	case json.Number:
 		if i, err := t.Int64(); err == nil {
-			return int(i)
+			return int(i), true
 		}
 	case string:
 		if i, err := strconv.Atoi(strings.TrimSpace(t)); err == nil {
-			return i
+			return i, true
 		}
 	case []any:
 		sum := 0
+		var ok bool
 		for _, item := range t {
-			sum += CoerceInt(item)
+			n, itemOK := CoerceIntOK(item)
+			if itemOK {
+				ok = true
+			}
+			sum += n
 		}
-		return sum
+		return sum, ok
 	}
-	return 0
+	return 0, false
 }
 
 // FirstInt returns the first non-zero integer.

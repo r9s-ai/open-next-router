@@ -72,6 +72,36 @@ type Meta struct {
 	requestRoot     map[string]any
 }
 
+func Clone(src *Meta) *Meta {
+	if src == nil {
+		return &Meta{}
+	}
+	out := &Meta{
+		API:                 src.API,
+		IsStream:            src.IsStream,
+		BaseURL:             src.BaseURL,
+		APIKey:              src.APIKey,
+		OAuthAccessToken:    src.OAuthAccessToken,
+		OAuthCacheKey:       src.OAuthCacheKey,
+		CredentialFile:      src.CredentialFile,
+		CredentialJSON:      src.CredentialJSON,
+		CredentialProjectID: src.CredentialProjectID,
+		ChannelLocation:     src.ChannelLocation,
+		OriginModelName:     src.OriginModelName,
+		DSLModelMapped:      src.DSLModelMapped,
+		RequestURLPath:      src.RequestURLPath,
+		RequestContentType:  src.RequestContentType,
+		RequestBody:         src.RequestBody,
+		RequestHeaders:      cloneHeader(src.RequestHeaders),
+		DerivedUsage:        cloneMap(src.DerivedUsage),
+		StartTime:           src.StartTime,
+	}
+	if src.requestRoot != nil {
+		out.SetRequestRoot(src.requestRoot)
+	}
+	return out
+}
+
 // RequestRoot requires a non-nil Meta receiver.
 // It lazily parses and caches the request body as a request-side root object.
 // It supports JSON objects and multipart form values.
@@ -91,4 +121,28 @@ func (m *Meta) SetRequestRoot(root map[string]any) {
 
 func parseRequestRoot(body []byte, contentType string) map[string]any {
 	return requestcanon.ParseRoot(body, contentType)
+}
+
+func cloneHeader(in http.Header) http.Header {
+	if in == nil {
+		return nil
+	}
+	out := make(http.Header, len(in))
+	for k, vals := range in {
+		cp := make([]string, len(vals))
+		copy(cp, vals)
+		out[k] = cp
+	}
+	return out
+}
+
+func cloneMap(in map[string]any) map[string]any {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }

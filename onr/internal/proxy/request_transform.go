@@ -37,7 +37,7 @@ func readRequestBody(gc *gin.Context, api string) (bodyBytes []byte, root map[st
 	contentType = gc.Request.Header.Get("Content-Type")
 
 	info, err := requestcanon.Inspect(bodyBytes, contentType, requestcanon.InspectOptions{
-		AllowNonJSON: allowNonJSONRequestBodyAPI(api),
+		AllowNonJSON: requestcanon.AllowNonJSONRequestBodyAPI(api),
 	})
 	if err != nil {
 		return bodyBytes, nil, "", contentType, err
@@ -58,15 +58,6 @@ func readRequestBody(gc *gin.Context, api string) (bodyBytes []byte, root map[st
 		}
 	}
 	return bodyBytes, root, model, contentType, nil
-}
-
-func allowNonJSONRequestBodyAPI(api string) bool {
-	switch strings.ToLower(strings.TrimSpace(api)) {
-	case "images.edits", "audio.transcriptions", "audio.translations":
-		return true
-	default:
-		return false
-	}
 }
 
 // selectRequestTransform requires a non-nil meta.

@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/jsonutil"
 )
 
 const (
@@ -212,36 +214,13 @@ func normalizeCostMap(in map[string]any) map[string]float64 {
 		if key == "" {
 			continue
 		}
-		n, ok := coerceNumber(v)
+		n, ok := jsonutil.CoerceFloatOK(v)
 		if !ok {
 			continue
 		}
 		out[key] = n
 	}
 	return out
-}
-
-func coerceNumber(v any) (float64, bool) {
-	switch t := v.(type) {
-	case float64:
-		return t, true
-	case float32:
-		return float64(t), true
-	case int:
-		return float64(t), true
-	case int64:
-		return float64(t), true
-	case int32:
-		return float64(t), true
-	case json.Number:
-		f, err := t.Float64()
-		if err != nil {
-			return 0, false
-		}
-		return f, true
-	default:
-		return 0, false
-	}
 }
 
 func cloneFloatMap(in map[string]float64) map[string]float64 {

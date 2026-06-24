@@ -9,8 +9,9 @@ import (
 	"fmt"
 	"io"
 	"sort"
-	"strconv"
 	"strings"
+
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/jsonutil"
 )
 
 type Options struct{}
@@ -70,7 +71,7 @@ func Parse(ctx context.Context, r io.Reader) ([]Event, error) {
 		if ev.Event == "" && len(data) > 0 && !ev.Done {
 			var root map[string]any
 			if json.Unmarshal(data, &root) == nil {
-				ev.Event = coerceString(root["type"])
+				ev.Event = jsonutil.CoerceScalarString(root["type"])
 			}
 		}
 		out = append(out, ev)
@@ -130,7 +131,7 @@ func eventType(ev Event, root map[string]any) string {
 	if s := strings.TrimSpace(ev.Event); s != "" {
 		return s
 	}
-	return strings.TrimSpace(coerceString(root["type"]))
+	return strings.TrimSpace(jsonutil.CoerceScalarString(root["type"]))
 }
 
 func collectOpenAIResponses(events []Event) (map[string]any, error) {
@@ -271,15 +272,15 @@ func applyAnthropicDelta(b *anthropicBlock, delta map[string]any) {
 	if delta == nil {
 		return
 	}
-	switch coerceString(delta["type"]) {
+	switch jsonutil.CoerceScalarString(delta["type"]) {
 	case "text_delta":
-		b.block["text"] = coerceString(b.block["text"]) + coerceString(delta["text"])
+		b.block["text"] = jsonutil.CoerceScalarString(b.block["text"]) + jsonutil.CoerceScalarString(delta["text"])
 	case "input_json_delta":
-		b.jsonParts.WriteString(coerceString(delta["partial_json"]))
+		b.jsonParts.WriteString(jsonutil.CoerceScalarString(delta["partial_json"]))
 	case "thinking_delta":
-		b.block["thinking"] = coerceString(b.block["thinking"]) + coerceString(delta["thinking"])
+		b.block["thinking"] = jsonutil.CoerceScalarString(b.block["thinking"]) + jsonutil.CoerceScalarString(delta["thinking"])
 	case "signature_delta":
-		b.block["signature"] = coerceString(delta["signature"])
+		b.block["signature"] = jsonutil.CoerceScalarString(delta["signature"])
 	default:
 		for k, v := range delta {
 			if k != "type" {
@@ -364,7 +365,7 @@ func mergeGeminiCandidate(dst, in map[string]any) {
 		content = map[string]any{}
 		dst["content"] = content
 	}
-	if role := strings.TrimSpace(coerceString(inContent["role"])); role != "" {
+	if role := strings.TrimSpace(jsonutil.CoerceScalarString(inContent["role"])); role != "" {
 		content["role"] = role
 	}
 	parts, _ := content["parts"].([]any)
@@ -374,11 +375,11 @@ func mergeGeminiCandidate(dst, in map[string]any) {
 		if part == nil {
 			continue
 		}
-		if text := coerceString(part["text"]); text != "" {
+		if text := jsonutil.CoerceScalarString(part["text"]); text != "" {
 			if len(parts) > 0 {
 				last, _ := parts[len(parts)-1].(map[string]any)
 				if last != nil {
-					if prev := coerceString(last["text"]); prev != "" {
+					if prev := jsonutil.CoerceScalarString(last["text"]); prev != "" {
 						last["text"] = prev + text
 						continue
 					}
@@ -392,11 +393,11 @@ func mergeGeminiCandidate(dst, in map[string]any) {
 
 func upstreamError(root map[string]any) error {
 	if errObj, _ := root["error"].(map[string]any); errObj != nil {
-		if msg := strings.TrimSpace(coerceString(errObj["message"])); msg != "" {
+		if msg := strings.TrimSpace(jsonutil.CoerceScalarString(errObj["message"])); msg != "" {
 			return fmt.Errorf("upstream SSE error: %s", msg)
 		}
 	}
-	if msg := strings.TrimSpace(coerceString(root["message"])); msg != "" {
+	if msg := strings.TrimSpace(jsonutil.CoerceScalarString(root["message"])); msg != "" {
 		return fmt.Errorf("upstream SSE error: %s", msg)
 	}
 	return fmt.Errorf("upstream SSE error: %v", root)
@@ -425,40 +426,9 @@ func mergeMaps(base, overlay map[string]any) map[string]any {
 	return base
 }
 
-func coerceString(v any) string {
-	switch x := v.(type) {
-	case string:
-		return x
-	case json.Number:
-		return x.String()
-	case float64:
-		return strconv.FormatFloat(x, 'f', -1, 64)
-	case bool:
-		if x {
-			return "true"
-		}
-		return "false"
-	default:
-		return ""
-	}
-}
-
 func coerceInt(v any, fallback int) int {
-	switch x := v.(type) {
-	case int:
-		return x
-	case int64:
-		return int(x)
-	case float64:
-		return int(x)
-	case json.Number:
-		if n, err := x.Int64(); err == nil {
-			return int(n)
-		}
-	case string:
-		if n, err := strconv.Atoi(strings.TrimSpace(x)); err == nil {
-			return n
-		}
+	if n, ok := jsonutil.CoerceIntOK(v); ok {
+		return n
 	}
 	return fallback
 }

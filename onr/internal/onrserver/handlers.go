@@ -116,22 +116,13 @@ func inspectRequestBody(c *gin.Context, api string) ([]byte, bool, string, error
 		contentType = c.Request.Header.Get("Content-Type")
 	}
 	info, err := requestcanon.Inspect(bodyBytes, contentType, requestcanon.InspectOptions{
-		AllowNonJSON: allowNonJSONRequestBody(api),
+		AllowNonJSON: requestcanon.AllowNonJSONRequestBodyAPI(api),
 	})
 	if err != nil {
 		return bodyBytes, false, "", err
 	}
 	cacheRequestInspection(c, bodyBytes, info.Root, strings.TrimSpace(info.Model), contentType)
 	return bodyBytes, info.Stream, strings.TrimSpace(info.Model), nil
-}
-
-func allowNonJSONRequestBody(api string) bool {
-	switch strings.ToLower(strings.TrimSpace(api)) {
-	case "images.edits", "audio.transcriptions", "audio.translations":
-		return true
-	default:
-		return false
-	}
 }
 
 func selectProvider(st *state, tokenProvider string, headerProvider string, model string) (provider string, source string) {

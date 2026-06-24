@@ -35,6 +35,34 @@ func TestCoerceInt_StringAndArray(t *testing.T) {
 	}
 }
 
+func TestCoerceIntOK(t *testing.T) {
+	tests := []struct {
+		name string
+		in   any
+		want int
+		ok   bool
+	}{
+		{name: "zero", in: 0, want: 0, ok: true},
+		{name: "float", in: float64(1.9), want: 1, ok: true},
+		{name: "int8", in: int8(2), want: 2, ok: true},
+		{name: "uint64", in: uint64(3), want: 3, ok: true},
+		{name: "json number", in: json.Number("4"), want: 4, ok: true},
+		{name: "string", in: "5", want: 5, ok: true},
+		{name: "array", in: []any{1, "2", map[string]any{}}, want: 3, ok: true},
+		{name: "empty string", in: "", want: 0, ok: false},
+		{name: "non numeric", in: map[string]any{}, want: 0, ok: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := CoerceIntOK(tt.in)
+			if got != tt.want || ok != tt.ok {
+				t.Fatalf("CoerceIntOK(%T) got (%v, %v), want (%v, %v)", tt.in, got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}
+
 func TestGetFirstIntByPaths(t *testing.T) {
 	root := map[string]any{
 		"usage": map[string]any{
@@ -67,6 +95,30 @@ func TestGetStringByPath_SupportsWildcardAndIndex(t *testing.T) {
 	}
 	if got := GetStringByPath(root, "$.one[0].name"); got != "first" {
 		t.Fatalf("index string got %q, want first", got)
+	}
+}
+
+func TestCoerceScalarString(t *testing.T) {
+	tests := []struct {
+		name string
+		in   any
+		want string
+	}{
+		{name: "string", in: "hello", want: "hello"},
+		{name: "json number", in: json.Number("123.45"), want: "123.45"},
+		{name: "float", in: float64(1.5), want: "1.5"},
+		{name: "true", in: true, want: "true"},
+		{name: "false", in: false, want: "false"},
+		{name: "unsupported", in: map[string]any{}, want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CoerceScalarString(tt.in)
+			if got != tt.want {
+				t.Fatalf("CoerceScalarString(%T)=%q want %q", tt.in, got, tt.want)
+			}
+		})
 	}
 }
 

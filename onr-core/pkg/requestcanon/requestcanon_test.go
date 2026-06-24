@@ -73,6 +73,32 @@ func TestInspectAllowNonJSONRaw(t *testing.T) {
 	}
 }
 
+func TestAllowNonJSONRequestBodyAPI(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		api  string
+		want bool
+	}{
+		{api: "images.edits", want: true},
+		{api: " audio.transcriptions ", want: true},
+		{api: "AUDIO.TRANSLATIONS", want: true},
+		{api: "chat.completions", want: false},
+		{api: "images.generations", want: false},
+		{api: "", want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.api, func(t *testing.T) {
+			t.Parallel()
+			got := AllowNonJSONRequestBodyAPI(tc.api)
+			if got != tc.want {
+				t.Fatalf("AllowNonJSONRequestBodyAPI(%q)=%v want %v", tc.api, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestParseRootMultipartForm(t *testing.T) {
 	t.Parallel()
 

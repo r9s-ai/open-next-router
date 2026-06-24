@@ -57,34 +57,14 @@ func Query(ctx context.Context, p Params) (Result, error) {
 		return Result{}, errors.New("api key is empty")
 	}
 
-	meta := dslmeta.Meta{}
-	if p.Meta != nil {
-		meta.API = p.Meta.API
-		meta.IsStream = p.Meta.IsStream
-		meta.BaseURL = p.Meta.BaseURL
-		meta.APIKey = p.Meta.APIKey
-		meta.OAuthAccessToken = p.Meta.OAuthAccessToken
-		meta.OAuthCacheKey = p.Meta.OAuthCacheKey
-		meta.CredentialFile = p.Meta.CredentialFile
-		meta.CredentialJSON = p.Meta.CredentialJSON
-		meta.CredentialProjectID = p.Meta.CredentialProjectID
-		meta.ChannelLocation = p.Meta.ChannelLocation
-		meta.OriginModelName = p.Meta.OriginModelName
-		meta.DSLModelMapped = p.Meta.DSLModelMapped
-		meta.RequestURLPath = p.Meta.RequestURLPath
-		meta.RequestContentType = p.Meta.RequestContentType
-		meta.RequestBody = p.Meta.RequestBody
-		meta.RequestHeaders = p.Meta.RequestHeaders
-		meta.DerivedUsage = p.Meta.DerivedUsage
-		meta.StartTime = p.Meta.StartTime
-	}
+	meta := dslmeta.Clone(p.Meta)
 	meta.API = strings.TrimSpace(meta.API)
 	if meta.API == "" {
 		return Result{}, errors.New("meta.api is empty")
 	}
 	meta.APIKey = strings.TrimSpace(p.APIKey)
 
-	cfgBalance, ok := p.File.Balance.Select(&meta)
+	cfgBalance, ok := p.File.Balance.Select(meta)
 	if !ok {
 		return Result{}, fmt.Errorf("provider %q has no balance config for api=%q stream=%v", provider, meta.API, meta.IsStream)
 	}
@@ -99,8 +79,8 @@ func Query(ctx context.Context, p Params) (Result, error) {
 	meta.BaseURL = baseURL
 
 	headers := make(http.Header)
-	p.File.Headers.Apply(&meta, nil, headers)
-	dslquery.ApplyHeaderOps(headers, cfgBalance.Headers, &meta)
+	p.File.Headers.Apply(meta, nil, headers)
+	dslquery.ApplyHeaderOps(headers, cfgBalance.Headers, meta)
 
 	client := p.HTTPClient
 	if client == nil {
@@ -115,9 +95,9 @@ func Query(ctx context.Context, p Params) (Result, error) {
 	)
 	switch mode {
 	case "openai":
-		balance, used, err = queryOpenAIBalanceWithPaths(ctx, client, baseURL, p.APIKey, cfgBalance.SubscriptionPath, cfgBalance.UsagePath, headers, &meta, p.DebugOut)
+		balance, used, err = queryOpenAIBalanceWithPaths(ctx, client, baseURL, p.APIKey, cfgBalance.SubscriptionPath, cfgBalance.UsagePath, headers, meta, p.DebugOut)
 	case "custom":
-		balance, used, err = queryCustomBalance(ctx, client, baseURL, cfgBalance, headers, &meta, p.DebugOut)
+		balance, used, err = queryCustomBalance(ctx, client, baseURL, cfgBalance, headers, meta, p.DebugOut)
 	default:
 		return Result{}, fmt.Errorf("unsupported balance mode %q", cfgBalance.Mode)
 	}

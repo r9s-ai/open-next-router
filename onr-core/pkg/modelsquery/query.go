@@ -40,7 +40,7 @@ func Query(ctx context.Context, p Params) (*Result, error) {
 		return nil, errors.New("provider is empty")
 	}
 
-	meta := cloneMetaForQuery(p.Meta)
+	meta := dslmeta.Clone(p.Meta)
 	meta.API = strings.TrimSpace(meta.API)
 	if meta.API == "" {
 		meta.API = "chat.completions"
@@ -92,24 +92,4 @@ func Query(ctx context.Context, p Params) (*Result, error) {
 		Provider: provider,
 		IDs:      ids,
 	}, nil
-}
-
-// cloneMetaForQuery requires a non-nil source meta.
-func cloneMetaForQuery(src *dslmeta.Meta) *dslmeta.Meta {
-	return &dslmeta.Meta{
-		API:                 src.API,
-		IsStream:            src.IsStream,
-		BaseURL:             src.BaseURL,
-		APIKey:              src.APIKey,
-		OAuthAccessToken:    src.OAuthAccessToken,
-		OAuthCacheKey:       src.OAuthCacheKey,
-		CredentialFile:      src.CredentialFile,
-		CredentialJSON:      src.CredentialJSON,
-		CredentialProjectID: src.CredentialProjectID,
-		ChannelLocation:     src.ChannelLocation,
-		OriginModelName:     src.OriginModelName,
-		DSLModelMapped:      src.DSLModelMapped,
-		RequestURLPath:      src.RequestURLPath,
-		StartTime:           src.StartTime,
-	}
 }

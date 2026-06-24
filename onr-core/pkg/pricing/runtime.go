@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/jsonutil"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -258,7 +260,7 @@ func computeExtraUsageCost(usage map[string]any, rates map[string]float64) (floa
 		if !ok || rate == 0 {
 			continue
 		}
-		quantity, ok := floatFromAny(value)
+		quantity, ok := jsonutil.CoerceFloatOK(value)
 		if !ok || quantity <= 0 {
 			continue
 		}
@@ -382,23 +384,6 @@ func intFromAny(v any) int {
 		return int(t)
 	default:
 		return 0
-	}
-}
-
-func floatFromAny(v any) (float64, bool) {
-	switch t := v.(type) {
-	case int:
-		return float64(t), true
-	case int64:
-		return float64(t), true
-	case int32:
-		return float64(t), true
-	case float64:
-		return t, true
-	case float32:
-		return float64(t), true
-	default:
-		return 0, false
 	}
 }
 
