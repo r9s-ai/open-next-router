@@ -36,8 +36,11 @@ func (p *ProviderRouting) Apply(meta *dslmeta.Meta) error {
 	if v := strings.TrimSpace(p.BaseURLExpr); v != "" {
 		// Convention: provider base_url is the default. If meta.BaseURL is already set, keep it as higher priority.
 		if strings.TrimSpace(meta.BaseURL) == "" {
-			// v0.1: only constant string override is supported for now.
-			meta.BaseURL = evalStringExpr(v, meta)
+			baseURL, err := evalRoutingStringExpr(v, meta)
+			if err != nil {
+				return fmt.Errorf("evaluate base_url: %w", err)
+			}
+			meta.BaseURL = baseURL
 		}
 	}
 
@@ -46,7 +49,11 @@ func (p *ProviderRouting) Apply(meta *dslmeta.Meta) error {
 		return fmt.Errorf("parse request url path %q: %w", meta.RequestURLPath, err)
 	}
 	if match.SetPath != "" {
-		u.Path = evalStringExpr(match.SetPath, meta)
+		path, err := evalRoutingStringExpr(match.SetPath, meta)
+		if err != nil {
+			return fmt.Errorf("evaluate set_path: %w", err)
+		}
+		u.Path = path
 	}
 	q := u.Query()
 	for _, k := range match.QueryDels {
@@ -56,7 +63,11 @@ func (p *ProviderRouting) Apply(meta *dslmeta.Meta) error {
 		q.Del(k)
 	}
 	for k, v := range match.QueryPairs {
-		q.Set(k, evalStringExpr(v, meta))
+		value, err := evalRoutingStringExpr(v, meta)
+		if err != nil {
+			return fmt.Errorf("evaluate set_query %q: %w", k, err)
+		}
+		q.Set(k, value)
 	}
 	u.RawQuery = q.Encode()
 	meta.RequestURLPath = u.String()
@@ -104,54 +115,54 @@ func evalStringExpr(expr string, meta *dslmeta.Meta) string {
 
 // EvalStringExpr evaluates a DSL string expression against request/channel metadata.
 func EvalStringExpr(expr string, meta *dslmeta.Meta) string {
+	v, _ := evalStringExprValue(expr, meta, false)
+	return v
+}
+
+func evalRoutingStringExpr(expr string, meta *dslmeta.Meta) (string, error) {
+	return evalStringExprValue(expr, meta, true)
+}
+
+func evalStringExprValue(expr string, meta *dslmeta.Meta, requireNonEmptyVariables bool) (string, error) {
 	raw := strings.TrimSpace(expr)
 	if raw == "" {
-		return ""
+		return "", nil
 	}
 	if strings.HasPrefix(raw, "template(") && strings.HasSuffix(raw, ")") {
 		args := splitTopLevelArgs(strings.TrimSuffix(strings.TrimPrefix(raw, "template("), ")"))
 		if len(args) != 1 || !isQuotedStringExpr(args[0]) {
-			return raw
+			return raw, nil
 		}
-		return evalTemplateString(unquoteString(strings.TrimSpace(args[0])), meta)
+		return evalTemplateString(unquoteString(strings.TrimSpace(args[0])), meta, requireNonEmptyVariables)
 	}
 	// Minimal concat support used by auth_bearer implementation.
 	if strings.HasPrefix(raw, "concat(") && strings.HasSuffix(raw, ")") {
 		inner := strings.TrimSuffix(strings.TrimPrefix(raw, "concat("), ")")
 		parts := splitTopLevelArgs(inner)
 		var b strings.Builder
-		for _, p := range parts {
-			b.WriteString(EvalStringExpr(p, meta))
+		for i, p := range parts {
+			part, err := evalStringExprValue(p, meta, requireNonEmptyVariables)
+			if err != nil {
+				return "", fmt.Errorf("concat argument %d: %w", i, err)
+			}
+			b.WriteString(part)
 		}
-		return b.String()
+		return b.String(), nil
 	}
 	if isQuotedStringExpr(raw) {
-		return unquoteString(raw)
+		return unquoteString(raw), nil
 	}
-	switch raw {
-	case exprChannelBaseURL:
-		return meta.BaseURL
-	case exprChannelKey:
-		return meta.APIKey
-	case exprChannelLocation:
-		return meta.ChannelLocation
-	case exprCredentialProjID:
-		return meta.CredentialProjectID
-	case exprOAuthAccessToken:
-		return meta.OAuthAccessToken
-	case exprRequestModel:
-		return meta.OriginModelName
-	case exprRequestMapped:
-		if meta.DSLModelMapped != "" {
-			return meta.DSLModelMapped
+	if isBuiltinStringVariable(raw) {
+		value := evalBuiltinStringVariable(raw, meta)
+		if requireNonEmptyVariables && strings.TrimSpace(value) == "" {
+			return "", fmt.Errorf("template variable %q is empty", strings.TrimPrefix(strings.TrimSpace(raw), "$"))
 		}
-		return meta.OriginModelName
-	default:
-		return raw
+		return value, nil
 	}
+	return raw, nil
 }
 
-func evalTemplateString(tmpl string, meta *dslmeta.Meta) string {
+func evalTemplateString(tmpl string, meta *dslmeta.Meta, requireNonEmptyVariables bool) (string, error) {
 	var b strings.Builder
 	for i := 0; i < len(tmpl); {
 		if strings.HasPrefix(tmpl[i:], `\${`) {
@@ -171,11 +182,44 @@ func evalTemplateString(tmpl string, meta *dslmeta.Meta) string {
 		}
 		name := strings.TrimSpace(tmpl[i+2 : i+2+end])
 		if expr, ok := normalizeTemplateVariable(name); ok {
-			b.WriteString(EvalStringExpr(expr, meta))
+			value := evalBuiltinStringVariable(expr, meta)
+			if requireNonEmptyVariables && strings.TrimSpace(value) == "" {
+				return "", fmt.Errorf("template variable %q is empty", strings.TrimPrefix(strings.TrimSpace(expr), "$"))
+			}
+			b.WriteString(value)
+		} else if requireNonEmptyVariables {
+			return "", fmt.Errorf("unsupported template variable %q", name)
 		}
 		i += 2 + end + 1
 	}
-	return b.String()
+	return b.String(), nil
+}
+
+func evalBuiltinStringVariable(expr string, meta *dslmeta.Meta) string {
+	if meta == nil {
+		return ""
+	}
+	switch strings.TrimSpace(expr) {
+	case exprChannelBaseURL:
+		return meta.BaseURL
+	case exprChannelKey:
+		return meta.APIKey
+	case exprChannelLocation:
+		return meta.ChannelLocation
+	case exprCredentialProjID:
+		return meta.CredentialProjectID
+	case exprOAuthAccessToken:
+		return meta.OAuthAccessToken
+	case exprRequestModel:
+		return meta.OriginModelName
+	case exprRequestMapped:
+		if meta.DSLModelMapped != "" {
+			return meta.DSLModelMapped
+		}
+		return meta.OriginModelName
+	default:
+		return ""
+	}
 }
 
 func normalizeTemplateVariable(name string) (string, bool) {

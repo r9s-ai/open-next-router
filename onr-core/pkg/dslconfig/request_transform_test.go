@@ -189,6 +189,70 @@ provider "vertex" {
 	}
 }
 
+func TestSetPathTemplate_RejectsEmptyCredentialVariableAtRuntime(t *testing.T) {
+	conf := `
+syntax "next-router/0.1";
+
+provider "vertex" {
+  defaults {
+    upstream_config {
+      base_url = "https://aiplatform.googleapis.com";
+    }
+  }
+
+  match api = "chat.completions" {
+    upstream {
+      set_path template("/v1/projects/${credential.project_id}/locations/${channel.location}/publishers/google/models/${request.model_mapped}:generateContent");
+    }
+  }
+}
+`
+	pf, hasProvider, err := validateAndBuildProviderFile("vertex.conf", conf, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("validateAndBuildProviderFile: %v", err)
+	}
+	if !hasProvider {
+		t.Fatalf("expected provider")
+	}
+
+	m := &dslmeta.Meta{
+		API:             "chat.completions",
+		OriginModelName: "gemini-2.5-flash",
+		DSLModelMapped:  "gemini-2.5-flash",
+		ChannelLocation: "global",
+		RequestURLPath:  "/v1/chat/completions",
+	}
+	err = pf.Routing.Apply(m)
+	if err == nil {
+		t.Fatalf("expected empty credential.project_id error")
+	}
+	if !strings.Contains(err.Error(), `template variable "credential.project_id" is empty`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSetPathConcat_RejectsEmptyModelVariableAtRuntime(t *testing.T) {
+	routing := ProviderRouting{
+		Matches: []RoutingMatch{
+			{
+				API:     "chat.completions",
+				SetPath: `concat("/v1/models/", $request.model_mapped, ":generateContent")`,
+			},
+		},
+	}
+	m := &dslmeta.Meta{
+		API:            "chat.completions",
+		RequestURLPath: "/v1/chat/completions",
+	}
+	err := routing.Apply(m)
+	if err == nil {
+		t.Fatalf("expected empty request.model_mapped error")
+	}
+	if !strings.Contains(err.Error(), `template variable "request.model_mapped" is empty`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestSetPathTemplate_RejectsUnknownVariable(t *testing.T) {
 	conf := `
 syntax "next-router/0.1";
