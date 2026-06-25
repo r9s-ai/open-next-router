@@ -39,6 +39,42 @@ provider "azure-response" {
 	}
 }
 
+func TestExportProviderMetadataPreservesEmptyAPIMatches(t *testing.T) {
+	streamTrue := true
+	cfg := ExportProviderMetadata(ProviderFile{
+		Request: ProviderRequestTransform{
+			Matches: []MatchRequestTransform{
+				{
+					Stream: &streamTrue,
+					Transform: RequestTransform{
+						JSONOps: []JSONOp{{Op: "json_set", Path: "$.selected", ValueExpr: `"stream-any-api"`}},
+					},
+				},
+			},
+		},
+		Usage: ProviderUsage{
+			Matches: []MatchUsage{
+				{
+					Stream: &streamTrue,
+					Extract: UsageExtractConfig{
+						Mode: usageModeCustom,
+						facts: []usageFactConfig{
+							{Dimension: "audio.tts", Unit: "second", Source: "derived", Path: "$.audio_duration_seconds"},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	if cfg.Request == nil || len(cfg.Request.Matches) != 1 || cfg.Request.Matches[0].API != "" {
+		t.Fatalf("request empty api match was not exported: %#v", cfg.Request)
+	}
+	if cfg.UsageFacts == nil || len(cfg.UsageFacts.Matches) != 1 || cfg.UsageFacts.Matches[0].API != "" {
+		t.Fatalf("usage empty api match was not exported: %#v", cfg.UsageFacts)
+	}
+}
+
 func TestValidateProviderFile_MetadataDefaults(t *testing.T) {
 	dir := t.TempDir()
 	writeProviderConf(t, dir, "openrouter", "https://openrouter.ai/api")

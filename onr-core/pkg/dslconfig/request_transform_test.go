@@ -98,6 +98,39 @@ provider "azure-openai" {
 	}
 }
 
+func TestProviderRequestTransformSelectKeepsDSLMatchOrder(t *testing.T) {
+	streamTrue := true
+	req := &ProviderRequestTransform{
+		Matches: []MatchRequestTransform{
+			{
+				API: "chat.completions",
+				Transform: RequestTransform{
+					JSONOps: []JSONOp{
+						{Op: "json_set", Path: "$.selected", ValueExpr: `"generic"`},
+					},
+				},
+			},
+			{
+				API:    "chat.completions",
+				Stream: &streamTrue,
+				Transform: RequestTransform{
+					JSONOps: []JSONOp{
+						{Op: "json_set", Path: "$.selected", ValueExpr: `"stream"`},
+					},
+				},
+			},
+		},
+	}
+
+	transform, ok := req.Select(&dslmeta.Meta{API: "chat.completions", IsStream: true})
+	if !ok {
+		t.Fatalf("expected request transform")
+	}
+	if len(transform.JSONOps) != 1 || transform.JSONOps[0].ValueExpr != `"generic"` {
+		t.Fatalf("expected first DSL match to win, got %#v", transform.JSONOps)
+	}
+}
+
 func TestSetPathTemplate_AppliesVariables(t *testing.T) {
 	conf := `
 syntax "next-router/0.1";
