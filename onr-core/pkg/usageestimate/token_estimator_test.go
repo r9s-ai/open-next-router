@@ -26,3 +26,23 @@ func TestRuneClassification_TableDriven(t *testing.T) {
 		})
 	}
 }
+
+func TestEstimateTokenByModel_LongLatinRunScalesWithLength(t *testing.T) {
+	t.Parallel()
+
+	short := EstimateTokenByModel("gpt-4o-mini", &tokenEstimateContext{text: "abc"})
+	long := EstimateTokenByModel("gpt-4o-mini", &tokenEstimateContext{text: "abcdefghijklmnopqrstuvwxyz0123456789"})
+	if long <= short {
+		t.Fatalf("long run tokens=%d want > short tokens=%d", long, short)
+	}
+}
+
+func TestEstimateTokenByModel_LongNumberRunScalesWithLength(t *testing.T) {
+	t.Parallel()
+
+	short := EstimateTokenByModel("gpt-4o-mini", &tokenEstimateContext{text: "123"})
+	long := EstimateTokenByModel("gpt-4o-mini", &tokenEstimateContext{text: "12345678901234567890"})
+	if long <= short {
+		t.Fatalf("long number tokens=%d want > short tokens=%d", long, short)
+	}
+}
