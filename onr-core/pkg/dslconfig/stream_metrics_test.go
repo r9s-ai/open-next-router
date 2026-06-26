@@ -321,6 +321,57 @@ func TestStreamMetricsAggregator_UsageRootFactsRunAtResult(t *testing.T) {
 	}
 }
 
+func TestStreamMetricsAggregator_UsageRootFinalDebugFactsKeepAdditiveOutputPaths(t *testing.T) {
+	meta := &dslmeta.Meta{API: "chat.completions", IsStream: true}
+	usageCfg := &UsageExtractConfig{
+		Mode: usageModeCustom,
+		usageRoots: []usageRootConfig{
+			{Path: "$.usage"},
+		},
+		facts: []usageFactConfig{
+			{Dimension: "input", Unit: "token", Path: "$.prompt_tokens"},
+			{Dimension: "output", Unit: "token", Path: "$.completion_tokens"},
+			{Dimension: "output", Unit: "token", Path: "$.completion_tokens_details.reasoning_tokens"},
+			{Dimension: "server_tool.web_search", Unit: "call", Source: "response", CountPath: "$.choices[*].delta.annotations"},
+		},
+	}
+	agg := NewStreamMetricsAggregator(meta, usageCfg, nil)
+
+	_ = agg.OnSSEDataJSON([]byte(`{"choices":[{"delta":{"annotations":[{"type":"web_search_call"}]}}]}`))
+	_ = agg.OnSSEDataJSON([]byte(`{
+	  "choices":[],
+	  "usage":{
+	    "prompt_tokens":4,
+	    "completion_tokens":1,
+	    "total_tokens":27,
+	    "completion_tokens_details":{"reasoning_tokens":22}
+	  }
+	}`))
+
+	u, _, _, ok := agg.Result()
+	if !ok || u == nil {
+		t.Fatalf("expected usage ok")
+	}
+	if u.InputTokens != 4 || u.OutputTokens != 23 || u.TotalTokens != 27 {
+		t.Fatalf("unexpected usage: %+v", *u)
+	}
+	if got, want := u.FlatFields["server_tool_web_search_calls"], 1; got != want {
+		t.Fatalf("server_tool_web_search_calls=%v want=%v", got, want)
+	}
+
+	outputFactCount := 0
+	outputFactTotal := 0.0
+	for _, fact := range u.DebugFacts {
+		if fact.Dimension == "output" && fact.Unit == "token" {
+			outputFactCount++
+			outputFactTotal += fact.Quantity
+		}
+	}
+	if outputFactCount != 2 || outputFactTotal != 23 {
+		t.Fatalf("output debug facts count=%d total=%v want count=2 total=23; facts=%#v", outputFactCount, outputFactTotal, u.DebugFacts)
+	}
+}
+
 func TestStreamMetricsAggregator_FinishReasonUsesSSEEventFilter(t *testing.T) {
 	meta := &dslmeta.Meta{API: "responses", IsStream: true}
 	finishCfg := FinishReasonExtractConfig{Mode: usageModeCustom}

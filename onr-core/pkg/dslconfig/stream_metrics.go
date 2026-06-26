@@ -437,9 +437,27 @@ func mergeUsageDebugFactsPreferNonZero(dst *Usage, src *Usage) {
 
 func usageFactDebugMergeKey(fact UsageFact) string {
 	key := normalizeUsageFactKey(fact.Dimension, fact.Unit)
-	parts := []string{key.Dimension, key.Unit}
+	parts := []string{
+		key.Dimension,
+		key.Unit,
+		strings.TrimSpace(fact.Source),
+		strings.TrimSpace(fact.Path),
+		strings.TrimSpace(fact.CountPath),
+		strings.TrimSpace(fact.SumPath),
+		strings.TrimSpace(fact.Expr),
+		strings.TrimSpace(fact.Type),
+		strings.TrimSpace(fact.Status),
+	}
+	if fact.Fallback {
+		parts = append(parts, "fallback")
+	} else {
+		parts = append(parts, "primary")
+	}
 	if strings.TrimSpace(fact.Event) != "" {
 		parts = append(parts, strings.TrimSpace(fact.Event))
+	}
+	if fact.EventOptional {
+		parts = append(parts, "event_optional")
 	}
 	if len(fact.Attributes) == 0 {
 		return strings.Join(parts, "|")
