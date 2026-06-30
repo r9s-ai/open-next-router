@@ -18,6 +18,9 @@ var supportedMatchAPIs = map[string]struct{}{
 	"audio.translations":           {},
 	"gemini.generateContent":       {},
 	"gemini.streamGenerateContent": {},
+	"gemini.predictLongRunning":    {},
+	"gemini.getOperation":          {},
+	"gemini.videoContent":          {},
 }
 
 func validateProviderMatchAPIs(path, providerName string, routing ProviderRouting) error {

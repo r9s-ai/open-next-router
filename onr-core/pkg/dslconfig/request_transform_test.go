@@ -286,6 +286,30 @@ func TestSetPathConcat_RejectsEmptyModelVariableAtRuntime(t *testing.T) {
 	}
 }
 
+func TestSetPathConcat_AppliesTaskUpstreamID(t *testing.T) {
+	routing := ProviderRouting{
+		Matches: []RoutingMatch{
+			{
+				API:     "gemini.getOperation",
+				SetPath: `concat("/v1beta/", $task.upstream_id)`,
+			},
+		},
+	}
+	m := &dslmeta.Meta{
+		API:            "gemini.getOperation",
+		RequestURLPath: "/v1beta/query",
+		Task: dslmeta.TaskMeta{
+			UpstreamID: "models/veo/operations/op-1",
+		},
+	}
+	if err := routing.Apply(m); err != nil {
+		t.Fatalf("Apply returned err: %v", err)
+	}
+	if m.RequestURLPath != "/v1beta/models/veo/operations/op-1" {
+		t.Fatalf("RequestURLPath=%q", m.RequestURLPath)
+	}
+}
+
 func TestSetPathTemplate_RejectsUnknownVariable(t *testing.T) {
 	conf := `
 syntax "next-router/0.1";
