@@ -17,14 +17,25 @@ func NormalizeProviderConfig(cfg ProviderConfig) ProviderConfig {
 	}
 	if cfg.Auth != nil {
 		auth := ProviderAuth{
-			Type:     strings.ToLower(strings.TrimSpace(cfg.Auth.Type)),
-			Header:   strings.TrimSpace(cfg.Auth.Header),
-			Mode:     strings.ToLower(strings.TrimSpace(cfg.Auth.Mode)),
-			Scope:    strings.TrimSpace(cfg.Auth.Scope),
-			TokenURL: strings.TrimSpace(cfg.Auth.TokenURL),
+			Type:           strings.ToLower(strings.TrimSpace(cfg.Auth.Type)),
+			Header:         strings.TrimSpace(cfg.Auth.Header),
+			Mode:           strings.ToLower(strings.TrimSpace(cfg.Auth.Mode)),
+			Scope:          strings.TrimSpace(cfg.Auth.Scope),
+			TokenURL:       strings.TrimSpace(cfg.Auth.TokenURL),
+			Service:        strings.ToLower(strings.TrimSpace(cfg.Auth.Service)),
+			Credentials:    strings.ToLower(strings.TrimSpace(cfg.Auth.Credentials)),
+			RequiresRegion: cfg.Auth.RequiresRegion,
 		}
-		if auth.Type != "" || auth.Header != "" || auth.Mode != "" || auth.Scope != "" || auth.TokenURL != "" {
+		if auth.Type != "" || auth.Header != "" || auth.Mode != "" || auth.Scope != "" || auth.TokenURL != "" || auth.Service != "" || auth.Credentials != "" || auth.RequiresRegion {
 			out.Auth = &auth
+		}
+	}
+	if cfg.Upstream != nil {
+		upstream := ProviderUpstream{
+			Transport: strings.ToLower(strings.TrimSpace(cfg.Upstream.Transport)),
+		}
+		if upstream.Transport != "" {
+			out.Upstream = &upstream
 		}
 	}
 	if cfg.Request != nil {

@@ -100,6 +100,7 @@ var directiveMetadata = []DirectiveMetadata{
 	{Name: "del_header", Block: "balance_mode", Hover: "`del_header <Header-Name>;`\n\nDeletes header for balance query request."},
 
 	{Name: "base_url", Block: "upstream_config", Hover: "`base_url = \"https://...\";`\n\nSets provider default upstream base URL."},
+	{Name: "transport", Block: "upstream_config", Hover: "`transport http|aws_sdk;`\n\nSelects upstream transport.", Args: []DirectiveArg{{Name: "transport", Kind: "enum", Enum: []string{"http", "aws_sdk"}}}},
 	{Name: "set_path", Block: "upstream", Hover: "`set_path <expr>;`\n\nSets upstream request path."},
 	{Name: "set_query", Block: "upstream", Hover: "`set_query <name> <expr>;`\n\nSets/upserts upstream query parameter."},
 	{Name: "del_query", Block: "upstream", Hover: "`del_query <name>;`\n\nDeletes upstream query parameter."},
@@ -107,6 +108,7 @@ var directiveMetadata = []DirectiveMetadata{
 	{Name: "auth_bearer", Block: "auth", Hover: "`auth_bearer;`\n\nSets `Authorization: Bearer <channel.key>`."},
 	{Name: "auth_header_key", Block: "auth", Hover: "`auth_header_key <Header-Name>;`\n\nSets `<Header-Name>: <channel.key>`."},
 	{Name: "auth_oauth_bearer", Block: "auth", Hover: "`auth_oauth_bearer;`\n\nSets `Authorization: Bearer <oauth.access_token>`."},
+	{Name: "auth_sigv4_bedrock", Block: "auth", Hover: "`auth_sigv4_bedrock;`\n\nDeclares AWS Bedrock SigV4 credentials for AWS SDK transport."},
 	{Name: "oauth_mode", Block: "auth", Hover: "`oauth_mode <mode>;`\n\nEnable OAuth token fetch mode for upstream auth.", Modes: []string{"openai", "gemini", "qwen", "claude", "iflow", "antigravity", "kimi", "google_service_account_file", "custom"}},
 	{Name: "oauth_token_url", Block: "auth", Hover: "`oauth_token_url <expr>;`\n\nOverrides token endpoint URL (typically with `oauth_mode custom`)."},
 	{Name: "oauth_client_id", Block: "auth", Hover: "`oauth_client_id <expr>;`\n\nSets OAuth client id expression for token exchange."},

@@ -10,8 +10,15 @@ import (
 )
 
 func validateProviderBaseURL(path, providerName string, routing ProviderRouting) error {
+	transport := strings.ToLower(strings.TrimSpace(routing.Transport))
+	if transport == "" {
+		transport = "http"
+	}
 	raw := strings.TrimSpace(routing.BaseURLExpr)
 	if raw == "" {
+		if transport == "aws_sdk" {
+			return nil
+		}
 		return fmt.Errorf("provider %q in %q: upstream_config.base_url is required", providerName, path)
 	}
 	// v0.1: base_url must be a string literal to avoid expression complexity and ambiguity.
@@ -23,6 +30,9 @@ func validateProviderBaseURL(path, providerName string, routing ProviderRouting)
 	}
 	v := strings.TrimSpace(unquoteString(raw))
 	if v == "" {
+		if transport == "aws_sdk" {
+			return nil
+		}
 		return fmt.Errorf("provider %q in %q: upstream_config.base_url must be non-empty", providerName, path)
 	}
 	u, err := url.Parse(v)

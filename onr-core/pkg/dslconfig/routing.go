@@ -10,6 +10,7 @@ import (
 
 type ProviderRouting struct {
 	BaseURLExpr string
+	Transport   string
 	Matches     []RoutingMatch
 }
 
@@ -43,7 +44,9 @@ func (p *ProviderRouting) Apply(meta *dslmeta.Meta) error {
 			meta.BaseURL = baseURL
 		}
 	}
-
+	if transport := strings.ToLower(strings.TrimSpace(p.Transport)); transport != "" {
+		meta.UpstreamTransport = transport
+	}
 	u, err := url.Parse(meta.RequestURLPath)
 	if err != nil {
 		return fmt.Errorf("parse request url path %q: %w", meta.RequestURLPath, err)

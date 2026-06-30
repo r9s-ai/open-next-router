@@ -131,7 +131,8 @@ func parseUpstreamConfigBlock(s *scanner, routing *ProviderRouting) error {
 		case tokRBrace:
 			return nil
 		case tokIdent:
-			if tok.text == "base_url" {
+			switch tok.text {
+			case "base_url":
 				if err := consumeEquals(s); err != nil {
 					return err
 				}
@@ -140,6 +141,13 @@ func parseUpstreamConfigBlock(s *scanner, routing *ProviderRouting) error {
 					return err
 				}
 				routing.BaseURLExpr = strings.TrimSpace(expr)
+				continue
+			case "transport":
+				mode, err := parseModeArgStmt(s, "transport")
+				if err != nil {
+					return err
+				}
+				routing.Transport = strings.ToLower(strings.TrimSpace(mode))
 				continue
 			}
 			if err := skipStmtOrBlock(s); err != nil {

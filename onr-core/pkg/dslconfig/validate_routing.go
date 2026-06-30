@@ -6,12 +6,65 @@ import (
 )
 
 func validateProviderRouting(path, providerName string, routing ProviderRouting) error {
+	transport := strings.ToLower(strings.TrimSpace(routing.Transport))
+	if transport == "" {
+		transport = "http"
+	}
+	switch transport {
+	case "http", "aws_sdk":
+		// ok
+	default:
+		return validationIssue(
+			fmt.Errorf("provider %q in %q: upstream_config unsupported transport %q", providerName, path, routing.Transport),
+			"upstream_config",
+			"transport",
+		)
+	}
 	for i, m := range routing.Matches {
 		scope := fmt.Sprintf("match[%d].upstream", i)
 		if strings.TrimSpace(m.SetPath) != "" {
 			if err := validateSetPathExpr(m.SetPath); err != nil {
 				return validationIssue(
 					fmt.Errorf("provider %q in %q: %s invalid set_path expression: %w", providerName, path, scope, err),
+					scope,
+					"set_path",
+				)
+			}
+		}
+		if transport == "aws_sdk" {
+			if len(m.QueryPairs) > 0 || len(m.QueryDels) > 0 {
+				return validationIssue(
+					fmt.Errorf("provider %q in %q: %s bedrock_runtime does not support query routing", providerName, path, scope),
+					scope,
+					"set_query",
+				)
+			}
+			if strings.TrimSpace(m.SetPath) == "" {
+				return validationIssue(
+					fmt.Errorf("provider %q in %q: %s set_path is required for bedrock_runtime", providerName, path, scope),
+					scope,
+					"set_path",
+				)
+			}
+			kind, err := validateBedrockRuntimePathExpr(m.SetPath)
+			if err != nil {
+				return validationIssue(
+					fmt.Errorf("provider %q in %q: %s invalid bedrock_runtime set_path: %w", providerName, path, scope, err),
+					scope,
+					"set_path",
+				)
+			}
+			isStreamMatch := m.Stream != nil && *m.Stream
+			if kind == "stream" && !isStreamMatch {
+				return validationIssue(
+					fmt.Errorf("provider %q in %q: %s invoke-with-response-stream path requires match stream = true", providerName, path, scope),
+					scope,
+					"set_path",
+				)
+			}
+			if kind == "invoke" && isStreamMatch {
+				return validationIssue(
+					fmt.Errorf("provider %q in %q: %s invoke path requires match stream = false", providerName, path, scope),
 					scope,
 					"set_path",
 				)
@@ -28,6 +81,48 @@ func validateProviderRouting(path, providerName string, routing ProviderRouting)
 		}
 	}
 	return nil
+}
+
+func validateBedrockRuntimePathExpr(expr string) (string, error) {
+	raw := strings.TrimSpace(expr)
+	var path string
+	switch {
+	case isQuotedStringExpr(raw):
+		path = unquoteString(raw)
+	case strings.HasPrefix(raw, "template(") && strings.HasSuffix(raw, ")"):
+		tmpl, err := validateTemplateExpr(raw)
+		if err != nil {
+			return "", err
+		}
+		path = tmpl
+	case strings.HasPrefix(raw, "/"):
+		path = raw
+	default:
+		return "", fmt.Errorf("expected literal or template path")
+	}
+	if !strings.HasPrefix(path, "/model/") {
+		if strings.HasPrefix(path, "/") {
+			return "http-passthrough", nil
+		}
+		return "", fmt.Errorf("path must be an absolute path")
+	}
+	modelPart := strings.TrimPrefix(path, "/model/")
+	switch {
+	case strings.HasSuffix(modelPart, "/invoke-with-response-stream"):
+		modelID := strings.TrimSuffix(modelPart, "/invoke-with-response-stream")
+		if strings.TrimSpace(modelID) == "" {
+			return "", fmt.Errorf("model id segment is empty")
+		}
+		return "stream", nil
+	case strings.HasSuffix(modelPart, "/invoke"):
+		modelID := strings.TrimSuffix(modelPart, "/invoke")
+		if strings.TrimSpace(modelID) == "" {
+			return "", fmt.Errorf("model id segment is empty")
+		}
+		return "invoke", nil
+	default:
+		return "", fmt.Errorf("path must end with /invoke or /invoke-with-response-stream")
+	}
 }
 
 func validateSetPathExpr(expr string) error {

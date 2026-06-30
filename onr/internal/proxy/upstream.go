@@ -20,6 +20,9 @@ import (
 
 // doUpstreamRequest requires a non-nil provider file and request meta from buildProxyCtx.
 func (c *Client) doUpstreamRequest(gc *gin.Context, provider string, pf *dslconfig.ProviderFile, m *dslmeta.Meta, reqBody []byte) (*http.Response, context.CancelFunc, error) {
+	if strings.EqualFold(strings.TrimSpace(m.UpstreamTransport), "aws_sdk") {
+		return c.doBedrockRuntimeRequest(gc, provider, m, reqBody)
+	}
 	baseURL := m.BaseURL
 	if baseURL == "" {
 		return nil, func() {}, errors.New("upstream base_url is empty")

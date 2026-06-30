@@ -72,6 +72,10 @@ func makeHandler(cfg *config.Config, st *state, pclient *proxy.Client, api strin
 		kbase := ""
 		kcredFile := ""
 		klocation := ""
+		kawsAK := ""
+		kawsSK := ""
+		kawsSession := ""
+		kawsRegion := ""
 		if uk := auth.TokenUpstreamKey(c); uk != "" {
 			kname = "byok"
 			kval = uk
@@ -87,14 +91,22 @@ func makeHandler(cfg *config.Config, st *state, pclient *proxy.Client, api strin
 			kbase = k.BaseURLOverride
 			kcredFile = k.CredentialFile
 			klocation = k.Location
+			kawsAK = k.AWSAccessKeyID
+			kawsSK = k.AWSSecretAccessKey
+			kawsSession = k.AWSSessionToken
+			kawsRegion = k.AWSRegion
 		}
 
 		res, perr := pclient.ProxyJSON(c, provider, proxy.ProviderKey{
-			Name:            kname,
-			Value:           kval,
-			BaseURLOverride: kbase,
-			CredentialFile:  kcredFile,
-			Location:        klocation,
+			Name:               kname,
+			Value:              kval,
+			BaseURLOverride:    kbase,
+			CredentialFile:     kcredFile,
+			Location:           klocation,
+			AWSAccessKeyID:     kawsAK,
+			AWSSecretAccessKey: kawsSK,
+			AWSSessionToken:    kawsSession,
+			AWSRegion:          kawsRegion,
 		}, api, stream)
 		if perr != nil {
 			writeOpenAIError(c, requestIDHeaderKey, "proxy_error", perr.Error())

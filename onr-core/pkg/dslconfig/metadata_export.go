@@ -13,6 +13,7 @@ func ExportProviderMetadata(p ProviderFile) dslmetadata.ProviderConfig {
 	cfg := dslmetadata.ProviderConfig{
 		Metadata: exportProviderMetadata(p.Metadata),
 		Routes:   exportProviderRoutes(p.Routing),
+		Upstream: exportProviderUpstream(p.Routing),
 		Request:  exportProviderRequest(p.Request),
 		Auth:     exportProviderAuth(p.Headers),
 		Balance:  exportProviderBalance(p.Balance),
@@ -22,6 +23,16 @@ func ExportProviderMetadata(p ProviderFile) dslmetadata.ProviderConfig {
 		cfg.UsageFacts = usageFacts
 	}
 	return dslmetadata.NormalizeProviderConfig(cfg)
+}
+
+func exportProviderUpstream(routing ProviderRouting) *dslmetadata.ProviderUpstream {
+	transport := strings.ToLower(strings.TrimSpace(routing.Transport))
+	if transport == "" {
+		return nil
+	}
+	return &dslmetadata.ProviderUpstream{
+		Transport: transport,
+	}
 }
 
 func exportProviderMetadata(metadata ProviderMetadata) *dslmetadata.ProviderMetadata {
@@ -223,6 +234,14 @@ func exportProviderAuth(headers ProviderHeaders) *dslmetadata.ProviderAuth {
 }
 
 func exportAuthFromPhase(phase PhaseHeaders) *dslmetadata.ProviderAuth {
+	if phase.AWSSigV4 {
+		return &dslmetadata.ProviderAuth{
+			Type:           "aws_sigv4",
+			Service:        "bedrock",
+			Credentials:    "static_ak_sk",
+			RequiresRegion: true,
+		}
+	}
 	for _, op := range phase.Auth {
 		if strings.TrimSpace(op.Op) != "header_set" {
 			continue

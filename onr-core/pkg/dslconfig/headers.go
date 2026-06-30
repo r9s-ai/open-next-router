@@ -26,9 +26,10 @@ type HeaderValueFilterRule struct {
 }
 
 type PhaseHeaders struct {
-	Auth    []HeaderOp
-	Request []HeaderOp
-	OAuth   OAuthConfig
+	Auth     []HeaderOp
+	Request  []HeaderOp
+	OAuth    OAuthConfig
+	AWSSigV4 bool
 }
 
 type HeaderOp struct {
@@ -92,17 +93,25 @@ func (p *ProviderHeaders) Effective(meta *dslmeta.Meta) (*PhaseHeaders, bool) {
 	}
 
 	out := PhaseHeaders{
-		Auth:    append([]HeaderOp(nil), p.Defaults.Auth...),
-		Request: append([]HeaderOp(nil), p.Defaults.Request...),
-		OAuth:   p.Defaults.OAuth,
+		Auth:     append([]HeaderOp(nil), p.Defaults.Auth...),
+		Request:  append([]HeaderOp(nil), p.Defaults.Request...),
+		OAuth:    p.Defaults.OAuth,
+		AWSSigV4: p.Defaults.AWSSigV4,
 	}
 
 	if m, ok := p.selectMatch(api, meta.IsStream); ok {
 		out.Auth = append(out.Auth, m.Headers.Auth...)
 		out.Request = append(out.Request, m.Headers.Request...)
 		out.OAuth = out.OAuth.Merge(m.Headers.OAuth)
+		out.AWSSigV4 = out.AWSSigV4 || m.Headers.AWSSigV4
 	}
 	return &out, true
+}
+
+// UsesAWSSigV4 reports whether the selected phase declares AWS SigV4 auth.
+func (p *ProviderHeaders) UsesAWSSigV4(meta *dslmeta.Meta) bool {
+	phase, ok := p.Effective(meta)
+	return ok && phase.AWSSigV4
 }
 
 // UsesOAuthMode requires a non-nil meta for selecting the effective header phase.
