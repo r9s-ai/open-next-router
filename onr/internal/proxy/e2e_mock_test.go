@@ -267,6 +267,66 @@ func TestE2EMock_ChatCompletions_AWSBedrockNativeChatCompletions(t *testing.T) {
 	}
 }
 
+func TestE2EMock_ClaudeMessages_AWSBedrockMantleAppliesDSLHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockResp := []byte(`{"id":"msg_bedrock","type":"message","role":"assistant","model":"anthropic.claude-haiku-4-5-20251001-v1:0","content":[{"type":"text","text":"OK"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`)
+	reqBody := []byte(`{"model":"anthropic.claude-haiku-4-5-20251001-v1:0","max_tokens":16,"stream_options":{"include_usage":true},"messages":[{"role":"user","content":"hi"}]}`)
+
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/anthropic/v1/messages" {
+			http.NotFound(w, r)
+			return
+		}
+		if got := r.Header.Get("anthropic-version"); got != "2023-06-01" {
+			t.Fatalf("anthropic-version=%q want 2023-06-01", got)
+		}
+		if got := r.Header.Get("anthropic-beta"); got != "context-management-2025-06-27" {
+			t.Fatalf("anthropic-beta=%q want context-management-2025-06-27", got)
+		}
+		authHeader := r.Header.Get("Authorization")
+		if !strings.Contains(authHeader, "AWS4-HMAC-SHA256") || !strings.Contains(authHeader, "SignedHeaders=") {
+			t.Fatalf("unexpected Authorization header: %q", authHeader)
+		}
+		if !strings.Contains(authHeader, "anthropic-version") || !strings.Contains(authHeader, "anthropic-beta") {
+			t.Fatalf("Authorization header did not sign DSL headers: %q", authHeader)
+		}
+		var req map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode upstream request: %v", err)
+		}
+		if _, ok := req["stream_options"]; ok {
+			t.Fatalf("stream_options should be removed, body=%#v", req)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(mockResp)
+	}))
+	t.Cleanup(mock.Close)
+
+	c := newMockE2EClient(t, map[string]string{
+		"aws-bedrock-mantle.conf": providerConfAWSBedrockMantle(mock.URL),
+	})
+	gc, rec := newGinJSONRequestPath(t, "/v1/messages", reqBody)
+	gc.Request.Header.Set("anthropic-beta", "context-management-2025-06-27, unsupported-beta")
+	res, err := c.ProxyJSON(gc, "aws-bedrock-mantle", ProviderKey{
+		Name:               "bedrock-key",
+		AWSAccessKeyID:     "AKID",
+		AWSSecretAccessKey: "SECRET",
+		AWSRegion:          "us-east-1",
+	}, "claude.messages", false)
+	if err != nil {
+		t.Fatalf("proxy error: %v", err)
+	}
+	if res == nil || res.Status != http.StatusOK {
+		t.Fatalf("unexpected result: %#v", res)
+	}
+	if got := rec.Code; got != http.StatusOK {
+		t.Fatalf("unexpected status: %d", got)
+	}
+}
+
 func TestE2EMock_ChatCompletions_AnthropicMessages_StreamToolUse(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -1446,6 +1506,19 @@ provider "aws-bedrock-mantle" {
     }
     upstream {
       set_path "/v1/chat/completions";
+    }
+  }
+
+  match api = "claude.messages" stream = false {
+    request {
+      model_map_default $request.model;
+      json_del "$.stream_options";
+      set_header "anthropic-version" "2023-06-01";
+      pass_header "anthropic-beta";
+      filter_header_values "anthropic-beta" "unsupported-*";
+    }
+    upstream {
+      set_path "/anthropic/v1/messages";
     }
   }
 }

@@ -20,11 +20,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 	"github.com/gin-gonic/gin"
 
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/trafficdump"
 )
 
-func (c *Client) doBedrockRuntimeRequest(gc *gin.Context, provider string, m *dslmeta.Meta, reqBody []byte) (*http.Response, context.CancelFunc, error) {
+func (c *Client) doBedrockRuntimeRequest(gc *gin.Context, provider string, pf *dslconfig.ProviderFile, m *dslmeta.Meta, reqBody []byte) (*http.Response, context.CancelFunc, error) {
 	operation, _, err := bedrockRuntimeTarget(m.RequestURLPath)
 	if err != nil {
 		return nil, func() {}, err
@@ -35,13 +36,13 @@ func (c *Client) doBedrockRuntimeRequest(gc *gin.Context, provider string, m *ds
 	case "invoke-with-response-stream":
 		return c.doBedrockInvokeModelStream(gc, provider, m, reqBody)
 	case "http-passthrough":
-		return c.doBedrockHTTPPassthrough(gc, provider, m, reqBody)
+		return c.doBedrockHTTPPassthrough(gc, provider, pf, m, reqBody)
 	default:
 		return nil, func() {}, fmt.Errorf("unsupported bedrock operation: %s", operation)
 	}
 }
 
-func (c *Client) doBedrockHTTPPassthrough(gc *gin.Context, provider string, m *dslmeta.Meta, reqBody []byte) (*http.Response, context.CancelFunc, error) {
+func (c *Client) doBedrockHTTPPassthrough(gc *gin.Context, provider string, pf *dslconfig.ProviderFile, m *dslmeta.Meta, reqBody []byte) (*http.Response, context.CancelFunc, error) {
 	reqCtx, cancel := context.WithTimeout(gc.Request.Context(), c.WriteTimeout)
 	httpc, err := c.httpClientForProvider(provider)
 	if err != nil {
@@ -65,6 +66,9 @@ func (c *Client) doBedrockHTTPPassthrough(gc *gin.Context, provider string, m *d
 	}
 	if accept := strings.TrimSpace(gc.Request.Header.Get("Accept")); accept != "" {
 		req.Header.Set("Accept", accept)
+	}
+	if pf != nil {
+		pf.Headers.Apply(m, gc.Request.Header, req.Header)
 	}
 	if err := signBedrockHTTPRequest(reqCtx, req, m, reqBody); err != nil {
 		cancel()
