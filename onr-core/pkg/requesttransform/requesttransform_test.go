@@ -73,6 +73,47 @@ func TestApply_AfterReqMapJSONOpsRunAfterReqMap(t *testing.T) {
 	}
 }
 
+func TestApply_OpenAIChatImageDataURLToClaudeBase64Source(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"model":"claude","messages":[{"role":"user","content":[{"type":"text","text":"describe"},{"type":"image_url","image_url":{"url":"data:image/png;base64,abcd"}}]}]}`)
+	result, err := Apply(&dslmeta.Meta{}, "application/json", body, nil, &dslconfig.RequestTransform{
+		ReqMapMode: "openai_chat_to_anthropic_messages",
+	}, ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	messages, ok := result.Root["messages"].([]any)
+	if !ok || len(messages) != 1 {
+		t.Fatalf("messages=%#v", result.Root["messages"])
+	}
+	message, ok := messages[0].(map[string]any)
+	if !ok {
+		t.Fatalf("message=%T", messages[0])
+	}
+	content, ok := message["content"].([]any)
+	if !ok || len(content) != 2 {
+		t.Fatalf("content=%#v", message["content"])
+	}
+	image, ok := content[1].(map[string]any)
+	if !ok {
+		t.Fatalf("image=%T", content[1])
+	}
+	source, ok := image["source"].(map[string]any)
+	if !ok {
+		t.Fatalf("source=%#v", image["source"])
+	}
+	if got, want := source["type"], "base64"; got != want {
+		t.Fatalf("source.type=%v want=%v", got, want)
+	}
+	if got, want := source["media_type"], "image/png"; got != want {
+		t.Fatalf("source.media_type=%v want=%v", got, want)
+	}
+	if got, want := source["data"], "abcd"; got != want {
+		t.Fatalf("source.data=%v want=%v", got, want)
+	}
+}
+
 func TestApply_AfterReqMapJSONOpsRunAfterJSONOpsWithoutReqMap(t *testing.T) {
 	t.Parallel()
 

@@ -526,6 +526,17 @@ func buildClaudeBlocks(content *apitypes.OpenAIChatMessageContent) []apitypes.Cl
 			if part.ImageURL == nil || strings.TrimSpace(part.ImageURL.URL) == "" {
 				continue
 			}
+			if inlineData, ok := dataURLToInlineData(part.ImageURL.URL); ok {
+				out = append(out, &apitypes.ClaudeImageContent{
+					ClaudeBaseContent: apitypes.ClaudeBaseContent{Type: "image"},
+					Source: &apitypes.ClaudeBase64Source{
+						ClaudeBaseSource: apitypes.ClaudeBaseSource{Type: "base64"},
+						MediaType:        inlineData.MimeType,
+						Data:             inlineData.Data,
+					},
+				})
+				continue
+			}
 			out = append(out, &apitypes.ClaudeImageContent{
 				ClaudeBaseContent: apitypes.ClaudeBaseContent{Type: "image"},
 				Source: &apitypes.ClaudeURLSource{
