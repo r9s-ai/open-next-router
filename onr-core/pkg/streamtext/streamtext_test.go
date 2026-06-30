@@ -432,6 +432,11 @@ func TestExtractDeltaText_OpenAIResponsesSSE(t *testing.T) {
 			payload: `{"type":"response.output_item.done","item":{"id":"msg_0831a33f96d9eed3006a01805b1e8c8193bd7364f72ee8940e","type":"message","status":"completed","content":[{"type":"output_text","annotations":[],"logprobs":[],"text":"I will use the horoscope tool to fetch your daily horoscope as an Aquarius. This tool specializes in providing astrological insights, which are tailored to your sign. It's the most efficient way to get accurate and relevant information about what the stars have in store for you today. Let me retrieve that for you now!"}],"role":"assistant"},"output_index":0,"sequence_number":67}`,
 			want:    "",
 		},
+		{
+			desc:    "output_item.done (reasoning encrypted)",
+			payload: `{"type":"response.output_item.done","item":{"id":"rs_0831a33f96d9eed3006a01805b1e8c8193bd7364f72ee8940e","type":"reasoning","encrypted_content":"gAAAAABencrypted","summary":[]},"output_index":0,"sequence_number":68}`,
+			want:    "",
+		},
 
 		// --- function_call ---
 		{

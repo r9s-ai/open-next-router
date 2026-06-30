@@ -156,7 +156,6 @@ func extractOpenAIResponsesDeltaText(payload []byte) string {
 			}
 		}
 	}
-
 	return ""
 }
 
