@@ -311,6 +311,10 @@ func exportExprTemplate(expr string) (string, bool) {
 	switch raw {
 	case "$request.model", "$request.model_mapped":
 		return "{model}", true
+	case "$task.id":
+		return "{task.id}", true
+	case "$task.upstream_id":
+		return "{task.upstream_id}", true
 	}
 	if strings.HasPrefix(raw, "concat(") && strings.HasSuffix(raw, ")") {
 		inner := strings.TrimSuffix(strings.TrimPrefix(raw, "concat("), ")")
@@ -362,10 +366,14 @@ func exportTemplatePlaceholders(tmpl string) string {
 		"${oauth.access_token}":     "{oauth.access_token}",
 		"${channel.key}":            "{channel.key}",
 		"${channel.base_url}":       "{channel.base_url}",
+		"${task.id}":                "{task.id}",
+		"${task.upstream_id}":       "{task.upstream_id}",
 		"${$request.model}":         "{model}",
 		"${$request.model_mapped}":  "{model}",
 		"${$credential.project_id}": "{credential.project_id}",
 		"${$channel.location}":      "{channel.location}",
+		"${$task.id}":               "{task.id}",
+		"${$task.upstream_id}":      "{task.upstream_id}",
 	}
 	out := tmpl
 	for old, replacement := range replacements {
