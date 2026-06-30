@@ -97,6 +97,10 @@ func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey
 		BaseURL:            normalizeUpstreamBaseURL(key.BaseURLOverride),
 		CredentialFile:     strings.TrimSpace(key.CredentialFile),
 		ChannelLocation:    normalizeProviderLocation(key.Location, strings.TrimSpace(key.CredentialFile) != ""),
+		AWSAccessKeyID:     strings.TrimSpace(key.AWSAccessKeyID),
+		AWSSecretAccessKey: strings.TrimSpace(key.AWSSecretAccessKey),
+		AWSSessionToken:    strings.TrimSpace(key.AWSSessionToken),
+		AWSRegion:          normalizeProviderLocation(firstNonEmpty(key.AWSRegion, key.Location), false),
 		RequestURLPath:     gc.Request.URL.RequestURI(),
 		RequestContentType: gc.Request.Header.Get("Content-Type"),
 		RequestHeaders:     gc.Request.Header,
@@ -115,10 +119,6 @@ func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey
 		}
 	}
 
-	if err := pf.Routing.Apply(m); err != nil {
-		return nil, err
-	}
-	m.BaseURL = normalizeUpstreamBaseURL(m.BaseURL)
 	if !pf.Routing.HasMatch(m) {
 		return nil, fmt.Errorf("dsl provider no match (provider=%s api=%s stream=%v)", provider, api, stream)
 	}
@@ -126,6 +126,10 @@ func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey
 	respDir, _ := pf.Response.Select(m)
 
 	reqTransform, hasReqTransform := selectRequestTransform(pf, m)
+	if err := pf.Routing.Apply(m); err != nil {
+		return nil, err
+	}
+	m.BaseURL = normalizeUpstreamBaseURL(m.BaseURL)
 	applyGeminiModelRewrite(api, m)
 
 	reqResult, err := applyRequestTransform(m, gc.Request.Header.Get("Content-Type"), gc.GetHeader("Content-Encoding"), bodyBytes, root, reqTransform, hasReqTransform)
@@ -147,4 +151,13 @@ func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey
 		respDir:      respDir,
 		reqTransform: reqTransform,
 	}, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }

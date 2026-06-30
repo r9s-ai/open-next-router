@@ -148,6 +148,10 @@ func runModelsGetWithOptions(opts modelsGetOptions) error {
 			CredentialFile:      keyCfg.CredentialFile,
 			CredentialProjectID: keyCfg.CredentialProjectID,
 			ChannelLocation:     keyCfg.Location,
+			AWSAccessKeyID:      keyCfg.AWSAccessKeyID,
+			AWSSecretAccessKey:  keyCfg.AWSSecretAccessKey,
+			AWSSessionToken:     keyCfg.AWSSessionToken,
+			AWSRegion:           keyCfg.AWSRegion,
 		}
 
 		if err := prepareOAuthForModels(oauth, p, &pf, &meta); err != nil {
@@ -161,12 +165,16 @@ func runModelsGetWithOptions(opts modelsGetOptions) error {
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		result, qerr := modelsquery.Query(ctx, modelsquery.Params{
-			Provider: p,
-			File:     pf,
-			Meta:     &meta,
-			BaseURL:  keyCfg.BaseURL,
-			APIKey:   keyCfg.APIKey,
-			DebugOut: debugOut,
+			Provider:           p,
+			File:               pf,
+			Meta:               &meta,
+			BaseURL:            keyCfg.BaseURL,
+			APIKey:             keyCfg.APIKey,
+			AWSAccessKeyID:     keyCfg.AWSAccessKeyID,
+			AWSSecretAccessKey: keyCfg.AWSSecretAccessKey,
+			AWSSessionToken:    keyCfg.AWSSessionToken,
+			AWSRegion:          keyCfg.AWSRegion,
+			DebugOut:           debugOut,
 		})
 		cancel()
 		if qerr != nil {
@@ -196,6 +204,10 @@ type providerKeyConfig struct {
 	CredentialFile      string
 	CredentialProjectID string
 	Location            string
+	AWSAccessKeyID      string
+	AWSSecretAccessKey  string
+	AWSSessionToken     string
+	AWSRegion           string
 }
 
 func resolveProviderKeyConfig(ks *keystore.Store, provider, keyIn, baseURLIn string) (providerKeyConfig, error) {
@@ -218,6 +230,10 @@ func resolveProviderKeyConfig(ks *keystore.Store, provider, keyIn, baseURLIn str
 	}
 	out.CredentialFile = strings.TrimSpace(next.CredentialFile)
 	out.Location = strings.TrimSpace(next.Location)
+	out.AWSAccessKeyID = strings.TrimSpace(next.AWSAccessKeyID)
+	out.AWSSecretAccessKey = strings.TrimSpace(next.AWSSecretAccessKey)
+	out.AWSSessionToken = strings.TrimSpace(next.AWSSessionToken)
+	out.AWSRegion = strings.TrimSpace(next.AWSRegion)
 	if out.CredentialFile != "" {
 		if out.Location == "" {
 			out.Location = "global"

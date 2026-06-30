@@ -5,6 +5,7 @@ const SchemaVersionV1 = "dslmetadata/v1"
 type ProviderConfig struct {
 	Metadata   *ProviderMetadata   `json:"metadata,omitempty"`
 	Auth       *ProviderAuth       `json:"auth,omitempty"`
+	Upstream   *ProviderUpstream   `json:"upstream,omitempty"`
 	Routes     []ProviderRoute     `json:"routes,omitempty"`
 	Request    *ProviderRequest    `json:"request,omitempty"`
 	Models     *ProviderModels     `json:"models,omitempty"`
@@ -18,11 +19,18 @@ type ProviderMetadata struct {
 }
 
 type ProviderAuth struct {
-	Type     string `json:"type,omitempty"`
-	Header   string `json:"header,omitempty"`
-	Mode     string `json:"mode,omitempty"`
-	Scope    string `json:"scope,omitempty"`
-	TokenURL string `json:"token_url,omitempty"`
+	Type           string `json:"type,omitempty"`
+	Header         string `json:"header,omitempty"`
+	Mode           string `json:"mode,omitempty"`
+	Scope          string `json:"scope,omitempty"`
+	TokenURL       string `json:"token_url,omitempty"`
+	Service        string `json:"service,omitempty"`
+	Credentials    string `json:"credentials,omitempty"`
+	RequiresRegion bool   `json:"requires_region,omitempty"`
+}
+
+type ProviderUpstream struct {
+	Transport string `json:"transport,omitempty"`
 }
 
 type ProviderRoute struct {

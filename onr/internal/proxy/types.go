@@ -19,11 +19,15 @@ const (
 )
 
 type ProviderKey struct {
-	Name            string
-	Value           string
-	BaseURLOverride string
-	CredentialFile  string
-	Location        string
+	Name               string
+	Value              string
+	BaseURLOverride    string
+	CredentialFile     string
+	Location           string
+	AWSAccessKeyID     string
+	AWSSecretAccessKey string
+	AWSSessionToken    string
+	AWSRegion          string
 }
 
 type Result struct {

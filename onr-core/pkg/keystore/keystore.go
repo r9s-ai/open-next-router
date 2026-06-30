@@ -26,11 +26,15 @@ type Store struct {
 }
 
 type Key struct {
-	Name            string `yaml:"name"`
-	Value           string `yaml:"value"`
-	BaseURLOverride string `yaml:"base_url_override"`
-	CredentialFile  string `yaml:"credential_file"`
-	Location        string `yaml:"location"`
+	Name               string `yaml:"name"`
+	Value              string `yaml:"value"`
+	BaseURLOverride    string `yaml:"base_url_override"`
+	CredentialFile     string `yaml:"credential_file"`
+	Location           string `yaml:"location"`
+	AWSAccessKeyID     string `yaml:"aws_access_key_id"`
+	AWSSecretAccessKey string `yaml:"aws_secret_access_key"`
+	AWSSessionToken    string `yaml:"aws_session_token"`
+	AWSRegion          string `yaml:"aws_region"`
 }
 
 type AccessKey struct {
@@ -75,12 +79,16 @@ func Load(path string) (*Store, error) {
 			k.BaseURLOverride = strings.TrimSpace(k.BaseURLOverride)
 			k.CredentialFile = strings.TrimSpace(k.CredentialFile)
 			k.Location = normalizeLocation(k.Location)
+			k.AWSAccessKeyID = strings.TrimSpace(k.AWSAccessKeyID)
+			k.AWSSecretAccessKey = strings.TrimSpace(k.AWSSecretAccessKey)
+			k.AWSSessionToken = strings.TrimSpace(k.AWSSessionToken)
+			k.AWSRegion = normalizeLocation(k.AWSRegion)
 
 			raw := strings.TrimSpace(k.Value)
 			if envVal := strings.TrimSpace(os.Getenv(envVarForUpstreamKey(p, k.Name, i))); envVal != "" {
 				raw = envVal
 			}
-			if raw == "" && k.CredentialFile == "" {
+			if raw == "" && k.CredentialFile == "" && k.AWSAccessKeyID == "" && k.AWSSecretAccessKey == "" {
 				continue
 			}
 

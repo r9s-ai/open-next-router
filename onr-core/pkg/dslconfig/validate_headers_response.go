@@ -55,6 +55,22 @@ func validatePhaseHeaders(path, providerName, scope string, phase PhaseHeaders) 
 	if err := validateHeaderOps(path, providerName, scope+".headers", append(append([]HeaderOp(nil), phase.Auth...), phase.Request...)); err != nil {
 		return err
 	}
+	if phase.AWSSigV4 {
+		if len(phase.Auth) > 0 {
+			return validationIssue(
+				fmt.Errorf("provider %q in %q: %s auth_sigv4_bedrock cannot be combined with header auth directives", providerName, path, scope),
+				scope,
+				"auth_sigv4_bedrock",
+			)
+		}
+		if !phase.OAuth.IsEmpty() {
+			return validationIssue(
+				fmt.Errorf("provider %q in %q: %s auth_sigv4_bedrock cannot be combined with oauth directives", providerName, path, scope),
+				scope,
+				"auth_sigv4_bedrock",
+			)
+		}
+	}
 	return validateOAuthConfig(path, providerName, scope+".oauth", phase.OAuth)
 }
 

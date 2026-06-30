@@ -41,6 +41,21 @@ type Meta struct {
 	// ChannelLocation is the provider location/region attached to the selected channel.
 	ChannelLocation string
 
+	// AWSAccessKeyID is the selected AWS access key id for SigV4 providers.
+	AWSAccessKeyID string
+
+	// AWSSecretAccessKey is the selected AWS secret access key for SigV4 providers.
+	AWSSecretAccessKey string
+
+	// AWSSessionToken is the optional AWS session token for temporary credentials.
+	AWSSessionToken string
+
+	// AWSRegion is the selected AWS region for SigV4 providers.
+	AWSRegion string
+
+	// UpstreamTransport selects the runtime transport implementation.
+	UpstreamTransport string
+
 	// OriginModelName is the original request model.
 	OriginModelName string
 
@@ -87,6 +102,11 @@ func Clone(src *Meta) *Meta {
 		CredentialJSON:      src.CredentialJSON,
 		CredentialProjectID: src.CredentialProjectID,
 		ChannelLocation:     src.ChannelLocation,
+		AWSAccessKeyID:      src.AWSAccessKeyID,
+		AWSSecretAccessKey:  src.AWSSecretAccessKey,
+		AWSSessionToken:     src.AWSSessionToken,
+		AWSRegion:           src.AWSRegion,
+		UpstreamTransport:   src.UpstreamTransport,
 		OriginModelName:     src.OriginModelName,
 		DSLModelMapped:      src.DSLModelMapped,
 		RequestURLPath:      src.RequestURLPath,

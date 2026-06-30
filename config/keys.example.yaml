@@ -35,6 +35,31 @@ providers:
         # Optional: override provider base_url explicitly, for example to use a regional endpoint.
         # base_url_override: "https://us-central1-aiplatform.googleapis.com"
 
+  aws-bedrock:
+    keys:
+      - name: "bedrock-us-east-1"
+        # AWS Bedrock uses SigV4 credentials instead of a bearer API key.
+        # Prefer env/secret-manager injection in production; keep this file out of public repos.
+        aws_access_key_id: ""
+        aws_secret_access_key: ""
+        # Optional for temporary credentials.
+        aws_session_token: ""
+        # Required; used by the AWS SDK to derive the regional Bedrock Runtime endpoint.
+        aws_region: "us-east-1"
+        # Optional: endpoint override for local mock, PrivateLink, or AWS-compatible endpoint.
+        # base_url_override: "https://bedrock-runtime.us-east-1.amazonaws.com"
+
+  aws-bedrock-mantle:
+    keys:
+      - name: "bedrock-mantle-us-east-1"
+        # Uses the same SigV4 credential shape as aws-bedrock, but targets Mantle OpenAI-compatible APIs.
+        aws_access_key_id: ""
+        aws_secret_access_key: ""
+        aws_session_token: ""
+        aws_region: "us-east-1"
+        # Optional: endpoint override for local mock or a custom endpoint.
+        # base_url_override: "https://bedrock-mantle.us-east-1.api.aws"
+
 # Access keys for clients (for token key: onr:v1?...&k64=...).
 access_keys:
   - name: "client-a"

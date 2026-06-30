@@ -148,6 +148,125 @@ func TestE2EMock_ChatCompletions_BedrockAnthropicBetaHeaderMappedToBody(t *testi
 	}
 }
 
+func TestE2EMock_ChatCompletions_AWSBedrockInvokeModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockResp := mustReadTestData(t, "mock_upstream/anthropic/messages_nonstream_ok.json")
+	fixtureReq := mustReadTestData(t, "fixtures/chat_nonstream_request.json")
+
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/model/anthropic.claude-3-5-sonnet-20241022-v2:0/invoke" {
+			t.Fatalf("unexpected bedrock request: method=%s path=%s escaped=%s", r.Method, r.URL.Path, r.URL.EscapedPath())
+		}
+		authHeader := r.Header.Get("Authorization")
+		if !strings.Contains(authHeader, "AWS4-HMAC-SHA256") || !strings.Contains(authHeader, "Credential=AKID") || !strings.Contains(authHeader, "/us-east-1/bedrock/aws4_request") {
+			t.Fatalf("unexpected Authorization header: %q", authHeader)
+		}
+		var req map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode upstream request: %v", err)
+		}
+		if got := asString(req["model"]); got != "anthropic.claude-3-5-sonnet-20241022-v2:0" {
+			t.Fatalf("unexpected upstream model: %q", got)
+		}
+		if got := asString(req["anthropic_version"]); got != "bedrock-2023-05-31" {
+			t.Fatalf("anthropic_version=%q want bedrock-2023-05-31", got)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(mockResp)
+	}))
+	t.Cleanup(mock.Close)
+
+	c := newMockE2EClient(t, map[string]string{
+		"aws-bedrock.conf": providerConfAWSBedrock(mock.URL),
+	})
+	gc, rec := newGinJSONRequest(t, fixtureReq)
+	res, err := c.ProxyJSON(gc, "aws-bedrock", ProviderKey{
+		Name:               "bedrock-key",
+		AWSAccessKeyID:     "AKID",
+		AWSSecretAccessKey: "SECRET",
+		AWSRegion:          "us-east-1",
+	}, "chat.completions", false)
+	if err != nil {
+		t.Fatalf("proxy error: %v", err)
+	}
+	if res == nil || res.Status != http.StatusOK {
+		t.Fatalf("unexpected result: %#v", res)
+	}
+	if got := rec.Code; got != http.StatusOK {
+		t.Fatalf("unexpected status: %d", got)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode downstream body: %v", err)
+	}
+	choices, _ := out["choices"].([]any)
+	if len(choices) != 1 {
+		t.Fatalf("unexpected choices length: %d", len(choices))
+	}
+}
+
+func TestE2EMock_ChatCompletions_AWSBedrockNativeChatCompletions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockResp := []byte(`{"id":"chatcmpl-bedrock","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"Hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}`)
+	fixtureReq := []byte(`{"model":"openai.gpt-oss-120b-1:0","max_tokens":32,"messages":[{"role":"user","content":"hi"}]}`)
+
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/chat/completions" {
+			t.Fatalf("unexpected bedrock chat request: method=%s path=%s", r.Method, r.URL.Path)
+		}
+		authHeader := r.Header.Get("Authorization")
+		if !strings.Contains(authHeader, "AWS4-HMAC-SHA256") || !strings.Contains(authHeader, "Credential=AKID") || !strings.Contains(authHeader, "/us-east-1/bedrock/") {
+			t.Fatalf("unexpected Authorization header: %q", authHeader)
+		}
+		var req map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode upstream request: %v", err)
+		}
+		if got := asString(req["model"]); got != "openai.gpt-oss-120b-1:0" {
+			t.Fatalf("unexpected upstream model: %q", got)
+		}
+		if _, ok := req["anthropic_version"]; ok {
+			t.Fatalf("unexpected anthropic_version in native chat request: %#v", req)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(mockResp)
+	}))
+	t.Cleanup(mock.Close)
+
+	c := newMockE2EClient(t, map[string]string{
+		"aws-bedrock-mantle.conf": providerConfAWSBedrockMantle(mock.URL),
+	})
+	gc, rec := newGinJSONRequest(t, fixtureReq)
+	res, err := c.ProxyJSON(gc, "aws-bedrock-mantle", ProviderKey{
+		Name:               "bedrock-key",
+		AWSAccessKeyID:     "AKID",
+		AWSSecretAccessKey: "SECRET",
+		AWSRegion:          "us-east-1",
+	}, "chat.completions", false)
+	if err != nil {
+		t.Fatalf("proxy error: %v", err)
+	}
+	if res == nil || res.Status != http.StatusOK {
+		t.Fatalf("unexpected result: %#v", res)
+	}
+	if got := rec.Code; got != http.StatusOK {
+		t.Fatalf("unexpected status: %d", got)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode downstream body: %v", err)
+	}
+	if got := asString(out["id"]); got != "chatcmpl-bedrock" {
+		t.Fatalf("unexpected response id: %q", got)
+	}
+}
+
 func TestE2EMock_ChatCompletions_AnthropicMessages_StreamToolUse(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -1258,6 +1377,75 @@ provider "bedrock-anthropic" {
     }
     response {
       resp_map anthropic_to_openai_chat;
+    }
+  }
+}
+`, baseURL)
+}
+
+func providerConfAWSBedrock(baseURL string) string {
+	return fmt.Sprintf(`syntax "next-router/0.1";
+
+provider "aws-bedrock" {
+  defaults {
+    upstream_config {
+      transport aws_sdk;
+      base_url = %q;
+    }
+    auth {
+      auth_sigv4_bedrock;
+    }
+    request {
+      after_req_map {
+        json_set "$.anthropic_version" "bedrock-2023-05-31";
+      }
+    }
+    response {
+      resp_passthrough;
+    }
+  }
+
+  match api = "chat.completions" stream = false {
+    request {
+      model_map "claude-haiku-4-5" "anthropic.claude-3-5-sonnet-20241022-v2:0";
+      model_map "claude-3-5-sonnet-20241022" "anthropic.claude-3-5-sonnet-20241022-v2:0";
+      req_map openai_chat_to_anthropic_messages;
+      json_del "$.stream_options";
+    }
+    upstream {
+      set_path template("/model/${request.model_mapped}/invoke");
+    }
+    response {
+      resp_map anthropic_to_openai_chat;
+    }
+  }
+}
+`, baseURL)
+}
+
+func providerConfAWSBedrockMantle(baseURL string) string {
+	return fmt.Sprintf(`syntax "next-router/0.1";
+
+provider "aws-bedrock-mantle" {
+  defaults {
+    upstream_config {
+      transport aws_sdk;
+      base_url = %q;
+    }
+    auth {
+      auth_sigv4_bedrock;
+    }
+    response {
+      resp_passthrough;
+    }
+  }
+
+  match api = "chat.completions" stream = false {
+    request {
+      model_map_default $request.model;
+    }
+    upstream {
+      set_path "/v1/chat/completions";
     }
   }
 }

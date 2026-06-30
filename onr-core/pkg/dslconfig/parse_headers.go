@@ -12,9 +12,10 @@ func parseAuthPhase(s *scanner, phase *PhaseHeaders) error {
 	}
 
 	handlers := map[string]func(*scanner, *PhaseHeaders) error{
-		"auth_bearer":       parseAuthBearerStmt,
-		"auth_header_key":   parseAuthHeaderKeyStmt,
-		"auth_oauth_bearer": parseAuthOAuthBearerStmt,
+		"auth_bearer":        parseAuthBearerStmt,
+		"auth_header_key":    parseAuthHeaderKeyStmt,
+		"auth_oauth_bearer":  parseAuthOAuthBearerStmt,
+		"auth_sigv4_bedrock": parseAuthSigV4BedrockStmt,
 		"oauth_mode": func(s *scanner, phase *PhaseHeaders) error {
 			mode, err := parseModeArgStmt(s, "oauth_mode")
 			if err != nil {
@@ -91,6 +92,14 @@ func parseAuthPhase(s *scanner, phase *PhaseHeaders) error {
 			// ignore
 		}
 	}
+}
+
+func parseAuthSigV4BedrockStmt(s *scanner, phase *PhaseHeaders) error {
+	if err := consumeSemicolon(s, "auth_sigv4_bedrock"); err != nil {
+		return err
+	}
+	phase.AWSSigV4 = true
+	return nil
 }
 
 func parseRequestPhaseWithTransform(s *scanner, phase *PhaseHeaders, transform *RequestTransform) error {
