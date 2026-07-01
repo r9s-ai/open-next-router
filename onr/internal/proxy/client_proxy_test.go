@@ -5,8 +5,6 @@ import (
 	"net/url"
 	"testing"
 	"time"
-
-	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
 )
 
 func TestHTTPClientForProvider_UsesProxy(t *testing.T) {
@@ -117,7 +115,7 @@ func TestHTTPClientForProvider_SOCKS5(t *testing.T) {
 	}
 }
 
-func TestBedrockClientForProvider_UsesProviderProxy(t *testing.T) {
+func TestBedrockHTTPClientForProvider_UsesProviderProxy(t *testing.T) {
 	c := &Client{
 		HTTP: &http.Client{Timeout: 3 * time.Second},
 		ProxyByProvider: map[string]string{
@@ -125,18 +123,9 @@ func TestBedrockClientForProvider_UsesProviderProxy(t *testing.T) {
 		},
 	}
 
-	bc, err := c.bedrockClient("aws-bedrock", &dslmeta.Meta{
-		AWSAccessKeyID:     "AKID",
-		AWSSecretAccessKey: "SECRET",
-		AWSRegion:          "us-east-1",
-	})
+	hc, err := c.httpClientForProvider("aws-bedrock")
 	if err != nil {
-		t.Fatalf("bedrockClient: %v", err)
-	}
-	opts := bc.Options()
-	hc, ok := opts.HTTPClient.(*http.Client)
-	if !ok {
-		t.Fatalf("expected *http.Client, got %T", opts.HTTPClient)
+		t.Fatalf("httpClientForProvider: %v", err)
 	}
 	tr, ok := hc.Transport.(*http.Transport)
 	if !ok {
