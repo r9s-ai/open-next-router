@@ -27,6 +27,10 @@ let editorAnalysisSeq = 0;
 let semanticMarks = [];
 let diagnosticMarks = [];
 let diagnosticLineClasses = [];
+let editorHoverTimer = 0;
+let editorHoverSeq = 0;
+let editorHoverEl = null;
+let editorHoverMark = null;
 
 const editor = window.CodeMirror ? window.CodeMirror.fromTextArea(contentEl, {
   lineNumbers: true,
@@ -38,7 +42,14 @@ const editor = window.CodeMirror ? window.CodeMirror.fromTextArea(contentEl, {
 
 if (editor) {
   editor.setSize(null, 460);
-  editor.on("change", queueEditorAnalysis);
+  editor.on("change", () => {
+    queueEditorAnalysis();
+    hideEditorHover();
+  });
+  editor.on("scroll", hideEditorHover);
+  const wrapper = editor.getWrapperElement();
+  wrapper.addEventListener("mousemove", handleEditorMouseMove);
+  wrapper.addEventListener("mouseleave", hideEditorHover);
 }
 
 function setStatus(obj) {
@@ -126,6 +137,19 @@ async function fetchEditorSemanticTokens(provider, content) {
   const data = await res.json();
   if (!res.ok || !data.ok) {
     throw new Error(data.error || "semantic tokens failed");
+  }
+  return data;
+}
+
+async function fetchEditorHover(provider, content, position) {
+  const res = await fetch("/api/editor/hover", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ provider, content, position })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    throw new Error(data.error || "hover failed");
   }
   return data;
 }
@@ -238,6 +262,119 @@ function renderSemanticTokens(text, legend, tokens) {
       { line: span.line, ch: toCh },
       { className: cls }
     ));
+  }
+}
+
+function handleEditorMouseMove(ev) {
+  if (!editor) {
+    return;
+  }
+  const provider = currentProvider();
+  if (!provider) {
+    hideEditorHover();
+    return;
+  }
+  const pos = editor.coordsChar({ left: ev.clientX, top: ev.clientY }, "client");
+  const lineNo = Math.max(0, Math.min(pos.line, editor.lineCount() - 1));
+  const line = editor.getLine(lineNo) || "";
+  const normalizedPos = {
+    line: lineNo,
+    character: Math.max(0, Math.min(pos.ch, line.length))
+  };
+  const mouse = { x: ev.clientX, y: ev.clientY };
+  const seq = ++editorHoverSeq;
+  clearTimeout(editorHoverTimer);
+  editorHoverTimer = setTimeout(() => runEditorHover(seq, normalizedPos, mouse), 180);
+}
+
+async function runEditorHover(seq, position, mouse) {
+  const provider = currentProvider();
+  if (!provider) {
+    hideEditorHover();
+    return;
+  }
+  try {
+    const data = await fetchEditorHover(provider, editorValue(), position);
+    if (seq !== editorHoverSeq) {
+      return;
+    }
+    if (!data.hover) {
+      hideEditorHover({ keepSeq: true });
+      return;
+    }
+    showEditorHover(data.hover, mouse);
+  } catch (_err) {
+    if (seq === editorHoverSeq) {
+      hideEditorHover({ keepSeq: true });
+    }
+  }
+}
+
+function showEditorHover(hover, mouse) {
+  clearEditorHoverMark();
+  if (editor && hover.range) {
+    editorHoverMark = editor.markText(
+      { line: hover.range.start.line, ch: hover.range.start.character },
+      { line: hover.range.end.line, ch: hover.range.end.character },
+      { className: "cm-hover-token" }
+    );
+  }
+  if (!editorHoverEl) {
+    editorHoverEl = document.createElement("div");
+    editorHoverEl.className = "editor-hover";
+    document.body.appendChild(editorHoverEl);
+  }
+  editorHoverEl.innerHTML = renderHoverMarkdown(hover.contents?.value || "");
+  editorHoverEl.style.display = "block";
+  positionEditorHover(mouse.x, mouse.y);
+}
+
+function positionEditorHover(x, y) {
+  if (!editorHoverEl) {
+    return;
+  }
+  let left = x + 12;
+  let top = y + 16;
+  const rect = editorHoverEl.getBoundingClientRect();
+  const margin = 8;
+  if (left + rect.width > window.innerWidth - margin) {
+    left = Math.max(margin, x - rect.width - 12);
+  }
+  if (top + rect.height > window.innerHeight - margin) {
+    top = Math.max(margin, y - rect.height - 12);
+  }
+  editorHoverEl.style.left = `${left}px`;
+  editorHoverEl.style.top = `${top}px`;
+}
+
+function renderHoverMarkdown(value) {
+  const parts = escapeHTML(value).split(/\n{2,}/).filter((part) => part.trim() !== "");
+  if (parts.length === 0) {
+    return "";
+  }
+  return parts.map((part) => {
+    const html = part
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\n/g, "<br>");
+    return `<div class="editor-hover-block">${html}</div>`;
+  }).join("");
+}
+
+function hideEditorHover(opts = {}) {
+  clearTimeout(editorHoverTimer);
+  if (!opts.keepSeq) {
+    editorHoverSeq++;
+  }
+  clearEditorHoverMark();
+  if (editorHoverEl) {
+    editorHoverEl.style.display = "none";
+  }
+}
+
+function clearEditorHoverMark() {
+  if (editorHoverMark) {
+    editorHoverMark.clear();
+    editorHoverMark = null;
   }
 }
 

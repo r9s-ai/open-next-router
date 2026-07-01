@@ -96,6 +96,12 @@ type editorRequest struct {
 	Content  string `json:"content"`
 }
 
+type editorHoverRequest struct {
+	Provider string           `json:"provider"`
+	Content  string           `json:"content"`
+	Position dsllang.Position `json:"position"`
+}
+
 type editorDiagnosticsResponse struct {
 	OK          bool                 `json:"ok"`
 	Provider    string               `json:"provider,omitempty"`
@@ -113,6 +119,15 @@ type editorSemanticTokensResponse struct {
 	Legend     dsllang.SemanticTokenLegend `json:"legend,omitempty"`
 	Tokens     dsllang.SemanticTokens      `json:"tokens,omitempty"`
 	Error      string                      `json:"error,omitempty"`
+}
+
+type editorHoverResponse struct {
+	OK         bool           `json:"ok"`
+	Provider   string         `json:"provider,omitempty"`
+	TargetFile string         `json:"target_file,omitempty"`
+	URI        string         `json:"uri,omitempty"`
+	Hover      *dsllang.Hover `json:"hover"`
+	Error      string         `json:"error,omitempty"`
 }
 
 type editorFormatResponse struct {
@@ -179,6 +194,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/providers/save", s.handleSave)
 	mux.HandleFunc("/api/editor/diagnostics", s.handleEditorDiagnostics)
 	mux.HandleFunc("/api/editor/semantic-tokens", s.handleEditorSemanticTokens)
+	mux.HandleFunc("/api/editor/hover", s.handleEditorHover)
 	mux.HandleFunc("/api/editor/format", s.handleEditorFormat)
 	mux.HandleFunc("/api/test/request", s.handleTestRequest)
 	mux.HandleFunc("/api/dumps/by-request-id", s.handleDumpByRequestID)
@@ -351,6 +367,31 @@ func (s *Server) handleEditorSemanticTokens(w http.ResponseWriter, r *http.Reque
 		URI:        uri,
 		Legend:     dsllang.CollectSemanticTokenLegend(),
 		Tokens:     dsllang.CollectSemanticTokens(in.Content),
+	})
+}
+
+func (s *Server) handleEditorHover(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, http.MethodPost)
+		return
+	}
+	in, err := decodeEditorHoverRequest(r)
+	if err != nil {
+		writeJSONAny(w, http.StatusBadRequest, editorHoverResponse{OK: false, Error: err.Error()})
+		return
+	}
+	uri, target, err := s.editorDocumentURI(in.Provider)
+	if err != nil {
+		writeJSONAny(w, http.StatusBadRequest, editorHoverResponse{OK: false, Error: err.Error()})
+		return
+	}
+	hover, _ := dsllang.CollectHover(in.Content, in.Position)
+	writeJSONAny(w, http.StatusOK, editorHoverResponse{
+		OK:         true,
+		Provider:   in.Provider,
+		TargetFile: target,
+		URI:        uri,
+		Hover:      hover,
 	})
 }
 
@@ -620,6 +661,23 @@ func decodeEditorRequest(r *http.Request) (editorRequest, error) {
 	name, err := normalizeProviderName(in.Provider)
 	if err != nil {
 		return editorRequest{}, err
+	}
+	in.Provider = name
+	return in, nil
+}
+
+func decodeEditorHoverRequest(r *http.Request) (editorHoverRequest, error) {
+	defer func() { _ = r.Body.Close() }()
+
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	var in editorHoverRequest
+	if err := dec.Decode(&in); err != nil {
+		return editorHoverRequest{}, err
+	}
+	name, err := normalizeProviderName(in.Provider)
+	if err != nil {
+		return editorHoverRequest{}, err
 	}
 	in.Provider = name
 	return in, nil

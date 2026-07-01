@@ -20,6 +20,20 @@ type Diagnostic struct {
 	Message  string `json:"message"`
 }
 
+// MarkupContent describes editor-facing rich text content.
+type MarkupContent struct {
+	Kind  string `json:"kind"`
+	Value string `json:"value"`
+}
+
+// Hover describes hover documentation for an editor position.
+type Hover struct {
+	Contents MarkupContent `json:"contents"`
+	Range    *Range        `json:"range,omitempty"`
+	Word     string        `json:"word,omitempty"`
+	Block    string        `json:"block,omitempty"`
+}
+
 type formattingOptions struct {
 	TabSize      int  `json:"tabSize"`
 	InsertSpaces bool `json:"insertSpaces"`

@@ -20,6 +20,30 @@ button.secondary { background: #fff; color: #324a5f; }
 .issue.clean { border-left-color: #16803c; background: #f0fdf4; color: #14532d; }
 .cm-diagnostic-line { background: rgba(180, 35, 24, 0.08); }
 .cm-diagnostic-token { text-decoration: underline wavy #b42318; text-underline-offset: 2px; }
+.cm-hover-token { background: rgba(50, 74, 95, 0.12); border-radius: 3px; }
+.editor-hover {
+  position: fixed;
+  z-index: 1000;
+  display: none;
+  max-width: min(440px, calc(100vw - 16px));
+  padding: 10px 12px;
+  border: 1px solid #2f3b46;
+  border-radius: 6px;
+  background: #182026;
+  color: #e6edf3;
+  box-shadow: 0 10px 26px rgba(15, 23, 32, 0.28);
+  font-size: 13px;
+  line-height: 1.45;
+  pointer-events: none;
+}
+.editor-hover-block + .editor-hover-block { margin-top: 8px; color: #cbd5e1; }
+.editor-hover code {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #2b3440;
+  color: #f8fafc;
+}
 .tok-keyword { color: #8f3f00; font-weight: 600; }
 .tok-string { color: #0f766e; }
 .tok-number { color: #7c3aed; }

@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/dsllang"
 )
 
 const validOpenAIConf = `
@@ -222,6 +224,39 @@ func TestEditorLanguageEndpoints(t *testing.T) {
 	}
 	if !tokenBody.OK || len(tokenBody.Legend.TokenTypes) == 0 || len(tokenBody.Tokens.Data) == 0 {
 		t.Fatalf("unexpected semantic tokens body: %+v", tokenBody)
+	}
+
+	status, hoverBody := postEditorHoverJSON(t, httpSrv.URL+"/api/editor/hover", editorHoverRequest{
+		Provider: "openai",
+		Content:  validOpenAIConf,
+		Position: dsllang.Position{
+			Line:      10,
+			Character: 6,
+		},
+	})
+	if status != http.StatusOK {
+		t.Fatalf("hover status=%d body=%+v", status, hoverBody)
+	}
+	if !hoverBody.OK || hoverBody.Hover == nil {
+		t.Fatalf("unexpected hover body: %+v", hoverBody)
+	}
+	if hoverBody.Hover.Word != "upstream" || !strings.Contains(hoverBody.Hover.Contents.Value, "Upstream path/query routing") {
+		t.Fatalf("unexpected hover contents: %+v", hoverBody.Hover)
+	}
+
+	status, emptyHoverBody := postEditorHoverJSON(t, httpSrv.URL+"/api/editor/hover", editorHoverRequest{
+		Provider: "openai",
+		Content:  validOpenAIConf,
+		Position: dsllang.Position{
+			Line:      10,
+			Character: 0,
+		},
+	})
+	if status != http.StatusOK {
+		t.Fatalf("empty hover status=%d body=%+v", status, emptyHoverBody)
+	}
+	if !emptyHoverBody.OK || emptyHoverBody.Hover != nil {
+		t.Fatalf("expected empty hover, got: %+v", emptyHoverBody)
 	}
 
 	status, formatBody := postEditorFormatJSON(t, httpSrv.URL+"/api/editor/format", editorRequest{
@@ -888,6 +923,24 @@ func postEditorSemanticTokensJSON(t *testing.T, url string, body any) (int, edit
 	}
 	defer func() { _ = resp.Body.Close() }()
 	var out editorSemanticTokensResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	return resp.StatusCode, out
+}
+
+func postEditorHoverJSON(t *testing.T, url string, body any) (int, editorHoverResponse) {
+	t.Helper()
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+	resp, err := http.Post(url, "application/json", bytes.NewReader(raw))
+	if err != nil {
+		t.Fatalf("post %s: %v", url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var out editorHoverResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
