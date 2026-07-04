@@ -10,6 +10,9 @@ import (
 
 type UsageExtractConfig struct {
 	Mode string
+	// SourceMode is the named usage_mode this config was resolved from (e.g. "anthropic_messages").
+	// It is empty when the config was defined inline without referencing a named mode.
+	SourceMode string
 
 	InputTokensPath      string
 	OutputTokensPath     string
@@ -207,6 +210,9 @@ func mergeUsageConfig(base UsageExtractConfig, override UsageExtractConfig) Usag
 	out.explicitFactKeys = nil
 	if strings.TrimSpace(override.Mode) != "" {
 		out.Mode = override.Mode
+	}
+	if strings.TrimSpace(override.SourceMode) != "" {
+		out.SourceMode = override.SourceMode
 	}
 	if strings.TrimSpace(override.InputTokensPath) != "" {
 		out.InputTokensPath = override.InputTokensPath
