@@ -3,6 +3,7 @@ package dslconfig
 import (
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -26,6 +27,10 @@ type usageFactConfig struct {
 
 	Attrs    map[string]string
 	Fallback bool
+
+	// Scale multiplies the extracted quantity when > 0 (e.g. 0.001 converts
+	// milliseconds to seconds). 0 means no scaling.
+	Scale float64
 }
 
 // UsageFactRule describes one usage_fact extraction rule in DSL/runtime.
@@ -304,6 +309,7 @@ func usageFactEventOptionalFallbackKey(fact usageFactConfig) string {
 		fact.Expr.String(),
 		fact.Type,
 		fact.Status,
+		strconv.FormatFloat(fact.Scale, 'f', -1, 64),
 		strings.Join(attrs, ","),
 	}, "\x1f")
 }
@@ -318,16 +324,20 @@ func evaluateUsageFactWithEvent(event string, reqRoot, respRoot, usageRoot, deri
 	}
 	switch {
 	case fact.Expr != nil:
-		return float64(fact.Expr.Eval(root)), true
+		quantity, matched = float64(fact.Expr.Eval(root)), true
 	case fact.CountPath != "":
-		return evaluateUsageFactCountPath(root, fact.CountPath, fact.Type, fact.Status)
+		quantity, matched = evaluateUsageFactCountPath(root, fact.CountPath, fact.Type, fact.Status)
 	case fact.SumPath != "":
-		return jsonutil.GetFloatByPathWithMatch(root, fact.SumPath)
+		quantity, matched = jsonutil.GetFloatByPathWithMatch(root, fact.SumPath)
 	case fact.Path != "":
-		return jsonutil.GetFloatByPathWithMatch(root, fact.Path)
+		quantity, matched = jsonutil.GetFloatByPathWithMatch(root, fact.Path)
 	default:
 		return 0, false
 	}
+	if matched && fact.Scale > 0 {
+		quantity *= fact.Scale
+	}
+	return quantity, matched
 }
 
 func usageFactSourceRoot(reqRoot, respRoot, usageRoot, derivedRoot map[string]any, source string, usageRootConfigured bool) map[string]any {
@@ -490,6 +500,7 @@ func buildUsageDebugFacts(facts []usageFactEval, usageRootConfigured bool) []Usa
 			SumPath:       fact.cfg.SumPath,
 			Type:          fact.cfg.Type,
 			Status:        fact.cfg.Status,
+			Scale:         fact.cfg.Scale,
 		}
 		if len(fact.cfg.Attrs) > 0 {
 			attrs := make(map[string]string, len(fact.cfg.Attrs))

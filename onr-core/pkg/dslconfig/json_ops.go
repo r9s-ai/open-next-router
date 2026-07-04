@@ -3,11 +3,13 @@ package dslconfig
 import (
 	"fmt"
 	"log/slog"
+	"math"
 	"reflect"
 	"strconv"
 	"strings"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/jsonutil"
 )
 
 // ApplyJSONOps applies object-path JSON mutations to a top-level object root and returns it.
@@ -109,6 +111,19 @@ func ApplyJSONOps(meta *dslmeta.Meta, in map[string]any, ops []JSONOp) (map[stri
 				return nil, err
 			}
 			changed = opChanged
+		case jsonOpMapValue:
+			val := evalJSONValueExpr(meta, op.ValueExpr)
+			opChanged, err := jsonMapValue(obj, op.Path, op.MatchValue, val)
+			if err != nil {
+				return nil, err
+			}
+			changed = opChanged
+		case jsonOpScale:
+			opChanged, err := jsonScale(obj, op.Path, op.ScaleRange)
+			if err != nil {
+				return nil, err
+			}
+			changed = opChanged
 		default:
 			return nil, fmt.Errorf("unsupported json op %q", op.Op)
 		}
@@ -194,8 +209,89 @@ func evalJSONValueExpr(meta *dslmeta.Meta, expr string) any {
 	if i, err := strconv.Atoi(raw); err == nil {
 		return i
 	}
+	if f, ok := parseFloatLiteral(raw); ok {
+		return f
+	}
 	// fall back to string expression evaluation
 	return evalStringExpr(raw, meta)
+}
+
+// parseFloatLiteral parses a plain decimal float literal like "1.0" or "-0.5".
+// It intentionally rejects Inf/NaN and exotic forms so words like "inf" stay strings.
+func parseFloatLiteral(raw string) (float64, bool) {
+	if raw == "" {
+		return 0, false
+	}
+	c := raw[0]
+	if c != '-' && c != '+' && c != '.' && (c < '0' || c > '9') {
+		return 0, false
+	}
+	if !strings.ContainsAny(raw, ".eE") {
+		return 0, false
+	}
+	f, err := strconv.ParseFloat(raw, 64)
+	if err != nil || math.IsInf(f, 0) || math.IsNaN(f) {
+		return 0, false
+	}
+	return f, true
+}
+
+// jsonMapValue replaces the string value at path with val only when it equals
+// matchValue. Missing paths and non-matching/non-string values are left unchanged,
+// so unmapped values pass through (same semantics as model_map fallthrough).
+func jsonMapValue(root map[string]any, path string, matchValue string, val any) (bool, error) {
+	parent, key, ok, err := jsonParentAndKey(root, path)
+	if err != nil || !ok {
+		return false, err
+	}
+	cur, ok := parent[key]
+	if !ok {
+		return false, nil
+	}
+	s, ok := cur.(string)
+	if !ok || s != matchValue {
+		return false, nil
+	}
+	if reflect.DeepEqual(cur, val) {
+		return false, nil
+	}
+	parent[key] = val
+	return true, nil
+}
+
+// jsonScale linearly maps the numeric value at path from [InMin, InMax] onto
+// [OutMin, OutMax] with clamping. Missing paths and non-numeric values are left
+// unchanged so optional fields pass through.
+func jsonScale(root map[string]any, path string, r *JSONScaleRange) (bool, error) {
+	if r == nil {
+		// The parser always attaches ScaleRange to json_scale ops; a nil range here
+		// means the op was constructed programmatically in an invalid way.
+		return false, fmt.Errorf("json_scale %s missing scale range", path)
+	}
+	parent, key, ok, err := jsonParentAndKey(root, path)
+	if err != nil || !ok {
+		return false, err
+	}
+	cur, ok := parent[key]
+	if !ok {
+		return false, nil
+	}
+	v, ok := jsonutil.CoerceFloatOK(cur)
+	if !ok {
+		return false, nil
+	}
+	if v < r.InMin {
+		v = r.InMin
+	}
+	if v > r.InMax {
+		v = r.InMax
+	}
+	out := r.OutMin + (v-r.InMin)*(r.OutMax-r.OutMin)/(r.InMax-r.InMin)
+	if reflect.DeepEqual(cur, out) {
+		return false, nil
+	}
+	parent[key] = out
+	return true, nil
 }
 
 func jsonSet(root map[string]any, path string, val any) (bool, error) {

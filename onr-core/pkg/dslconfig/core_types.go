@@ -33,12 +33,13 @@ type UsageFact struct {
 	Fallback      bool   `json:"fallback,omitempty"`
 	Event         string `json:"event,omitempty"`
 	EventOptional bool   `json:"event_optional,omitempty"`
-	Path          string `json:"path,omitempty"`
-	CountPath     string `json:"count_path,omitempty"`
-	SumPath       string `json:"sum_path,omitempty"`
-	Expr          string `json:"expr,omitempty"`
-	Type          string `json:"type,omitempty"`
-	Status        string `json:"status,omitempty"`
+	Path          string  `json:"path,omitempty"`
+	CountPath     string  `json:"count_path,omitempty"`
+	SumPath       string  `json:"sum_path,omitempty"`
+	Expr          string  `json:"expr,omitempty"`
+	Type          string  `json:"type,omitempty"`
+	Status        string  `json:"status,omitempty"`
+	Scale         float64 `json:"scale,omitempty"`
 }
 
 // UsageRoot describes one usage_root extraction rule in DSL/runtime.

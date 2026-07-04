@@ -119,6 +119,20 @@ func validateRequestJSONOps(path, providerName, scope string, ops []JSONOp) erro
 			if _, err := parseObjectPath(op.ToPath); err != nil {
 				return fmt.Errorf("provider %q in %q: %s invalid to path: %w", providerName, path, opScope, err)
 			}
+		case jsonOpMapValue:
+			if _, err := parseObjectPath(op.Path); err != nil {
+				return fmt.Errorf("provider %q in %q: %s invalid json path: %w", providerName, path, opScope, err)
+			}
+			if err := validateJSONValueExpr(op.ValueExpr); err != nil {
+				return fmt.Errorf("provider %q in %q: %s invalid value expression: %w", providerName, path, opScope, err)
+			}
+		case jsonOpScale:
+			if _, err := parseObjectPath(op.Path); err != nil {
+				return fmt.Errorf("provider %q in %q: %s invalid json path: %w", providerName, path, opScope, err)
+			}
+			if op.ScaleRange == nil || op.ScaleRange.InMax <= op.ScaleRange.InMin {
+				return fmt.Errorf("provider %q in %q: %s json_scale requires in_max > in_min", providerName, path, opScope)
+			}
 		default:
 			return fmt.Errorf("provider %q in %q: %s unsupported json op %q", providerName, path, opScope, op.Op)
 		}
@@ -139,6 +153,9 @@ func validateJSONValueExpr(expr string) error {
 		return nil
 	}
 	if _, err := strconv.Atoi(raw); err == nil {
+		return nil
+	}
+	if _, ok := parseFloatLiteral(raw); ok {
 		return nil
 	}
 	return ValidateStringExpr(raw)
