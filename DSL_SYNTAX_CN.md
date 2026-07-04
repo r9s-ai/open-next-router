@@ -136,6 +136,8 @@ match api = "<api-name>" { ... }
 - `embeddings`
 - `gemini.generateContent`（Gemini 原生：`POST /v1beta/models/{model}:generateContent`）
 - `gemini.streamGenerateContent`（Gemini 原生：`POST /v1beta/models/{model}:streamGenerateContent?alt=sse`）
+- `gemini.predictLongRunning`（Gemini 原生：`POST /v1beta/models/{model}:predictLongRunning`）
+- `gemini.getOperation`（Gemini 原生长任务查询：`GET /v1beta/{operation_name}`）
 - `images.generations`
 - `images.edits`
 - `audio.speech`
@@ -628,19 +630,21 @@ response {
 - `json_set` 会创建缺失路径；`json_replace` 只替换已存在路径，适合替换上游响应中的 `model` 字段而不污染其它事件。
 - `json_set`、`json_replace`、`json_set_if_absent` 的值表达式支持 `template(...)`
 - 流式 SSE 中，`json_set`、`json_replace`、`json_set_if_absent`、`json_del`、`json_rename` 可追加 `event="<name|name2>"`，按 SSE `event:` 名过滤执行。
+- response JSON 操作还可在带 `event="..."` 时追加 `event_optional=true`：如果运行时有 event，仍必须匹配指定事件名；如果没有 event 上下文，则允许按普通 JSON 匹配回退执行。
 - response JSON 操作可追加 `max_count=<n>` 限制单条指令在一次响应处理周期内的最大生效次数；默认 `max_count=0` 表示不限次数。
 
 ```conf
 response {
   resp_passthrough;
-  json_replace "$.message.model" $request.model event="message_start" max_count=1;
-  json_replace "$.response.model" $request.model event="response.created|response.completed|response.incomplete";
+  json_set "$.response.metadata.gateway" "onr" event="response.completed" event_optional=true;
+  json_replace "$.message.model" $request.model event="message_start" event_optional=true max_count=1;
+  json_replace "$.response.model" $request.model event="response.created|response.completed|response.incomplete" event_optional=true;
 }
 ```
 
-- `event="..."` 只影响 SSE JSON event；非流式 JSON 响应没有 event 上下文，带 event 的响应 JSON 操作会跳过。
+- `event="..."` 只影响 SSE JSON event；非流式 JSON 响应没有 event 上下文，带 event 的响应 JSON 操作会跳过，除非该指令支持并启用了 `event_optional=true`。
+- `event_optional=true` 必须与 `event` 同时出现；当运行时没有 event 上下文时，这条指令会退化为普通 JSON 匹配。
 - `max_count` 按单条指令计数：非流式 JSON 最多处理一次对象；SSE 会跨整个 stream 累计。只有实际修改成功才计数，例如 `json_replace` 路径不存在时不计数。
-- 响应 JSON 操作不支持 `event_optional=true`；需要兼容缺失 `event:` 的上游时，应使用不带 event 的指令或在上游映射阶段补齐 event。
 
 限制（v0.1）：
 
@@ -1557,7 +1561,7 @@ Multiple: yes
 #### json_set
 
 ```text
-Syntax:  json_set <jsonpath> <expr> [event="<name|name2>"] [max_count=<n>];
+Syntax:  json_set <jsonpath> <expr> [event="<name|name2>"] [event_optional=true|false] [max_count=<n>];
 Default: —
 Context: request/response
 Multiple: yes
@@ -1567,12 +1571,13 @@ Multiple: yes
 - JSONPath（v0.1）仅支持对象路径：`$.a.b.c`（不支持数组下标 `[]`）。
 - `<expr>` 在此处支持：`true/false/null`、整数、字符串字面量、变量、`concat(...)`、`template(...)`。
 - `event="..."` 仅在 `response` 的 SSE JSON 操作中有效，用于按 SSE `event:` 名过滤执行。
+- `event_optional=true` 仅在 `response` 中有效，必须与 `event` 同时出现，并允许没有 event 上下文时继续执行。
 - `max_count=<n>` 仅在 `response` 中有效；`0` 表示不限次数，`n > 0` 表示本指令在一次响应处理周期内最多实际修改 `n` 次。
 
 #### json_replace
 
 ```text
-Syntax:  json_replace <jsonpath> <expr> [event="<name|name2>"] [max_count=<n>];
+Syntax:  json_replace <jsonpath> <expr> [event="<name|name2>"] [event_optional=true|false] [max_count=<n>];
 Default: —
 Context: request/response
 Multiple: yes
@@ -1583,12 +1588,13 @@ Multiple: yes
 - JSONPath（v0.1）仅支持对象路径：`$.a.b.c`（不支持数组下标 `[]`）。
 - `<expr>` 支持同 `json_set`。
 - `event="..."` 仅在 `response` 的 SSE JSON 操作中有效，用于按 SSE `event:` 名过滤执行。
+- `event_optional=true` 仅在 `response` 中有效，必须与 `event` 同时出现，并允许没有 event 上下文时继续执行。
 - `max_count=<n>` 仅在 `response` 中有效，语义同 `json_set`。
 
 #### json_set_if_absent
 
 ```text
-Syntax:  json_set_if_absent <jsonpath> <expr> [event="<name|name2>"] [max_count=<n>];
+Syntax:  json_set_if_absent <jsonpath> <expr> [event="<name|name2>"] [event_optional=true|false] [max_count=<n>];
 Default: —
 Context: request/response
 Multiple: yes
@@ -1597,12 +1603,13 @@ Multiple: yes
 - 仅当路径不存在时设置字段。
 - 若路径已存在（包括值为 `null`），则保留原值不覆盖。
 - `event="..."` 仅在 `response` 的 SSE JSON 操作中有效。
+- `event_optional=true` 仅在 `response` 中有效，必须与 `event` 同时出现，并允许没有 event 上下文时继续执行。
 - `max_count=<n>` 仅在 `response` 中有效，语义同 `json_set`。
 
 #### json_del
 
 ```text
-Syntax:  json_del <jsonpath> [event="<name|name2>"] [max_count=<n>];
+Syntax:  json_del <jsonpath> [event="<name|name2>"] [event_optional=true|false] [max_count=<n>];
 Default: —
 Context: request/response
 Multiple: yes
@@ -1611,12 +1618,13 @@ Multiple: yes
 - 删除字段；字段不存在时为 no-op。
 - JSONPath（v0.1）仅支持对象路径：`$.a.b.c`（不支持数组下标 `[]`）。
 - `event="..."` 仅在 `response` 的 SSE JSON 操作中有效。
+- `event_optional=true` 仅在 `response` 中有效，必须与 `event` 同时出现，并允许没有 event 上下文时继续执行。
 - `max_count=<n>` 仅在 `response` 中有效，语义同 `json_set`。
 
 #### json_rename
 
 ```text
-Syntax:  json_rename <from-jsonpath> <to-jsonpath> [event="<name|name2>"] [max_count=<n>];
+Syntax:  json_rename <from-jsonpath> <to-jsonpath> [event="<name|name2>"] [event_optional=true|false] [max_count=<n>];
 Default: —
 Context: request/response
 Multiple: yes
@@ -1625,6 +1633,7 @@ Multiple: yes
 - 将字段从 `<from-jsonpath>` 移动到 `<to-jsonpath>`；源字段不存在时为 no-op。
 - JSONPath（v0.1）仅支持对象路径：`$.a.b.c`（不支持数组下标 `[]`）。
 - `event="..."` 仅在 `response` 的 SSE JSON 操作中有效。
+- `event_optional=true` 仅在 `response` 中有效，必须与 `event` 同时出现，并允许没有 event 上下文时继续执行。
 - `max_count=<n>` 仅在 `response` 中有效，语义同 `json_set`。
 
 #### json_wrap_input_text
@@ -2271,7 +2280,14 @@ Provider location。对 Vertex AI 通常是 `global` 或 `us-central1` 这类区
 
 映射后的模型名。默认等于 `$request.model`；可通过 `model_map` 与 `model_map_default` 修改。
 
-### 8.4 使用示例
+### 8.4 `$task.*`
+
+`$task.upstream_id`
+
+长任务查询路由中的上游任务/operation id。对 Gemini Veo 来说，它是 `predictLongRunning`
+返回的 operation name，例如 `models/veo-3.1-generate-preview/operations/abc`。
+
+### 8.5 使用示例
 
 ```conf
 request {
@@ -2292,5 +2308,8 @@ upstream {
 
   # 示例：使用 credential 与 location 元数据拼接 Vertex AI path
   set_path template("/v1/projects/${credential.project_id}/locations/${channel.location}/publishers/google/models/${request.model_mapped}:generateContent");
+
+  # 示例：Gemini 长任务 operation 查询路径
+  set_path concat("/v1beta/", $task.upstream_id);
 }
 ```

@@ -60,6 +60,11 @@ func CollectSemanticTokens(text string) SemanticTokens {
 	return SemanticTokens(tokens)
 }
 
+// CollectHover returns directive hover documentation for a text position.
+func CollectHover(text string, pos Position) (*Hover, bool) {
+	return collectHover(text, pos)
+}
+
 // CollectSemanticTokenLegend returns the token legend for CollectSemanticTokens.
 func CollectSemanticTokenLegend() SemanticTokenLegend {
 	return SemanticTokenLegend{

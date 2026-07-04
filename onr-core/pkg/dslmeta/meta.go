@@ -8,6 +8,11 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/requestcanon"
 )
 
+type TaskMeta struct {
+	ID         string
+	UpstreamID string
+}
+
 // Meta is the minimal context required by the DSL engine.
 // It is intentionally small to keep open-next-router decoupled from other projects.
 type Meta struct {
@@ -62,6 +67,9 @@ type Meta struct {
 	// DSLModelMapped is the mapped model name after applying model_map.
 	DSLModelMapped string
 
+	// Task exposes a narrow runtime task context for long-running operation routes.
+	Task TaskMeta
+
 	// RequestURLPath is the request path (and query), e.g. "/v1/chat/completions?x=1".
 	// DSL routing directives can rewrite it via set_path/set_query/del_query.
 	RequestURLPath string
@@ -109,6 +117,7 @@ func Clone(src *Meta) *Meta {
 		UpstreamTransport:   src.UpstreamTransport,
 		OriginModelName:     src.OriginModelName,
 		DSLModelMapped:      src.DSLModelMapped,
+		Task:                src.Task,
 		RequestURLPath:      src.RequestURLPath,
 		RequestContentType:  src.RequestContentType,
 		RequestBody:         src.RequestBody,

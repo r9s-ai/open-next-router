@@ -118,7 +118,7 @@ func ApplyJSONOps(meta *dslmeta.Meta, in map[string]any, ops []JSONOp) (map[stri
 }
 
 func shouldSkipJSONOp(event string, op JSONOp, counts []int, idx int) bool {
-	if strings.TrimSpace(op.Event) != "" && !matchesUsageEvent(event, op.Event, false) {
+	if strings.TrimSpace(op.Event) != "" && !matchesUsageEvent(event, op.Event, op.EventOptional) {
 		return true
 	}
 	return op.MaxCount > 0 && counts != nil && idx >= 0 && idx < len(counts) && counts[idx] >= op.MaxCount

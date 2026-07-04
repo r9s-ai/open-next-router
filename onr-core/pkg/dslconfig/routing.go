@@ -247,6 +247,10 @@ func evalBuiltinStringVariable(expr string, meta *dslmeta.Meta) string {
 			return meta.DSLModelMapped
 		}
 		return meta.OriginModelName
+	case exprTaskID:
+		return meta.Task.ID
+	case exprTaskUpstreamID:
+		return meta.Task.UpstreamID
 	default:
 		return ""
 	}
@@ -268,7 +272,7 @@ func normalizeTemplateVariable(name string) (string, bool) {
 
 func isBuiltinStringVariable(expr string) bool {
 	switch strings.TrimSpace(expr) {
-	case exprChannelBaseURL, exprChannelKey, exprChannelLocation, exprCredentialProjID, exprOAuthAccessToken, exprRequestModel, exprRequestMapped:
+	case exprChannelBaseURL, exprChannelKey, exprChannelLocation, exprCredentialProjID, exprOAuthAccessToken, exprRequestModel, exprRequestMapped, exprTaskID, exprTaskUpstreamID:
 		return true
 	default:
 		return false

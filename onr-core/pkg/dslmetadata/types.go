@@ -65,16 +65,17 @@ type ModelMap struct {
 type JSONOp struct {
 	Op string `json:"op"`
 
-	Path       string   `json:"path,omitempty"`
-	FromPath   string   `json:"from_path,omitempty"`
-	ToPath     string   `json:"to_path,omitempty"`
-	ValueExpr  string   `json:"value_expr,omitempty"`
-	HeaderName string   `json:"header_name,omitempty"`
-	FieldName  string   `json:"field_name,omitempty"`
-	Patterns   []string `json:"patterns,omitempty"`
-	Separator  string   `json:"separator,omitempty"`
-	Event      string   `json:"event,omitempty"`
-	MaxCount   int      `json:"max_count,omitempty"`
+	Path          string   `json:"path,omitempty"`
+	FromPath      string   `json:"from_path,omitempty"`
+	ToPath        string   `json:"to_path,omitempty"`
+	ValueExpr     string   `json:"value_expr,omitempty"`
+	HeaderName    string   `json:"header_name,omitempty"`
+	FieldName     string   `json:"field_name,omitempty"`
+	Patterns      []string `json:"patterns,omitempty"`
+	Separator     string   `json:"separator,omitempty"`
+	Event         string   `json:"event,omitempty"`
+	EventOptional bool     `json:"event_optional,omitempty"`
+	MaxCount      int      `json:"max_count,omitempty"`
 }
 
 type HeaderOp struct {

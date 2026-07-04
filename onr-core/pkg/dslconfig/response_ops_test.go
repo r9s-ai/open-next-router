@@ -23,7 +23,7 @@ provider "t" {
     response {
       json_del "$.usage";
       json_set "$.foo" "bar";
-      json_replace "$.model" $request.model event="message_start" max_count=1;
+      json_replace "$.model" $request.model event="message_start" event_optional=true max_count=1;
       json_set_if_absent "$.bar" "baz";
       json_rename "$.a" "$.b";
       sse_json_del_if "$.type" "message_delta" "$.usage";
@@ -46,6 +46,7 @@ provider "t" {
 	require.Equal(t, "$.model", d.JSONOps[2].Path)
 	require.Equal(t, "$request.model", d.JSONOps[2].ValueExpr)
 	require.Equal(t, "message_start", d.JSONOps[2].Event)
+	require.True(t, d.JSONOps[2].EventOptional)
 	require.Equal(t, 1, d.JSONOps[2].MaxCount)
 	require.Equal(t, "json_set_if_absent", d.JSONOps[3].Op)
 	require.Equal(t, "$.bar", d.JSONOps[3].Path)
@@ -108,6 +109,117 @@ func TestTransformSSEEventDataJSON_EventAndMaxCount(t *testing.T) {
 	require.False(t, deltaHasMessage)
 	msg2 := payloads[2]["message"].(map[string]any)
 	require.Equal(t, "upstream-2", msg2["model"])
+}
+
+func TestTransformSSEEventDataJSON_JSONOpsEventOptionalFallsBackWhenEventMissing(t *testing.T) {
+	in := "" +
+		"data: {\"message\":{\"model\":\"upstream-no-event\"},\"drop\":true,\"old\":\"legacy\"}\n\n" +
+		"event: message_delta\n" +
+		"data: {\"message\":{\"model\":\"upstream-delta\"},\"drop\":true,\"old\":\"legacy\"}\n\n" +
+		"event: message_start\n" +
+		"data: {\"message\":{\"model\":\"upstream-start\"},\"drop\":true,\"old\":\"legacy\"}\n\n" +
+		"data: [DONE]\n\n"
+
+	ops := []JSONOp{
+		{Op: "json_replace", Path: "$.message.model", ValueExpr: "$request.model", Event: "message_start", EventOptional: true},
+		{Op: "json_set", Path: "$.set_by_rule", ValueExpr: "true", Event: "message_start", EventOptional: true},
+		{Op: "json_set_if_absent", Path: "$.message.role", ValueExpr: "\"assistant\"", Event: "message_start", EventOptional: true},
+		{Op: "json_del", Path: "$.drop", Event: "message_start", EventOptional: true},
+		{Op: "json_rename", FromPath: "$.old", ToPath: "$.new", Event: "message_start", EventOptional: true},
+	}
+
+	var out bytes.Buffer
+	err := TransformSSEEventDataJSON(
+		bytes.NewBufferString(in),
+		&out,
+		&dslmeta.Meta{OriginModelName: "meta-model"},
+		nil,
+		ops,
+	)
+	require.NoError(t, err)
+
+	payloads := responseJSONPayloads(t, out.Bytes())
+	require.Len(t, payloads, 3)
+
+	msg0 := payloads[0]["message"].(map[string]any)
+	require.Equal(t, "meta-model", msg0["model"])
+	require.Equal(t, "assistant", msg0["role"])
+	require.Equal(t, true, payloads[0]["set_by_rule"])
+	_, hasDrop0 := payloads[0]["drop"]
+	require.False(t, hasDrop0)
+	require.Equal(t, "legacy", payloads[0]["new"])
+	_, hasOld0 := payloads[0]["old"]
+	require.False(t, hasOld0)
+
+	msg1 := payloads[1]["message"].(map[string]any)
+	require.Equal(t, "upstream-delta", msg1["model"])
+	_, hasRole1 := msg1["role"]
+	require.False(t, hasRole1)
+	_, hasSet1 := payloads[1]["set_by_rule"]
+	require.False(t, hasSet1)
+	require.Equal(t, true, payloads[1]["drop"])
+	require.Equal(t, "legacy", payloads[1]["old"])
+	_, hasNew1 := payloads[1]["new"]
+	require.False(t, hasNew1)
+
+	msg2 := payloads[2]["message"].(map[string]any)
+	require.Equal(t, "meta-model", msg2["model"])
+	require.Equal(t, "assistant", msg2["role"])
+	require.Equal(t, true, payloads[2]["set_by_rule"])
+	_, hasDrop2 := payloads[2]["drop"]
+	require.False(t, hasDrop2)
+	require.Equal(t, "legacy", payloads[2]["new"])
+	_, hasOld2 := payloads[2]["old"]
+	require.False(t, hasOld2)
+}
+
+func TestValidateProviderFile_ResponseJSONReplaceEventOptionalRequiresEvent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "t.conf")
+	require.NoError(t, os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "t" {
+  defaults {
+    upstream_config { base_url = "https://t.example.com"; }
+    response {
+      json_replace "$.model" $request.model event_optional=true;
+    }
+  }
+}
+`), 0o600))
+
+	_, err := ValidateProviderFile(path)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "event_optional requires event")
+}
+
+func TestValidateProviderFile_ResponseJSONEventOptionalSupportsAllEventScopedJSONOps(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "t.conf")
+	require.NoError(t, os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "t" {
+  defaults {
+    upstream_config { base_url = "https://t.example.com"; }
+    response {
+      json_set "$.model" $request.model event="message_start" event_optional=true;
+      json_set_if_absent "$.role" "assistant" event="message_start" event_optional=true;
+      json_del "$.usage" event="message_start" event_optional=true;
+      json_rename "$.old" "$.new" event="message_start" event_optional=true;
+    }
+  }
+}
+`), 0o600))
+
+	pf, err := ValidateProviderFile(path)
+	require.NoError(t, err)
+	require.Len(t, pf.Response.Defaults.JSONOps, 4)
+	for _, op := range pf.Response.Defaults.JSONOps {
+		require.Equal(t, "message_start", op.Event)
+		require.True(t, op.EventOptional)
+	}
 }
 
 func TestValidateProviderFile_SSEJSONDelIf_RejectsEmptyEquals(t *testing.T) {
@@ -264,4 +376,25 @@ func TestTransformSSEEventDataJSON_ConditionalDelAndJSONOps(t *testing.T) {
 	require.True(t, hasUsage1)
 	_, hasAlways1 := obj1["always"]
 	require.False(t, hasAlways1)
+}
+
+func responseJSONPayloads(t *testing.T, raw []byte) []map[string]any {
+	t.Helper()
+	var payloads []map[string]any
+	for _, ev := range bytes.Split(raw, []byte("\n\n")) {
+		for _, line := range bytes.Split(ev, []byte("\n")) {
+			line = bytes.TrimSpace(line)
+			if !bytes.HasPrefix(line, []byte("data:")) {
+				continue
+			}
+			body := bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
+			if len(body) == 0 || bytes.Equal(body, []byte("[DONE]")) {
+				continue
+			}
+			var obj map[string]any
+			require.NoError(t, json.Unmarshal(body, &obj))
+			payloads = append(payloads, obj)
+		}
+	}
+	return payloads
 }

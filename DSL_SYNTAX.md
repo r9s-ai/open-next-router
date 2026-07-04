@@ -140,6 +140,8 @@ Currently supported `api` values (aligned with OpenAI-style endpoints):
 - `audio.translations`
 - `gemini.generateContent` (Gemini native: `POST /v1beta/models/{model}:generateContent`)
 - `gemini.streamGenerateContent` (Gemini native: `POST /v1beta/models/{model}:streamGenerateContent?alt=sse`)
+- `gemini.predictLongRunning` (Gemini native: `POST /v1beta/models/{model}:predictLongRunning`)
+- `gemini.getOperation` (Gemini native long-running operation query: `GET /v1beta/{operation_name}`)
 
 ## 5. Phases / blocks (can appear in defaults and match)
 
@@ -608,19 +610,21 @@ Semantics:
 - `json_set` creates missing paths; `json_replace` only replaces existing paths, which is useful for replacing upstream `model` fields without polluting unrelated events.
 - `json_set`, `json_replace`, and `json_set_if_absent` value expressions support `template(...)`.
 - In streaming SSE, `json_set`, `json_replace`, `json_set_if_absent`, `json_del`, and `json_rename` may add `event="<name|name2>"` to run only for matching SSE `event:` names.
+- Response JSON ops may also add `event_optional=true` together with `event="..."`; they still require matching event names when an event is present, but remain eligible when no event context is available.
 - Response JSON ops may add `max_count=<n>` to limit how many times one directive can take effect during one response handling cycle. The default `max_count=0` means unlimited.
 
 ```conf
 response {
   resp_passthrough;
-  json_replace "$.message.model" $request.model event="message_start" max_count=1;
-  json_replace "$.response.model" $request.model event="response.created|response.completed|response.incomplete";
+  json_set "$.response.metadata.gateway" "onr" event="response.completed" event_optional=true;
+  json_replace "$.message.model" $request.model event="message_start" event_optional=true max_count=1;
+  json_replace "$.response.model" $request.model event="response.created|response.completed|response.incomplete" event_optional=true;
 }
 ```
 
-- `event="..."` only affects SSE JSON events. Non-streaming JSON responses have no event context, so response JSON ops with `event` are skipped.
+- `event="..."` only affects SSE JSON events. Non-streaming JSON responses have no event context, so response JSON ops with `event` are skipped unless the directive supports and enables `event_optional=true`.
+- `event_optional=true` requires `event`; when the runtime has no event context, the directive falls back to normal JSON matching.
 - `max_count` is tracked per directive. Non-streaming JSON has at most one object to process; SSE counts across the whole stream. Only actual changes are counted, so a `json_replace` with a missing path does not increment the count.
-- Response JSON ops do not support `event_optional=true`. To support upstreams that omit `event:` framing, use an unscoped directive or add event names during upstream mapping.
 
 Limitations (v0.1):
 
@@ -1538,7 +1542,7 @@ Multiple: yes
 #### json_set
 
 ```text
-Syntax:  json_set <jsonpath> <value-expr> [event="<name|name2>"] [max_count=<n>];
+Syntax:  json_set <jsonpath> <value-expr> [event="<name|name2>"] [event_optional=true|false] [max_count=<n>];
 Default: —
 Context: request/response
 Multiple: yes
@@ -1548,12 +1552,13 @@ Multiple: yes
 - JSONPath is limited to object paths: `$.a.b.c`.
 - `<value-expr>` supports `true/false/null`, integer, string literal, variable, `concat(...)`, and `template(...)`.
 - `event="..."` only applies to response SSE JSON ops and filters by SSE `event:` name.
+- `event_optional=true` only applies in `response`, requires `event`, and keeps the directive eligible when no event context is available.
 - `max_count=<n>` only applies in `response`; `0` means unlimited, `n > 0` means this directive can make at most `n` actual changes during one response handling cycle.
 
 #### json_replace
 
 ```text
-Syntax:  json_replace <jsonpath> <value-expr> [event="<name|name2>"] [max_count=<n>];
+Syntax:  json_replace <jsonpath> <value-expr> [event="<name|name2>"] [event_optional=true|false] [max_count=<n>];
 Default: —
 Context: request/response
 Multiple: yes
@@ -1564,12 +1569,13 @@ Multiple: yes
 - JSONPath is limited to object paths: `$.a.b.c`.
 - `<value-expr>` supports the same expression forms as `json_set`.
 - `event="..."` only applies to response SSE JSON ops and filters by SSE `event:` name.
+- `event_optional=true` only applies in `response`, requires `event`, and allows the directive to run when no event context is available.
 - `max_count=<n>` only applies in `response`, with the same semantics as `json_set`.
 
 #### json_set_if_absent
 
 ```text
-Syntax:  json_set_if_absent <jsonpath> <value-expr> [event="<name|name2>"] [max_count=<n>];
+Syntax:  json_set_if_absent <jsonpath> <value-expr> [event="<name|name2>"] [event_optional=true|false] [max_count=<n>];
 Default: —
 Context: request/response
 Multiple: yes
@@ -1578,12 +1584,13 @@ Multiple: yes
 - Sets a JSON value only when the path does not exist.
 - If the path already exists (including `null`), the original value is kept.
 - `event="..."` only applies to response SSE JSON ops.
+- `event_optional=true` only applies in `response`, requires `event`, and allows the directive to run when no event context is available.
 - `max_count=<n>` only applies in `response`, with the same semantics as `json_set`.
 
 #### json_del
 
 ```text
-Syntax:  json_del <jsonpath> [event="<name|name2>"] [max_count=<n>];
+Syntax:  json_del <jsonpath> [event="<name|name2>"] [event_optional=true|false] [max_count=<n>];
 Default: —
 Context: request/response
 Multiple: yes
@@ -1592,12 +1599,13 @@ Multiple: yes
 - Deletes a JSON field.
 - JSONPath is limited to object paths: `$.a.b.c`.
 - `event="..."` only applies to response SSE JSON ops.
+- `event_optional=true` only applies in `response`, requires `event`, and allows the directive to run when no event context is available.
 - `max_count=<n>` only applies in `response`, with the same semantics as `json_set`.
 
 #### json_rename
 
 ```text
-Syntax:  json_rename <from-jsonpath> <to-jsonpath> [event="<name|name2>"] [max_count=<n>];
+Syntax:  json_rename <from-jsonpath> <to-jsonpath> [event="<name|name2>"] [event_optional=true|false] [max_count=<n>];
 Default: —
 Context: request/response
 Multiple: yes
@@ -1606,6 +1614,7 @@ Multiple: yes
 - Renames a JSON field.
 - JSONPath is limited to object paths: `$.a.b.c`.
 - `event="..."` only applies to response SSE JSON ops.
+- `event_optional=true` only applies in `response`, requires `event`, and allows the directive to run when no event context is available.
 - `max_count=<n>` only applies in `response`, with the same semantics as `json_set`.
 
 #### json_wrap_input_text
@@ -2275,7 +2284,14 @@ Model name from the client request.
 
 Mapped model name. Defaults to `$request.model`; can be modified by `model_map` and `model_map_default`.
 
-### 8.4 Examples
+### 8.4 `$task.*`
+
+`$task.upstream_id`
+
+Upstream task/operation id for long-running operation routes. For Gemini Veo this is the operation
+name returned by `predictLongRunning`, for example `models/veo-3.1-generate-preview/operations/abc`.
+
+### 8.5 Examples
 
 ```conf
 request {
@@ -2296,5 +2312,8 @@ upstream {
 
   # Example: Vertex AI path with credential and location metadata
   set_path template("/v1/projects/${credential.project_id}/locations/${channel.location}/publishers/google/models/${request.model_mapped}:generateContent");
+
+  # Example: Gemini long-running operation query path
+  set_path concat("/v1beta/", $task.upstream_id);
 }
 ```

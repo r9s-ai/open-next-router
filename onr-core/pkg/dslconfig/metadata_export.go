@@ -115,17 +115,18 @@ func exportJSONOps(in []JSONOp) []dslmetadata.JSONOp {
 	out := make([]dslmetadata.JSONOp, 0, len(in))
 	for _, op := range in {
 		out = append(out, dslmetadata.JSONOp{
-			Op:         strings.TrimSpace(op.Op),
-			Path:       strings.TrimSpace(op.Path),
-			FromPath:   strings.TrimSpace(op.FromPath),
-			ToPath:     strings.TrimSpace(op.ToPath),
-			ValueExpr:  strings.TrimSpace(op.ValueExpr),
-			HeaderName: strings.TrimSpace(op.HeaderName),
-			FieldName:  strings.TrimSpace(op.FieldName),
-			Patterns:   trimStringSliceForMetadata(op.Patterns),
-			Separator:  strings.TrimSpace(op.Separator),
-			Event:      strings.TrimSpace(op.Event),
-			MaxCount:   op.MaxCount,
+			Op:            strings.TrimSpace(op.Op),
+			Path:          strings.TrimSpace(op.Path),
+			FromPath:      strings.TrimSpace(op.FromPath),
+			ToPath:        strings.TrimSpace(op.ToPath),
+			ValueExpr:     strings.TrimSpace(op.ValueExpr),
+			HeaderName:    strings.TrimSpace(op.HeaderName),
+			FieldName:     strings.TrimSpace(op.FieldName),
+			Patterns:      trimStringSliceForMetadata(op.Patterns),
+			Separator:     strings.TrimSpace(op.Separator),
+			Event:         strings.TrimSpace(op.Event),
+			EventOptional: op.EventOptional,
+			MaxCount:      op.MaxCount,
 		})
 	}
 	return out
@@ -330,6 +331,10 @@ func exportExprTemplate(expr string) (string, bool) {
 	switch raw {
 	case "$request.model", "$request.model_mapped":
 		return "{model}", true
+	case "$task.id":
+		return "{task.id}", true
+	case "$task.upstream_id":
+		return "{task.upstream_id}", true
 	}
 	if strings.HasPrefix(raw, "concat(") && strings.HasSuffix(raw, ")") {
 		inner := strings.TrimSuffix(strings.TrimPrefix(raw, "concat("), ")")
@@ -381,10 +386,14 @@ func exportTemplatePlaceholders(tmpl string) string {
 		"${oauth.access_token}":     "{oauth.access_token}",
 		"${channel.key}":            "{channel.key}",
 		"${channel.base_url}":       "{channel.base_url}",
+		"${task.id}":                "{task.id}",
+		"${task.upstream_id}":       "{task.upstream_id}",
 		"${$request.model}":         "{model}",
 		"${$request.model_mapped}":  "{model}",
 		"${$credential.project_id}": "{credential.project_id}",
 		"${$channel.location}":      "{channel.location}",
+		"${$task.id}":               "{task.id}",
+		"${$task.upstream_id}":      "{task.upstream_id}",
 	}
 	out := tmpl
 	for old, replacement := range replacements {

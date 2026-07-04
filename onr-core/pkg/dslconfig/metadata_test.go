@@ -75,6 +75,26 @@ func TestExportProviderMetadataPreservesEmptyAPIMatches(t *testing.T) {
 	}
 }
 
+func TestExportProviderMetadataTaskRouteTemplate(t *testing.T) {
+	cfg := ExportProviderMetadata(ProviderFile{
+		Routing: ProviderRouting{
+			Matches: []RoutingMatch{
+				{
+					API:     "gemini.getOperation",
+					SetPath: `concat("/v1beta/", $task.upstream_id)`,
+				},
+			},
+		},
+	})
+
+	if len(cfg.Routes) != 1 {
+		t.Fatalf("routes length = %d, want 1: %#v", len(cfg.Routes), cfg.Routes)
+	}
+	if got, want := cfg.Routes[0].Path, "/v1beta/{task.upstream_id}"; got != want {
+		t.Fatalf("route path=%q want %q", got, want)
+	}
+}
+
 func TestValidateProviderFile_MetadataDefaults(t *testing.T) {
 	dir := t.TempDir()
 	writeProviderConf(t, dir, "openrouter", "https://openrouter.ai/api")

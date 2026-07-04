@@ -1,6 +1,7 @@
 package dslconfig
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 )
@@ -110,7 +111,7 @@ func parseSSECollect(s *scanner, resp *ResponseDirective) error {
 }
 
 func parseRespJSONSetStmt(s *scanner, resp *ResponseDirective, opName string) error {
-	// json_set/json_replace/json_set_if_absent <jsonpath> <expr> [event="..."] [max_count=n];
+	// json_set/json_replace/json_set_if_absent <jsonpath> <expr> [event="..."] [event_optional=true|false] [max_count=n];
 	pathTok := s.nextNonTrivia()
 	switch pathTok.kind {
 	case tokIdent, tokString:
@@ -127,11 +128,12 @@ func parseRespJSONSetStmt(s *scanner, resp *ResponseDirective, opName string) er
 		return err
 	}
 	resp.JSONOps = append(resp.JSONOps, JSONOp{
-		Op:        opName,
-		Path:      strings.TrimSpace(path),
-		ValueExpr: strings.TrimSpace(valueExpr),
-		Event:     opts.Event,
-		MaxCount:  opts.MaxCount,
+		Op:            opName,
+		Path:          strings.TrimSpace(path),
+		ValueExpr:     strings.TrimSpace(valueExpr),
+		Event:         opts.Event,
+		EventOptional: opts.EventOptional,
+		MaxCount:      opts.MaxCount,
 	})
 	return nil
 }
@@ -154,10 +156,11 @@ func parseRespJSONDelStmt(s *scanner, resp *ResponseDirective) error {
 		return err
 	}
 	resp.JSONOps = append(resp.JSONOps, JSONOp{
-		Op:       jsonOpDel,
-		Path:     strings.TrimSpace(path),
-		Event:    opts.Event,
-		MaxCount: opts.MaxCount,
+		Op:            jsonOpDel,
+		Path:          strings.TrimSpace(path),
+		Event:         opts.Event,
+		EventOptional: opts.EventOptional,
+		MaxCount:      opts.MaxCount,
 	})
 	return nil
 }
@@ -191,18 +194,20 @@ func parseRespJSONRenameStmt(s *scanner, resp *ResponseDirective) error {
 		return err
 	}
 	resp.JSONOps = append(resp.JSONOps, JSONOp{
-		Op:       jsonOpRename,
-		FromPath: strings.TrimSpace(from),
-		ToPath:   strings.TrimSpace(to),
-		Event:    opts.Event,
-		MaxCount: opts.MaxCount,
+		Op:            jsonOpRename,
+		FromPath:      strings.TrimSpace(from),
+		ToPath:        strings.TrimSpace(to),
+		Event:         opts.Event,
+		EventOptional: opts.EventOptional,
+		MaxCount:      opts.MaxCount,
 	})
 	return nil
 }
 
 type respJSONOptions struct {
-	Event    string
-	MaxCount int
+	Event         string
+	EventOptional bool
+	MaxCount      int
 }
 
 func consumeRespJSONExprAndOptions(s *scanner, directive string) (string, respJSONOptions, error) {
@@ -263,7 +268,7 @@ func isRespJSONOptionStart(tokens []token, idx int) bool {
 		return false
 	}
 	key := strings.ToLower(strings.TrimSpace(tokens[idx].text))
-	if key != "event" && key != "max_count" {
+	if key != "event" && key != "event_optional" && key != "max_count" {
 		return false
 	}
 	next := nextNonTriviaIndex(tokens, idx+1)
@@ -277,7 +282,7 @@ func parseRespJSONOptions(s *scanner, tokens []token, directive string) (respJSO
 			return opts, s.errAt(tokens[i], directive+" expects response json option")
 		}
 		key := strings.ToLower(strings.TrimSpace(tokens[i].text))
-		if key != "event" && key != "max_count" {
+		if key != "event" && key != "event_optional" && key != "max_count" {
 			return opts, s.errAt(tokens[i], "unsupported "+directive+" option "+key)
 		}
 		eq := nextNonTriviaIndex(tokens, i+1)
@@ -300,6 +305,12 @@ func parseRespJSONOptions(s *scanner, tokens []token, directive string) (respJSO
 		switch key {
 		case "event":
 			opts.Event = strings.TrimSpace(unquoteIfString(raw))
+		case "event_optional":
+			val, err := parseRespJSONBool(raw)
+			if err != nil {
+				return opts, s.errAt(tokens[valStart], "event_optional expects true or false")
+			}
+			opts.EventOptional = val
 		case "max_count":
 			n, err := strconv.Atoi(raw)
 			if err != nil || n < 0 {
@@ -310,6 +321,17 @@ func parseRespJSONOptions(s *scanner, tokens []token, directive string) (respJSO
 		i = nextOpt
 	}
 	return opts, nil
+}
+
+func parseRespJSONBool(raw string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid bool")
+	}
 }
 
 func nextRespJSONOptionIndex(tokens []token, start int) int {

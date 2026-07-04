@@ -8,6 +8,8 @@ const (
 	exprOAuthAccessToken = "$oauth.access_token"
 	exprRequestModel     = "$request.model"
 	exprRequestMapped    = "$request.model_mapped"
+	exprTaskID           = "$task.id"
+	exprTaskUpstreamID   = "$task.upstream_id"
 
 	jsonOpSet           = "json_set"
 	jsonOpReplace       = "json_replace"

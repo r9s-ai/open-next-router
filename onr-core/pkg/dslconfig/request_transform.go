@@ -137,14 +137,15 @@ func (t *RequestTransform) Apply(meta *dslmeta.Meta) {
 type JSONOp struct {
 	Op string
 
-	Path       string
-	FromPath   string
-	ToPath     string
-	ValueExpr  string
-	HeaderName string
-	FieldName  string
-	Patterns   []string
-	Separator  string
-	Event      string
-	MaxCount   int
+	Path          string
+	FromPath      string
+	ToPath        string
+	ValueExpr     string
+	HeaderName    string
+	FieldName     string
+	Patterns      []string
+	Separator     string
+	Event         string
+	EventOptional bool
+	MaxCount      int
 }
