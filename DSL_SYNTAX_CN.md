@@ -399,6 +399,25 @@ request {
 - `json_del_with_condition`：当对象字段匹配允许值或通配符时，删除该对象或数组中的匹配对象
 - `after_req_map { ... }`：在 `req_map` 之后执行内部 JSON 操作；如果没有配置 `req_map`，则在普通请求 JSON 操作之后执行
 
+#### json_map_value / json_scale（字段值映射与数值缩放，可多条）
+
+```conf
+request {
+  # 值映射：voice=alloy 时替换为 male-qn-qingse；未命中保持原值透传（与 model_map 的 fallthrough 语义一致）
+  json_map_value "$.voice" "alloy" "male-qn-qingse";
+  json_map_value "$.voice" "nova" "female-shaonv";
+
+  # 数值线性缩放：把 OpenAI speed(0.25–4.0) 线性映射到上游区间(0.5–2.0)，输入先 clamp 到 [in_min, in_max]
+  json_scale "$.speed" in_min=0.25 in_max=4.0 out_min=0.5 out_max=2.0;
+}
+```
+
+说明：
+
+- `json_map_value <jsonpath> "<from>" <to-expr>;`：仅当路径上的值是**字符串**且等于 `<from>` 时替换为 `<to-expr>` 的求值结果；路径缺失、非字符串或未命中时保持原值。多条映射写多条指令。
+- `json_scale <jsonpath> in_min=<f> in_max=<f> out_min=<f> out_max=<f>;`：把路径上的数值先 clamp 到 `[in_min, in_max]`，再线性映射到 `[out_min, out_max]`；路径缺失或非数值时为 no-op。要求 `in_max > in_min`，四个选项均必填。
+- 值表达式的数字字面量支持小数（如 `1.0`、`0.5`），`json_set` / `json_set_if_absent` 等写入时会以 JSON number 输出。
+
 #### req_map
 
 ```conf
@@ -663,6 +682,44 @@ response {
 - 条件要求 `<cond_path>` 取到的值是字符串，且必须**完全等于** `<equals>`
 - 规则按顺序执行，且在 `json_*` 响应操作之前执行
 
+#### resp_body_extract / resp_content_type（JSON → 二进制响应）
+
+用于“上游用 JSON 包裹二进制内容”的端点（例如 TTS 返回 hex 编码音频）：
+
+```conf
+match api = "audio.speech" stream = false {
+  response {
+    resp_body_extract path="$.data.audio" decode=hex;
+    resp_content_type from_path="$.extra_info.audio_format" kind=audio default="mp3";
+  }
+}
+```
+
+说明：
+
+- `resp_body_extract path="$.a.b" decode=hex|base64;`：非流式。把上游 JSON 响应中 `path` 处的字符串按 `decode` 解码，作为下游响应体输出（body 形态从 JSON 变为二进制）。
+- 用量 / 错误检测先在**原始 JSON** 上完成，再做 body 变换；计费上下文保留原始 JSON。
+- `resp_content_type from_path="$.path" kind=audio [default="mp3"];`：从上游 JSON 的格式字段解析下游 `Content-Type`。`kind=audio` 表示值是音频格式名（mp3/wav/flac/pcm/aac/opus/ogg），未知格式回退 `audio/mpeg`；`from_path` 缺失时用 `default`。
+- 单个 response 块内各指令最多一条；与 `resp_map` / `sse_parse` 互斥使用（配合 `resp_passthrough` 或独立使用）。
+
+#### sse_binary_extract（SSE → 二进制流）
+
+用于“上游 SSE JSON chunk 包裹二进制分块”的流式端点：
+
+```conf
+match api = "audio.speech" stream = true {
+  response {
+    sse_binary_extract path="$.data.audio" decode=hex stop_path="$.data.status" stop_eq=2;
+  }
+}
+```
+
+说明：
+
+- 对每个 SSE event 的 JSON payload：取 `path` 处字符串按 `decode` 解码，将解码后的**裸二进制**写入下游响应（不是 SSE 转发）。
+- `stop_path` / `stop_eq` 成对出现：当 payload 中 `stop_path` 的值等于 `stop_eq`（数值或字符串比较）时结束流。
+- 每个 chunk 的 JSON payload 仍会进入 usage 提取通路，供流式计费读取尾块字段。
+
 ### 5.6 error（错误归一化）
 
 语法：
@@ -676,6 +733,22 @@ error { error_map openai; }
 - 允许的 `mode`（加载期白名单校验）：`openai` / `common` / `passthrough`
 - 如写多条，最后一条生效
 - `passthrough`：跳过错误归一化，直接把上游错误响应透传给客户端
+
+#### error_when（体内错误检测）
+
+```conf
+error {
+  error_map openai;
+  error_when path="$.base_resp.status_code" ne=0 status=400;
+}
+```
+
+说明：
+
+- 针对“HTTP 200 但业务错误藏在响应体里”的上游：当 `path` 处的值满足 `ne=`（不等于）或 `eq=`（等于）条件时，把该响应按上游错误处理，经 `error_map` 归一化后以 `status`（默认 400）返回下游。
+- `ne` / `eq` 只能二选一；数值与字符串都支持（`ne=0` 会与 JSON number 做数值比较）。
+- **路径缺失永远不算命中**（对 `ne` 也是），避免正常响应没有错误字段时误报。
+- 可写多条，任意一条命中即判定为错误；仅对 HTTP 2xx 响应生效，非 2xx 仍走原有 `error_map` 流程。
 
 ### 5.7 metrics（用量提取 / usage）
 
@@ -1865,6 +1938,7 @@ Multiple: yes
 - `attr.modality` 对 `cache_read token` 有特殊含义，用于表达上游真实返回的分模态 cached token。支持值为 `text` / `image` / `audio` / `video`；OpenAI cache detail 使用 text/image/audio，Gemini cache detail 使用 text/image/audio/video。
 - 同一 `dimension + unit` 可以出现多条规则；所有命中的非 fallback 规则会累计求和。
 - `fallback=true` 表示在同一 `dimension + unit` 没有更具体事实时再生效。
+- `scale=<正数>` 对提取出的数量做乘法缩放，用于单位换算；例如上游返回毫秒时：`usage_fact audio.tts second path="$.extra_info.audio_length" scale=0.001;`。缺省不缩放。
 - `source` 在配置了 `usage_root` 时默认是 `usage`，否则默认是 `response`；当前支持 `usage` / `response` / `request` / `derived`。
 - `usage` / `response` / `request` / `derived` 之外的其他 `source` 会在校验阶段直接报错。
 - `dimension` 是扁平字符串键，`.` 只是名称的一部分，不表示嵌套。

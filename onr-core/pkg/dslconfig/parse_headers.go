@@ -193,6 +193,18 @@ func parseRequestPhaseWithTransform(s *scanner, phase *PhaseHeaders, transform *
 			}
 			return parseJSONDelWithConditionStmt(s, t)
 		},
+		"json_map_value": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
+			if t == nil {
+				return skipStmtOrBlock(s)
+			}
+			return parseJSONMapValueStmt(s, t)
+		},
+		"json_scale": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
+			if t == nil {
+				return skipStmtOrBlock(s)
+			}
+			return parseJSONScaleStmt(s, t)
+		},
 		"after_req_map": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
 			if t == nil {
 				return skipStmtOrBlock(s)
@@ -497,6 +509,115 @@ func parseJSONWrapInputTextStmt(s *scanner, t *RequestTransform) error {
 		Path: strings.TrimSpace(path),
 	})
 	return nil
+}
+
+func parseJSONMapValueStmt(s *scanner, t *RequestTransform) error {
+	// json_map_value <jsonpath> <from-string> <to-expr>;
+	pathTok := s.nextNonTrivia()
+	switch pathTok.kind {
+	case tokIdent, tokString:
+		// ok
+	default:
+		return s.errAt(pathTok, "json_map_value expects json path")
+	}
+	path := pathTok.text
+	if pathTok.kind == tokString {
+		path = unquoteString(pathTok.text)
+	}
+	fromTok := s.nextNonTrivia()
+	if fromTok.kind != tokString {
+		return s.errAt(fromTok, "json_map_value expects from value string literal")
+	}
+	from := unquoteString(fromTok.text)
+	valueExpr, err := consumeExprUntilSemicolon(s)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(valueExpr) == "" {
+		return s.errAt(fromTok, "json_map_value expects to value expression")
+	}
+	t.JSONOps = append(t.JSONOps, JSONOp{
+		Op:         jsonOpMapValue,
+		Path:       strings.TrimSpace(path),
+		MatchValue: from,
+		ValueExpr:  strings.TrimSpace(valueExpr),
+	})
+	return nil
+}
+
+func parseJSONScaleStmt(s *scanner, t *RequestTransform) error {
+	// json_scale <jsonpath> in_min=<f> in_max=<f> out_min=<f> out_max=<f>;
+	pathTok := s.nextNonTrivia()
+	switch pathTok.kind {
+	case tokIdent, tokString:
+		// ok
+	default:
+		return s.errAt(pathTok, "json_scale expects json path")
+	}
+	path := pathTok.text
+	if pathTok.kind == tokString {
+		path = unquoteString(pathTok.text)
+	}
+	r := &JSONScaleRange{}
+	seen := map[string]bool{}
+	for {
+		tok := s.nextNonTrivia()
+		switch tok.kind {
+		case tokEOF:
+			return s.errAt(tok, "unexpected EOF in json_scale")
+		case tokSemicolon:
+			for _, key := range []string{"in_min", "in_max", "out_min", "out_max"} {
+				if !seen[key] {
+					return s.errAt(tok, "json_scale requires "+key)
+				}
+			}
+			if r.InMax <= r.InMin {
+				return s.errAt(tok, "json_scale requires in_max > in_min")
+			}
+			t.JSONOps = append(t.JSONOps, JSONOp{
+				Op:         jsonOpScale,
+				Path:       strings.TrimSpace(path),
+				ScaleRange: r,
+			})
+			return nil
+		case tokIdent:
+			key := strings.ToLower(strings.TrimSpace(tok.text))
+			var dst *float64
+			switch key {
+			case "in_min":
+				dst = &r.InMin
+			case "in_max":
+				dst = &r.InMax
+			case "out_min":
+				dst = &r.OutMin
+			case "out_max":
+				dst = &r.OutMax
+			default:
+				return s.errAt(tok, "unsupported json_scale option "+key)
+			}
+			if err := consumeEquals(s); err != nil {
+				return err
+			}
+			val, err := consumeJSONScaleNumber(s, key)
+			if err != nil {
+				return err
+			}
+			*dst = val
+			seen[key] = true
+		default:
+			return s.errAt(tok, "expected json_scale option or ';'")
+		}
+	}
+}
+
+// consumeJSONScaleNumber reads one decimal number value (optionally quoted).
+func consumeJSONScaleNumber(s *scanner, key string) (float64, error) {
+	tok := s.nextNonTrivia()
+	f, err := parseNumberValueTokens(s, tok)
+	if err != nil {
+		return 0, s.errAt(tok, key+" expects number")
+	}
+	return f, nil
 }
 
 func parseJSONSetHeaderValuesStmt(s *scanner, t *RequestTransform) error {

@@ -384,6 +384,19 @@ request {
 - `json_del_with_condition` deletes an object, or matching objects from an array, when the object's field matches an allowed value or wildcard pattern.
 - `after_req_map { ... }` runs nested JSON operations after `req_map`. If no `req_map` is configured, it runs after the normal request JSON operations.
 
+#### json_map_value / json_scale (value mapping and numeric scaling, multiple allowed)
+
+```conf
+request {
+  json_map_value "$.voice" "alloy" "male-qn-qingse";
+  json_scale "$.speed" in_min=0.25 in_max=4.0 out_min=0.5 out_max=2.0;
+}
+```
+
+- `json_map_value <jsonpath> "<from>" <to-expr>;`: replaces the string value at path with the mapped result only when it equals `<from>`. Missing paths, non-string values, and unmatched values pass through unchanged (same fallthrough semantics as `model_map`). Repeat the directive for multiple mappings.
+- `json_scale <jsonpath> in_min=<f> in_max=<f> out_min=<f> out_max=<f>;`: clamps the numeric value at path to `[in_min, in_max]` and maps it linearly onto `[out_min, out_max]`. Missing/non-numeric fields are left unchanged. All four options are required and `in_max > in_min`.
+- Numeric value expressions now support decimal float literals (e.g. `1.0`, `0.5`), emitted as JSON numbers.
+
 #### req_map
 
 ```conf
@@ -643,6 +656,36 @@ response {
 - Condition requires the value at `<cond_path>` to be a string and to **exactly** equal `<equals>`.
 - Rules are executed in order, before `json_*` response ops.
 
+#### resp_body_extract / resp_content_type (JSON -> binary response)
+
+For endpoints where the upstream wraps binary content in JSON (e.g. TTS returning hex-encoded audio):
+
+```conf
+match api = "audio.speech" stream = false {
+  response {
+    resp_body_extract path="$.data.audio" decode=hex;
+    resp_content_type from_path="$.extra_info.audio_format" kind=audio default="mp3";
+  }
+}
+```
+
+- `resp_body_extract path="$.a.b" decode=hex|base64;`: non-stream only. Decodes the string at path from the upstream JSON response and emits it as the raw downstream body. Usage/error extraction reads the original JSON before the body transform.
+- `resp_content_type from_path="$.path" kind=audio [default="mp3"];`: resolves the downstream `Content-Type` from a format field in the upstream JSON. `kind=audio` interprets the value as an audio format name (mp3/wav/flac/pcm/aac/opus/ogg); unknown formats fall back to `audio/mpeg`.
+
+#### sse_binary_extract (SSE -> binary stream)
+
+```conf
+match api = "audio.speech" stream = true {
+  response {
+    sse_binary_extract path="$.data.audio" decode=hex stop_path="$.data.status" stop_eq=2;
+  }
+}
+```
+
+- For each upstream SSE event's JSON payload: decodes the string at path and writes the raw bytes to the downstream body (not SSE forwarding).
+- `stop_path` / `stop_eq` must appear together: the stream ends when the value at `stop_path` equals `stop_eq` (numeric or string comparison).
+- Each chunk's JSON payload still feeds the usage extraction pipeline so trailing-chunk fields remain available for stream billing.
+
 ### 5.6 error
 
 ```conf
@@ -651,6 +694,20 @@ error { error_map openai; }
 
 - Allowed modes (whitelist enforced at load time): `openai`, `common`, `passthrough`.
 - If multiple directives are present, the last one wins.
+
+#### error_when (in-body error detection)
+
+```conf
+error {
+  error_map openai;
+  error_when path="$.base_resp.status_code" ne=0 status=400;
+}
+```
+
+- For upstreams that return business errors inside HTTP 200 bodies: when the value at `path` matches `eq=` (equals) or `ne=` (not equals), the response is treated as an upstream error, normalized via `error_map`, and returned downstream with `status` (default 400).
+- Exactly one of `ne` / `eq` per rule; numbers compare numerically (`ne=0` matches JSON number semantics).
+- Missing paths never match (also for `ne`), so success responses without an error envelope are not misreported.
+- Multiple rules are allowed; any hit marks the response as an error. Only applies to HTTP 2xx responses.
 
 ### 5.7 metrics (usage / finish_reason extraction)
 
@@ -2031,6 +2088,7 @@ Multiple: yes
 - `attr.modality` is meaningful for `cache_read token` when an upstream reports real per-modality cached token counts. Supported values are `text`, `image`, `audio`, and `video`; OpenAI cache detail uses text/image/audio, while Gemini cache detail uses text/image/audio/video.
 - Multiple rules may share the same `dimension + unit`; all matched non-fallback rules are summed.
 - `fallback=true` means the fact applies only when no more specific fact exists for the same `dimension + unit`.
+- `scale=<positive number>` multiplies the extracted quantity, for unit conversion; e.g. upstream milliseconds: `usage_fact audio.tts second path="$.extra_info.audio_length" scale=0.001;`. Default is no scaling.
 - `source` defaults to `usage` when `usage_root` is configured, otherwise it defaults to `response`; current values are `usage`, `response`, `request`, and `derived`.
 - `dimension` is a flat string key; `.` is part of the name and does not imply nesting.
 - Supported `dimension` values:

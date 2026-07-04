@@ -142,5 +142,6 @@ type UsageFact struct {
 	Status     string            `json:"status,omitempty"`
 	Event      string            `json:"event,omitempty"`
 	Fallback   bool              `json:"fallback,omitempty"`
+	Scale      float64           `json:"scale,omitempty"`
 	Attributes map[string]string `json:"attributes,omitempty"`
 }

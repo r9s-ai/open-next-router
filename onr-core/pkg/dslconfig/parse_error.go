@@ -33,6 +33,10 @@ func parseErrorPhase(s *scanner, errDir *ErrorDirective) error {
 				}
 				errDir.Op = "error_map"
 				errDir.Mode = mode
+			case "error_when":
+				if err := parseErrorWhenStmt(s, errDir); err != nil {
+					return err
+				}
 			default:
 				if err := skipStmtOrBlock(s); err != nil {
 					return err

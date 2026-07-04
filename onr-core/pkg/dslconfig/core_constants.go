@@ -21,4 +21,6 @@ const (
 	jsonOpSetHeaderVals = "json_set_header_values"
 	jsonOpFilterValues  = "json_filter_values"
 	jsonOpDelWithCond   = "json_del_with_condition"
+	jsonOpMapValue      = "json_map_value"
+	jsonOpScale         = "json_scale"
 )

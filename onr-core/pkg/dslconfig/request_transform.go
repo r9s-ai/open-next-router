@@ -148,4 +148,19 @@ type JSONOp struct {
 	Event         string
 	EventOptional bool
 	MaxCount      int
+
+	// MatchValue is the source string value matched by json_map_value; when the
+	// value at Path equals MatchValue, it is replaced with ValueExpr's result.
+	MatchValue string
+	// ScaleRange holds json_scale's linear mapping ranges; nil for other ops.
+	ScaleRange *JSONScaleRange
+}
+
+// JSONScaleRange describes json_scale's linear mapping: values are clamped to
+// [InMin, InMax] then mapped linearly onto [OutMin, OutMax].
+type JSONScaleRange struct {
+	InMin  float64
+	InMax  float64
+	OutMin float64
+	OutMax float64
 }

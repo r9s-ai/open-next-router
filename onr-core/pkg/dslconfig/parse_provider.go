@@ -734,6 +734,13 @@ func parseUsageFactMetaOption(s *scanner, keyTok token, key string, valTok token
 		}
 		fact.Fallback = val
 		return nil
+	case key == "scale":
+		val, err := parseNumberValueTokens(s, valTok)
+		if err != nil || val <= 0 {
+			return s.errAt(valTok, "scale expects positive number")
+		}
+		fact.Scale = val
+		return nil
 	case strings.HasPrefix(key, "attr."):
 		val, err := parseUsageFactStringValue(s, valTok, key)
 		if err != nil {

@@ -91,6 +91,7 @@ func cloneUsageFactsForIntrospection(facts []usageFactConfig, usageRootConfigure
 			SumPath:       fact.SumPath,
 			Type:          fact.Type,
 			Status:        fact.Status,
+			Scale:         fact.Scale,
 		}
 		if fact.Expr != nil {
 			item.Expr = usageExprString(fact.Expr)

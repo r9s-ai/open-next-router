@@ -1,6 +1,37 @@
 package dslconfig
 
-import "strings"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
+
+// parseNumberValueTokens parses one decimal number starting at first.
+// Numbers may be quoted ("0.001") or bare (0.25, -3); bare numbers are split
+// into single-char tokens by the scanner, so consecutive non-trivia tokens are
+// re-joined until whitespace/semicolon.
+func parseNumberValueTokens(s *scanner, first token) (float64, error) {
+	raw := first.text
+	if first.kind == tokString {
+		raw = unquoteString(first.text)
+	} else {
+		for {
+			save := s.i
+			tok := s.next()
+			if tok.kind == tokOther || tok.kind == tokIdent {
+				raw += tok.text
+				continue
+			}
+			s.i = save
+			break
+		}
+	}
+	f, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid number %q", raw)
+	}
+	return f, nil
+}
 
 func consumeEquals(s *scanner) error {
 	tok := s.nextNonTrivia()

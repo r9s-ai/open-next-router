@@ -60,6 +60,18 @@ func parseResponsePhase(s *scanner, resp *ResponseDirective) error {
 				if err := parseSSEJSONDelIfStmt(s, resp); err != nil {
 					return err
 				}
+			case "resp_body_extract":
+				if err := parseRespBodyExtractStmt(s, resp); err != nil {
+					return err
+				}
+			case "resp_content_type":
+				if err := parseRespContentTypeStmt(s, resp); err != nil {
+					return err
+				}
+			case "sse_binary_extract":
+				if err := parseSSEBinaryExtractStmt(s, resp); err != nil {
+					return err
+				}
 			default:
 				if err := skipStmtOrBlock(s); err != nil {
 					return err
