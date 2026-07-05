@@ -670,7 +670,7 @@ usage_mode "shared_openai" {
 - Another `usage_mode` may be referenced from inside the block via `usage_extract <other_mode>;`, so larger presets can be composed. Recursive references are rejected.
 - Names are global within a providers directory or merged providers file. Duplicate `usage_mode` names are validation errors.
 - This repository's default `config/modes/usage_modes.conf` defines API-specific presets such as `openai_chat_completions`, `openai_prompt_completion`, `openai_responses`, `openai_responses_stream`, `anthropic_messages`, `anthropic_messages_stream`, `gemini_generate_content`, and `gemini_generate_content_stream`. Defining the same name in DSL overrides that preset.
-- At execution time, `usage_extract <custom_name>;` is resolved to the referenced preset and compiled into the same final usage plan as builtin modes.
+- At execution time, `usage_extract <custom_name>;` is resolved to the referenced preset and compiled into the same final usage plan as builtin modes. The resolved `UsageExtractConfig.SourceMode` field is set to the referenced mode name (e.g. `"anthropic_messages"`), allowing callers to identify which named preset was used for a given request.
 
 #### finish_reason_mode (global reusable finish_reason preset)
 

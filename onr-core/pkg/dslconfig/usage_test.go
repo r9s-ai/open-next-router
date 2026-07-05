@@ -1,6 +1,7 @@
 package dslconfig
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -822,5 +823,107 @@ func TestUsageDimensionRegistry_AllowsKnownPairs(t *testing.T) {
 	}
 	if !reg.Allows("audio.tts", "second") {
 		t.Fatalf("expected audio.tts second allowed")
+	}
+}
+
+// TestUsageExtractConfig_SourceModeSetAfterNamedModeResolution verifies that
+// UsageExtractConfig.SourceMode is populated with the referenced usage_mode
+// name after resolution, enabling callers to identify which named preset was used.
+func TestUsageExtractConfig_SourceModeSetAfterNamedModeResolution(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		api            string
+		stream         bool
+		wantSourceMode string
+	}{
+		{api: "claude.messages", stream: false, wantSourceMode: "anthropic_messages"},
+		{api: "claude.messages", stream: true, wantSourceMode: "anthropic_messages_stream"},
+		{api: "chat.completions", stream: false, wantSourceMode: "openai_chat_completions"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.api+"/stream="+boolStr(tc.stream), func(t *testing.T) {
+			t.Parallel()
+			cfg, _ := mustLoadProviderMatchConfigs(t, "anthropic.conf", tc.api, tc.stream)
+			if cfg.SourceMode != tc.wantSourceMode {
+				t.Fatalf("SourceMode=%q want=%q", cfg.SourceMode, tc.wantSourceMode)
+			}
+		})
+	}
+}
+
+func boolStr(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
+}
+
+// TestMergeUsageConfig_SourceModeOverride verifies that mergeUsageConfig
+// applies a non-empty override.SourceMode over the base value.
+func TestMergeUsageConfig_SourceModeOverride(t *testing.T) {
+	t.Parallel()
+	base := UsageExtractConfig{SourceMode: "base_mode", InputTokensPath: "$.base"}
+	override := UsageExtractConfig{SourceMode: "override_mode"}
+	got := mergeUsageConfig(base, override)
+	if got.SourceMode != "override_mode" {
+		t.Fatalf("SourceMode=%q want=%q", got.SourceMode, "override_mode")
+	}
+	if got.InputTokensPath != "$.base" {
+		t.Fatalf("InputTokensPath=%q want=%q (base should be preserved)", got.InputTokensPath, "$.base")
+	}
+}
+
+// TestMergeUsageConfig_EmptySourceModeKeepsBase verifies that an empty
+// override.SourceMode does not clear the base SourceMode.
+func TestMergeUsageConfig_EmptySourceModeKeepsBase(t *testing.T) {
+	t.Parallel()
+	base := UsageExtractConfig{SourceMode: "base_mode"}
+	override := UsageExtractConfig{SourceMode: ""}
+	got := mergeUsageConfig(base, override)
+	if got.SourceMode != "base_mode" {
+		t.Fatalf("SourceMode=%q want=%q (empty override should not clear base)", got.SourceMode, "base_mode")
+	}
+}
+
+// TestResolveUsageModeRegistry_SourceModePropagatedToProvider verifies end-to-end
+// that a provider using a global usage_mode preset has SourceMode set on the
+// resolved config after registry reload.
+func TestResolveUsageModeRegistry_SourceModePropagatedToProvider(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "testprovider.conf")
+	content := `syntax "next-router/0.1";
+
+usage_mode "my_tokens" {
+  usage_extract custom;
+  usage_fact input token path="$.usage.prompt_tokens";
+  usage_fact output token path="$.usage.completion_tokens";
+}
+
+provider "testprovider" {
+  defaults {
+    upstream_config { base_url = "https://example.com"; }
+    metrics { usage_extract my_tokens; }
+  }
+}
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	reg := NewRegistry()
+	if _, err := reg.ReloadFromFile(path); err != nil {
+		t.Fatalf("ReloadFromFile: %v", err)
+	}
+	pf, ok := reg.GetProvider("testprovider")
+	if !ok {
+		t.Fatalf("provider not found")
+	}
+	cfg, ok := pf.Usage.Select(&dslmeta.Meta{API: "chat.completions"})
+	if !ok {
+		t.Fatalf("no usage config for defaults")
+	}
+	if cfg.SourceMode != "my_tokens" {
+		t.Fatalf("SourceMode=%q want=%q", cfg.SourceMode, "my_tokens")
 	}
 }

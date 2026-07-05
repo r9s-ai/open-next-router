@@ -156,7 +156,9 @@ func resolveUsageExtractConfig(path, providerName, scope string, cfg UsageExtrac
 		}
 		override := cfg
 		override.Mode = ""
-		return mergeUsageConfig(base, override), nil
+		override.SourceMode = mode
+		merged := mergeUsageConfig(base, override)
+		return merged, nil
 	}
 	return UsageExtractConfig{}, validationIssue(
 		fmt.Errorf("provider %q in %q: %s unsupported usage_extract mode %q", providerName, path, scope, cfg.Mode),
