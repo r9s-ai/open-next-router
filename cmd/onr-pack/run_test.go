@@ -292,3 +292,32 @@ func TestRun_VersionFlag(t *testing.T) {
 		t.Fatalf("stdout should contain version")
 	}
 }
+
+func TestRun_ConfigFlagIsNotSupported(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"--config", "./onr.yaml"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("run code=%d want=2 stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "flag provided but not defined: -config") {
+		t.Fatalf("stderr=%q want unsupported config flag error", stderr.String())
+	}
+}
+
+func TestRun_HelpIncludesExamples(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"help"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run code=%d stderr=%q", code, stderr.String())
+	}
+	for _, want := range []string{
+		"onr-pack --providers ./config/onr.conf --out ./dist/providers.conf",
+		"onr-pack --providers ./config/onr.conf --check-only --check required-usage",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout=%q missing %q", stdout.String(), want)
+		}
+	}
+}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -13,40 +14,46 @@ import (
 	"github.com/r9s-ai/open-next-router/pkg/config"
 )
 
+var errUnexpectedPositionalArgs = errors.New("unexpected positional arguments")
+
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "version" {
 		_, _ = fmt.Fprintln(stdout, detectVersion())
 		return 0
 	}
-
-	opts := packOptions{}
-	fs := flag.NewFlagSet("onr-pack", flag.ContinueOnError)
+	opts := defaultPackOptions()
+	fs := newPackFlagSet("onr-pack", stderr)
+	addSourceFlags(fs, &opts)
+	addOutputFlags(fs, &opts)
 	fs.SetOutput(stderr)
-	fs.StringVar(&opts.cfgPath, "config", "onr.yaml", "path to config yaml")
-	fs.StringVar(&opts.cfgPath, "c", "onr.yaml", "path to config yaml (alias of --config)")
-	fs.StringVar(&opts.providersPath, "providers", "", "provider DSL source path (dir or merged file)")
-	fs.StringVar(&opts.outPath, "out", "providers.conf", "output merged providers file")
-	fs.StringVar(&opts.outPath, "o", "providers.conf", "output merged providers file (alias of --out)")
 	fs.BoolVar(&opts.versionOnly, "version", false, "print version and exit")
 	fs.BoolVar(&opts.checkOnly, "check-only", false, "validate provider DSL only; do not write bundled output")
-	fs.Var(&opts.checks, "check", "run extra named check after DSL validation; repeat or comma-separate values (known: required-usage, all)")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	addCheckFlags(fs, &opts)
+	fs.Usage = func() {
+		printRootUsage(stderr)
+		fs.PrintDefaults()
+	}
+	if len(args) > 0 && (args[0] == "help" || args[0] == "-h" || args[0] == "--help") {
+		printRootUsage(stdout)
+		fs.SetOutput(stdout)
+		fs.PrintDefaults()
+		return 0
+	}
+	if err := parseFlagSet(fs, args); err != nil {
+		return errCodeForFlagParse(err)
 	}
 	if opts.versionOnly {
 		_, _ = fmt.Fprintln(stdout, detectVersion())
 		return 0
 	}
-	if fs.NArg() > 0 {
-		_, _ = fmt.Fprintln(stderr, "error: unexpected positional arguments")
-		return 2
+	if err := rejectPositionalArgs(fs, stderr); err != nil {
+		return errCodeForFlagParse(err)
 	}
+	return executePack(opts, stdout, stderr)
+}
 
-	sourcePath, err := resolveProviderSource(opts)
-	if err != nil {
-		_, _ = fmt.Fprintln(stderr, "error: "+err.Error())
-		return 1
-	}
+func executePack(opts packOptions, stdout, stderr io.Writer) int {
+	sourcePath := resolveProviderSource(opts)
 
 	res, err := dslconfig.ValidateProvidersPath(sourcePath)
 	if err != nil {
@@ -100,12 +107,70 @@ func run(args []string, stdout, stderr io.Writer) int {
 }
 
 type packOptions struct {
-	cfgPath       string
 	providersPath string
 	outPath       string
 	checkOnly     bool
 	versionOnly   bool
 	checks        checkList
+}
+
+func defaultPackOptions() packOptions {
+	return packOptions{
+		outPath: "providers.conf",
+	}
+}
+
+func newPackFlagSet(name string, output io.Writer) *flag.FlagSet {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.SetOutput(output)
+	return fs
+}
+
+func addSourceFlags(fs *flag.FlagSet, opts *packOptions) {
+	fs.StringVar(&opts.providersPath, "providers", opts.providersPath, "provider DSL source path (dir or merged file)")
+}
+
+func addOutputFlags(fs *flag.FlagSet, opts *packOptions) {
+	fs.StringVar(&opts.outPath, "out", opts.outPath, "output bundled providers file")
+	fs.StringVar(&opts.outPath, "o", opts.outPath, "output bundled providers file (alias of --out)")
+}
+
+func addCheckFlags(fs *flag.FlagSet, opts *packOptions) {
+	fs.Var(&opts.checks, "check", "run extra named check after DSL validation; repeat or comma-separate values (known: required-usage, all)")
+}
+
+func parseFlagSet(fs *flag.FlagSet, args []string) error {
+	return fs.Parse(args)
+}
+
+func rejectPositionalArgs(fs *flag.FlagSet, stderr io.Writer) error {
+	if fs.NArg() == 0 {
+		return nil
+	}
+	_, _ = fmt.Fprintln(stderr, "error: unexpected positional arguments")
+	return errUnexpectedPositionalArgs
+}
+
+func errCodeForFlagParse(err error) int {
+	if errors.Is(err, flag.ErrHelp) {
+		return 0
+	}
+	return 2
+}
+
+func printRootUsage(w io.Writer) {
+	_, _ = fmt.Fprint(w, `Usage:
+  onr-pack [--providers PATH] [--out FILE] [--check-only] [--check CHECK]
+  onr-pack version
+
+Examples:
+  onr-pack --providers ./config/onr.conf --out ./dist/providers.conf
+  onr-pack --providers ./config/onr.conf --check-only
+  onr-pack --providers ./config/onr.conf --check-only --check required-usage
+  onr-pack version
+
+Flags:
+`)
 }
 
 func detectVersion() string {
@@ -133,23 +198,12 @@ func detectVersion() string {
 	return "unknown"
 }
 
-func resolveProviderSource(opts packOptions) (string, error) {
+func resolveProviderSource(opts packOptions) string {
 	if v := strings.TrimSpace(opts.providersPath); v != "" {
-		return v, nil
-	}
-	cfgPath := strings.TrimSpace(opts.cfgPath)
-	if cfgPath != "" {
-		cfg, err := config.Load(cfgPath)
-		if err == nil {
-			path, _ := config.ResolveProviderDSLSource(cfg)
-			return path, nil
-		}
-		if !os.IsNotExist(err) {
-			return "", fmt.Errorf("config: %w", err)
-		}
+		return v
 	}
 	path, _ := config.ResolveProviderDSLSource(nil)
-	return path, nil
+	return path
 }
 
 func samePath(a string, b string) bool {

@@ -191,10 +191,7 @@ go run ./cmd/onr -t ./onr.yaml
 Validate the provider DSL source first, then write a self-contained merged file:
 
 ```bash
-# resolve provider source from onr.yaml and write providers.conf
-go run ./cmd/onr-pack -c ./onr.yaml -o ./dist/providers.conf
-
-# or bundle a specific DSL source directly
+# bundle a specific DSL source directly
 go run ./cmd/onr-pack --providers ./config/onr.conf --out ./dist/providers.conf
 
 # validate only; do not write output
@@ -202,6 +199,9 @@ go run ./cmd/onr-pack --providers ./config/onr.conf --check-only
 
 # validate with extra named checks
 go run ./cmd/onr-pack --providers ./config/onr.conf --check-only --check required-usage
+
+# print version
+go run ./cmd/onr-pack version
 ```
 
 The command validates the provider DSL before writing. If validation fails, no output file is generated. Use `--check-only` to validate only and print the validation result without writing a bundled file.
