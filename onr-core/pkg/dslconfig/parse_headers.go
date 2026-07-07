@@ -199,11 +199,11 @@ func parseRequestPhaseWithTransform(s *scanner, phase *PhaseHeaders, transform *
 			}
 			return parseJSONMapValueStmt(s, t)
 		},
-		"json_scale": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
+		"json_clamp": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
 			if t == nil {
 				return skipStmtOrBlock(s)
 			}
-			return parseJSONScaleStmt(s, t)
+			return parseJSONClampStmt(s, t)
 		},
 		"after_req_map": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
 			if t == nil {
@@ -545,73 +545,69 @@ func parseJSONMapValueStmt(s *scanner, t *RequestTransform) error {
 	return nil
 }
 
-func parseJSONScaleStmt(s *scanner, t *RequestTransform) error {
-	// json_scale <jsonpath> in_min=<f> in_max=<f> out_min=<f> out_max=<f>;
+func parseJSONClampStmt(s *scanner, t *RequestTransform) error {
+	// json_clamp <jsonpath> min=<f> max=<f>;
 	pathTok := s.nextNonTrivia()
 	switch pathTok.kind {
 	case tokIdent, tokString:
 		// ok
 	default:
-		return s.errAt(pathTok, "json_scale expects json path")
+		return s.errAt(pathTok, "json_clamp expects json path")
 	}
 	path := pathTok.text
 	if pathTok.kind == tokString {
 		path = unquoteString(pathTok.text)
 	}
-	r := &JSONScaleRange{}
+	r := &JSONClampRange{}
 	seen := map[string]bool{}
 	for {
 		tok := s.nextNonTrivia()
 		switch tok.kind {
 		case tokEOF:
-			return s.errAt(tok, "unexpected EOF in json_scale")
+			return s.errAt(tok, "unexpected EOF in json_clamp")
 		case tokSemicolon:
-			for _, key := range []string{"in_min", "in_max", "out_min", "out_max"} {
+			for _, key := range []string{"min", "max"} {
 				if !seen[key] {
-					return s.errAt(tok, "json_scale requires "+key)
+					return s.errAt(tok, "json_clamp requires "+key)
 				}
 			}
-			if r.InMax <= r.InMin {
-				return s.errAt(tok, "json_scale requires in_max > in_min")
+			if r.Max < r.Min {
+				return s.errAt(tok, "json_clamp requires max >= min")
 			}
 			t.JSONOps = append(t.JSONOps, JSONOp{
-				Op:         jsonOpScale,
+				Op:         jsonOpClamp,
 				Path:       strings.TrimSpace(path),
-				ScaleRange: r,
+				ClampRange: r,
 			})
 			return nil
 		case tokIdent:
 			key := strings.ToLower(strings.TrimSpace(tok.text))
 			var dst *float64
 			switch key {
-			case "in_min":
-				dst = &r.InMin
-			case "in_max":
-				dst = &r.InMax
-			case "out_min":
-				dst = &r.OutMin
-			case "out_max":
-				dst = &r.OutMax
+			case "min":
+				dst = &r.Min
+			case "max":
+				dst = &r.Max
 			default:
-				return s.errAt(tok, "unsupported json_scale option "+key)
+				return s.errAt(tok, "unsupported json_clamp option "+key)
 			}
 			if err := consumeEquals(s); err != nil {
 				return err
 			}
-			val, err := consumeJSONScaleNumber(s, key)
+			val, err := consumeNumberOption(s, key)
 			if err != nil {
 				return err
 			}
 			*dst = val
 			seen[key] = true
 		default:
-			return s.errAt(tok, "expected json_scale option or ';'")
+			return s.errAt(tok, "expected json_clamp option or ';'")
 		}
 	}
 }
 
-// consumeJSONScaleNumber reads one decimal number value (optionally quoted).
-func consumeJSONScaleNumber(s *scanner, key string) (float64, error) {
+// consumeNumberOption reads one decimal number value (optionally quoted).
+func consumeNumberOption(s *scanner, key string) (float64, error) {
 	tok := s.nextNonTrivia()
 	f, err := parseNumberValueTokens(s, tok)
 	if err != nil {

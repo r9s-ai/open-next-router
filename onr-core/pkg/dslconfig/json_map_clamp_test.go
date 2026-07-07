@@ -8,14 +8,14 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
 )
 
-func TestParseJSONMapValueAndScale(t *testing.T) {
+func TestParseJSONMapValueAndClamp(t *testing.T) {
 	conf := `syntax "next-router/0.1";
 provider "demo" {
   match api = "audio.speech" {
     request {
       json_map_value "$.voice" "alloy" "male-qn-qingse";
       json_map_value "$.voice" "nova" "female-shaonv";
-      json_scale "$.speed" in_min=0.25 in_max=4.0 out_min=0.5 out_max=2.0;
+      json_clamp "$.speed" min=0.5 max=2.0;
     }
   }
 }`
@@ -33,31 +33,31 @@ provider "demo" {
 	if ops[0].Op != jsonOpMapValue || ops[0].Path != "$.voice" || ops[0].MatchValue != "alloy" || ops[0].ValueExpr != `"male-qn-qingse"` {
 		t.Fatalf("unexpected map value op: %#v", ops[0])
 	}
-	scale := ops[2]
-	if scale.Op != jsonOpScale || scale.ScaleRange == nil {
-		t.Fatalf("unexpected scale op: %#v", scale)
+	clamp := ops[2]
+	if clamp.Op != jsonOpClamp || clamp.ClampRange == nil {
+		t.Fatalf("unexpected clamp op: %#v", clamp)
 	}
-	if scale.ScaleRange.InMin != 0.25 || scale.ScaleRange.InMax != 4.0 || scale.ScaleRange.OutMin != 0.5 || scale.ScaleRange.OutMax != 2.0 {
-		t.Fatalf("unexpected scale range: %#v", scale.ScaleRange)
+	if clamp.ClampRange.Min != 0.5 || clamp.ClampRange.Max != 2.0 {
+		t.Fatalf("unexpected clamp range: %#v", clamp.ClampRange)
 	}
 }
 
-func TestParseJSONScaleRejectsMissingOption(t *testing.T) {
+func TestParseJSONClampRejectsMissingOption(t *testing.T) {
 	conf := `syntax "next-router/0.1";
 provider "demo" {
   match api = "audio.speech" {
     request {
-      json_scale "$.speed" in_min=0.25 in_max=4.0 out_min=0.5;
+      json_clamp "$.speed" min=0.5;
     }
   }
 }`
 	_, _, _, _, _, _, _, _, _, err := parseProviderConfig("demo.conf", conf)
 	if err == nil {
-		t.Fatalf("expected error for missing out_max")
+		t.Fatalf("expected error for missing max")
 	}
 }
 
-func TestApplyJSONOps_MapValueAndScale(t *testing.T) {
+func TestApplyJSONOps_MapValueAndClamp(t *testing.T) {
 	t.Parallel()
 	m := &dslmeta.Meta{API: "audio.speech", OriginModelName: "tts-1"}
 
@@ -83,23 +83,30 @@ func TestApplyJSONOps_MapValueAndScale(t *testing.T) {
 			want: "native-voice-300",
 		},
 		{
-			name: "scale_linear_mid",
+			name: "clamp_in_range_passthrough",
 			in:   map[string]any{"speed": 1.0},
-			ops:  []JSONOp{{Op: jsonOpScale, Path: "$.speed", ScaleRange: &JSONScaleRange{InMin: 0.25, InMax: 4.0, OutMin: 0.5, OutMax: 2.0}}},
+			ops:  []JSONOp{{Op: jsonOpClamp, Path: "$.speed", ClampRange: &JSONClampRange{Min: 0.5, Max: 2.0}}},
 			key:  "speed",
-			want: 0.5 + (1.0-0.25)*1.5/3.75,
+			want: 1.0,
 		},
 		{
-			name: "scale_clamps_above",
-			in:   map[string]any{"speed": 9.5},
-			ops:  []JSONOp{{Op: jsonOpScale, Path: "$.speed", ScaleRange: &JSONScaleRange{InMin: 0.25, InMax: 4.0, OutMin: 0.5, OutMax: 2.0}}},
+			name: "clamp_below_min",
+			in:   map[string]any{"speed": 0.25},
+			ops:  []JSONOp{{Op: jsonOpClamp, Path: "$.speed", ClampRange: &JSONClampRange{Min: 0.5, Max: 2.0}}},
+			key:  "speed",
+			want: 0.5,
+		},
+		{
+			name: "clamp_above_max",
+			in:   map[string]any{"speed": 4.0},
+			ops:  []JSONOp{{Op: jsonOpClamp, Path: "$.speed", ClampRange: &JSONClampRange{Min: 0.5, Max: 2.0}}},
 			key:  "speed",
 			want: 2.0,
 		},
 		{
-			name: "scale_missing_field_noop",
+			name: "clamp_missing_field_noop",
 			in:   map[string]any{"other": 1},
-			ops:  []JSONOp{{Op: jsonOpScale, Path: "$.speed", ScaleRange: &JSONScaleRange{InMin: 0.25, InMax: 4.0, OutMin: 0.5, OutMax: 2.0}}},
+			ops:  []JSONOp{{Op: jsonOpClamp, Path: "$.speed", ClampRange: &JSONClampRange{Min: 0.5, Max: 2.0}}},
 			key:  "speed",
 			want: nil,
 		},
@@ -145,7 +152,7 @@ provider "demo" {
   match api = "audio.speech" {
     request {
       json_map_value "$.voice" "alloy" "male-qn-qingse";
-      json_scale "$.speed" in_min=0.25 in_max=4.0 out_min=0.5 out_max=2.0;
+      json_clamp "$.speed" min=0.5 max=2.0;
       json_set_if_absent "$.voice_setting.speed" 1.0;
     }
     upstream { set_path "/v1/t2a_v2"; }

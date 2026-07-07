@@ -22,5 +22,5 @@ const (
 	jsonOpFilterValues  = "json_filter_values"
 	jsonOpDelWithCond   = "json_del_with_condition"
 	jsonOpMapValue      = "json_map_value"
-	jsonOpScale         = "json_scale"
+	jsonOpClamp         = "json_clamp"
 )

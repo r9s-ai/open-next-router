@@ -118,8 +118,8 @@ func ApplyJSONOps(meta *dslmeta.Meta, in map[string]any, ops []JSONOp) (map[stri
 				return nil, err
 			}
 			changed = opChanged
-		case jsonOpScale:
-			opChanged, err := jsonScale(obj, op.Path, op.ScaleRange)
+		case jsonOpClamp:
+			opChanged, err := jsonClamp(obj, op.Path, op.ClampRange)
 			if err != nil {
 				return nil, err
 			}
@@ -259,14 +259,14 @@ func jsonMapValue(root map[string]any, path string, matchValue string, val any) 
 	return true, nil
 }
 
-// jsonScale linearly maps the numeric value at path from [InMin, InMax] onto
-// [OutMin, OutMax] with clamping. Missing paths and non-numeric values are left
-// unchanged so optional fields pass through.
-func jsonScale(root map[string]any, path string, r *JSONScaleRange) (bool, error) {
+// jsonClamp clamps the numeric value at path to [Min, Max]. Missing paths and
+// non-numeric values are left unchanged so optional fields pass through; values
+// already inside the range are returned unchanged.
+func jsonClamp(root map[string]any, path string, r *JSONClampRange) (bool, error) {
 	if r == nil {
-		// The parser always attaches ScaleRange to json_scale ops; a nil range here
+		// The parser always attaches ClampRange to json_clamp ops; a nil range here
 		// means the op was constructed programmatically in an invalid way.
-		return false, fmt.Errorf("json_scale %s missing scale range", path)
+		return false, fmt.Errorf("json_clamp %s missing clamp range", path)
 	}
 	parent, key, ok, err := jsonParentAndKey(root, path)
 	if err != nil || !ok {
@@ -280,13 +280,13 @@ func jsonScale(root map[string]any, path string, r *JSONScaleRange) (bool, error
 	if !ok {
 		return false, nil
 	}
-	if v < r.InMin {
-		v = r.InMin
+	out := v
+	if out < r.Min {
+		out = r.Min
 	}
-	if v > r.InMax {
-		v = r.InMax
+	if out > r.Max {
+		out = r.Max
 	}
-	out := r.OutMin + (v-r.InMin)*(r.OutMax-r.OutMin)/(r.InMax-r.InMin)
 	if reflect.DeepEqual(cur, out) {
 		return false, nil
 	}

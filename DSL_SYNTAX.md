@@ -386,17 +386,17 @@ request {
 - `json_del_with_condition` deletes an object, or matching objects from an array, when the object's field matches an allowed value or wildcard pattern.
 - `after_req_map { ... }` runs nested JSON operations after `req_map`. If no `req_map` is configured, it runs after the normal request JSON operations.
 
-#### json_map_value / json_scale (value mapping and numeric scaling, multiple allowed)
+#### json_map_value / json_clamp (value mapping and numeric clamping, multiple allowed)
 
 ```conf
 request {
   json_map_value "$.voice" "alloy" "male-qn-qingse";
-  json_scale "$.speed" in_min=0.25 in_max=4.0 out_min=0.5 out_max=2.0;
+  json_clamp "$.speed" min=0.5 max=2.0;
 }
 ```
 
 - `json_map_value <jsonpath> "<from>" <to-expr>;`: replaces the string value at path with the mapped result only when it equals `<from>`. Missing paths, non-string values, and unmatched values pass through unchanged (same fallthrough semantics as `model_map`). Repeat the directive for multiple mappings.
-- `json_scale <jsonpath> in_min=<f> in_max=<f> out_min=<f> out_max=<f>;`: clamps the numeric value at path to `[in_min, in_max]` and maps it linearly onto `[out_min, out_max]`. Missing/non-numeric fields are left unchanged. All four options are required and `in_max > in_min`.
+- `json_clamp <jsonpath> min=<f> max=<f>;`: clamps the numeric value at path to `[min, max]` (below `min` becomes `min`, above `max` becomes `max`, values inside the range are unchanged). Missing/non-numeric fields are left unchanged. Both options are required and `max >= min`.
 - Numeric value expressions now support decimal float literals (e.g. `1.0`, `0.5`), emitted as JSON numbers.
 
 #### req_map

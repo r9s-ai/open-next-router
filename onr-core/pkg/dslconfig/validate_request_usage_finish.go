@@ -126,12 +126,12 @@ func validateRequestJSONOps(path, providerName, scope string, ops []JSONOp) erro
 			if err := validateJSONValueExpr(op.ValueExpr); err != nil {
 				return fmt.Errorf("provider %q in %q: %s invalid value expression: %w", providerName, path, opScope, err)
 			}
-		case jsonOpScale:
+		case jsonOpClamp:
 			if _, err := parseObjectPath(op.Path); err != nil {
 				return fmt.Errorf("provider %q in %q: %s invalid json path: %w", providerName, path, opScope, err)
 			}
-			if op.ScaleRange == nil || op.ScaleRange.InMax <= op.ScaleRange.InMin {
-				return fmt.Errorf("provider %q in %q: %s json_scale requires in_max > in_min", providerName, path, opScope)
+			if op.ClampRange == nil || op.ClampRange.Max < op.ClampRange.Min {
+				return fmt.Errorf("provider %q in %q: %s json_clamp requires max >= min", providerName, path, opScope)
 			}
 		default:
 			return fmt.Errorf("provider %q in %q: %s unsupported json op %q", providerName, path, opScope, op.Op)

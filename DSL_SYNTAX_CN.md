@@ -401,7 +401,7 @@ request {
 - `json_del_with_condition`：当对象字段匹配允许值或通配符时，删除该对象或数组中的匹配对象
 - `after_req_map { ... }`：在 `req_map` 之后执行内部 JSON 操作；如果没有配置 `req_map`，则在普通请求 JSON 操作之后执行
 
-#### json_map_value / json_scale（字段值映射与数值缩放，可多条）
+#### json_map_value / json_clamp（字段值映射与数值钳制，可多条）
 
 ```conf
 request {
@@ -409,15 +409,15 @@ request {
   json_map_value "$.voice" "alloy" "male-qn-qingse";
   json_map_value "$.voice" "nova" "female-shaonv";
 
-  # 数值线性缩放：把 OpenAI speed(0.25–4.0) 线性映射到上游区间(0.5–2.0)，输入先 clamp 到 [in_min, in_max]
-  json_scale "$.speed" in_min=0.25 in_max=4.0 out_min=0.5 out_max=2.0;
+  # 数值钳制：把 speed 夹到上游允许区间 [0.5, 2.0]，区间内原值透传
+  json_clamp "$.speed" min=0.5 max=2.0;
 }
 ```
 
 说明：
 
 - `json_map_value <jsonpath> "<from>" <to-expr>;`：仅当路径上的值是**字符串**且等于 `<from>` 时替换为 `<to-expr>` 的求值结果；路径缺失、非字符串或未命中时保持原值。多条映射写多条指令。
-- `json_scale <jsonpath> in_min=<f> in_max=<f> out_min=<f> out_max=<f>;`：把路径上的数值先 clamp 到 `[in_min, in_max]`，再线性映射到 `[out_min, out_max]`；路径缺失或非数值时为 no-op。要求 `in_max > in_min`，四个选项均必填。
+- `json_clamp <jsonpath> min=<f> max=<f>;`：把路径上的数值钳制到 `[min, max]`（小于 `min` 取 `min`，大于 `max` 取 `max`，区间内原值不变）；路径缺失或非数值时为 no-op。`min`/`max` 均必填且要求 `max >= min`。
 - 值表达式的数字字面量支持小数（如 `1.0`、`0.5`），`json_set` / `json_set_if_absent` 等写入时会以 JSON number 输出。
 
 #### req_map
