@@ -30,9 +30,9 @@ type UsageFact struct {
 	Attributes map[string]string `json:"attributes,omitempty"`
 	Source     string            `json:"source,omitempty"`
 
-	Fallback      bool   `json:"fallback,omitempty"`
-	Event         string `json:"event,omitempty"`
-	EventOptional bool   `json:"event_optional,omitempty"`
+	Fallback      bool    `json:"fallback,omitempty"`
+	Event         string  `json:"event,omitempty"`
+	EventOptional bool    `json:"event_optional,omitempty"`
 	Path          string  `json:"path,omitempty"`
 	CountPath     string  `json:"count_path,omitempty"`
 	SumPath       string  `json:"sum_path,omitempty"`

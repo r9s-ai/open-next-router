@@ -11,6 +11,21 @@ func parseResponsePhase(s *scanner, resp *ResponseDirective) error {
 	if lb.kind != tokLBrace {
 		return s.errAt(lb, "expected '{' after response")
 	}
+	handlers := map[string]func(*scanner, *ResponseDirective) error{
+		"resp_passthrough":   parseRespPassthrough,
+		"resp_map":           parseRespMap,
+		"sse_parse":          parseSSEParse,
+		"sse_collect":        parseSSECollect,
+		jsonOpSet:            func(s *scanner, r *ResponseDirective) error { return parseRespJSONSetStmt(s, r, jsonOpSet) },
+		jsonOpReplace:        func(s *scanner, r *ResponseDirective) error { return parseRespJSONSetStmt(s, r, jsonOpReplace) },
+		jsonOpSetIfAbsent:    func(s *scanner, r *ResponseDirective) error { return parseRespJSONSetStmt(s, r, jsonOpSetIfAbsent) },
+		jsonOpDel:            parseRespJSONDelStmt,
+		jsonOpRename:         parseRespJSONRenameStmt,
+		"sse_json_del_if":    parseSSEJSONDelIfStmt,
+		"resp_body_extract":  parseRespBodyExtractStmt,
+		"resp_content_type":  parseRespContentTypeStmt,
+		"sse_binary_extract": parseSSEBinaryExtractStmt,
+	}
 	for {
 		tok := s.nextNonTrivia()
 		switch tok.kind {
@@ -19,63 +34,14 @@ func parseResponsePhase(s *scanner, resp *ResponseDirective) error {
 		case tokRBrace:
 			return nil
 		case tokIdent:
-			switch tok.text {
-			case "resp_passthrough":
-				if err := parseRespPassthrough(s, resp); err != nil {
+			if h, ok := handlers[tok.text]; ok {
+				if err := h(s, resp); err != nil {
 					return err
 				}
-			case "resp_map":
-				if err := parseRespMap(s, resp); err != nil {
-					return err
-				}
-			case "sse_parse":
-				if err := parseSSEParse(s, resp); err != nil {
-					return err
-				}
-			case "sse_collect":
-				if err := parseSSECollect(s, resp); err != nil {
-					return err
-				}
-			case jsonOpSet:
-				if err := parseRespJSONSetStmt(s, resp, jsonOpSet); err != nil {
-					return err
-				}
-			case jsonOpReplace:
-				if err := parseRespJSONSetStmt(s, resp, jsonOpReplace); err != nil {
-					return err
-				}
-			case jsonOpSetIfAbsent:
-				if err := parseRespJSONSetStmt(s, resp, jsonOpSetIfAbsent); err != nil {
-					return err
-				}
-			case jsonOpDel:
-				if err := parseRespJSONDelStmt(s, resp); err != nil {
-					return err
-				}
-			case jsonOpRename:
-				if err := parseRespJSONRenameStmt(s, resp); err != nil {
-					return err
-				}
-			case "sse_json_del_if":
-				if err := parseSSEJSONDelIfStmt(s, resp); err != nil {
-					return err
-				}
-			case "resp_body_extract":
-				if err := parseRespBodyExtractStmt(s, resp); err != nil {
-					return err
-				}
-			case "resp_content_type":
-				if err := parseRespContentTypeStmt(s, resp); err != nil {
-					return err
-				}
-			case "sse_binary_extract":
-				if err := parseSSEBinaryExtractStmt(s, resp); err != nil {
-					return err
-				}
-			default:
-				if err := skipStmtOrBlock(s); err != nil {
-					return err
-				}
+				continue
+			}
+			if err := skipStmtOrBlock(s); err != nil {
+				return err
 			}
 		default:
 			// ignore

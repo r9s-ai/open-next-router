@@ -25,111 +25,63 @@ func ApplyJSONOps(meta *dslmeta.Meta, in map[string]any, ops []JSONOp) (map[stri
 		if shouldSkipJSONOp("", op, counts, i) {
 			continue
 		}
-		changed := false
-		switch op.Op {
-		case jsonOpSet:
-			val := evalJSONValueExpr(meta, op.ValueExpr)
-			opChanged, err := jsonSet(obj, op.Path, val)
-			if err != nil {
-				return nil, err
-			}
-			changed = opChanged
-		case jsonOpReplace:
-			val := evalJSONValueExpr(meta, op.ValueExpr)
-			opChanged, err := jsonReplace(obj, op.Path, val)
-			if err != nil {
-				return nil, err
-			}
-			changed = opChanged
-		case jsonOpSetIfAbsent:
-			exists, err := jsonPathExists(obj, op.Path)
-			if err != nil {
-				return nil, err
-			}
-			if exists {
-				continue
-			}
-			val := evalJSONValueExpr(meta, op.ValueExpr)
-			opChanged, err := jsonSet(obj, op.Path, val)
-			if err != nil {
-				return nil, err
-			}
-			changed = opChanged
-		case jsonOpDel:
-			opChanged, err := jsonDel(obj, op.Path)
-			if err != nil {
-				return nil, err
-			}
-			changed = opChanged
-		case jsonOpDelIfMissing:
-			exists, err := jsonPathExists(obj, op.FromPath)
-			if err != nil {
-				return nil, err
-			}
-			if exists {
-				continue
-			}
-			opChanged, err := jsonDel(obj, op.Path)
-			if err != nil {
-				return nil, err
-			}
-			changed = opChanged
-		case jsonOpRename:
-			opChanged, err := jsonRename(obj, op.FromPath, op.ToPath)
-			if err != nil {
-				return nil, err
-			}
-			changed = opChanged
-		case jsonOpWrapInputText:
-			opChanged, err := jsonWrapInputText(obj, op.Path)
-			if err != nil {
-				return nil, err
-			}
-			changed = opChanged
-		case jsonOpSetHeaderVals:
-			// Filtering is intentionally handled by a following json_filter_values op.
-			// The parser rejects extra value patterns on json_set_header_values so
-			// config authors do not assume this op filters values by itself.
-			vals := headerValuesForJSON(meta, op.HeaderName, op.Separator)
-			if len(vals) == 0 {
-				continue
-			}
-			opChanged, err := jsonSet(obj, op.Path, vals)
-			if err != nil {
-				return nil, err
-			}
-			changed = opChanged
-		case jsonOpFilterValues:
-			opChanged, err := jsonFilterValues(obj, op.Path, op.Patterns)
-			if err != nil {
-				return nil, err
-			}
-			changed = opChanged
-		case jsonOpDelWithCond:
-			opChanged, err := jsonDelWithCondition(obj, op.Path, op.FieldName, op.Patterns)
-			if err != nil {
-				return nil, err
-			}
-			changed = opChanged
-		case jsonOpMapValue:
-			val := evalJSONValueExpr(meta, op.ValueExpr)
-			opChanged, err := jsonMapValue(obj, op.Path, op.MatchValue, val)
-			if err != nil {
-				return nil, err
-			}
-			changed = opChanged
-		case jsonOpClamp:
-			opChanged, err := jsonClamp(obj, op.Path, op.ClampRange)
-			if err != nil {
-				return nil, err
-			}
-			changed = opChanged
-		default:
-			return nil, fmt.Errorf("unsupported json op %q", op.Op)
+		changed, err := applyJSONOp(meta, obj, op)
+		if err != nil {
+			return nil, err
 		}
 		recordJSONOpChange(changed, op, counts, i)
 	}
 	return obj, nil
+}
+
+// applyJSONOp executes one JSON op against obj and reports whether it changed
+// the object. Ops that intentionally do nothing (absent/missing/empty guards)
+// return (false, nil), matching the previous inline `continue` behavior since
+// recordJSONOpChange ignores unchanged ops.
+func applyJSONOp(meta *dslmeta.Meta, obj map[string]any, op JSONOp) (bool, error) {
+	switch op.Op {
+	case jsonOpSet:
+		return jsonSet(obj, op.Path, evalJSONValueExpr(meta, op.ValueExpr))
+	case jsonOpReplace:
+		return jsonReplace(obj, op.Path, evalJSONValueExpr(meta, op.ValueExpr))
+	case jsonOpSetIfAbsent:
+		exists, err := jsonPathExists(obj, op.Path)
+		if err != nil || exists {
+			return false, err
+		}
+		return jsonSet(obj, op.Path, evalJSONValueExpr(meta, op.ValueExpr))
+	case jsonOpDel:
+		return jsonDel(obj, op.Path)
+	case jsonOpDelIfMissing:
+		exists, err := jsonPathExists(obj, op.FromPath)
+		if err != nil || exists {
+			return false, err
+		}
+		return jsonDel(obj, op.Path)
+	case jsonOpRename:
+		return jsonRename(obj, op.FromPath, op.ToPath)
+	case jsonOpWrapInputText:
+		return jsonWrapInputText(obj, op.Path)
+	case jsonOpSetHeaderVals:
+		// Filtering is intentionally handled by a following json_filter_values op.
+		// The parser rejects extra value patterns on json_set_header_values so
+		// config authors do not assume this op filters values by itself.
+		vals := headerValuesForJSON(meta, op.HeaderName, op.Separator)
+		if len(vals) == 0 {
+			return false, nil
+		}
+		return jsonSet(obj, op.Path, vals)
+	case jsonOpFilterValues:
+		return jsonFilterValues(obj, op.Path, op.Patterns)
+	case jsonOpDelWithCond:
+		return jsonDelWithCondition(obj, op.Path, op.FieldName, op.Patterns)
+	case jsonOpMapValue:
+		return jsonMapValue(obj, op.Path, op.MatchValue, evalJSONValueExpr(meta, op.ValueExpr))
+	case jsonOpClamp:
+		return jsonClamp(obj, op.Path, op.ClampRange)
+	default:
+		return false, fmt.Errorf("unsupported json op %q", op.Op)
+	}
 }
 
 func shouldSkipJSONOp(event string, op JSONOp, counts []int, idx int) bool {
