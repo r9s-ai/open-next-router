@@ -395,7 +395,14 @@ request {
 }
 ```
 
-- `json_map_value <jsonpath> "<from>" <to-expr>;`: replaces the string value at path with the mapped result only when it equals `<from>`. Missing paths, non-string values, and unmatched values pass through unchanged (same fallthrough semantics as `model_map`). Repeat the directive for multiple mappings.
+- `json_map_value <jsonpath> "<from>" <to-expr>;`: replaces the string value at path with the mapped result only when it equals `<from>`. Missing paths, non-string values, and unmatched values pass through unchanged (same fallthrough semantics as `model_map`).
+- List many mappings for one path in a single **block form**, equivalent to expanding into multiple `json_map_value` directives:
+  ```conf
+  json_map_value "$.voice" {
+    "alloy" "male-qn-qingse";
+    "echo"  "Deep_Voice_Man";
+  }
+  ```
 - `json_clamp <jsonpath> min=<f> max=<f>;`: clamps the numeric value at path to `[min, max]` (below `min` becomes `min`, above `max` becomes `max`, values inside the range are unchanged). Missing/non-numeric fields are left unchanged. Both options are required and `max >= min`.
 - Numeric value expressions now support decimal float literals (e.g. `1.0`, `0.5`), emitted as JSON numbers.
 

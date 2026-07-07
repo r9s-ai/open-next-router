@@ -416,7 +416,14 @@ request {
 
 说明：
 
-- `json_map_value <jsonpath> "<from>" <to-expr>;`：仅当路径上的值是**字符串**且等于 `<from>` 时替换为 `<to-expr>` 的求值结果；路径缺失、非字符串或未命中时保持原值。多条映射写多条指令。
+- `json_map_value <jsonpath> "<from>" <to-expr>;`：仅当路径上的值是**字符串**且等于 `<from>` 时替换为 `<to-expr>` 的求值结果；路径缺失、非字符串或未命中时保持原值。
+- 同一路径的多条映射可用**块写法**一次列出，等价于展开成多条 `json_map_value`：
+  ```conf
+  json_map_value "$.voice" {
+    "alloy" "male-qn-qingse";
+    "echo"  "Deep_Voice_Man";
+  }
+  ```
 - `json_clamp <jsonpath> min=<f> max=<f>;`：把路径上的数值钳制到 `[min, max]`（小于 `min` 取 `min`，大于 `max` 取 `max`，区间内原值不变）；路径缺失或非数值时为 no-op。`min`/`max` 均必填且要求 `max >= min`。
 - 值表达式的数字字面量支持小数（如 `1.0`、`0.5`），`json_set` / `json_set_if_absent` 等写入时会以 JSON number 输出。
 

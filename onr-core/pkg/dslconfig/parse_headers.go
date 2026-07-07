@@ -512,7 +512,8 @@ func parseJSONWrapInputTextStmt(s *scanner, t *RequestTransform) error {
 }
 
 func parseJSONMapValueStmt(s *scanner, t *RequestTransform) error {
-	// json_map_value <jsonpath> <from-string> <to-expr>;
+	// Single:  json_map_value <jsonpath> <from-string> <to-expr>;
+	// Block:   json_map_value <jsonpath> { <from-string> <to-expr>; ... }
 	pathTok := s.nextNonTrivia()
 	switch pathTok.kind {
 	case tokIdent, tokString:
@@ -524,17 +525,21 @@ func parseJSONMapValueStmt(s *scanner, t *RequestTransform) error {
 	if pathTok.kind == tokString {
 		path = unquoteString(pathTok.text)
 	}
-	fromTok := s.nextNonTrivia()
-	if fromTok.kind != tokString {
-		return s.errAt(fromTok, "json_map_value expects from value string literal")
+	next := s.nextNonTrivia()
+	if next.kind == tokLBrace {
+		return parseJSONMapValueBlock(s, t, strings.TrimSpace(path))
 	}
-	from := unquoteString(fromTok.text)
+	// Single-mapping form: `next` is the from-value token.
+	if next.kind != tokString {
+		return s.errAt(next, "json_map_value expects from value string literal or '{'")
+	}
+	from := unquoteString(next.text)
 	valueExpr, err := consumeExprUntilSemicolon(s)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(valueExpr) == "" {
-		return s.errAt(fromTok, "json_map_value expects to value expression")
+		return s.errAt(next, "json_map_value expects to value expression")
 	}
 	t.JSONOps = append(t.JSONOps, JSONOp{
 		Op:         jsonOpMapValue,
@@ -543,6 +548,43 @@ func parseJSONMapValueStmt(s *scanner, t *RequestTransform) error {
 		ValueExpr:  strings.TrimSpace(valueExpr),
 	})
 	return nil
+}
+
+// parseJSONMapValueBlock parses the block form after the opening '{'. Each entry
+// `"<from>" <to-expr>;` expands into a standalone json_map_value op on the same
+// path, so runtime/validation treat block and single forms identically.
+func parseJSONMapValueBlock(s *scanner, t *RequestTransform, path string) error {
+	count := 0
+	for {
+		tok := s.nextNonTrivia()
+		switch tok.kind {
+		case tokEOF:
+			return s.errAt(tok, "unexpected EOF in json_map_value block")
+		case tokRBrace:
+			if count == 0 {
+				return s.errAt(tok, "json_map_value block requires at least one mapping")
+			}
+			return nil
+		case tokString:
+			from := unquoteString(tok.text)
+			valueExpr, err := consumeExprUntilSemicolon(s)
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(valueExpr) == "" {
+				return s.errAt(tok, "json_map_value block entry expects to value expression")
+			}
+			t.JSONOps = append(t.JSONOps, JSONOp{
+				Op:         jsonOpMapValue,
+				Path:       path,
+				MatchValue: from,
+				ValueExpr:  strings.TrimSpace(valueExpr),
+			})
+			count++
+		default:
+			return s.errAt(tok, "json_map_value block expects from value string literal or '}'")
+		}
+	}
 }
 
 func parseJSONClampStmt(s *scanner, t *RequestTransform) error {

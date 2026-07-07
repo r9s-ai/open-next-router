@@ -42,6 +42,97 @@ provider "demo" {
 	}
 }
 
+func TestParseJSONMapValueBlockExpandsToOps(t *testing.T) {
+	conf := `syntax "next-router/0.1";
+provider "demo" {
+  match api = "audio.speech" {
+    request {
+      json_map_value "$.voice" {
+        "alloy" "male-qn-qingse";
+        "echo"  "Deep_Voice_Man";
+        "nova"  "Lively_Girl";
+      }
+      json_rename "$.voice" "$.voice_setting.voice_id";
+    }
+  }
+}`
+	_, _, req, _, _, _, _, _, _, err := parseProviderConfig("demo.conf", conf)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	ops := req.Matches[0].Transform.JSONOps
+	// 3 expanded map ops + 1 rename
+	if len(ops) != 4 {
+		t.Fatalf("expected 4 ops, got %d: %#v", len(ops), ops)
+	}
+	want := []struct{ from, to string }{
+		{"alloy", `"male-qn-qingse"`},
+		{"echo", `"Deep_Voice_Man"`},
+		{"nova", `"Lively_Girl"`},
+	}
+	for i, w := range want {
+		op := ops[i]
+		if op.Op != jsonOpMapValue || op.Path != "$.voice" || op.MatchValue != w.from || op.ValueExpr != w.to {
+			t.Fatalf("op[%d] unexpected: %#v", i, op)
+		}
+	}
+	if ops[3].Op != jsonOpRename {
+		t.Fatalf("expected rename op last, got %#v", ops[3])
+	}
+}
+
+func TestParseJSONMapValueBlockRejectsEmpty(t *testing.T) {
+	conf := `syntax "next-router/0.1";
+provider "demo" {
+  match api = "audio.speech" {
+    request {
+      json_map_value "$.voice" {
+      }
+    }
+  }
+}`
+	_, _, _, _, _, _, _, _, _, err := parseProviderConfig("demo.conf", conf)
+	if err == nil {
+		t.Fatalf("expected error for empty json_map_value block")
+	}
+}
+
+// Block and single forms must produce identical ops.
+func TestParseJSONMapValueBlockEqualsSingle(t *testing.T) {
+	blockConf := `syntax "next-router/0.1";
+provider "demo" {
+  match api = "audio.speech" {
+    request { json_map_value "$.voice" { "alloy" "male-qn-qingse"; "nova" "Lively_Girl"; } }
+  }
+}`
+	singleConf := `syntax "next-router/0.1";
+provider "demo" {
+  match api = "audio.speech" {
+    request {
+      json_map_value "$.voice" "alloy" "male-qn-qingse";
+      json_map_value "$.voice" "nova" "Lively_Girl";
+    }
+  }
+}`
+	_, _, rb, _, _, _, _, _, _, err := parseProviderConfig("b.conf", blockConf)
+	if err != nil {
+		t.Fatalf("parse block: %v", err)
+	}
+	_, _, rs, _, _, _, _, _, _, err := parseProviderConfig("s.conf", singleConf)
+	if err != nil {
+		t.Fatalf("parse single: %v", err)
+	}
+	ob, os := rb.Matches[0].Transform.JSONOps, rs.Matches[0].Transform.JSONOps
+	if len(ob) != len(os) {
+		t.Fatalf("op count differs: block=%d single=%d", len(ob), len(os))
+	}
+	for i := range ob {
+		if ob[i].Op != os[i].Op || ob[i].Path != os[i].Path || ob[i].MatchValue != os[i].MatchValue || ob[i].ValueExpr != os[i].ValueExpr {
+			t.Fatalf("op[%d] differs: block=%#v single=%#v", i, ob[i], os[i])
+		}
+	}
+}
+
 func TestParseJSONClampRejectsMissingOption(t *testing.T) {
 	conf := `syntax "next-router/0.1";
 provider "demo" {
