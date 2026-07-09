@@ -17,7 +17,11 @@ const (
 	claudeStopReasonMax      = "max_tokens"
 )
 
-// MapOpenAIChatCompletionsToClaudeMessagesRequestObject maps OpenAI chat request object to Claude messages request object.
+// MapOpenAIChatCompletionsToClaudeMessagesRequestObject is unused in production.
+// The DSL openai_chat_to_anthropic_messages goes through
+// requesttransform.mapOpenAIChatCompletionsToClaudeRequest instead.
+// TODO: delete this function and its tests once confirmed no external callers exist.
+/*
 func MapOpenAIChatCompletionsToClaudeMessagesRequestObject(root apitypes.JSONObject) (apitypes.JSONObject, error) {
 	model := strings.TrimSpace(jsonutil.CoerceString(root["model"]))
 	if model == "" {
@@ -71,9 +75,21 @@ func MapOpenAIChatCompletionsToClaudeMessagesRequestObject(root apitypes.JSONObj
 	if tools, ok := mapOpenAIToolsToClaude(root["tools"]); ok {
 		out["tools"] = tools
 	}
+	outputConfig, err := mapResponseFormatToOutputConfig(root["response_format"])
+	if err != nil {
+		return nil, err
+	}
+	if outputConfig != nil {
+		out["output_config"] = outputConfig
+	}
 	return out, nil
 }
+*/
 
+// openAIToolMessageToClaudeUser is only called by the commented-out
+// MapOpenAIChatCompletionsToClaudeMessagesRequestObject.
+// TODO: delete once that function is deleted.
+/*
 func openAIToolMessageToClaudeUser(msg map[string]any) apitypes.JSONObject {
 	callID := strings.TrimSpace(jsonutil.CoerceString(msg["tool_call_id"]))
 	return apitypes.JSONObject{
@@ -87,7 +103,12 @@ func openAIToolMessageToClaudeUser(msg map[string]any) apitypes.JSONObject {
 		},
 	}
 }
+*/
 
+// openAIMessageToClaudeMessage is only called by the commented-out
+// MapOpenAIChatCompletionsToClaudeMessagesRequestObject.
+// TODO: delete once that function is deleted.
+/*
 func openAIMessageToClaudeMessage(msg map[string]any) apitypes.JSONObject {
 	role := strings.TrimSpace(jsonutil.CoerceString(msg["role"]))
 	if role == "" {
@@ -133,7 +154,12 @@ func openAIMessageToClaudeMessage(msg map[string]any) apitypes.JSONObject {
 		"content": content,
 	}
 }
+*/
 
+// mapOpenAIToolsToClaude is only called by the commented-out
+// MapOpenAIChatCompletionsToClaudeMessagesRequestObject.
+// TODO: delete once that function is deleted.
+/*
 func mapOpenAIToolsToClaude(rawTools any) ([]any, bool) {
 	tools, _ := rawTools.([]any)
 	if len(tools) == 0 {
@@ -165,9 +191,12 @@ func mapOpenAIToolsToClaude(rawTools any) ([]any, bool) {
 	}
 	return out, len(out) > 0
 }
+*/
 
-// MapClaudeMessagesResponseToOpenAIChatCompletions maps Claude messages response JSON
-// to OpenAI chat.completions response JSON.
+// MapClaudeMessagesResponseToOpenAIChatCompletions is unused in production; callers use
+// MapClaudeMessagesResponseToOpenAIChatCompletionsObject directly via MapResponseObjectByMode.
+// TODO: delete once confirmed no external callers exist.
+/*
 func MapClaudeMessagesResponseToOpenAIChatCompletions(body []byte) ([]byte, error) {
 	var obj map[string]any
 	if err := json.Unmarshal(body, &obj); err != nil {
@@ -179,6 +208,7 @@ func MapClaudeMessagesResponseToOpenAIChatCompletions(body []byte) ([]byte, erro
 	}
 	return json.Marshal(out)
 }
+*/
 
 // MapClaudeMessagesResponseToOpenAIChatCompletionsObject maps Claude messages response object
 // to OpenAI chat.completions response object.
@@ -452,7 +482,10 @@ func prependClaudeSystemMessages(rawSystem any, openAIMessages []any) []any {
 	return openAIMessages
 }
 
-// MapOpenAIChatCompletionsToClaudeMessagesResponse maps OpenAI chat response JSON to Claude response JSON.
+// MapOpenAIChatCompletionsToClaudeMessagesResponse is unused in production; callers use
+// MapOpenAIChatCompletionsToClaudeMessagesResponseObject directly via MapResponseObjectByMode.
+// TODO: delete once confirmed no external callers exist.
+/*
 func MapOpenAIChatCompletionsToClaudeMessagesResponse(body []byte) ([]byte, error) {
 	var obj map[string]any
 	if err := json.Unmarshal(body, &obj); err != nil {
@@ -464,6 +497,7 @@ func MapOpenAIChatCompletionsToClaudeMessagesResponse(body []byte) ([]byte, erro
 	}
 	return json.Marshal(out)
 }
+*/
 
 // MapOpenAIChatCompletionsToClaudeMessagesResponseObject maps OpenAI chat response object to Claude response object.
 func MapOpenAIChatCompletionsToClaudeMessagesResponseObject(root apitypes.JSONObject) (apitypes.JSONObject, error) {

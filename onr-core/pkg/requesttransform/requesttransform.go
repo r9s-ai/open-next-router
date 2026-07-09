@@ -15,6 +15,16 @@ import (
 
 const contentEncodingIdentity = "identity"
 
+// ValidationError is returned when the caller's request does not meet the target provider's
+// schema requirements (e.g. unsupported response_format type, missing required schema field).
+// Relay converts this to a 400 Bad Request so the caller sees a clear validation message
+// rather than a generic internal server error.
+type ValidationError struct {
+	Message string
+}
+
+func (e *ValidationError) Error() string { return e.Message }
+
 type ApplyOptions struct {
 	ContentEncoding string
 	RequestHeaders  http.Header
@@ -291,7 +301,47 @@ func mapOpenAIChatCompletionsToClaudeRequest(req *apitypes.OpenAIChatCompletions
 		dst.System = system
 	}
 	dst.Messages = messages
+
+	if req.ResponseFormat != nil {
+		outputConfig, err := convertResponseFormatToClaudeOutputConfig(req.ResponseFormat)
+		if err != nil {
+			return nil, err
+		}
+		if outputConfig != nil {
+			dst.OutputConfig = outputConfig
+		}
+	}
 	return dst, nil
+}
+
+// convertResponseFormatToClaudeOutputConfig converts OpenAI response_format to Claude output_config.
+// "text" or absent → nil, nil (no output_config needed)
+// "json_object" → error (Claude requires an explicit schema; schemaless JSON object mode is not supported)
+// "json_schema" → output_config.format.type = "json_schema" + schema from json_schema.schema
+// "json_schema" without schema, or schema missing additionalProperties:false → error
+// strict: true on json_schema means the caller's schema already encodes all constraints — no extra mapping needed.
+// rf must be non-nil.
+func convertResponseFormatToClaudeOutputConfig(rf *apitypes.OpenAIChatResponseFormat) (*apitypes.ClaudeOutputConfig, error) {
+	switch rf.Type {
+	case "json_object":
+		return nil, &ValidationError{Message: "response_format type json_object is not supported for Claude: use json_schema with an explicit schema instead"}
+	case "json_schema":
+		if rf.JSONSchema == nil || rf.JSONSchema.Schema == nil {
+			return nil, &ValidationError{Message: "response_format type json_schema requires a non-empty json_schema.schema"}
+		}
+		schema := rf.JSONSchema.Schema
+		if ap, ok := schema["additionalProperties"].(bool); !ok || ap {
+			return nil, &ValidationError{Message: "response_format json_schema.schema must set additionalProperties to false (Claude requires strict schema validation)"}
+		}
+		return &apitypes.ClaudeOutputConfig{
+			Format: &apitypes.ClaudeJsonOutputFormat{
+				Type:   "json_schema",
+				Schema: schema,
+			},
+		}, nil
+	default:
+		return nil, nil
+	}
 }
 
 // buildClaudeToolsAndChoice requires a non-nil typed OpenAI chat request.
