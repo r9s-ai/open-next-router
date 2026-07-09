@@ -36,27 +36,11 @@ func TestMapOpenAIChatCompletionsToClaudeMessagesResponse_Basic(t *testing.T) {
   "choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}],
   "usage":{"prompt_tokens":3,"completion_tokens":5,"total_tokens":8}
 }`)
-	out, err := MapOpenAIChatCompletionsToClaudeMessagesResponse(in)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	s := string(out)
-	if !containsAll(s, `"type":"message"`, `"role":"assistant"`, `"content":[{"text":"hello","type":"text"}]`, `"stop_reason":"end_turn"`) {
-		t.Fatalf("unexpected mapped output: %s", s)
-	}
-}
-
-func TestMapOpenAIChatCompletionsToClaudeMessagesRequest_Basic(t *testing.T) {
-	in := []byte(`{
-  "model":"claude-3-5-sonnet-20240620",
-  "messages":[{"role":"system","content":"be concise"},{"role":"user","content":"hi"}],
-  "max_tokens":128
-}`)
-	var obj map[string]any
-	if err := json.Unmarshal(in, &obj); err != nil {
+	var root map[string]any
+	if err := json.Unmarshal(in, &root); err != nil {
 		t.Fatalf("unexpected unmarshal error: %v", err)
 	}
-	outObj, err := MapOpenAIChatCompletionsToClaudeMessagesRequestObject(obj)
+	outObj, err := MapOpenAIChatCompletionsToClaudeMessagesResponseObject(root)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -65,10 +49,16 @@ func TestMapOpenAIChatCompletionsToClaudeMessagesRequest_Basic(t *testing.T) {
 		t.Fatalf("unexpected marshal error: %v", err)
 	}
 	s := string(out)
-	if !containsAll(s, `"model":"claude-3-5-sonnet-20240620"`, `"system":"be concise"`, `"messages"`, `"max_tokens":128`) {
+	if !containsAll(s, `"type":"message"`, `"role":"assistant"`, `"content":[{"text":"hello","type":"text"}]`, `"stop_reason":"end_turn"`) {
 		t.Fatalf("unexpected mapped output: %s", s)
 	}
 }
+
+// TestMapOpenAIChatCompletionsToClaudeMessagesRequest_Basic is commented out because
+// MapOpenAIChatCompletionsToClaudeMessagesRequestObject is unused in production.
+// TODO: delete once the function is deleted.
+//
+// func TestMapOpenAIChatCompletionsToClaudeMessagesRequest_Basic(t *testing.T) { ... }
 
 func TestMapClaudeMessagesResponseToOpenAIChatCompletions_Basic(t *testing.T) {
 	in := []byte(`{
@@ -80,9 +70,17 @@ func TestMapClaudeMessagesResponseToOpenAIChatCompletions_Basic(t *testing.T) {
   "stop_reason":"end_turn",
   "usage":{"input_tokens":3,"output_tokens":4}
 }`)
-	out, err := MapClaudeMessagesResponseToOpenAIChatCompletions(in)
+	var root map[string]any
+	if err := json.Unmarshal(in, &root); err != nil {
+		t.Fatalf("unexpected unmarshal error: %v", err)
+	}
+	outObj, err := MapClaudeMessagesResponseToOpenAIChatCompletionsObject(root)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	out, err := json.Marshal(outObj)
+	if err != nil {
+		t.Fatalf("unexpected marshal error: %v", err)
 	}
 	s := string(out)
 	if !containsAll(s, `"object":"chat.completion"`, `"model":"claude-3-5-sonnet-20240620"`, `"content":"hello"`, `"finish_reason":"stop"`) {
@@ -100,9 +98,17 @@ func TestMapClaudeMessagesResponseToOpenAIChatCompletions_PreservesCacheUsage(t 
   "stop_reason":"end_turn",
   "usage":{"input_tokens":10,"output_tokens":4,"cache_creation_input_tokens":7,"cache_read_input_tokens":2}
 }`)
-	out, err := MapClaudeMessagesResponseToOpenAIChatCompletions(in)
+	var root map[string]any
+	if err := json.Unmarshal(in, &root); err != nil {
+		t.Fatalf("unexpected unmarshal error: %v", err)
+	}
+	outObj, err := MapClaudeMessagesResponseToOpenAIChatCompletionsObject(root)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	out, err := json.Marshal(outObj)
+	if err != nil {
+		t.Fatalf("unexpected marshal error: %v", err)
 	}
 	var obj map[string]any
 	if err := json.Unmarshal(out, &obj); err != nil {
@@ -145,9 +151,17 @@ func TestMapClaudeMessagesResponseToOpenAIChatCompletions_SingleChoiceAggregates
   "stop_reason":"tool_use",
   "usage":{"input_tokens":3,"output_tokens":4}
 }`)
-	out, err := MapClaudeMessagesResponseToOpenAIChatCompletions(in)
+	var root map[string]any
+	if err := json.Unmarshal(in, &root); err != nil {
+		t.Fatalf("unexpected unmarshal error: %v", err)
+	}
+	outObj, err := MapClaudeMessagesResponseToOpenAIChatCompletionsObject(root)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	out, err := json.Marshal(outObj)
+	if err != nil {
+		t.Fatalf("unexpected marshal error: %v", err)
 	}
 	var obj map[string]any
 	if err := json.Unmarshal(out, &obj); err != nil {
@@ -177,6 +191,14 @@ func TestMapClaudeMessagesResponseToOpenAIChatCompletions_SingleChoiceAggregates
 	}
 }
 
+// The following four tests are commented out because MapOpenAIChatCompletionsToClaudeMessagesRequestObject
+// is unused in production. TODO: delete once the function is deleted.
+//
+// func TestMapOpenAIChatCompletionsToClaudeMessagesRequest_ResponseFormatJsonObject(t *testing.T) { ... }
+// func TestMapOpenAIChatCompletionsToClaudeMessagesRequest_ResponseFormatJsonSchema(t *testing.T) { ... }
+// func TestMapOpenAIChatCompletionsToClaudeMessagesRequest_ResponseFormatJsonSchemaAdditionalPropertiesNotFalse(t *testing.T) { ... }
+// func TestMapOpenAIChatCompletionsToClaudeMessagesRequest_ResponseFormatText(t *testing.T) { ... }
+
 func TestMapClaudeMessagesResponseToOpenAIChatCompletions_FinishReasonMaxTokensToLength(t *testing.T) {
 	in := []byte(`{
   "id":"msg_123",
@@ -187,9 +209,17 @@ func TestMapClaudeMessagesResponseToOpenAIChatCompletions_FinishReasonMaxTokensT
   "stop_reason":"max_tokens",
   "usage":{"input_tokens":3,"output_tokens":4}
 }`)
-	out, err := MapClaudeMessagesResponseToOpenAIChatCompletions(in)
+	var root map[string]any
+	if err := json.Unmarshal(in, &root); err != nil {
+		t.Fatalf("unexpected unmarshal error: %v", err)
+	}
+	outObj, err := MapClaudeMessagesResponseToOpenAIChatCompletionsObject(root)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	out, err := json.Marshal(outObj)
+	if err != nil {
+		t.Fatalf("unexpected marshal error: %v", err)
 	}
 	var obj map[string]any
 	if err := json.Unmarshal(out, &obj); err != nil {

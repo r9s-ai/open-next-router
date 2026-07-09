@@ -420,7 +420,12 @@ v0.1 includes:
 - `anthropic_to_openai_chat`: Anthropic `/v1/messages` request JSON → OpenAI `chat.completions` request JSON
 - `gemini_to_openai_chat`: Gemini `generateContent` request JSON → OpenAI `chat.completions` request JSON
 - `openai_chat_to_gemini_generate_content`: OpenAI `chat.completions` request JSON → Gemini `generateContent` request JSON
-- `openai_chat_to_anthropic_messages`: OpenAI `chat.completions` request JSON → Anthropic `/v1/messages` request JSON
+- `openai_chat_to_anthropic_messages`: OpenAI `chat.completions` request JSON → Anthropic `/v1/messages` request JSON.
+  Mapped fields include `model`, `messages`, `system`, `tools`, `tool_choice`, `max_tokens`, `temperature`, `top_p`, `stream`, and `response_format`.
+  `response_format` constraints:
+  - `type: "text"` or absent — no `output_config` is set (default behavior).
+  - `type: "json_object"` — returns a 400 error; use `json_schema` with an explicit schema instead.
+  - `type: "json_schema"` — maps to `output_config.format.type = "json_schema"`. The `json_schema.schema` field must be present and must set `additionalProperties: false`; otherwise a 400 error is returned.
 
 ### 5.4 upstream
 
