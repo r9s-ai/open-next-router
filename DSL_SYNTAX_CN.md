@@ -415,7 +415,12 @@ v0.1 内置：
 - `anthropic_to_openai_chat`：Anthropic `/v1/messages` 请求 JSON → OpenAI `chat.completions` 请求 JSON
 - `gemini_to_openai_chat`：Gemini `generateContent` 请求 JSON → OpenAI `chat.completions` 请求 JSON
 - `openai_chat_to_gemini_generate_content`：OpenAI `chat.completions` 请求 JSON → Gemini `generateContent` 请求 JSON
-- `openai_chat_to_anthropic_messages`：OpenAI `chat.completions` 请求 JSON → Anthropic `/v1/messages` 请求 JSON
+- `openai_chat_to_anthropic_messages`：OpenAI `chat.completions` 请求 JSON → Anthropic `/v1/messages` 请求 JSON。
+  映射字段包括 `model`、`messages`、`system`、`tools`、`tool_choice`、`max_tokens`、`temperature`、`top_p`、`stream` 和 `response_format`。
+  `response_format` 约束：
+  - `type: "text"` 或未设置 — 不设置 `output_config`（默认行为）。
+  - `type: "json_object"` — 返回 400 错误；请改用带有显式 schema 的 `json_schema`。
+  - `type: "json_schema"` — 映射到 `output_config.format.type = "json_schema"`。`json_schema.schema` 字段必须存在，且必须设置 `additionalProperties: false`，否则返回 400 错误。
 
 ### 5.4 upstream（路径与 query 操作）
 

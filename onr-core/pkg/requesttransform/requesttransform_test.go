@@ -2,6 +2,7 @@ package requesttransform
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
@@ -544,7 +545,7 @@ func TestApplyReqMap_OpenAIChatToAnthropicMessages_ResponseFormat(t *testing.T) 
 		}
 	})
 
-	t.Run("json_object returns error", func(t *testing.T) {
+	t.Run("json_object returns ValidationError", func(t *testing.T) {
 		t.Parallel()
 		body := []byte(`{
 			"model":"claude-3-5-sonnet-20240620",
@@ -555,9 +556,13 @@ func TestApplyReqMap_OpenAIChatToAnthropicMessages_ResponseFormat(t *testing.T) 
 		if err == nil {
 			t.Fatalf("expected error for json_object, got nil")
 		}
+		var ve *ValidationError
+		if !errors.As(err, &ve) {
+			t.Fatalf("expected *ValidationError, got %T: %v", err, err)
+		}
 	})
 
-	t.Run("missing additionalProperties:false returns error", func(t *testing.T) {
+	t.Run("missing additionalProperties:false returns ValidationError", func(t *testing.T) {
 		t.Parallel()
 		body := []byte(`{
 			"model":"claude-3-5-sonnet-20240620",
@@ -570,6 +575,10 @@ func TestApplyReqMap_OpenAIChatToAnthropicMessages_ResponseFormat(t *testing.T) 
 		_, _, err := ApplyReqMap("openai_chat_to_anthropic_messages", body, nil, ApplyOptions{})
 		if err == nil {
 			t.Fatalf("expected error when additionalProperties is not false, got nil")
+		}
+		var ve *ValidationError
+		if !errors.As(err, &ve) {
+			t.Fatalf("expected *ValidationError, got %T: %v", err, err)
 		}
 	})
 
