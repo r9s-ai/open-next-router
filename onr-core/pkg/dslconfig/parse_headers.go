@@ -222,6 +222,42 @@ func parseRequestPhaseWithTransform(s *scanner, phase *PhaseHeaders, transform *
 			t.ReqMapMode = mode
 			return nil
 		},
+		"req_required": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
+			if t == nil {
+				return skipStmtOrBlock(s)
+			}
+			return parseReqRequiredStmt(s, t)
+		},
+		"req_forbid": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
+			if t == nil {
+				return skipStmtOrBlock(s)
+			}
+			return parseReqForbidStmt(s, t)
+		},
+		"req_type": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
+			if t == nil {
+				return skipStmtOrBlock(s)
+			}
+			return parseReqTypeStmt(s, t)
+		},
+		"req_range": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
+			if t == nil {
+				return skipStmtOrBlock(s)
+			}
+			return parseReqRangeStmt(s, t)
+		},
+		"req_len": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
+			if t == nil {
+				return skipStmtOrBlock(s)
+			}
+			return parseReqLenStmt(s, t)
+		},
+		"req_enum": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
+			if t == nil {
+				return skipStmtOrBlock(s)
+			}
+			return parseReqEnumStmt(s, t)
+		},
 	}
 
 	removed := map[string]string{

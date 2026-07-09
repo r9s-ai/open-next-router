@@ -427,6 +427,35 @@ v0.1 includes:
   - `type: "json_object"` — returns a 400 error; use `json_schema` with an explicit schema instead.
   - `type: "json_schema"` — maps to `output_config.format.type = "json_schema"`. The `json_schema.schema` field must be present and must set `additionalProperties: false`; otherwise a 400 error is returned.
 
+#### req_required / req_forbid / req_type / req_range / req_len / req_enum (multiple allowed)
+
+```conf
+request {
+  req_required body "$.model";
+  req_required body "$.messages";
+  req_type body "$.messages" array;
+  req_len body "$.messages" min=1 max=256;
+  req_range body "$.temperature" min=0 max=2;
+  req_enum body "$.reasoning_effort" "low" "medium" "high";
+  req_forbid body "$.legacy_field";
+}
+```
+
+Request parameter validation. A failed rule rejects the request with HTTP 400 (`code=request_validation_failed`) before it is sent upstream.
+
+- `<source>` is `body`, `header`, or `query`. `body` targets use the object-path subset (`$.a.b.c`, no array indices); `header`/`query` targets use the parameter name.
+- Rules are list-like: `defaults.request` rules run first, then matched `match.request` rules, in DSL order. The first failure stops validation.
+- Validation runs after `model_map` (so a `$.model` rule sees the mapped model name, not the client's original value) and before the request JSON operations and `req_map`, so errors reflect the client's original parameters.
+- `req_required` fails when the target is missing. JSON `null` counts as missing unless `allow_null=true` (body source only).
+- `req_forbid` fails when the target is present.
+- All other rules are no-ops when the target is missing; combine with `req_required` for mandatory fields.
+- `req_type` (body only) checks the JSON type: `null`, `bool`, `number`, `integer`, `string`, `array`, or `object`. `integer` accepts JSON numbers with an integral value.
+- `req_range` checks a numeric bound; at least one of `min=`/`max=` is required. Only decimal number literals are supported (no scientific notation).
+- `req_len` checks string length (Unicode code points, not bytes) or array length; at least one of `min=`/`max=` is required, bounds must be non-negative integers.
+- `req_enum` checks set membership. Body candidates are JSON literals (`"low"`, `1`, `true`, `null`); header/query candidates compare as strings.
+- If any `body` rule is configured and the request has no JSON object body, the request is rejected with 400; validation-only providers that accept non-JSON bodies should use only `header`/`query` rules.
+- Error messages include the path, rule and expected condition, never the actual field value.
+
 ### 5.4 upstream
 
 `upstream` is limited to upstream target routing.

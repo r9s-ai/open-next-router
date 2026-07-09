@@ -6,47 +6,61 @@ import (
 	"strings"
 )
 
-func validateProviderRequestTransform(path, providerName string, req ProviderRequestTransform) error {
-	if err := validateRequestTransform(path, providerName, "defaults.request", req.Defaults); err != nil {
-		return err
+func validateProviderRequestTransform(path, providerName string, req ProviderRequestTransform) (ProviderRequestTransform, error) {
+	resolvedDefaults, err := validateRequestTransform(path, providerName, "defaults.request", req.Defaults)
+	if err != nil {
+		return ProviderRequestTransform{}, err
 	}
+	resolved := ProviderRequestTransform{Defaults: resolvedDefaults}
+	if len(req.Matches) == 0 {
+		return resolved, nil
+	}
+	resolved.Matches = make([]MatchRequestTransform, 0, len(req.Matches))
 	for i, m := range req.Matches {
 		scope := fmt.Sprintf("match[%d].request", i)
-		if err := validateRequestTransform(path, providerName, scope, m.Transform); err != nil {
-			return err
+		transform, err := validateRequestTransform(path, providerName, scope, m.Transform)
+		if err != nil {
+			return ProviderRequestTransform{}, err
 		}
+		m.Transform = transform
+		resolved.Matches = append(resolved.Matches, m)
 	}
-	return nil
+	return resolved, nil
 }
 
-func validateRequestTransform(path, providerName, scope string, t RequestTransform) error {
+func validateRequestTransform(path, providerName, scope string, t RequestTransform) (RequestTransform, error) {
 	if err := validateModelMapConfig(path, providerName, scope+".model_map", t.ModelMap); err != nil {
-		return err
+		return RequestTransform{}, err
 	}
+	rules, err := validateRequestValidationRules(path, providerName, scope, t.ValidationRules)
+	if err != nil {
+		return RequestTransform{}, err
+	}
+	t.ValidationRules = rules
 	if err := validateRequestJSONOps(path, providerName, scope, t.JSONOps); err != nil {
-		return err
+		return RequestTransform{}, err
 	}
 	if err := validateRequestJSONOps(path, providerName, scope+".after_req_map", t.AfterReqMapJSONOps); err != nil {
-		return err
+		return RequestTransform{}, err
 	}
 
 	mode := strings.ToLower(strings.TrimSpace(t.ReqMapMode))
 	if mode == "" {
-		return nil
+		return t, nil
 	}
 	switch mode {
 	case "openai_chat_to_openai_responses":
-		return nil
+		return t, nil
 	case "openai_chat_to_anthropic_messages":
-		return nil
+		return t, nil
 	case "openai_chat_to_gemini_generate_content":
-		return nil
+		return t, nil
 	case "anthropic_to_openai_chat":
-		return nil
+		return t, nil
 	case "gemini_to_openai_chat":
-		return nil
+		return t, nil
 	default:
-		return validationIssue(
+		return RequestTransform{}, validationIssue(
 			fmt.Errorf("provider %q in %q: %s unsupported req_map mode %q", providerName, path, scope, t.ReqMapMode),
 			scope,
 			"req_map",

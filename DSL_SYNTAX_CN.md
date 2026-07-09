@@ -448,6 +448,35 @@ v0.1 内置：
   - `type: "json_object"` — 返回 400 错误；请改用带有显式 schema 的 `json_schema`。
   - `type: "json_schema"` — 映射到 `output_config.format.type = "json_schema"`。`json_schema.schema` 字段必须存在，且必须设置 `additionalProperties: false`，否则返回 400 错误。
 
+#### req_required / req_forbid / req_type / req_range / req_len / req_enum（可多条）
+
+```conf
+request {
+  req_required body "$.model";
+  req_required body "$.messages";
+  req_type body "$.messages" array;
+  req_len body "$.messages" min=1 max=256;
+  req_range body "$.temperature" min=0 max=2;
+  req_enum body "$.reasoning_effort" "low" "medium" "high";
+  req_forbid body "$.legacy_field";
+}
+```
+
+请求参数校验。任一规则失败时请求被拒绝，返回 HTTP 400（`code=request_validation_failed`），不会请求上游。
+
+- `<source>` 为 `body`、`header` 或 `query`。`body` 目标使用 object-path 子集（`$.a.b.c`，不支持数组下标）；`header`/`query` 目标使用参数名。
+- 规则是 list-like 指令：先执行 `defaults.request` 中的规则，再按 DSL 顺序追加执行命中的 `match.request` 规则，遇到第一条失败即停止。
+- 校验发生在 `model_map` 之后（因此针对 `$.model` 的规则作用于映射后的模型名，而不是客户端原始值）、请求 JSON 操作和 `req_map` 之前，错误信息贴近客户端原始参数。
+- `req_required`：目标缺失时失败。JSON `null` 默认按缺失处理，仅 body source 可用 `allow_null=true` 放行。
+- `req_forbid`：目标存在时失败。
+- 其余规则在目标缺失时为 no-op；必填字段请与 `req_required` 组合使用。
+- `req_type`（仅 body）检查 JSON 类型：`null`、`bool`、`number`、`integer`、`string`、`array`、`object`。`integer` 接受数值为整数的 JSON number。
+- `req_range`：数值范围检查；`min=`/`max=` 至少一个。仅支持十进制数字字面量（不支持科学计数法）。
+- `req_len`：字符串长度（按 Unicode code point 计数，不是字节数）或数组长度检查；`min=`/`max=` 至少一个，且必须为非负整数。
+- `req_enum`：集合成员检查。body 候选值按 JSON literal 解析（`"low"`、`1`、`true`、`null`）；header/query 候选值按字符串比较。
+- 只要配置了任意 `body` 规则，而请求没有 JSON object body，即返回 400；接受非 JSON body 的 API 应只配置 `header`/`query` 规则。
+- 错误信息包含路径、规则和期望条件，不包含字段实际值。
+
 ### 5.4 upstream（路径与 query 操作）
 
 `upstream` phase 只负责上游目标路由。

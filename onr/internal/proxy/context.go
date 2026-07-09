@@ -126,13 +126,15 @@ func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey
 	respDir, _ := pf.Response.Select(m)
 
 	reqTransform, hasReqTransform := selectRequestTransform(pf, m)
+	// Capture the client's original query string before routing rewrites it.
+	originalRawQuery := gc.Request.URL.RawQuery
 	if err := pf.Routing.Apply(m); err != nil {
 		return nil, err
 	}
 	m.BaseURL = normalizeUpstreamBaseURL(m.BaseURL)
 	applyGeminiModelRewrite(api, m)
 
-	reqResult, err := applyRequestTransform(m, gc.Request.Header.Get("Content-Type"), gc.GetHeader("Content-Encoding"), bodyBytes, root, reqTransform, hasReqTransform)
+	reqResult, err := applyRequestTransform(m, gc.Request.Header.Get("Content-Type"), gc.GetHeader("Content-Encoding"), originalRawQuery, bodyBytes, root, reqTransform, hasReqTransform)
 	if err != nil {
 		return nil, err
 	}

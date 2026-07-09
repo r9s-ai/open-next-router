@@ -85,7 +85,8 @@ func applyGeminiModelRewrite(api string, meta *dslmeta.Meta) {
 }
 
 // applyRequestTransform requires a non-nil meta, and t is non-nil when hasT is true.
-func applyRequestTransform(meta *dslmeta.Meta, contentType, contentEncoding string, bodyBytes []byte, root map[string]any, t *dslconfig.RequestTransform, hasT bool) (requesttransform.Result, error) {
+// rawQuery is the client's original URL query string, captured before routing rewrites.
+func applyRequestTransform(meta *dslmeta.Meta, contentType, contentEncoding string, rawQuery string, bodyBytes []byte, root map[string]any, t *dslconfig.RequestTransform, hasT bool) (requesttransform.Result, error) {
 	if !hasT {
 		return requesttransform.Result{
 			Body:        bodyBytes,
@@ -97,5 +98,6 @@ func applyRequestTransform(meta *dslmeta.Meta, contentType, contentEncoding stri
 	return requesttransform.Apply(meta, contentType, bodyBytes, root, t, requesttransform.ApplyOptions{
 		ContentEncoding: contentEncoding,
 		RequestHeaders:  meta.RequestHeaders,
+		RawQuery:        rawQuery,
 	})
 }

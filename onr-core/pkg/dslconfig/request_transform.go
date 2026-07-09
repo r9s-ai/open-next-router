@@ -15,6 +15,7 @@ type ModelMapConfig struct {
 
 type RequestTransform struct {
 	ModelMap           ModelMapConfig
+	ValidationRules    []RequestValidationRule
 	JSONOps            []JSONOp
 	AfterReqMapJSONOps []JSONOp
 	// ReqMapMode selects a built-in request mapping mode (non-streaming JSON transform),
@@ -52,7 +53,7 @@ func (p *ProviderRequestTransform) Select(meta *dslmeta.Meta) (*RequestTransform
 		out = mergeRequestTransform(out, m.Transform)
 	}
 	out.ReqMapMode = normalizedReqMapMode(out.ReqMapMode)
-	if out.ModelMap.Map == nil && strings.TrimSpace(out.ModelMap.DefaultExpr) == "" && len(out.JSONOps) == 0 && len(out.AfterReqMapJSONOps) == 0 && out.ReqMapMode == "" {
+	if out.ModelMap.Map == nil && strings.TrimSpace(out.ModelMap.DefaultExpr) == "" && len(out.ValidationRules) == 0 && len(out.JSONOps) == 0 && len(out.AfterReqMapJSONOps) == 0 && out.ReqMapMode == "" {
 		return nil, false
 	}
 	return &out, true
@@ -83,6 +84,9 @@ func mergeRequestTransform(base, override RequestTransform) RequestTransform {
 	if len(base.JSONOps) > 0 {
 		out.JSONOps = append([]JSONOp(nil), base.JSONOps...)
 	}
+	if len(base.ValidationRules) > 0 {
+		out.ValidationRules = append([]RequestValidationRule(nil), base.ValidationRules...)
+	}
 	if len(base.AfterReqMapJSONOps) > 0 {
 		out.AfterReqMapJSONOps = append([]JSONOp(nil), base.AfterReqMapJSONOps...)
 	}
@@ -99,6 +103,9 @@ func mergeRequestTransform(base, override RequestTransform) RequestTransform {
 	}
 	if len(override.JSONOps) > 0 {
 		out.JSONOps = append(out.JSONOps, override.JSONOps...)
+	}
+	if len(override.ValidationRules) > 0 {
+		out.ValidationRules = append(out.ValidationRules, override.ValidationRules...)
 	}
 	if len(override.AfterReqMapJSONOps) > 0 {
 		out.AfterReqMapJSONOps = append(out.AfterReqMapJSONOps, override.AfterReqMapJSONOps...)

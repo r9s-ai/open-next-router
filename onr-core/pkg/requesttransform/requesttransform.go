@@ -11,6 +11,7 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/requestcanon"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/requestvalidate"
 )
 
 const contentEncodingIdentity = "identity"
@@ -28,6 +29,9 @@ func (e *ValidationError) Error() string { return e.Message }
 type ApplyOptions struct {
 	ContentEncoding string
 	RequestHeaders  http.Header
+	// RawQuery is the client's original URL query string captured before routing
+	// rewrites; used only by request validation rules with query source.
+	RawQuery string
 }
 
 type Result struct {
@@ -65,6 +69,15 @@ func Apply(meta *dslmeta.Meta, contentType string, body []byte, value map[string
 					changed = true
 				}
 			}
+		}
+	}
+
+	// Validation runs before any JSON transform so errors reflect the client's
+	// original parameters. Not gated on out != nil: header/query rules must run
+	// for non-JSON bodies too; body rules with a nil root fail inside Validate.
+	if len(t.ValidationRules) > 0 {
+		if verr := requestvalidate.Validate(t.ValidationRules, out, meta.RequestHeaders, opts.RawQuery); verr != nil {
+			return Result{}, verr
 		}
 	}
 
