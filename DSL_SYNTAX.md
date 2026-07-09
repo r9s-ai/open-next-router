@@ -694,6 +694,8 @@ match api = "audio.speech" stream = true {
 - For each upstream SSE event's JSON payload: decodes the string at path and writes the raw bytes to the downstream body (not SSE forwarding).
 - `stop_path` / `stop_eq` must appear together: the stream ends when the value at `stop_path` equals `stop_eq` (numeric or string comparison).
 - Each chunk's JSON payload still feeds the usage extraction pipeline so trailing-chunk fields remain available for stream billing.
+- Streaming `Content-Type`: response headers are sent before the first audio byte, so `resp_content_type from_path=` (typically a trailing-chunk field) cannot apply. Runtimes should resolve the streaming `Content-Type` from the client-requested format, falling back to the rule's `default`.
+- Chunk decode failures are fatal: before the first byte is written the request fails with an upstream error; after that the stream is truncated at the bad chunk (skipping it would silently splice corrupted audio).
 
 ### 5.6 error
 
@@ -717,6 +719,7 @@ error {
 - Exactly one of `ne` / `eq` per rule; numbers compare numerically (`ne=0` matches JSON number semantics).
 - Missing paths never match (also for `ne`), so success responses without an error envelope are not misreported.
 - Multiple rules are allowed; any hit marks the response as an error. Only applies to HTTP 2xx responses.
+- Streaming boundary: on binary streams (`sse_binary_extract`) rules are only effective before the first audio byte is written. Once the HTTP status line has been sent it cannot be rewritten, so a mid-stream error envelope ends the stream as-is (logged, not converted).
 
 ### 5.7 metrics (usage / finish_reason extraction)
 

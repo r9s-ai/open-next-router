@@ -728,6 +728,8 @@ match api = "audio.speech" stream = true {
 - 对每个 SSE event 的 JSON payload：取 `path` 处字符串按 `decode` 解码，将解码后的**裸二进制**写入下游响应（不是 SSE 转发）。
 - `stop_path` / `stop_eq` 成对出现：当 payload 中 `stop_path` 的值等于 `stop_eq`（数值或字符串比较）时结束流。
 - 每个 chunk 的 JSON payload 仍会进入 usage 提取通路，供流式计费读取尾块字段。
+- 流式 `Content-Type`：响应头在首个音频字节前发送，此时尾包字段还没到，`resp_content_type from_path=` 无法生效。运行时应优先取客户端请求的格式（如 `response_format`），再回退规则的 `default`。
+- chunk 解码失败按致命处理：首字节写出前直接返回上游错误；已写出后在坏块处截断流（跳过坏块继续拼接会产生"中间缺一段"的静默损坏音频）。
 
 ### 5.6 error（错误归一化）
 
@@ -758,6 +760,7 @@ error {
 - `ne` / `eq` 只能二选一；数值与字符串都支持（`ne=0` 会与 JSON number 做数值比较）。
 - **路径缺失永远不算命中**（对 `ne` 也是），避免正常响应没有错误字段时误报。
 - 可写多条，任意一条命中即判定为错误；仅对 HTTP 2xx 响应生效，非 2xx 仍走原有 `error_map` 流程。
+- 流式边界：二进制流（`sse_binary_extract`）下规则仅在首个音频字节写出前生效。HTTP 状态行一旦发送便无法改写，流中途出现的错误信封只记日志、按已写出内容结束流,不再转换状态码。
 
 ### 5.7 metrics（用量提取 / usage）
 
