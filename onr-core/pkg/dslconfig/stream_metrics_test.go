@@ -413,6 +413,73 @@ func TestStreamMetricsAggregator_UsageRootFinalDebugFactsKeepAdditiveOutputPaths
 	}
 }
 
+func TestStreamMetricsAggregator_UsageRootExcludeField(t *testing.T) {
+	meta := &dslmeta.Meta{API: "claude.messages", IsStream: true}
+	usageCfg := &UsageExtractConfig{
+		Mode: usageModeCustom,
+		usageRoots: []usageRootConfig{
+			{Path: "$.message.usage", Event: "message_start", EventOptional: true, ExcludeFields: []string{"output_tokens"}},
+			{Path: "$.usage", Event: "message_delta", EventOptional: true},
+		},
+		facts: []usageFactConfig{
+			{Dimension: "input", Unit: "token", Path: "$.input_tokens"},
+			{Dimension: "output", Unit: "token", Path: "$.output_tokens"},
+			{Dimension: "cache_read", Unit: "token", Path: "$.cache_read_input_tokens"},
+			{Dimension: "cache_write", Unit: "token", Path: "$.cache_creation_1h_input_tokens", Attrs: map[string]string{"ttl": "1h"}},
+			{Dimension: "cache_write", Unit: "token", Path: "$.cache_creation_5m_input_tokens", Attrs: map[string]string{"ttl": "5m"}},
+		},
+	}
+	agg := NewStreamMetricsAggregator(meta, usageCfg, nil)
+
+	_ = agg.OnSSEEventDataJSON("message_start", []byte(`{
+	  "type":"message_start",
+	  "message":{
+	    "id":"msg_c",
+	    "model":"claude-sonnet-4-6",
+	    "usage":{
+	      "input_tokens":50,
+	      "output_tokens":1,
+	      "cache_read_input_tokens":3,
+	      "cache_creation_1h_input_tokens":10000,
+	      "cache_creation_5m_input_tokens":30000
+	    }
+	  }
+	}`))
+	_ = agg.OnSSEEventDataJSON("message_delta", []byte(`{
+	  "type":"message_delta",
+	  "usage":{"output_tokens":7}
+	}`))
+
+	u, cached, _, ok := agg.Result()
+	if !ok || u == nil {
+		t.Fatalf("expected usage ok")
+	}
+	if got, want := u.InputTokens, 50; got != want {
+		t.Fatalf("InputTokens got %d, want %d", got, want)
+	}
+	if got, want := u.OutputTokens, 7; got != want {
+		t.Fatalf("OutputTokens got %d, want %d", got, want)
+	}
+	if got, want := cached, 3; got != want {
+		t.Fatalf("cached got %d, want %d", got, want)
+	}
+	if u.InputTokenDetails == nil {
+		t.Fatalf("expected input token details")
+	}
+	if got, want := u.InputTokenDetails.CachedTokens, 3; got != want {
+		t.Fatalf("CachedTokens got %d, want %d", got, want)
+	}
+	if got, want := u.InputTokenDetails.CacheWriteTokens, 40000; got != want {
+		t.Fatalf("CacheWriteTokens got %d, want %d", got, want)
+	}
+	if got, want := u.FlatFields["cache_write_ttl_1h_tokens"], 10000; got != want {
+		t.Fatalf("cache_write_ttl_1h_tokens got %v, want %v", got, want)
+	}
+	if got, want := u.FlatFields["cache_write_ttl_5m_tokens"], 30000; got != want {
+		t.Fatalf("cache_write_ttl_5m_tokens got %v, want %v", got, want)
+	}
+}
+
 func TestStreamMetricsAggregator_FinishReasonUsesSSEEventFilter(t *testing.T) {
 	meta := &dslmeta.Meta{API: "responses", IsStream: true}
 	finishCfg := FinishReasonExtractConfig{Mode: usageModeCustom}

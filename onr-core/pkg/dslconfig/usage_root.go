@@ -10,6 +10,7 @@ type usageRootConfig struct {
 	Path          string
 	Event         string
 	EventOptional bool
+	ExcludeFields []string
 }
 
 // UsageRootRule describes one usage_root extraction rule in DSL/runtime.
@@ -33,6 +34,7 @@ func extractUsageRootWithEvent(event string, respRoot map[string]any, roots []us
 			if !ok {
 				continue
 			}
+			obj = cloneUsageRootValueWithExcludedFields(obj, rootCfg.ExcludeFields)
 			mergeUsageRootPreferNonZero(merged, obj)
 		}
 	}
@@ -40,6 +42,21 @@ func extractUsageRootWithEvent(event string, respRoot map[string]any, roots []us
 		return nil
 	}
 	return merged
+}
+
+func cloneUsageRootValueWithExcludedFields(obj map[string]any, fields []string) map[string]any {
+	if len(obj) == 0 {
+		return nil
+	}
+	out := cloneUsageRootValue(obj)
+	for _, field := range fields {
+		field = strings.TrimSpace(field)
+		if field == "" {
+			continue
+		}
+		delete(out, field)
+	}
+	return out
 }
 
 func mergeUsageRootPreferNonZero(dst, src map[string]any) {
@@ -133,7 +150,12 @@ func cloneUsageRootConfigs(roots []usageRootConfig) []usageRootConfig {
 		return nil
 	}
 	out := make([]usageRootConfig, len(roots))
-	copy(out, roots)
+	for i, root := range roots {
+		out[i] = root
+		if len(root.ExcludeFields) > 0 {
+			out[i].ExcludeFields = append([]string(nil), root.ExcludeFields...)
+		}
+	}
 	return out
 }
 

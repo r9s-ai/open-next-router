@@ -43,6 +43,26 @@ func TestUsageExtractConfigDeclaredFacts(t *testing.T) {
 	}
 }
 
+func TestUsageExtractConfigDeclaredUsageRootsCopiesExcludeFields(t *testing.T) {
+	cfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		usageRoots: []usageRootConfig{
+			{Path: "$.usage", ExcludeFields: []string{"output_tokens"}},
+		},
+	}
+
+	roots := cfg.DeclaredUsageRoots()
+	if len(roots) != 1 {
+		t.Fatalf("expected 1 usage root, got %d", len(roots))
+	}
+	roots[0].ExcludeFields[0] = "total_tokens"
+
+	roots = cfg.DeclaredUsageRoots()
+	if got, want := roots[0].ExcludeFields[0], "output_tokens"; got != want {
+		t.Fatalf("ExcludeFields got %q, want %q", got, want)
+	}
+}
+
 func TestUsageExtractConfigBuiltinFacts(t *testing.T) {
 	cfg := UsageExtractConfig{Mode: "gemini_generate_content"}
 

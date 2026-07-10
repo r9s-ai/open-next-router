@@ -920,6 +920,7 @@ metrics {
   usage_extract custom;
 
   usage_root path="$.usage";
+  usage_root path="$.message.usage" event="message_start" event_optional=true exclude="output_tokens";
 
   usage_fact input token path="$.input_tokens";
   usage_fact output token path="$.output_tokens";
@@ -932,6 +933,7 @@ metrics {
 - For stream extraction, ONR merges `usage_root` from each chunk first, then runs default-source / `source=usage` facts once at stream end. Explicit `source=response`, `request`, and `derived` facts still run during chunk processing according to their own source and event filters.
 - `event="a|b"` may match multiple SSE event names.
 - `event_optional=true` must be used together with `event="..."`.
+- `exclude="field_a|field_b"` removes top-level fields from the extracted usage object before it is merged. It does not accept JSONPath or nested paths.
 - `usage_root` does not support `name`.
 - Use `source="response"` on a `usage_fact` that must still read from the raw response payload.
 
@@ -2034,7 +2036,7 @@ Multiple: yes
 #### usage_root
 
 ```text
-Syntax:  usage_root path="$.usage" [event="a|b"] [event_optional=true];
+Syntax:  usage_root path="$.usage" [event="a|b"] [event_optional=true] [exclude="field_a|field_b"];
 Default: —
 Context: metrics, usage_mode
 Multiple: yes
@@ -2043,6 +2045,7 @@ Multiple: yes
 - `path` is required and must start with `$.`.
 - `event` is optional and only applies to stream extraction.
 - `event_optional=true` requires `event`.
+- `exclude` is optional and removes top-level fields from the extracted usage object before merging.
 - Multiple matched usage roots are merged into one usage object.
 - `usage_root` does not support `name`.
 

@@ -2054,7 +2054,7 @@ provider "usage-root" {
       base_url = "https://api.example.com";
     }
     metrics {
-      usage_root path="$.usage";
+      usage_root path="$.message.usage" exclude="output_tokens|total_tokens";
       usage_fact input token path="$.input_tokens";
       usage_fact output token path="$.output_tokens";
     }
@@ -2072,8 +2072,11 @@ provider "usage-root" {
 	if len(roots) != 1 {
 		t.Fatalf("usage roots len=%d want=1", len(roots))
 	}
-	if got, want := roots[0].Path, "$.usage"; got != want {
+	if got, want := roots[0].Path, "$.message.usage"; got != want {
 		t.Fatalf("usage root path=%q want=%q", got, want)
+	}
+	if got, want := strings.Join(roots[0].ExcludeFields, "|"), "output_tokens|total_tokens"; got != want {
+		t.Fatalf("usage root exclude=%q want=%q", got, want)
 	}
 	facts := pf.Usage.Defaults.CompiledPlan(nil).Facts
 	if len(facts) != 2 {
@@ -2083,6 +2086,132 @@ provider "usage-root" {
 		if got, want := fact.Source, "usage"; got != want {
 			t.Fatalf("compiled fact source got %q, want %q", got, want)
 		}
+	}
+}
+
+func TestValidateProviderFile_UsageRootExcludeValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		exclude string
+	}{
+		{name: "empty", exclude: ""},
+		{name: "jsonpath", exclude: "$.output_tokens"},
+		{name: "nested", exclude: "nested.field"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "usage-root-exclude-invalid.conf")
+			if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "usage-root-exclude-invalid" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+    metrics {
+      usage_root path="$.usage" exclude="`+tc.exclude+`";
+    }
+  }
+}
+`), 0o600); err != nil {
+				t.Fatalf("WriteFile: %v", err)
+			}
+
+			if _, err := ValidateProviderFile(path); err == nil || !strings.Contains(err.Error(), "usage_root[0] exclude") {
+				t.Fatalf("ValidateProviderFile err=%v, want usage_root exclude validation", err)
+			}
+		})
+	}
+}
+
+func TestExtractUsage_UsageRootExcludeField(t *testing.T) {
+	cfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		usageRoots: []usageRootConfig{
+			{Path: "$.usage", ExcludeFields: []string{"output_tokens"}},
+		},
+		facts: []usageFactConfig{
+			{Dimension: "input", Unit: "token", Path: "$.input_tokens"},
+			{Dimension: "output", Unit: "token", Path: "$.output_tokens"},
+		},
+	}
+	body := []byte(`{"usage":{"input_tokens":10,"output_tokens":9}}`)
+
+	usage, _, err := ExtractUsage(&dslmeta.Meta{}, &cfg, body)
+	if err != nil {
+		t.Fatalf("ExtractUsage: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage")
+	}
+	if got, want := usage.InputTokens, 10; got != want {
+		t.Fatalf("InputTokens got %d, want %d", got, want)
+	}
+	if got, want := usage.OutputTokens, 0; got != want {
+		t.Fatalf("OutputTokens got %d, want %d", got, want)
+	}
+}
+
+func TestExtractUsage_UsageRootExcludeDoesNotAffectResponseSource(t *testing.T) {
+	cfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		usageRoots: []usageRootConfig{
+			{Path: "$.usage", ExcludeFields: []string{"output_tokens"}},
+		},
+		facts: []usageFactConfig{
+			{Dimension: "input", Unit: "token", Path: "$.input_tokens"},
+			{Dimension: "output", Unit: "token", Source: "response", Path: "$.usage.output_tokens"},
+		},
+	}
+	body := []byte(`{"usage":{"input_tokens":10,"output_tokens":9}}`)
+
+	usage, _, err := ExtractUsage(&dslmeta.Meta{}, &cfg, body)
+	if err != nil {
+		t.Fatalf("ExtractUsage: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage")
+	}
+	if got, want := usage.InputTokens, 10; got != want {
+		t.Fatalf("InputTokens got %d, want %d", got, want)
+	}
+	if got, want := usage.OutputTokens, 9; got != want {
+		t.Fatalf("OutputTokens got %d, want %d", got, want)
+	}
+}
+
+func TestExtractUsage_UsageRootMergeDoesNotMutateResponseSource(t *testing.T) {
+	cfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		usageRoots: []usageRootConfig{
+			{Path: "$.usage_a"},
+			{Path: "$.usage_b"},
+		},
+		facts: []usageFactConfig{
+			{Dimension: "input", Unit: "token", Source: "response", Path: "$.usage_a.nested.tokens"},
+			{Dimension: "output", Unit: "token", Path: "$.nested.tokens"},
+		},
+	}
+	body := []byte(`{
+	  "usage_a":{"nested":{"tokens":0}},
+	  "usage_b":{"nested":{"tokens":5}}
+	}`)
+
+	usage, _, err := ExtractUsage(&dslmeta.Meta{}, &cfg, body)
+	if err != nil {
+		t.Fatalf("ExtractUsage: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage")
+	}
+	if got, want := usage.InputTokens, 0; got != want {
+		t.Fatalf("InputTokens got %d, want %d", got, want)
+	}
+	if got, want := usage.OutputTokens, 5; got != want {
+		t.Fatalf("OutputTokens got %d, want %d", got, want)
 	}
 }
 
