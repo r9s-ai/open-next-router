@@ -17,7 +17,8 @@ func TestExtractUsage_OpenAI_NonStream(t *testing.T) {
 	    "input_tokens": 8,
 	    "output_tokens": 9,
 	    "input_tokens_details": {
-	      "cached_tokens": 5
+	      "cached_tokens": 5,
+	      "cache_write_tokens": 3
 	    }
 	  }
 	}`)
@@ -38,6 +39,137 @@ func TestExtractUsage_OpenAI_NonStream(t *testing.T) {
 	if u.InputTokenDetails == nil || u.InputTokenDetails.CachedTokens != 5 {
 		t.Fatalf("expected cached token details, got=%+v", u.InputTokenDetails)
 	}
+	if u.InputTokenDetails.CacheWriteTokens != 3 {
+		t.Fatalf("cache_write_tokens=%d want=3", u.InputTokenDetails.CacheWriteTokens)
+	}
+}
+
+func TestExtractUsage_OpenAIChatCompletionsCacheWriteMainPathWins(t *testing.T) {
+	meta := &dslmeta.Meta{API: "chat.completions", IsStream: false}
+	cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
+
+	resp := []byte(`{
+	  "usage": {
+	    "prompt_tokens": 11,
+	    "completion_tokens": 5,
+	    "prompt_tokens_details": {
+	      "cached_tokens": 2,
+	      "cache_write_tokens": 3
+	    },
+	    "input_tokens_details": {
+	      "cached_tokens": 97,
+	      "cache_write_tokens": 99
+	    }
+	  }
+	}`)
+
+	u, cached, err := ExtractUsage(meta, cfg, resp)
+	if err != nil {
+		t.Fatalf("ExtractUsage: %v", err)
+	}
+	if u == nil || u.InputTokenDetails == nil {
+		t.Fatalf("expected usage details, got=%+v", u)
+	}
+	if u.InputTokens != 11 || u.OutputTokens != 5 || u.TotalTokens != 16 {
+		t.Fatalf("unexpected usage: %+v", *u)
+	}
+	if cached != 2 || u.InputTokenDetails.CachedTokens != 2 {
+		t.Fatalf("cached=%d details=%+v want=2", cached, u.InputTokenDetails)
+	}
+	if u.InputTokenDetails.CacheWriteTokens != 3 {
+		t.Fatalf("cache_write_tokens=%d want=3", u.InputTokenDetails.CacheWriteTokens)
+	}
+}
+
+func TestExtractUsage_OpenAIResponsesCacheWrite(t *testing.T) {
+	meta := &dslmeta.Meta{API: "responses", IsStream: false}
+	cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
+
+	resp := []byte(`{
+	  "usage": {
+	    "input_tokens": 13,
+	    "output_tokens": 7,
+	    "input_tokens_details": {
+	      "cached_tokens": 4,
+	      "cache_write_tokens": 6
+	    }
+	  }
+	}`)
+
+	u, cached, err := ExtractUsage(meta, cfg, resp)
+	if err != nil {
+		t.Fatalf("ExtractUsage: %v", err)
+	}
+	if u == nil || u.InputTokenDetails == nil {
+		t.Fatalf("expected usage details, got=%+v", u)
+	}
+	if u.InputTokens != 13 || u.OutputTokens != 7 || u.TotalTokens != 20 {
+		t.Fatalf("unexpected usage: %+v", *u)
+	}
+	if cached != 4 || u.InputTokenDetails.CachedTokens != 4 {
+		t.Fatalf("cached=%d details=%+v want=4", cached, u.InputTokenDetails)
+	}
+	if u.InputTokenDetails.CacheWriteTokens != 6 {
+		t.Fatalf("cache_write_tokens=%d want=6", u.InputTokenDetails.CacheWriteTokens)
+	}
+}
+
+func TestExtractUsage_OpenAIResponsesOptionalCacheFields(t *testing.T) {
+	tests := []struct {
+		name       string
+		body       string
+		wantCached int
+		wantWrite  int
+	}{
+		{
+			name:       "cache read only",
+			body:       `{"usage":{"input_tokens":13,"output_tokens":7,"input_tokens_details":{"cached_tokens":4}}}`,
+			wantCached: 4,
+		},
+		{
+			name:      "cache write only",
+			body:      `{"usage":{"input_tokens":13,"output_tokens":7,"input_tokens_details":{"cache_write_tokens":6}}}`,
+			wantWrite: 6,
+		},
+		{
+			name: "no cache fields",
+			body: `{"usage":{"input_tokens":13,"output_tokens":7}}`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			meta := &dslmeta.Meta{API: "responses", IsStream: false}
+			cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
+
+			u, cached, err := ExtractUsage(meta, cfg, []byte(tc.body))
+			if err != nil {
+				t.Fatalf("ExtractUsage: %v", err)
+			}
+			if u == nil {
+				t.Fatal("expected usage")
+			}
+			if cached != tc.wantCached {
+				t.Fatalf("cached=%d want=%d", cached, tc.wantCached)
+			}
+			if tc.wantCached == 0 && tc.wantWrite == 0 {
+				if u.InputTokenDetails != nil &&
+					(u.InputTokenDetails.CachedTokens != 0 || u.InputTokenDetails.CacheWriteTokens != 0) {
+					t.Fatalf("unexpected input token details: %+v", u.InputTokenDetails)
+				}
+				return
+			}
+			if u.InputTokenDetails == nil {
+				t.Fatal("expected input token details")
+			}
+			if u.InputTokenDetails.CachedTokens != tc.wantCached {
+				t.Fatalf("cached token details=%d want=%d", u.InputTokenDetails.CachedTokens, tc.wantCached)
+			}
+			if u.InputTokenDetails.CacheWriteTokens != tc.wantWrite {
+				t.Fatalf("cache_write_tokens=%d want=%d", u.InputTokenDetails.CacheWriteTokens, tc.wantWrite)
+			}
+		})
+	}
 }
 
 func TestExtractUsageObject_OpenAI_NonStream(t *testing.T) {
@@ -49,7 +181,8 @@ func TestExtractUsageObject_OpenAI_NonStream(t *testing.T) {
 			"input_tokens":  8,
 			"output_tokens": 9,
 			"input_tokens_details": map[string]any{
-				"cached_tokens": 5,
+				"cached_tokens":      5,
+				"cache_write_tokens": 3,
 			},
 		},
 	}
@@ -69,6 +202,9 @@ func TestExtractUsageObject_OpenAI_NonStream(t *testing.T) {
 	}
 	if u.InputTokenDetails == nil || u.InputTokenDetails.CachedTokens != 5 {
 		t.Fatalf("expected cached token details, got=%+v", u.InputTokenDetails)
+	}
+	if u.InputTokenDetails.CacheWriteTokens != 3 {
+		t.Fatalf("cache_write_tokens=%d want=3", u.InputTokenDetails.CacheWriteTokens)
 	}
 }
 

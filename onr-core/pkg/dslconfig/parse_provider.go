@@ -650,6 +650,12 @@ func parseUsageRootStmt(s *scanner, cfg *UsageExtractConfig) error {
 					return s.errAt(valTok, "event_optional expects true or false")
 				}
 				root.EventOptional = val
+			case "exclude":
+				val, err := parseUsageFactStringValue(s, valTok, "exclude")
+				if err != nil {
+					return err
+				}
+				root.ExcludeFields = parseUsageRootExcludeFields(val)
 			default:
 				return s.errAt(tok, "unsupported usage_root option "+key)
 			}
@@ -657,6 +663,19 @@ func parseUsageRootStmt(s *scanner, cfg *UsageExtractConfig) error {
 			return s.errAt(tok, "expected usage_root option or ';'")
 		}
 	}
+}
+
+func parseUsageRootExcludeFields(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return []string{""}
+	}
+	parts := strings.Split(raw, "|")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		out = append(out, strings.TrimSpace(part))
+	}
+	return out
 }
 
 func parseUsageFactPrimitiveOption(s *scanner, keyTok token, key string, valTok token, fact *usageFactConfig, primitiveSet *bool) (bool, error) {

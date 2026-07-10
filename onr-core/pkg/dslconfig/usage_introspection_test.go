@@ -43,6 +43,26 @@ func TestUsageExtractConfigDeclaredFacts(t *testing.T) {
 	}
 }
 
+func TestUsageExtractConfigDeclaredUsageRootsCopiesExcludeFields(t *testing.T) {
+	cfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		usageRoots: []usageRootConfig{
+			{Path: "$.usage", ExcludeFields: []string{"output_tokens"}},
+		},
+	}
+
+	roots := cfg.DeclaredUsageRoots()
+	if len(roots) != 1 {
+		t.Fatalf("expected 1 usage root, got %d", len(roots))
+	}
+	roots[0].ExcludeFields[0] = "total_tokens"
+
+	roots = cfg.DeclaredUsageRoots()
+	if got, want := roots[0].ExcludeFields[0], "output_tokens"; got != want {
+		t.Fatalf("ExcludeFields got %q, want %q", got, want)
+	}
+}
+
 func TestUsageExtractConfigBuiltinFacts(t *testing.T) {
 	cfg := UsageExtractConfig{Mode: "gemini_generate_content"}
 
@@ -65,6 +85,37 @@ func TestUsageExtractConfigCompiledFacts_OpenAIAudioSpeech(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected derived audio.tts fact, got %#v", facts)
+	}
+}
+
+func TestUsageExtractConfigCompiledFacts_OpenAICacheWrite(t *testing.T) {
+	tests := []struct {
+		name   string
+		api    string
+		stream bool
+		path   string
+	}{
+		{name: "chat", api: "chat.completions", path: "$.prompt_tokens_details.cache_write_tokens"},
+		{name: "responses", api: "responses", path: "$.input_tokens_details.cache_write_tokens"},
+		{name: "responses stream", api: "responses", stream: true, path: "$.input_tokens_details.cache_write_tokens"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", tc.api, tc.stream)
+			facts := cfg.CompiledFacts(&dslmeta.Meta{API: tc.api, IsStream: tc.stream})
+
+			found := false
+			for _, fact := range facts {
+				if fact.Dimension == "cache_write" && fact.Unit == "token" && fact.Path == tc.path && !fact.Fallback {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("expected cache_write fact path %q, got %#v", tc.path, facts)
+			}
+		})
 	}
 }
 

@@ -1052,6 +1052,7 @@ metrics {
   usage_extract custom;
 
   usage_root path="$.usage";
+  usage_root path="$.message.usage" event="message_start" event_optional=true exclude="output_tokens";
 
   usage_fact input token path="$.input_tokens";
   usage_fact output token path="$.output_tokens";
@@ -1064,6 +1065,7 @@ metrics {
 - 流式提取时，ONR 会先在每个 chunk 中合并 `usage_root`，等 stream 结束后再从合并结果执行默认 source / `source=usage` 的 `usage_fact`；显式 `source=response` / `request` / `derived` 的事实仍在 chunk 阶段按自己的 source 与 event 执行。
 - `event="a|b"` 可用于匹配多个 SSE 事件名。
 - `event_optional=true` 可选，需要与 `event="..."` 一起使用，用于兼容上游有时不带 SSE `event:` 的情况。
+- `exclude="field_a|field_b"` 会在合并前从提取出的 usage 对象里删除顶层字段；不支持 JSONPath 或嵌套路径。
 - `usage_root` 不支持 `name`，统一合并为一个 usage 对象。
 - 需要继续从原始响应读取的事实应显式写 `source="response"`，例如：
 
@@ -1949,7 +1951,7 @@ Multiple: no
 #### usage_root
 
 ```text
-Syntax:  usage_root path="$.usage" [event="a|b"] [event_optional=true];
+Syntax:  usage_root path="$.usage" [event="a|b"] [event_optional=true] [exclude="field_a|field_b"];
 Default: —
 Context: metrics, usage_mode
 Multiple: yes
@@ -1958,6 +1960,7 @@ Multiple: yes
 - `path` 必填，必须以 `$.` 开头。
 - `event` 可选，只对流式 SSE 提取有意义，支持用 `|` 配置多个事件名。
 - `event_optional=true` 必须与 `event` 同时出现。
+- `exclude` 可选，会在合并前从提取出的 usage 对象里删除顶层字段。
 - 多条 `usage_root` 命中时会合并成一个 usage 对象。
 - `usage_root` 不支持 `name`。
 

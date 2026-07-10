@@ -41,7 +41,11 @@ func cloneUsageRootsForIntrospection(roots []usageRootConfig) []UsageRoot {
 	}
 	out := make([]UsageRoot, 0, len(roots))
 	for _, root := range roots {
-		out = append(out, UsageRoot(root))
+		item := UsageRoot(root)
+		if len(root.ExcludeFields) > 0 {
+			item.ExcludeFields = append([]string(nil), root.ExcludeFields...)
+		}
+		out = append(out, item)
 	}
 	return out
 }

@@ -44,9 +44,10 @@ type UsageFact struct {
 
 // UsageRoot describes one usage_root extraction rule in DSL/runtime.
 type UsageRoot struct {
-	Path          string `json:"path,omitempty"`
-	Event         string `json:"event,omitempty"`
-	EventOptional bool   `json:"event_optional,omitempty"`
+	Path          string   `json:"path,omitempty"`
+	Event         string   `json:"event,omitempty"`
+	EventOptional bool     `json:"event_optional,omitempty"`
+	ExcludeFields []string `json:"exclude_fields,omitempty"`
 }
 
 // UsageExecutionPlan is the normalized internal plan used after usage_extract

@@ -420,6 +420,11 @@ func validateUsageRootConfig(path, providerName, scope string, idx int, root usa
 	if !strings.HasPrefix(strings.TrimSpace(root.Path), "$.") {
 		return fmt.Errorf("provider %q in %q: %s usage_root[%d] path must start with $. ", providerName, path, scope, idx)
 	}
+	for _, field := range root.ExcludeFields {
+		if err := validateUsageRootExcludeField(field); err != nil {
+			return fmt.Errorf("provider %q in %q: %s usage_root[%d] exclude %q invalid: %w", providerName, path, scope, idx, field, err)
+		}
+	}
 	if strings.TrimSpace(root.Event) == "" {
 		if root.EventOptional {
 			return fmt.Errorf("provider %q in %q: %s usage_root[%d] event_optional requires event", providerName, path, scope, idx)
@@ -428,6 +433,17 @@ func validateUsageRootConfig(path, providerName, scope string, idx int, root usa
 	}
 	if err := validateUsageEventList(strings.TrimSpace(root.Event)); err != nil {
 		return fmt.Errorf("provider %q in %q: %s usage_root[%d] %s", providerName, path, scope, idx, err.Error())
+	}
+	return nil
+}
+
+func validateUsageRootExcludeField(field string) error {
+	field = strings.TrimSpace(field)
+	if field == "" {
+		return fmt.Errorf("field name is empty")
+	}
+	if strings.ContainsAny(field, " \t\r\n.$[]") {
+		return fmt.Errorf("field name must be a top-level key, not a JSONPath")
 	}
 	return nil
 }
