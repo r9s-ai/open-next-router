@@ -17,8 +17,8 @@ func TestStreamMetricsAggregator_OpenAIUsageLast_FinishFirst(t *testing.T) {
 
 	_ = agg.OnSSEDataJSON([]byte(`{"choices":[{"finish_reason":"stop"}]}`))
 	_ = agg.OnSSEDataJSON([]byte(`{"choices":[{"finish_reason":"length"}]}`))
-	_ = agg.OnSSEDataJSON([]byte(`{"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}`))
-	_ = agg.OnSSEDataJSON([]byte(`{"usage":{"prompt_tokens":9,"completion_tokens":8,"total_tokens":17}}`))
+	_ = agg.OnSSEDataJSON([]byte(`{"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3,"prompt_tokens_details":{"cache_write_tokens":4}}}`))
+	_ = agg.OnSSEDataJSON([]byte(`{"usage":{"prompt_tokens":9,"completion_tokens":8,"total_tokens":17,"prompt_tokens_details":{"cache_write_tokens":6}}}`))
 
 	u, _, fr, ok := agg.Result()
 	if !ok || u == nil {
@@ -26,6 +26,9 @@ func TestStreamMetricsAggregator_OpenAIUsageLast_FinishFirst(t *testing.T) {
 	}
 	if u.TotalTokens != 17 {
 		t.Fatalf("unexpected total tokens: %d", u.TotalTokens)
+	}
+	if u.InputTokenDetails == nil || u.InputTokenDetails.CacheWriteTokens != 6 {
+		t.Fatalf("unexpected input token details: %+v", u.InputTokenDetails)
 	}
 	// finish_reason: first non-empty
 	if fr != "stop" {
@@ -263,7 +266,7 @@ func TestStreamMetricsAggregator_OpenAIResponsesStreamUsageUsesSSEEventFilter(t 
 	  "type":"response.completed",
 	  "response":{
 	    "status":"completed",
-	    "usage":{"input_tokens":11,"output_tokens":5,"input_tokens_details":{"cached_tokens":2}},
+	    "usage":{"input_tokens":11,"output_tokens":5,"input_tokens_details":{"cached_tokens":2,"cache_write_tokens":3}},
 	    "output":[
 	      {"type":"web_search_call","status":"completed"},
 	      {"type":"web_search_call","status":"failed"}
@@ -281,8 +284,46 @@ func TestStreamMetricsAggregator_OpenAIResponsesStreamUsageUsesSSEEventFilter(t 
 	if cached != 2 {
 		t.Fatalf("cached=%d want=2", cached)
 	}
+	if u.InputTokenDetails == nil || u.InputTokenDetails.CacheWriteTokens != 3 {
+		t.Fatalf("unexpected input token details: %+v", u.InputTokenDetails)
+	}
 	if got, want := u.FlatFields["server_tool_web_search_calls"], 1; got != want {
 		t.Fatalf("server_tool_web_search_calls=%v want=%v", got, want)
+	}
+}
+
+func TestStreamMetricsAggregator_OpenAIResponsesStreamCacheWriteFinalEvents(t *testing.T) {
+	for _, event := range []string{"response.completed", "response.incomplete"} {
+		t.Run(event, func(t *testing.T) {
+			meta := &dslmeta.Meta{API: "responses", IsStream: true}
+			usageCfg, finishCfg := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
+			agg := NewStreamMetricsAggregator(meta, usageCfg, finishCfg)
+
+			_ = agg.OnSSEEventDataJSON("response.output_text.delta", []byte(`{"delta":"Hello"}`))
+			_ = agg.OnSSEEventDataJSON(event, []byte(`{
+			  "response":{
+			    "usage":{
+			      "input_tokens":17,
+			      "output_tokens":4,
+			      "input_tokens_details":{"cached_tokens":5,"cache_write_tokens":7}
+			    }
+			  }
+			}`))
+
+			u, cached, _, ok := agg.Result()
+			if !ok || u == nil || u.InputTokenDetails == nil {
+				t.Fatalf("expected usage details, got ok=%v usage=%+v", ok, u)
+			}
+			if u.InputTokens != 17 || u.OutputTokens != 4 || u.TotalTokens != 21 {
+				t.Fatalf("unexpected usage: %+v", *u)
+			}
+			if cached != 5 || u.InputTokenDetails.CachedTokens != 5 {
+				t.Fatalf("cached=%d details=%+v want=5", cached, u.InputTokenDetails)
+			}
+			if u.InputTokenDetails.CacheWriteTokens != 7 {
+				t.Fatalf("cache_write_tokens=%d want=7", u.InputTokenDetails.CacheWriteTokens)
+			}
+		})
 	}
 }
 

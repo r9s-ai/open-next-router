@@ -68,6 +68,37 @@ func TestUsageExtractConfigCompiledFacts_OpenAIAudioSpeech(t *testing.T) {
 	}
 }
 
+func TestUsageExtractConfigCompiledFacts_OpenAICacheWrite(t *testing.T) {
+	tests := []struct {
+		name   string
+		api    string
+		stream bool
+		path   string
+	}{
+		{name: "chat", api: "chat.completions", path: "$.prompt_tokens_details.cache_write_tokens"},
+		{name: "responses", api: "responses", path: "$.input_tokens_details.cache_write_tokens"},
+		{name: "responses stream", api: "responses", stream: true, path: "$.input_tokens_details.cache_write_tokens"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", tc.api, tc.stream)
+			facts := cfg.CompiledFacts(&dslmeta.Meta{API: tc.api, IsStream: tc.stream})
+
+			found := false
+			for _, fact := range facts {
+				if fact.Dimension == "cache_write" && fact.Unit == "token" && fact.Path == tc.path && !fact.Fallback {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("expected cache_write fact path %q, got %#v", tc.path, facts)
+			}
+		})
+	}
+}
+
 func TestUsageExtractConfigCompiledPlan_CustomLegacyFields(t *testing.T) {
 	inExpr, err := ParseUsageExpr("$.usage.prompt_tokens + $.usage.extra_input")
 	if err != nil {
