@@ -67,3 +67,20 @@ jobs:
       - name: Run tests
         working-directory: ${{ matrix.module.path }}
         run: go test -v ./...
+
+  fuzz:
+    name: Fuzz parsing boundaries
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.work
+          cache: true
+
+      - name: Run bounded fuzz tests
+        run: make fuzz FUZZTIME=10s

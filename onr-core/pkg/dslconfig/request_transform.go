@@ -148,4 +148,17 @@ type JSONOp struct {
 	Event         string
 	EventOptional bool
 	MaxCount      int
+
+	// MatchValue is the source string value matched by json_map_value; when the
+	// value at Path equals MatchValue, it is replaced with ValueExpr's result.
+	MatchValue string
+	// ClampRange holds json_clamp's [Min, Max] bounds; nil for other ops.
+	ClampRange *JSONClampRange
+}
+
+// JSONClampRange describes json_clamp: the numeric value at the path is clamped
+// to [Min, Max]. Values inside the range pass through unchanged.
+type JSONClampRange struct {
+	Min float64
+	Max float64
 }

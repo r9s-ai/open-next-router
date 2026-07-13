@@ -112,7 +112,10 @@ func (s *scanner) scanString() (token, bool) {
 	for s.i < len(s.input) {
 		c := s.input[s.i]
 		if c == '\\' {
-			s.i += 2
+			s.i++
+			if s.i < len(s.input) {
+				s.i++
+			}
 			continue
 		}
 		s.i++

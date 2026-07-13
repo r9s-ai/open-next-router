@@ -71,57 +71,86 @@ func validateModelMapConfig(path, providerName, scope string, cfg ModelMapConfig
 func validateRequestJSONOps(path, providerName, scope string, ops []JSONOp) error {
 	for i, op := range ops {
 		opScope := fmt.Sprintf("%s.json_op[%d]", scope, i)
-		switch strings.ToLower(strings.TrimSpace(op.Op)) {
-		case jsonOpDelWithCond:
-			if _, err := parseObjectPath(op.Path); err != nil {
-				return fmt.Errorf("provider %q in %q: %s invalid json path: %w", providerName, path, opScope, err)
-			}
-			if strings.TrimSpace(op.FieldName) == "" {
-				return fmt.Errorf("provider %q in %q: %s json_del_with_condition requires field name", providerName, path, opScope)
-			}
-			if len(op.Patterns) == 0 {
-				return fmt.Errorf("provider %q in %q: %s json_del_with_condition requires at least one pattern", providerName, path, opScope)
-			}
-		case jsonOpSet, jsonOpReplace, jsonOpSetIfAbsent, jsonOpDel, jsonOpWrapInputText:
-			if _, err := parseObjectPath(op.Path); err != nil {
-				return fmt.Errorf("provider %q in %q: %s invalid json path: %w", providerName, path, opScope, err)
-			}
-			if op.Op == jsonOpSet || op.Op == jsonOpReplace || op.Op == jsonOpSetIfAbsent {
-				if err := validateJSONValueExpr(op.ValueExpr); err != nil {
-					return fmt.Errorf("provider %q in %q: %s invalid value expression: %w", providerName, path, opScope, err)
-				}
-			}
-		case jsonOpDelIfMissing:
-			if _, err := parseObjectPath(op.Path); err != nil {
-				return fmt.Errorf("provider %q in %q: %s invalid json path: %w", providerName, path, opScope, err)
-			}
-			if _, err := parseObjectPath(op.FromPath); err != nil {
-				return fmt.Errorf("provider %q in %q: %s invalid required path: %w", providerName, path, opScope, err)
-			}
-		case jsonOpSetHeaderVals:
-			if _, err := parseObjectPath(op.Path); err != nil {
-				return fmt.Errorf("provider %q in %q: %s invalid json path: %w", providerName, path, opScope, err)
-			}
-			if strings.TrimSpace(op.HeaderName) == "" {
-				return fmt.Errorf("provider %q in %q: %s json_set_header_values requires header name", providerName, path, opScope)
-			}
-		case jsonOpFilterValues:
-			if _, err := parseObjectPath(op.Path); err != nil {
-				return fmt.Errorf("provider %q in %q: %s invalid json path: %w", providerName, path, opScope, err)
-			}
-			if len(op.Patterns) == 0 {
-				return fmt.Errorf("provider %q in %q: %s json_filter_values requires at least one pattern", providerName, path, opScope)
-			}
-		case jsonOpRename:
-			if _, err := parseObjectPath(op.FromPath); err != nil {
-				return fmt.Errorf("provider %q in %q: %s invalid from path: %w", providerName, path, opScope, err)
-			}
-			if _, err := parseObjectPath(op.ToPath); err != nil {
-				return fmt.Errorf("provider %q in %q: %s invalid to path: %w", providerName, path, opScope, err)
-			}
-		default:
-			return fmt.Errorf("provider %q in %q: %s unsupported json op %q", providerName, path, opScope, op.Op)
+		if err := validateRequestJSONOp(path, providerName, opScope, op); err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+// validateRequestJSONOp validates a single request JSON op. opScope already
+// includes the op index for error messages.
+func validateRequestJSONOp(path, providerName, opScope string, op JSONOp) error {
+	invalidPath := func(kind string, err error) error {
+		return fmt.Errorf("provider %q in %q: %s invalid %s: %w", providerName, path, opScope, kind, err)
+	}
+	requireErr := func(msg string) error {
+		return fmt.Errorf("provider %q in %q: %s %s", providerName, path, opScope, msg)
+	}
+	switch strings.ToLower(strings.TrimSpace(op.Op)) {
+	case jsonOpDelWithCond:
+		if _, err := parseObjectPath(op.Path); err != nil {
+			return invalidPath("json path", err)
+		}
+		if strings.TrimSpace(op.FieldName) == "" {
+			return requireErr("json_del_with_condition requires field name")
+		}
+		if len(op.Patterns) == 0 {
+			return requireErr("json_del_with_condition requires at least one pattern")
+		}
+	case jsonOpSet, jsonOpReplace, jsonOpSetIfAbsent, jsonOpDel, jsonOpWrapInputText:
+		if _, err := parseObjectPath(op.Path); err != nil {
+			return invalidPath("json path", err)
+		}
+		if op.Op == jsonOpSet || op.Op == jsonOpReplace || op.Op == jsonOpSetIfAbsent {
+			if err := validateJSONValueExpr(op.ValueExpr); err != nil {
+				return invalidPath("value expression", err)
+			}
+		}
+	case jsonOpDelIfMissing:
+		if _, err := parseObjectPath(op.Path); err != nil {
+			return invalidPath("json path", err)
+		}
+		if _, err := parseObjectPath(op.FromPath); err != nil {
+			return invalidPath("required path", err)
+		}
+	case jsonOpSetHeaderVals:
+		if _, err := parseObjectPath(op.Path); err != nil {
+			return invalidPath("json path", err)
+		}
+		if strings.TrimSpace(op.HeaderName) == "" {
+			return requireErr("json_set_header_values requires header name")
+		}
+	case jsonOpFilterValues:
+		if _, err := parseObjectPath(op.Path); err != nil {
+			return invalidPath("json path", err)
+		}
+		if len(op.Patterns) == 0 {
+			return requireErr("json_filter_values requires at least one pattern")
+		}
+	case jsonOpRename:
+		if _, err := parseObjectPath(op.FromPath); err != nil {
+			return invalidPath("from path", err)
+		}
+		if _, err := parseObjectPath(op.ToPath); err != nil {
+			return invalidPath("to path", err)
+		}
+	case jsonOpMapValue:
+		if _, err := parseObjectPath(op.Path); err != nil {
+			return invalidPath("json path", err)
+		}
+		if err := validateJSONValueExpr(op.ValueExpr); err != nil {
+			return invalidPath("value expression", err)
+		}
+	case jsonOpClamp:
+		if _, err := parseObjectPath(op.Path); err != nil {
+			return invalidPath("json path", err)
+		}
+		if op.ClampRange == nil || op.ClampRange.Max < op.ClampRange.Min {
+			return requireErr("json_clamp requires max >= min")
+		}
+	default:
+		return fmt.Errorf("provider %q in %q: %s unsupported json op %q", providerName, path, opScope, op.Op)
 	}
 	return nil
 }
@@ -139,6 +168,9 @@ func validateJSONValueExpr(expr string) error {
 		return nil
 	}
 	if _, err := strconv.Atoi(raw); err == nil {
+		return nil
+	}
+	if _, ok := parseFloatLiteral(raw); ok {
 		return nil
 	}
 	return ValidateStringExpr(raw)
