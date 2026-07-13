@@ -269,6 +269,9 @@ func mapOpenAIChatCompletionsToClaudeRequest(req *apitypes.OpenAIChatCompletions
 	if req.User != "" {
 		dst.Metadata = &apitypes.ClaudeMetadata{UserId: req.User}
 	}
+	if len(req.Fallbacks) > 0 {
+		dst.Fallbacks = req.Fallbacks
+	}
 	if stopSequences := normalizeStopSequences(req.Stop); len(stopSequences) > 0 {
 		dst.StopSequences = stopSequences
 	}

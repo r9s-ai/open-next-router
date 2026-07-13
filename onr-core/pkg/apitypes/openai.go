@@ -9,6 +9,7 @@ type OpenAIChatCompletionsRequest struct {
 	Messages             []OpenAIChatMessage           `json:"messages,omitempty"`
 	Audio                *OpenAIChatAudioParam         `json:"audio,omitempty"`
 	FrequencyPenalty     *float64                      `json:"frequency_penalty,omitempty"`
+	Fallbacks            []*Fallback                   `json:"fallbacks,omitempty"`
 	FunctionCall         *OpenAIChatFunctionCallOption `json:"function_call,omitempty"`
 	Functions            []OpenAIFunctionDefinition    `json:"functions,omitempty"`
 	LogitBias            map[string]float64            `json:"logit_bias,omitempty"`
@@ -78,6 +79,10 @@ func (r *OpenAIChatCompletionsRequest) fromMapPart1(m map[string]any) error {
 		return err
 	}
 	r.FrequencyPenalty, err = floatPtrValue(m, "frequency_penalty")
+	if err != nil {
+		return err
+	}
+	r.Fallbacks, err = decodeFallbackListFromMapField(m, "fallbacks")
 	if err != nil {
 		return err
 	}
@@ -240,6 +245,13 @@ func (r *OpenAIChatCompletionsRequest) toMapPart1(out map[string]any) error {
 	}
 	if r.FrequencyPenalty != nil {
 		out["frequency_penalty"] = *r.FrequencyPenalty
+	}
+	if len(r.Fallbacks) > 0 {
+		fallbacks, err := fallbackListToMaps(r.Fallbacks)
+		if err != nil {
+			return err
+		}
+		out["fallbacks"] = fallbacks
 	}
 	if r.FunctionCall != nil {
 		functionCall, err := r.FunctionCall.ToAny()
@@ -1597,12 +1609,119 @@ func (d *OpenAITokenDetails) ToMap() (map[string]any, error) {
 	return out, nil
 }
 
-type OpenAIChatCompletionsUsage struct {
+type OpenAIUsageByModel struct {
+	Type                    string              `json:"type,omitempty"`
+	Model                   string              `json:"model,omitempty"`
+	Seconds                 int                 `json:"seconds,omitempty"`
+	InputTokens             int                 `json:"input_tokens,omitempty"`
+	OutputTokens            int                 `json:"output_tokens,omitempty"`
 	PromptTokens            int                 `json:"prompt_tokens,omitempty"`
 	CompletionTokens        int                 `json:"completion_tokens,omitempty"`
 	TotalTokens             int                 `json:"total_tokens,omitempty"`
-	PromptTokensDetails     *OpenAITokenDetails `json:"prompt_tokens_details,omitempty"`
 	CompletionTokensDetails *OpenAITokenDetails `json:"completion_tokens_details,omitempty"`
+	InputTokenDetails       *OpenAITokenDetails `json:"input_tokens_details,omitempty"`
+	OutputTokenDetails      *OpenAITokenDetails `json:"output_tokens_details,omitempty"`
+	PromptTokenDetails      *OpenAITokenDetails `json:"prompt_tokens_details,omitempty"`
+}
+
+type OpenAIChatCompletionsUsage struct {
+	PromptTokens            int                   `json:"prompt_tokens,omitempty"`
+	CompletionTokens        int                   `json:"completion_tokens,omitempty"`
+	TotalTokens             int                   `json:"total_tokens,omitempty"`
+	PromptTokensDetails     *OpenAITokenDetails   `json:"prompt_tokens_details,omitempty"`
+	CompletionTokensDetails *OpenAITokenDetails   `json:"completion_tokens_details,omitempty"`
+	Iterations              []*OpenAIUsageByModel `json:"iterations,omitempty"`
+}
+
+func (u *OpenAIUsageByModel) FromMap(m map[string]any) error {
+	var err error
+	u.Type, err = stringValue(m, "type")
+	if err != nil {
+		return err
+	}
+	u.Model, err = stringValue(m, "model")
+	if err != nil {
+		return err
+	}
+	u.Seconds, err = intValue(m, "seconds")
+	if err != nil {
+		return err
+	}
+	u.InputTokens, err = intValue(m, "input_tokens")
+	if err != nil {
+		return err
+	}
+	u.OutputTokens, err = intValue(m, "output_tokens")
+	if err != nil {
+		return err
+	}
+	u.PromptTokens, err = intValue(m, "prompt_tokens")
+	if err != nil {
+		return err
+	}
+	u.CompletionTokens, err = intValue(m, "completion_tokens")
+	if err != nil {
+		return err
+	}
+	u.TotalTokens, err = intValue(m, "total_tokens")
+	if err != nil {
+		return err
+	}
+	u.CompletionTokensDetails, err = decodeOpenAITokenDetailsPtrFromMapField(m, "completion_tokens_details")
+	if err != nil {
+		return err
+	}
+	u.InputTokenDetails, err = decodeOpenAITokenDetailsPtrFromMapField(m, "input_tokens_details")
+	if err != nil {
+		return err
+	}
+	u.OutputTokenDetails, err = decodeOpenAITokenDetailsPtrFromMapField(m, "output_tokens_details")
+	if err != nil {
+		return err
+	}
+	u.PromptTokenDetails, err = decodeOpenAITokenDetailsPtrFromMapField(m, "prompt_tokens_details")
+	return err
+}
+
+func (u *OpenAIUsageByModel) ToMap() (map[string]any, error) {
+	out := map[string]any{}
+	setMapString(out, "type", u.Type)
+	setMapString(out, "model", u.Model)
+	setMapInt(out, "seconds", u.Seconds)
+	setMapInt(out, "input_tokens", u.InputTokens)
+	setMapInt(out, "output_tokens", u.OutputTokens)
+	setMapInt(out, "prompt_tokens", u.PromptTokens)
+	setMapInt(out, "completion_tokens", u.CompletionTokens)
+	setMapInt(out, "total_tokens", u.TotalTokens)
+	if u.CompletionTokensDetails != nil {
+		details, err := u.CompletionTokensDetails.ToMap()
+		if err != nil {
+			return nil, err
+		}
+		out["completion_tokens_details"] = details
+	}
+	if u.InputTokenDetails != nil {
+		details, err := u.InputTokenDetails.ToMap()
+		if err != nil {
+			return nil, err
+		}
+		out["input_tokens_details"] = details
+	}
+	if u.OutputTokenDetails != nil {
+		details, err := u.OutputTokenDetails.ToMap()
+		if err != nil {
+			return nil, err
+		}
+		out["output_tokens_details"] = details
+	}
+	if u.PromptTokenDetails != nil {
+		details, err := u.PromptTokenDetails.ToMap()
+		if err != nil {
+			return nil, err
+		}
+		out["prompt_tokens_details"] = details
+	}
+	return out, nil
 }
 
 func (u *OpenAIChatCompletionsUsage) FromMap(m map[string]any) error {
@@ -1624,6 +1743,10 @@ func (u *OpenAIChatCompletionsUsage) FromMap(m map[string]any) error {
 		return err
 	}
 	u.CompletionTokensDetails, err = decodeOpenAITokenDetailsPtrFromMapField(m, "completion_tokens_details")
+	if err != nil {
+		return err
+	}
+	u.Iterations, err = decodeOpenAIUsageByModelListFromMapField(m, "iterations")
 	return err
 }
 
@@ -1645,6 +1768,13 @@ func (u *OpenAIChatCompletionsUsage) ToMap() (map[string]any, error) {
 			return nil, err
 		}
 		out["completion_tokens_details"] = completionDetails
+	}
+	if len(u.Iterations) > 0 {
+		items, err := openAIUsageByModelListToMaps(u.Iterations)
+		if err != nil {
+			return nil, err
+		}
+		out["iterations"] = items
 	}
 	return out, nil
 }
@@ -2453,11 +2583,12 @@ func (i *OpenAIResponseOutputItem) ToMap() (map[string]any, error) {
 }
 
 type OpenAIResponsesUsage struct {
-	InputTokens        int                 `json:"input_tokens,omitempty"`
-	OutputTokens       int                 `json:"output_tokens,omitempty"`
-	TotalTokens        int                 `json:"total_tokens,omitempty"`
-	InputTokenDetails  *OpenAITokenDetails `json:"input_token_details,omitempty"`
-	OutputTokenDetails *OpenAITokenDetails `json:"output_token_details,omitempty"`
+	InputTokens        int                   `json:"input_tokens,omitempty"`
+	OutputTokens       int                   `json:"output_tokens,omitempty"`
+	TotalTokens        int                   `json:"total_tokens,omitempty"`
+	InputTokenDetails  *OpenAITokenDetails   `json:"input_token_details,omitempty"`
+	OutputTokenDetails *OpenAITokenDetails   `json:"output_token_details,omitempty"`
+	Iterations         []*OpenAIUsageByModel `json:"iterations,omitempty"`
 }
 
 type OpenAIResponseFileSearchRankingOptions struct {
@@ -3203,6 +3334,10 @@ func (u *OpenAIResponsesUsage) FromMap(m map[string]any) error {
 		return err
 	}
 	u.OutputTokenDetails, err = decodeOpenAITokenDetailsPtrFromMapField(m, "output_token_details")
+	if err != nil {
+		return err
+	}
+	u.Iterations, err = decodeOpenAIUsageByModelListFromMapField(m, "iterations")
 	return err
 }
 
@@ -3224,6 +3359,13 @@ func (u *OpenAIResponsesUsage) ToMap() (map[string]any, error) {
 			return nil, err
 		}
 		out["output_token_details"] = details
+	}
+	if len(u.Iterations) > 0 {
+		items, err := openAIUsageByModelListToMaps(u.Iterations)
+		if err != nil {
+			return nil, err
+		}
+		out["iterations"] = items
 	}
 	return out, nil
 }
@@ -4004,6 +4146,37 @@ func decodeOpenAITokenDetailsPtrFromMapField(m map[string]any, key string) (*Ope
 	}
 	var out OpenAITokenDetails
 	return &out, out.FromMap(mv)
+}
+
+func decodeOpenAIUsageByModelListFromMapField(m map[string]any, key string) ([]*OpenAIUsageByModel, error) {
+	items, err := mapListValue(m, key)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*OpenAIUsageByModel, 0, len(items))
+	for _, item := range items {
+		var v OpenAIUsageByModel
+		if err := v.FromMap(item); err != nil {
+			return nil, err
+		}
+		out = append(out, &v)
+	}
+	return out, nil
+}
+
+func openAIUsageByModelListToMaps(items []*OpenAIUsageByModel) ([]any, error) {
+	out := make([]any, 0, len(items))
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		m, err := item.ToMap()
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, nil
 }
 
 func decodeOpenAIChatCompletionsChoiceListFromMapField(m map[string]any, key string) ([]OpenAIChatCompletionsChoice, error) {

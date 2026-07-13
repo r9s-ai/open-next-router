@@ -281,6 +281,35 @@ func (s *claudeSSEToChatState) mergeUsage(raw *apitypes.ClaudeUsage) {
 		u.PromptTokensDetails.CacheWriteTokens = raw.CacheCreationInputTokens
 		u.PromptTokens += raw.CacheCreationInputTokens
 	}
+	if len(raw.Iterations) > 0 {
+		u.Iterations = claudeUsageIterationsToOpenAI(raw.Iterations)
+	}
+}
+
+func claudeUsageIterationsToOpenAI(iterations []apitypes.ClaudeUsageByModel) []*apitypes.OpenAIUsageByModel {
+	if len(iterations) == 0 {
+		return nil
+	}
+	out := make([]*apitypes.OpenAIUsageByModel, 0, len(iterations))
+	for i := range iterations {
+		iteration := iterations[i]
+		promptTokens := iteration.InputTokens + iteration.CacheCreationInputTokens + iteration.CacheReadInputTokens
+		usage := &apitypes.OpenAIUsageByModel{
+			Type:             iteration.Type,
+			Model:            iteration.Model,
+			PromptTokens:     promptTokens,
+			CompletionTokens: iteration.OutputTokens,
+			TotalTokens:      promptTokens + iteration.OutputTokens,
+		}
+		if iteration.CacheReadInputTokens > 0 || iteration.CacheCreationInputTokens > 0 {
+			usage.PromptTokenDetails = &apitypes.OpenAITokenDetails{
+				CachedTokens:     iteration.CacheReadInputTokens,
+				CacheWriteTokens: iteration.CacheCreationInputTokens,
+			}
+		}
+		out = append(out, usage)
+	}
+	return out
 }
 
 func (s *claudeSSEToChatState) emitUsageChunk() error {

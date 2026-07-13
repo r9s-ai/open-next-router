@@ -289,6 +289,7 @@ func mapClaudeUsageToOpenAIChatUsage(raw *apitypes.ClaudeUsage) (apitypes.JSONOb
 		PromptTokens:     promptTokens,
 		CompletionTokens: raw.OutputTokens,
 		TotalTokens:      promptTokens + raw.OutputTokens,
+		Iterations:       claudeUsageIterationsToOpenAI(raw.Iterations),
 	}
 	if raw.CacheReadInputTokens > 0 || raw.CacheCreationInputTokens > 0 {
 		u.PromptTokensDetails = &apitypes.OpenAITokenDetails{

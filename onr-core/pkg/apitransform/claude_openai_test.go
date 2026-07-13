@@ -88,6 +88,41 @@ func TestMapClaudeMessagesResponseToOpenAIChatCompletions_Basic(t *testing.T) {
 	}
 }
 
+func TestMapClaudeMessagesResponseToOpenAIChatCompletions_PreservesUsageIterations(t *testing.T) {
+	in := []byte(`{
+  "id":"msg_123",
+  "type":"message",
+  "role":"assistant",
+  "model":"claude-fable-5",
+  "content":[{"type":"text","text":"OK"}],
+  "stop_reason":"end_turn",
+  "usage":{
+    "input_tokens":97,
+    "output_tokens":1120,
+    "iterations":[
+      {"model":"claude-fable-5","type":"message","input_tokens":97,"output_tokens":0},
+      {"model":"claude-opus-4-8","type":"fallback_message","input_tokens":97,"output_tokens":1120}
+    ]
+  }
+}`)
+	var root map[string]any
+	if err := json.Unmarshal(in, &root); err != nil {
+		t.Fatalf("unmarshal input: %v", err)
+	}
+	out, err := MapClaudeMessagesResponseToOpenAIChatCompletionsObject(root)
+	if err != nil {
+		t.Fatalf("map response: %v", err)
+	}
+	encoded, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("marshal output: %v", err)
+	}
+	s := string(encoded)
+	if !containsAll(s, `"usage"`, `"iterations"`, `"model":"claude-fable-5"`, `"model":"claude-opus-4-8"`, `"completion_tokens":1120`, `"total_tokens":1217`) {
+		t.Fatalf("expected usage iterations, got %s", s)
+	}
+}
+
 func TestMapClaudeMessagesResponseToOpenAIChatCompletions_PreservesCacheUsage(t *testing.T) {
 	in := []byte(`{
   "id":"msg_123",

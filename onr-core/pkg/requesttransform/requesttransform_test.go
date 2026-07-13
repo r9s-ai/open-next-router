@@ -246,6 +246,7 @@ func TestApplyReqMap_OpenAIChatToAnthropicMessages_UsesTypedAnthropicConversion(
 		],
 		"tool_choice":{"type":"function","function":{"name":"lookup_weather"}},
 		"max_tokens":999999,
+		"fallbacks":[{"model":"claude-fallback","max_tokens":128}],
 		"reasoning_effort":"high",
 		"stop":["END"],
 		"stream":true,
@@ -272,6 +273,15 @@ func TestApplyReqMap_OpenAIChatToAnthropicMessages_UsesTypedAnthropicConversion(
 	}
 	if got, want := root["stream"], true; got != want {
 		t.Fatalf("stream=%v want=%v", got, want)
+	}
+
+	fallbacks, ok := root["fallbacks"].([]any)
+	if !ok || len(fallbacks) != 1 {
+		t.Fatalf("fallbacks=%v", root["fallbacks"])
+	}
+	fallback, ok := fallbacks[0].(map[string]any)
+	if !ok || fallback["model"] != "claude-fallback" || mustInt(t, fallback["max_tokens"]) != 128 {
+		t.Fatalf("fallback=%v", fallbacks[0])
 	}
 
 	stopSequences, ok := root["stop_sequences"].([]any)
