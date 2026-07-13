@@ -137,11 +137,14 @@ type UsageFact struct {
 	Path       string            `json:"path,omitempty"`
 	CountPath  string            `json:"count_path,omitempty"`
 	SumPath    string            `json:"sum_path,omitempty"`
+	LenPath    string            `json:"len_path,omitempty"`
 	Expr       string            `json:"expr,omitempty"`
 	Type       string            `json:"type,omitempty"`
 	Status     string            `json:"status,omitempty"`
 	Event      string            `json:"event,omitempty"`
 	Fallback   bool              `json:"fallback,omitempty"`
+	WhenPath   string            `json:"when_path,omitempty"`
+	WhenEq     string            `json:"when_eq,omitempty"`
 	Scale      float64           `json:"scale,omitempty"`
 	Attributes map[string]string `json:"attributes,omitempty"`
 }

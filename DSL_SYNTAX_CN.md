@@ -1967,7 +1967,7 @@ Multiple: yes
 #### usage_fact
 
 ```text
-Syntax:  usage_fact <dimension> <unit> path|count_path|sum_path|expr ...;
+Syntax:  usage_fact <dimension> <unit> path|count_path|sum_path|len_path|expr ...;
 Default: —
 Context: metrics
 Multiple: yes
@@ -1975,7 +1975,15 @@ Multiple: yes
 
 - 仅建议配合 `usage_extract custom;` 使用。
 - 第一批支持固定 registry 维度，不开放任意自定义维度。
-- 支持 `path` / `count_path` / `sum_path` / `expr` 四类原语。
+- 支持 `path` / `count_path` / `sum_path` / `len_path` / `expr` 五类原语(每条规则恰好一个)。
+- `len_path` 读取路径处的字符串并以其 **rune 数**作为数量,用于按字符计费的维度(如 TTS 输入文本:`usage_fact input character source=request len_path="$.input";`)。
+- `when_path="$.x" when_eq="v"` 为规则加条件门:仅当同一 source root 中 `when_path` 处的值等于 `when_eq`(数值或字符串比较)时规则才命中;路径缺失永不命中,因此可与 `fallback=true` 规则自然串联——例如按 OpenAI STT 的 `usage.type` 分支:
+
+```conf
+usage_fact audio.stt second path="$.seconds" when_path="$.type" when_eq="duration";
+usage_fact audio.stt second path="$.input_token_details.audio_tokens" scale=0.048 when_path="$.type" when_eq="tokens" fallback=true;
+```
+
 - `count_path` 可搭配 `type` / `status` 过滤。
 - `path` / `sum_path` / `expr` 中的 JSONPath 现在支持受限 filter 子集：
   - `$.items[?(@.field=="VALUE")].x`
@@ -2030,6 +2038,8 @@ Multiple: yes
   - `audio.tts second`
   - `audio.stt second`
   - `audio.translate second`
+  - `input character`
+  - `output character`
 
 #### finish_reason_extract
 

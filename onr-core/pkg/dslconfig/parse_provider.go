@@ -680,12 +680,12 @@ func parseUsageRootExcludeFields(raw string) []string {
 
 func parseUsageFactPrimitiveOption(s *scanner, keyTok token, key string, valTok token, fact *usageFactConfig, primitiveSet *bool) (bool, error) {
 	switch key {
-	case "path", "count_path", "sum_path", "expr":
+	case "path", "count_path", "sum_path", "len_path", "expr":
 	default:
 		return false, nil
 	}
 	if *primitiveSet {
-		return true, s.errAt(keyTok, "usage_fact allows only one of path, count_path, sum_path or expr")
+		return true, s.errAt(keyTok, "usage_fact allows only one of path, count_path, sum_path, len_path or expr")
 	}
 	val, err := parseUsageFactStringValue(s, valTok, key)
 	if err != nil {
@@ -698,6 +698,8 @@ func parseUsageFactPrimitiveOption(s *scanner, keyTok token, key string, valTok 
 		fact.CountPath = val
 	case "sum_path":
 		fact.SumPath = val
+	case "len_path":
+		fact.LenPath = val
 	case "expr":
 		expr, err := ParseUsageExpr(val)
 		if err != nil {
@@ -759,6 +761,20 @@ func parseUsageFactMetaOption(s *scanner, keyTok token, key string, valTok token
 			return s.errAt(valTok, "scale expects positive number")
 		}
 		fact.Scale = val
+		return nil
+	case key == "when_path":
+		val, err := parseUsageFactStringValue(s, valTok, "when_path")
+		if err != nil {
+			return err
+		}
+		fact.WhenPath = val
+		return nil
+	case key == "when_eq":
+		val, err := parseUsageFactStringValue(s, valTok, "when_eq")
+		if err != nil {
+			return err
+		}
+		fact.WhenEq = val
 		return nil
 	case strings.HasPrefix(key, "attr."):
 		val, err := parseUsageFactStringValue(s, valTok, key)
