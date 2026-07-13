@@ -1,4 +1,4 @@
-.PHONY: run build build-all test version release-dry release-snapshot clean help bench-dsl bench-dslconfig bench-dsl-pprof prek prek-install sync-onr-core-version
+.PHONY: run build build-all test fuzz version release-dry release-snapshot clean help bench-dsl bench-dslconfig bench-dsl-pprof prek prek-install sync-onr-core-version
 
 # Get version from root release tags only (ignore submodule tags like onr-core/v*)
 VERSION ?= $(shell git describe --tags --match 'v*' --always --dirty 2>/dev/null || echo "dev")
@@ -12,6 +12,7 @@ ONR_CORE_VERSION ?= latest
 BENCH_COUNT ?= 1
 BENCHTIME ?=
 BENCHMEM ?= -benchmem
+FUZZTIME ?= 10s
 DSL_BENCH_PKGS := ./onr-core/pkg/jsonutil ./onr-core/pkg/dslmeta ./onr-core/pkg/usageestimate ./onr-core/pkg/dslconfig
 DSL_BENCH_PATTERN ?= Benchmark(GetFloatByPathWithMatch|GetFirstIntByPaths|MetaRequestRoot|EstimateChatCompletions|ExtractUsage_|ExtractFinishReason_|ProviderUsageSelect_|ProviderFinishReasonSelect_|StreamMetricsAggregator_)
 DSL_PPROF_BENCH ?= BenchmarkExtractUsage_CustomFacts_Exported
@@ -58,6 +59,14 @@ build-all: ## Build for all platforms using GoReleaser
 test: ## Run tests
 	go test -v ./...
 	cd onr-core && go test -v ./...
+
+fuzz: ## Run bounded fuzz tests for DSL and SSE parsing
+	go test -fuzz=FuzzDSLParser -fuzztime=$(FUZZTIME) ./onr-core/pkg/dslconfig
+	go test -fuzz=FuzzProviderBlockOperations -fuzztime=$(FUZZTIME) ./onr-core/pkg/dslconfig
+	go test -fuzz=FuzzParseAndCollect -fuzztime=$(FUZZTIME) ./onr-core/pkg/ssecollect
+	go test -fuzz=FuzzApply -fuzztime=$(FUZZTIME) ./onr-core/pkg/requesttransform
+	go test -fuzz=FuzzTransformSSEByMode -fuzztime=$(FUZZTIME) ./onr-core/pkg/apitransform
+	go test -fuzz=FuzzJSONPathVisitorsAgree -fuzztime=$(FUZZTIME) ./onr-core/pkg/jsonutil
 
 bench-dsl: ## Run grouped DSL/perf benchmarks with benchmem
 	env GOCACHE=$(GO_BUILD_CACHE) go test $(DSL_BENCH_PKGS) -run '^$$' -bench '$(DSL_BENCH_PATTERN)' $(BENCHMEM) -count=$(BENCH_COUNT) $(if $(BENCHTIME),-benchtime=$(BENCHTIME),)
