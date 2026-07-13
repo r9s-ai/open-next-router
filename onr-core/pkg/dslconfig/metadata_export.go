@@ -178,6 +178,7 @@ func exportUsageFacts(in []UsageFact) []dslmetadata.UsageFact {
 			Status:     strings.TrimSpace(fact.Status),
 			Event:      strings.TrimSpace(fact.Event),
 			Fallback:   fact.Fallback,
+			Scale:      fact.Scale,
 			Attributes: normalizeMetadataAttributes(fact.Attributes),
 		})
 	}

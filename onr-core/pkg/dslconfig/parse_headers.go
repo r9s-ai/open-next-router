@@ -193,6 +193,18 @@ func parseRequestPhaseWithTransform(s *scanner, phase *PhaseHeaders, transform *
 			}
 			return parseJSONDelWithConditionStmt(s, t)
 		},
+		"json_map_value": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
+			if t == nil {
+				return skipStmtOrBlock(s)
+			}
+			return parseJSONMapValueStmt(s, t)
+		},
+		"json_clamp": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
+			if t == nil {
+				return skipStmtOrBlock(s)
+			}
+			return parseJSONClampStmt(s, t)
+		},
 		"after_req_map": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
 			if t == nil {
 				return skipStmtOrBlock(s)
@@ -497,6 +509,153 @@ func parseJSONWrapInputTextStmt(s *scanner, t *RequestTransform) error {
 		Path: strings.TrimSpace(path),
 	})
 	return nil
+}
+
+func parseJSONMapValueStmt(s *scanner, t *RequestTransform) error {
+	// Single:  json_map_value <jsonpath> <from-string> <to-expr>;
+	// Block:   json_map_value <jsonpath> { <from-string> <to-expr>; ... }
+	pathTok := s.nextNonTrivia()
+	switch pathTok.kind {
+	case tokIdent, tokString:
+		// ok
+	default:
+		return s.errAt(pathTok, "json_map_value expects json path")
+	}
+	path := pathTok.text
+	if pathTok.kind == tokString {
+		path = unquoteString(pathTok.text)
+	}
+	next := s.nextNonTrivia()
+	if next.kind == tokLBrace {
+		return parseJSONMapValueBlock(s, t, strings.TrimSpace(path))
+	}
+	// Single-mapping form: `next` is the from-value token.
+	if next.kind != tokString {
+		return s.errAt(next, "json_map_value expects from value string literal or '{'")
+	}
+	from := unquoteString(next.text)
+	valueExpr, err := consumeExprUntilSemicolon(s)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(valueExpr) == "" {
+		return s.errAt(next, "json_map_value expects to value expression")
+	}
+	t.JSONOps = append(t.JSONOps, JSONOp{
+		Op:         jsonOpMapValue,
+		Path:       strings.TrimSpace(path),
+		MatchValue: from,
+		ValueExpr:  strings.TrimSpace(valueExpr),
+	})
+	return nil
+}
+
+// parseJSONMapValueBlock parses the block form after the opening '{'. Each entry
+// `"<from>" <to-expr>;` expands into a standalone json_map_value op on the same
+// path, so runtime/validation treat block and single forms identically.
+func parseJSONMapValueBlock(s *scanner, t *RequestTransform, path string) error {
+	count := 0
+	for {
+		tok := s.nextNonTrivia()
+		switch tok.kind {
+		case tokEOF:
+			return s.errAt(tok, "unexpected EOF in json_map_value block")
+		case tokRBrace:
+			if count == 0 {
+				return s.errAt(tok, "json_map_value block requires at least one mapping")
+			}
+			return nil
+		case tokString:
+			from := unquoteString(tok.text)
+			valueExpr, err := consumeExprUntilSemicolon(s)
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(valueExpr) == "" {
+				return s.errAt(tok, "json_map_value block entry expects to value expression")
+			}
+			t.JSONOps = append(t.JSONOps, JSONOp{
+				Op:         jsonOpMapValue,
+				Path:       path,
+				MatchValue: from,
+				ValueExpr:  strings.TrimSpace(valueExpr),
+			})
+			count++
+		default:
+			return s.errAt(tok, "json_map_value block expects from value string literal or '}'")
+		}
+	}
+}
+
+func parseJSONClampStmt(s *scanner, t *RequestTransform) error {
+	// json_clamp <jsonpath> min=<f> max=<f>;
+	pathTok := s.nextNonTrivia()
+	switch pathTok.kind {
+	case tokIdent, tokString:
+		// ok
+	default:
+		return s.errAt(pathTok, "json_clamp expects json path")
+	}
+	path := pathTok.text
+	if pathTok.kind == tokString {
+		path = unquoteString(pathTok.text)
+	}
+	r := &JSONClampRange{}
+	seen := map[string]bool{}
+	for {
+		tok := s.nextNonTrivia()
+		switch tok.kind {
+		case tokEOF:
+			return s.errAt(tok, "unexpected EOF in json_clamp")
+		case tokSemicolon:
+			for _, key := range []string{"min", "max"} {
+				if !seen[key] {
+					return s.errAt(tok, "json_clamp requires "+key)
+				}
+			}
+			if r.Max < r.Min {
+				return s.errAt(tok, "json_clamp requires max >= min")
+			}
+			t.JSONOps = append(t.JSONOps, JSONOp{
+				Op:         jsonOpClamp,
+				Path:       strings.TrimSpace(path),
+				ClampRange: r,
+			})
+			return nil
+		case tokIdent:
+			key := strings.ToLower(strings.TrimSpace(tok.text))
+			var dst *float64
+			switch key {
+			case "min":
+				dst = &r.Min
+			case "max":
+				dst = &r.Max
+			default:
+				return s.errAt(tok, "unsupported json_clamp option "+key)
+			}
+			if err := consumeEquals(s); err != nil {
+				return err
+			}
+			val, err := consumeNumberOption(s, key)
+			if err != nil {
+				return err
+			}
+			*dst = val
+			seen[key] = true
+		default:
+			return s.errAt(tok, "expected json_clamp option or ';'")
+		}
+	}
+}
+
+// consumeNumberOption reads one decimal number value (optionally quoted).
+func consumeNumberOption(s *scanner, key string) (float64, error) {
+	tok := s.nextNonTrivia()
+	f, err := parseNumberValueTokens(s, tok)
+	if err != nil {
+		return 0, s.errAt(tok, key+" expects number")
+	}
+	return f, nil
 }
 
 func parseJSONSetHeaderValuesStmt(s *scanner, t *RequestTransform) error {
