@@ -76,6 +76,25 @@ provider "gemini" {
 	}
 }
 
+func TestProviderBlockOperationsUseFirstMatchingName(t *testing.T) {
+	content := `provider "duplicate" {}
+provider "duplicate" { metadata { display_name = "Duplicate"; } }`
+	first := `provider "duplicate" {}`
+
+	got, ok, err := ExtractProviderBlockOptional("providers.conf", content, "duplicate")
+	if err != nil || !ok || got != first {
+		t.Fatalf("ExtractProviderBlockOptional got=(%q,%v,%v), want=(%q,true,nil)", got, ok, err, first)
+	}
+
+	updated, err := UpsertProviderBlock("providers.conf", content, "duplicate", `provider "duplicate" { metadata { display_name = "Updated"; } }`)
+	if err != nil {
+		t.Fatalf("UpsertProviderBlock: %v", err)
+	}
+	if got, want := updated, "provider \"duplicate\" { metadata { display_name = \"Updated\"; } }\n\nprovider \"duplicate\" { metadata { display_name = \"Duplicate\"; } }"; got != want {
+		t.Fatalf("upserted content=%q, want %q", got, want)
+	}
+}
+
 func TestListIncludedFiles(t *testing.T) {
 	root := t.TempDir()
 	modesDir := filepath.Join(root, "modes")

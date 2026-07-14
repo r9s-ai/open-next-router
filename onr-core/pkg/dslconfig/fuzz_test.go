@@ -30,6 +30,7 @@ func FuzzProviderBlockOperations(f *testing.F) {
 	for _, seed := range []string{
 		`provider "openai" { defaults { upstream_config { base_url = "https://api.openai.com"; } } }`,
 		`provider "one" {} provider "two" { metadata { display_name = "Two"; } }`,
+		`provider "duplicate" {} provider "duplicate" { metadata { display_name = "Duplicate"; } }`,
 		`# a comment\nprovider "demo" { defaults { request { req_map openai_chat_to_anthropic; } } }`,
 	} {
 		f.Add(seed)
@@ -40,6 +41,7 @@ func FuzzProviderBlockOperations(f *testing.F) {
 		if err != nil {
 			return
 		}
+		seen := make(map[string]struct{}, len(blocks))
 		for _, block := range blocks {
 			if block.Start < 0 || block.End < block.Start || block.End > len(content) {
 				t.Fatalf("invalid block offsets: %#v", block)
@@ -50,6 +52,12 @@ func FuzzProviderBlockOperations(f *testing.F) {
 			if strings.TrimSpace(block.Name) == "" {
 				continue
 			}
+			if _, duplicate := seen[block.Name]; duplicate {
+				// Name-based operations intentionally select the first matching block.
+				// Duplicate provider names are rejected when a provider config is loaded.
+				continue
+			}
+			seen[block.Name] = struct{}{}
 			extracted, ok, err := ExtractProviderBlockOptional("fuzz.conf", content, block.Name)
 			if err != nil || !ok || extracted != block.Content {
 				t.Fatalf("ExtractProviderBlockOptional(%q) = (%q, %v, %v), want (%q, true, nil)", block.Name, extracted, ok, err, block.Content)
