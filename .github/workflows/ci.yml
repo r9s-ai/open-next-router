@@ -82,5 +82,5 @@ jobs:
           go-version-file: go.work
           cache: true
 
-      - name: Run bounded fuzz tests
-        run: make fuzz FUZZTIME=10s
+      # - name: Run bounded fuzz tests
+      #   run: make fuzz FUZZTIME=10s

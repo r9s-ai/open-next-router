@@ -41,7 +41,7 @@ func FuzzProviderBlockOperations(f *testing.F) {
 		if err != nil {
 			return
 		}
-		seenNames := make(map[string]struct{}, len(blocks))
+		seen := make(map[string]struct{}, len(blocks))
 		for _, block := range blocks {
 			if block.Start < 0 || block.End < block.Start || block.End > len(content) {
 				t.Fatalf("invalid block offsets: %#v", block)
@@ -52,10 +52,12 @@ func FuzzProviderBlockOperations(f *testing.F) {
 			if strings.TrimSpace(block.Name) == "" {
 				continue
 			}
-			if _, seen := seenNames[block.Name]; seen {
+			if _, duplicate := seen[block.Name]; duplicate {
+				// Name-based operations intentionally select the first matching block.
+				// Duplicate provider names are rejected when a provider config is loaded.
 				continue
 			}
-			seenNames[block.Name] = struct{}{}
+			seen[block.Name] = struct{}{}
 			extracted, ok, err := ExtractProviderBlockOptional("fuzz.conf", content, block.Name)
 			if err != nil || !ok || extracted != block.Content {
 				t.Fatalf("ExtractProviderBlockOptional(%q) = (%q, %v, %v), want (%q, true, nil)", block.Name, extracted, ok, err, block.Content)
