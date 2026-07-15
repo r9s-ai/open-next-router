@@ -10,5 +10,5 @@ type sseMetricsTap = ssemetrics.Tap
 
 // newSSEMetricsTap returns nil when agg is nil; otherwise it returns a non-nil tap.
 func newSSEMetricsTap(agg *dslconfig.StreamMetricsAggregator) *sseMetricsTap {
-	return ssemetrics.NewTap(agg)
+	return ssemetrics.NewTap(ssemetrics.WithEventDataHandler(agg))
 }

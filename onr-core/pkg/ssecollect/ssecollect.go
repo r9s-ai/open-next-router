@@ -16,6 +16,8 @@ import (
 
 type Options struct{}
 
+const maxChunkCollectIndex = 100
+
 type Event struct {
 	Event string
 	ID    string
@@ -158,9 +160,15 @@ func collectOpenAIResponses(events []Event) (map[string]any, error) {
 			if item == nil {
 				continue
 			}
-			idx := coerceInt(root["output_index"], len(itemsByIndex))
+			idx, err := boundedChunkIndex(root["output_index"], len(itemsByIndex), "output_index")
+			if err != nil {
+				return nil, err
+			}
 			if v, ok := item["output_index"]; ok {
-				idx = coerceInt(v, idx)
+				idx, err = boundedChunkIndex(v, idx, "item.output_index")
+				if err != nil {
+					return nil, err
+				}
 			}
 			itemsByIndex[idx] = cloneMap(item)
 		}
@@ -209,14 +217,20 @@ func collectAnthropicMessages(events []Event) (map[string]any, error) {
 				msg["content"] = []any{}
 			}
 		case "content_block_start":
-			idx := coerceInt(root["index"], len(blocks))
+			idx, err := boundedChunkIndex(root["index"], len(blocks), "index")
+			if err != nil {
+				return nil, err
+			}
 			block, _ := root["content_block"].(map[string]any)
 			if block == nil {
 				block = map[string]any{}
 			}
 			blocks[idx] = &anthropicBlock{block: cloneMap(block)}
 		case "content_block_delta":
-			idx := coerceInt(root["index"], 0)
+			idx, err := boundedChunkIndex(root["index"], 0, "index")
+			if err != nil {
+				return nil, err
+			}
 			b := blocks[idx]
 			if b == nil {
 				b = &anthropicBlock{block: map[string]any{}}
@@ -225,7 +239,10 @@ func collectAnthropicMessages(events []Event) (map[string]any, error) {
 			delta, _ := root["delta"].(map[string]any)
 			applyAnthropicDelta(b, delta)
 		case "content_block_stop":
-			idx := coerceInt(root["index"], 0)
+			idx, err := boundedChunkIndex(root["index"], 0, "index")
+			if err != nil {
+				return nil, err
+			}
 			if b := blocks[idx]; b != nil {
 				finalizeAnthropicBlock(b)
 			}
@@ -325,7 +342,10 @@ func collectGeminiGenerateContent(events []Event) (map[string]any, error) {
 			if in == nil {
 				continue
 			}
-			idx := coerceInt(in["index"], pos)
+			idx, err := boundedChunkIndex(in["index"], pos, "index")
+			if err != nil {
+				return nil, err
+			}
 			dst := candidates[idx]
 			if dst == nil {
 				dst = map[string]any{"index": idx}
@@ -431,4 +451,12 @@ func coerceInt(v any, fallback int) int {
 		return n
 	}
 	return fallback
+}
+
+func boundedChunkIndex(v any, fallback int, field string) (int, error) {
+	idx := coerceInt(v, fallback)
+	if idx < 0 || idx > maxChunkCollectIndex {
+		return 0, fmt.Errorf("%w: %s %d outside allowed range 0..%d", ErrInvalidChunkPayload, field, idx, maxChunkCollectIndex)
+	}
+	return idx, nil
 }

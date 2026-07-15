@@ -5,23 +5,36 @@ import (
 	"strings"
 )
 
-// EventDataHandler consumes one complete SSE event/data JSON payload.
+// EventDataHandler consumes one complete SSE event/data JSON payload together
+// with the current SSE event name. Use this handler when metrics or extraction
+// rules depend on event filters such as "response.completed".
 type EventDataHandler interface {
 	OnSSEEventDataJSON(event string, payload []byte) error
 }
 
-type SSEEventHandlerChain struct {
+// DataHandler consumes one complete SSE data JSON payload without the SSE event
+// name. Use this only for payload-level side effects that do not need event
+// filtering, such as recording the latest raw upstream chunk.
+type DataHandler interface {
+	OnSSEDataJSON(payload []byte) error
+}
+
+type handlerFinisher interface {
+	Finish()
+}
+
+type EventDataHandlerChain struct {
 	handlers []EventDataHandler
 }
 
-func NewSSEEventHandlerChain(handlers ...EventDataHandler) *SSEEventHandlerChain {
-	chain := &SSEEventHandlerChain{}
+func NewEventDataHandlerChain(handlers ...EventDataHandler) *EventDataHandlerChain {
+	chain := &EventDataHandlerChain{}
 	chain.handlers = append(chain.handlers, handlers...)
 	return chain
 
 }
 
-func (h *SSEEventHandlerChain) OnSSEEventDataJSON(event string, payload []byte) error {
+func (h *EventDataHandlerChain) OnSSEEventDataJSON(event string, payload []byte) error {
 	for _, handler := range h.handlers {
 		if handler == nil {
 			continue
@@ -31,13 +44,56 @@ func (h *SSEEventHandlerChain) OnSSEEventDataJSON(event string, payload []byte) 
 	return nil
 }
 
+func (h *EventDataHandlerChain) Finish() {
+	if h == nil {
+		return
+	}
+	for _, handler := range h.handlers {
+		if finisher, ok := handler.(handlerFinisher); ok {
+			finisher.Finish()
+		}
+	}
+}
+
+type DataHandlerChain struct {
+	handlers []DataHandler
+}
+
+func NewDataHandlerChain(handlers ...DataHandler) *DataHandlerChain {
+	chain := &DataHandlerChain{}
+	chain.handlers = append(chain.handlers, handlers...)
+	return chain
+
+}
+
+func (h *DataHandlerChain) OnSSEDataJSON(payload []byte) error {
+	for _, handler := range h.handlers {
+		if handler == nil {
+			continue
+		}
+		_ = handler.OnSSEDataJSON(payload)
+	}
+	return nil
+}
+
+func (h *DataHandlerChain) Finish() {
+	if h == nil {
+		return
+	}
+	for _, handler := range h.handlers {
+		if finisher, ok := handler.(handlerFinisher); ok {
+			finisher.Finish()
+		}
+	}
+}
+
 // Tap incrementally parses SSE framing and forwards complete event/data payloads.
 //
 // It is intentionally transport-agnostic: callers may feed raw bytes via Write,
 // or pre-split logical lines via ProcessLine.
 type Tap struct {
-	handler   EventDataHandler
-	onPayload func(payload []byte)
+	eventDataHandler EventDataHandler
+	dataHandler      DataHandler
 
 	lineBuf  []byte
 	curEvent string
@@ -47,27 +103,43 @@ type Tap struct {
 // Option customizes a Tap.
 type Option func(*Tap)
 
-// WithPayloadHook registers a side-effect hook that runs before the payload is
-// forwarded to the event handler.
-func WithPayloadHook(fn func(payload []byte)) Option {
+// WithDataHandler registers a payload-only handler. The handler receives the
+// joined data payload after SSE framing is parsed, but it does not receive the
+// event name.
+func WithDataHandler(dataHandler DataHandler) Option {
 	return func(t *Tap) {
 		if t == nil {
 			return
 		}
-		t.onPayload = fn
+		t.dataHandler = dataHandler
+	}
+}
+
+// WithEventDataHandler registers a handler that receives both the current SSE
+// event name and the joined data payload. Prefer this for metrics extraction,
+// finish-reason extraction, and stream format checks that may use event filters.
+func WithEventDataHandler(eventdataHandler EventDataHandler) Option {
+	return func(t *Tap) {
+		if t == nil {
+			return
+		}
+		t.eventDataHandler = eventdataHandler
 	}
 }
 
 // NewTap constructs a shared SSE framing tap.
-// NewTap returns nil only when both handler and payload hook are absent.
-func NewTap(handler EventDataHandler, opts ...Option) *Tap {
-	t := &Tap{handler: handler}
-	for _, opt := range opts {
+// NewTap returns nil only when both event and payload-only handlers are absent.
+func NewTap(opt ...Option) *Tap {
+	t := &Tap{}
+
+	for _, opt := range opt {
 		if opt != nil {
 			opt(t)
 		}
+
 	}
-	if t.handler == nil && t.onPayload == nil {
+
+	if t.eventDataHandler == nil && t.dataHandler == nil {
 		return nil
 	}
 	return t
@@ -108,6 +180,7 @@ func (t *Tap) Finish() {
 		t.lineBuf = t.lineBuf[:0]
 	}
 	t.flush()
+	t.finishHandlers()
 }
 
 func (t *Tap) processLineBytes(line []byte) {
@@ -117,7 +190,10 @@ func (t *Tap) processLineBytes(line []byte) {
 	case bytes.HasPrefix(line, []byte("event:")):
 		t.curEvent = string(bytes.TrimSpace(bytes.TrimPrefix(line, []byte("event:"))))
 	case bytes.HasPrefix(line, []byte("data:")):
-		t.curData = append(t.curData, bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:"))))
+		payload := bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
+		// line is backed by lineBuf, which is reused by Write for the next SSE
+		// line. Keep an owned copy so multi-line data payloads are not overwritten.
+		t.curData = append(t.curData, append([]byte(nil), payload...))
 	}
 }
 
@@ -134,11 +210,20 @@ func (t *Tap) flush() {
 		t.curEvent = ""
 		return
 	}
-	if t.onPayload != nil {
-		t.onPayload(payload)
+	if t.dataHandler != nil {
+		_ = t.dataHandler.OnSSEDataJSON(payload)
 	}
-	if t.handler != nil {
-		_ = t.handler.OnSSEEventDataJSON(t.curEvent, payload)
+	if t.eventDataHandler != nil {
+		_ = t.eventDataHandler.OnSSEEventDataJSON(t.curEvent, payload)
 	}
 	t.curEvent = ""
+}
+
+func (t *Tap) finishHandlers() {
+	if finisher, ok := t.dataHandler.(handlerFinisher); ok {
+		finisher.Finish()
+	}
+	if finisher, ok := t.eventDataHandler.(handlerFinisher); ok {
+		finisher.Finish()
+	}
 }

@@ -1,8 +1,9 @@
 package usageestimate
 
 import (
-	"strings"
+	"encoding/json"
 
+	tiktoken "github.com/pkoukk/tiktoken-go"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
 )
 
@@ -34,6 +35,7 @@ type Input struct {
 	RequestRoot  map[string]any
 	ResponseBody []byte
 	StreamTail   []byte
+	TokenEncoder *tiktoken.Tiktoken
 }
 
 type Output struct {
@@ -48,137 +50,136 @@ type parsedRequestBody struct {
 	err  error
 }
 
-type tokenEstimateContext struct {
-	text                     string
-	completion               bool // is output
-	numTools                 int  // number of tool definitions
-	numThinkingBlockInput    int
-	numThinkingBlockOutput   int
-	numFunctionCalls         int
-	numFunctionCallOutputs   int
-	numCustomToolCalls       int
-	numCustomToolCallOutputs int
+type Opt func(c *EstimateContext)
+
+func EstimateToken(model string, api string, body any, estimateDirection EstimateDirection) (int, error) {
+	return estimateTokenWithEncoder(model, api, body, estimateDirection, nil)
+}
+
+func estimateTokenWithEncoder(model string, api string, body any, estimateDirection EstimateDirection, tokenEncoder *tiktoken.Tiktoken) (int, error) {
+
+	ectx := NewEstimateContext(model, api, estimateDirection)
+	ectx.TokenEncoder = tokenEncoder
+	tokenizer, err := GetTokenizers(ectx)
+	if err != nil {
+		return 0, err
+	}
+	bodyMap, ok := bodyMapFromAny(body)
+	if !ok {
+		switch v := body.(type) {
+		case string:
+			return tokenizer.CountToken(v), nil
+		case []byte:
+			return tokenizer.CountToken(string(v)), nil
+		default:
+			byteData, err := json.Marshal(body)
+			if err != nil {
+				return 0, err
+			}
+			return tokenizer.CountToken(string(byteData)), nil
+		}
+	}
+	ExtractStructToEstimateContext(ectx, bodyMap)
+	prompt := tokenizer.ApplyChatTemplate()
+	tokens := tokenizer.CountToken(prompt)
+	return tokens, nil
+
+}
+
+func bodyMapFromAny(body any) (map[string]any, bool) {
+	switch v := body.(type) {
+	case map[string]any:
+		return v, true
+	case []byte:
+		var out map[string]any
+		if err := json.Unmarshal(v, &out); err == nil {
+			return out, true
+		}
+	case string:
+		var out map[string]any
+		if err := json.Unmarshal([]byte(v), &out); err == nil {
+			return out, true
+		}
+	}
+	return nil, false
 }
 
 func Estimate(cfg *Config, in Input) Output {
 	u, stage := normalizeUpstreamUsage(in.UpstreamUsage)
-	if cfg == nil || !cfg.IsAPIEnabled(in.API) {
+	// normalizeUpstreamUsage returns one of three states:
+	// 1. u == nil, stage == "": no upstream usage object.
+	// 2. u != nil, stage == StageUpstream: upstream usage has at least one non-zero signal.
+	// 3. u != nil, stage == "": upstream usage exists but is effectively all-zero.
+	if cfg == nil || !cfg.IsAPIEnabled(in.API) || !cfg.EstimateWhenMissingOrZero {
 
 		return Output{Usage: u, Stage: stage}
 	}
 
+	// State 2 with both scalar token fields present: return upstream usage as-is.
+	if u != nil && u.InputTokens > 0 && u.OutputTokens > 0 {
+		return Output{Usage: u, Stage: stage}
+	}
+
+	var outUsage *dslconfig.Usage
+	var estimatePromptSuccessed, estimateCompletionsSuccessed bool
+	var outStage string
+
 	if u != nil {
-		if !cfg.EstimateWhenMissingOrZero {
-			return Output{Usage: u, Stage: stage}
-		}
-		// Upstream usage exists; optionally estimate missing fields (common in streaming).
-		if stage == StageUpstream {
-			if outU, outStage := estimateMissingFields(cfg, in, u); outStage != StageUpstream {
-				return Output{Usage: outU, Stage: outStage}
-			}
-			return Output{Usage: u, Stage: stage}
-		}
-		// All-zero (or effectively missing) usage: allow estimation.
-		if !isAllZero(u) {
-			return Output{Usage: u, Stage: stage}
-		}
-	}
-	if u == nil && !cfg.EstimateWhenMissingOrZero {
-		return Output{Usage: nil, Stage: ""}
-	}
-
-	reqParsed := parseRequestBody(in.RequestBody, in.RequestRoot, cfg.MaxRequestBytes)
-	reqCtx := extractRequestTextFromParsed(in.API, reqParsed)
-	respText := ""
-	if len(in.StreamTail) > 0 {
-		respText = extractStreamText(in.API, in.StreamTail, cfg.MaxStreamCollectBytes)
+		copied := *u
+		outUsage = &copied
 	} else {
-		respText = extractResponseTextForModel(in.API, in.Model, in.ResponseBody, cfg.MaxResponseBytes)
+		outUsage = &dslconfig.Usage{}
 	}
 
-	respCtx := &tokenEstimateContext{text: respText, completion: true, numTools: 0}
-	est := &dslconfig.Usage{
-		InputTokens:  EstimateTokenByModel(in.Model, reqCtx),
-		OutputTokens: EstimateTokenByModel(in.Model, respCtx),
-	}
-	est.TotalTokens = est.InputTokens + est.OutputTokens
-
-	// Best-effort overhead for OpenAI-style chat messages.
-	if normalizeAPI(in.API) == apiChatCompletions {
-		msgCount := countMessagesFromParsed(reqParsed)
-		if msgCount > 0 {
-			est.InputTokens += msgCount*3 + 3
-			est.TotalTokens = est.InputTokens + est.OutputTokens
-		}
-	}
-
-	return Output{Usage: est, Stage: StageEstimateBoth}
-}
-
-func estimateMissingFields(cfg *Config, in Input, u *dslconfig.Usage) (*dslconfig.Usage, string) {
-	if cfg == nil || u == nil {
-		return u, StageUpstream
-	}
-	needPrompt := u.InputTokens == 0
-	needCompletion := u.OutputTokens == 0
-	if !needPrompt && !needCompletion {
-		return u, StageUpstream
-	}
-
-	reqParsed := parseRequestBody(in.RequestBody, in.RequestRoot, cfg.MaxRequestBytes)
-	reqCtx := &tokenEstimateContext{}
-	if needPrompt {
-		reqCtx = extractRequestTextFromParsed(in.API, reqParsed)
-		if strings.TrimSpace(reqCtx.text) == "" {
-			needPrompt = false
-		}
-	}
-
-	var respText string
-	if needCompletion {
-		if len(in.StreamTail) > 0 {
-			respText = extractStreamText(in.API, in.StreamTail, cfg.MaxStreamCollectBytes)
+	// States 1 and 3 estimate from an empty/all-zero base. State 2 reaches here
+	// only when one scalar token field is missing; keep existing upstream fields
+	// and estimate only the missing side.
+	if outUsage.InputTokens == 0 {
+		inputTokens := 0
+		parsed := parseRequestBody(in.RequestBody, in.RequestRoot, cfg.MaxRequestBytes)
+		if parsed.root == nil {
+			inputTokens, _ = estimateTokenWithEncoder(in.Model, in.API, parsed.raw, EstimateInput, in.TokenEncoder)
 		} else {
-			respText = extractResponseTextForModel(in.API, in.Model, in.ResponseBody, cfg.MaxResponseBytes)
+			inputTokens, _ = estimateTokenWithEncoder(in.Model, in.API, parsed.root, EstimateInput, in.TokenEncoder)
 		}
-		if strings.TrimSpace(respText) == "" {
-			needCompletion = false
-		}
-	}
 
-	if !needPrompt && !needCompletion {
-		return u, StageUpstream
-	}
+		if inputTokens >= 0 {
+			estimatePromptSuccessed = true
+			outUsage.InputTokens = inputTokens
 
-	out := *u
-	if needPrompt {
-		out.InputTokens = EstimateTokenByModel(in.Model, reqCtx)
-	}
-	if needCompletion {
-		respCtx := &tokenEstimateContext{text: respText, completion: true}
-		out.OutputTokens = EstimateTokenByModel(in.Model, respCtx)
-	}
-	out.TotalTokens = out.InputTokens + out.OutputTokens
-
-	// Best-effort overhead for OpenAI-style chat messages only when prompt is estimated.
-	if needPrompt && normalizeAPI(in.API) == apiChatCompletions {
-		msgCount := countMessagesFromParsed(reqParsed)
-		if msgCount > 0 {
-			out.InputTokens += msgCount*3 + 3
-			out.TotalTokens = out.InputTokens + out.OutputTokens
 		}
 	}
 
-	switch {
-	case needPrompt && needCompletion:
-		return &out, StageEstimateBoth
-	case needPrompt:
-		return &out, StageEstimatePrompt
-	case needCompletion:
-		return &out, StageEstimateCompletion
-	default:
-		return u, StageUpstream
+	if outUsage.OutputTokens == 0 {
+		outputTokens := 0
+		outputBody := in.ResponseBody
+		if len(in.StreamTail) > 0 {
+			outputBody = in.StreamTail
+		}
+		outputTokens, _ = estimateTokenWithEncoder(in.Model, in.API, outputBody, EstimateOutput, in.TokenEncoder)
+		if outputTokens >= 0 {
+			estimateCompletionsSuccessed = true
+			outUsage.OutputTokens = outputTokens
+
+		}
 	}
+	if !estimateCompletionsSuccessed && !estimatePromptSuccessed {
+		return Output{Usage: u, Stage: stage}
+	}
+
+	outUsage.TotalTokens = outUsage.InputTokens + outUsage.OutputTokens
+	if estimatePromptSuccessed {
+		outStage = StageEstimatePrompt
+	}
+	if estimateCompletionsSuccessed {
+		outStage = StageEstimateCompletion
+	}
+	if estimatePromptSuccessed && estimateCompletionsSuccessed {
+		outStage = StageEstimateBoth
+	}
+
+	return Output{Usage: outUsage, Stage: outStage}
+
 }
 
 func normalizeUpstreamUsage(u *dslconfig.Usage) (*dslconfig.Usage, string) {

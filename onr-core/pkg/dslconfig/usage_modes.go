@@ -9,6 +9,57 @@ import (
 
 type usageModeRegistry map[string]UsageExtractConfig
 
+// ParseUsageMode parses and resolves one usage_mode from standalone DSL content.
+// It only considers usage_mode directives contained in content (and its explicit
+// include directives); it does not load repository defaults or provider config.
+// When name is empty, content must define exactly one usage_mode.
+func ParseUsageMode(path string, content string, name string) (UsageExtractConfig, error) {
+	p := strings.TrimSpace(path)
+	if p == "" {
+		p = "<usage_mode>"
+	}
+	expanded, err := preprocessIncludes(p, content)
+	if err != nil {
+		return UsageExtractConfig{}, err
+	}
+	raw, err := parseGlobalUsageModes(p, expanded)
+	if err != nil {
+		return UsageExtractConfig{}, err
+	}
+	if len(raw) == 0 {
+		return UsageExtractConfig{}, fmt.Errorf("no usage_mode found in %q", p)
+	}
+
+	selected := normalizeUsageModeName(name)
+	if selected == "" {
+		if len(raw) != 1 {
+			names := make([]string, 0, len(raw))
+			for modeName := range raw {
+				names = append(names, modeName)
+			}
+			sort.Strings(names)
+			return UsageExtractConfig{}, fmt.Errorf("usage_mode name is required in %q; available modes: %s", p, strings.Join(names, ", "))
+		}
+		for modeName := range raw {
+			selected = modeName
+		}
+	}
+
+	paths := make(map[string]string, len(raw))
+	for modeName := range raw {
+		paths[modeName] = p
+	}
+	resolved, err := resolveUsageModeRegistry(paths, raw)
+	if err != nil {
+		return UsageExtractConfig{}, err
+	}
+	cfg, ok := resolved[selected]
+	if !ok {
+		return UsageExtractConfig{}, fmt.Errorf("usage_mode %q not found in %q", selected, p)
+	}
+	return cfg, nil
+}
+
 func parseGlobalUsageModes(path string, content string) (usageModeRegistry, error) {
 	s := newScanner(path, content)
 	modes := usageModeRegistry{}
