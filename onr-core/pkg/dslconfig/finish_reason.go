@@ -161,7 +161,7 @@ func extractFinishReasonFromSSE(meta *dslmeta.Meta, cfg *FinishReasonExtractConf
 		meta: meta,
 		cfg:  cfg,
 	}
-	tap := ssemetrics.NewTap(handler)
+	tap := ssemetrics.NewTap(ssemetrics.WithEventDataHandler(handler))
 	if tap == nil {
 		return "", false
 	}

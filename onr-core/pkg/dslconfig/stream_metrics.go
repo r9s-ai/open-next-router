@@ -128,7 +128,7 @@ func (a *StreamMetricsAggregator) OnSSEEventDataJSON(event string, payload []byt
 // OnSSETail parses a text/event-stream buffer and feeds each "data:" JSON payload into the aggregator.
 // OnSSETail requires a valid StreamMetricsAggregator receiver.
 func (a *StreamMetricsAggregator) OnSSETail(sse []byte) {
-	tap := ssemetrics.NewTap(a)
+	tap := ssemetrics.NewTap(ssemetrics.WithEventDataHandler(a))
 	if tap == nil {
 		return
 	}

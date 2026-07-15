@@ -1,7 +1,11 @@
 package main
 
-import "os"
+import (
+	"os"
+
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/usageestimate"
+)
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	os.Exit(usageestimate.RunCLI(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
