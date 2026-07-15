@@ -42,6 +42,8 @@
 //
 //   - ProviderUsage, MatchUsage, UsageExtractConfig
 //
+//   - ParseUsageMode
+//
 //   - ParseUsageExpr, UsageExpr
 //
 //   - ExtractUsage

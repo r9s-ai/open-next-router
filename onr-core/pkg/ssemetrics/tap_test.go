@@ -90,6 +90,27 @@ func TestTap_ProcessLineInvokesPayloadHook(t *testing.T) {
 	}
 }
 
+func TestTap_JoinsMultipleDataLines(t *testing.T) {
+	t.Parallel()
+
+	handler := &recordingHandler{}
+	tap := NewTap(WithEventDataHandler(handler))
+	stream := "event: message_start\n" +
+		"data: {\"message\":{\"usage\":{\"input_tokens\":3,\n" +
+		"data: \"cache_read_input_tokens\":2}}}\n\n"
+	if _, err := tap.Write([]byte(stream)); err != nil {
+		t.Fatalf("tap.Write: %v", err)
+	}
+	tap.Finish()
+
+	if len(handler.payloads) != 1 {
+		t.Fatalf("payloads=%v", handler.payloads)
+	}
+	if got, want := handler.payloads[0], "{\"message\":{\"usage\":{\"input_tokens\":3,\n\"cache_read_input_tokens\":2}}}"; got != want {
+		t.Fatalf("payload=%q want=%q", got, want)
+	}
+}
+
 func TestTap_LargeChunkAcrossWrites(t *testing.T) {
 	t.Parallel()
 

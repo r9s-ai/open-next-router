@@ -190,7 +190,10 @@ func (t *Tap) processLineBytes(line []byte) {
 	case bytes.HasPrefix(line, []byte("event:")):
 		t.curEvent = string(bytes.TrimSpace(bytes.TrimPrefix(line, []byte("event:"))))
 	case bytes.HasPrefix(line, []byte("data:")):
-		t.curData = append(t.curData, bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:"))))
+		payload := bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
+		// line is backed by lineBuf, which is reused by Write for the next SSE
+		// line. Keep an owned copy so multi-line data payloads are not overwritten.
+		t.curData = append(t.curData, append([]byte(nil), payload...))
 	}
 }
 
