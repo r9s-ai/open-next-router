@@ -202,7 +202,7 @@ func extractFacts(meta *dslmeta.Meta, cfg *dslconfig.UsageExtractConfig, body []
 		if !ok || usage == nil || len(usage.DebugFacts) == 0 {
 			return []dslconfig.UsageFact{}, nil
 		}
-		return usage.DebugFacts, nil
+		return factsWithQuantity(usage.DebugFacts), nil
 	}
 	usage, _, err := dslconfig.ExtractUsage(meta, cfg, body)
 	if err != nil {
@@ -211,5 +211,18 @@ func extractFacts(meta *dslmeta.Meta, cfg *dslconfig.UsageExtractConfig, body []
 	if usage == nil || len(usage.DebugFacts) == 0 {
 		return []dslconfig.UsageFact{}, nil
 	}
-	return usage.DebugFacts, nil
+	return factsWithQuantity(usage.DebugFacts), nil
+}
+
+func factsWithQuantity(facts []dslconfig.UsageFact) []dslconfig.UsageFact {
+	out := make([]dslconfig.UsageFact, 0, len(facts))
+	for _, fact := range facts {
+		// Quantity uses omitempty in the public JSON shape. Suppress zero-value
+		// matches so every emitted item has an explicit quantity field.
+		if fact.Quantity == 0 {
+			continue
+		}
+		out = append(out, fact)
+	}
+	return out
 }

@@ -616,3 +616,132 @@ func TestClaudeResponseToMap(t *testing.T) {
 	require.Equal(t, "api_error", errMap["type"])
 	require.Equal(t, "example", errMap["message"])
 }
+
+func TestClaudeUsageIterationsMapRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	input := map[string]any{
+		"input_tokens":  float64(10),
+		"output_tokens": float64(2),
+		"cache_creation": map[string]any{
+			"ephemeral_5m_input_tokens": float64(3),
+			"ephemeral_1h_input_tokens": float64(4),
+		},
+		"iterations": []any{
+			map[string]any{"type": "message", "model": "primary", "input_tokens": float64(10), "output_tokens": float64(0)},
+			map[string]any{"type": "fallback_message", "model": "fallback", "input_tokens": float64(10), "output_tokens": float64(2), "cache_creation": map[string]any{"ephemeral_5m_input_tokens": float64(1)}},
+		},
+	}
+
+	var usage ClaudeUsage
+	require.NoError(t, usage.FromMap(input))
+	require.Len(t, usage.Iterations, 2)
+	require.Equal(t, "primary", usage.Iterations[0].Model)
+	require.Equal(t, "fallback", usage.Iterations[1].Model)
+	require.Equal(t, 2, usage.Iterations[1].OutputTokens)
+	require.NotNil(t, usage.CacheCreation)
+	require.Equal(t, 3, usage.CacheCreation.Ephemeral5mInputTokens)
+	require.Equal(t, 4, usage.CacheCreation.Ephemeral1hInputTokens)
+	require.NotNil(t, usage.Iterations[1].CacheCreation)
+	require.Equal(t, 1, usage.Iterations[1].CacheCreation.Ephemeral5mInputTokens)
+
+	got, err := usage.ToMap()
+	require.NoError(t, err)
+	cacheCreation, ok := got["cache_creation"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, 3, cacheCreation["ephemeral_5m_input_tokens"])
+	require.Equal(t, 4, cacheCreation["ephemeral_1h_input_tokens"])
+	items, ok := got["iterations"].([]any)
+	require.True(t, ok)
+	require.Len(t, items, 2)
+	fallback, ok := items[1].(map[string]any)
+	require.True(t, ok)
+	fallbackCacheCreation, ok := fallback["cache_creation"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, 1, fallbackCacheCreation["ephemeral_5m_input_tokens"])
+}
+
+func TestClaudeUsageByModelGetClaudeUsage(t *testing.T) {
+	t.Parallel()
+	cacheDetail := &CacheCreationUsageDetail{Ephemeral5mInputTokens: 2, Ephemeral1hInputTokens: 4}
+	u := ClaudeUsageByModel{
+		Type:                     "fallback_message",
+		Model:                    "claude-fallback",
+		InputTokens:              100,
+		OutputTokens:             50,
+		CacheCreationInputTokens: 10,
+		CacheReadInputTokens:     5,
+		CacheCreation:            cacheDetail,
+	}
+	got := u.GetClaudeUsage()
+	require.Equal(t, u.InputTokens, got.InputTokens)
+	require.Equal(t, u.OutputTokens, got.OutputTokens)
+	require.Equal(t, u.CacheCreationInputTokens, got.CacheCreationInputTokens)
+	require.Equal(t, u.CacheReadInputTokens, got.CacheReadInputTokens)
+	require.Equal(t, cacheDetail, got.CacheCreation)
+	require.Nil(t, got.Iterations)
+}
+
+func TestClaudeRequestFallbacksMapRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	input := map[string]any{
+		"model":    "claude-primary",
+		"messages": []any{map[string]any{"role": "user", "content": "hello"}},
+		"fallbacks": []any{
+			map[string]any{"model": "claude-fallback", "max_tokens": float64(128)},
+		},
+	}
+
+	var req ClaudeRequest
+	require.NoError(t, req.FromMap(input))
+	require.Len(t, req.Fallbacks, 1)
+	require.Equal(t, "claude-fallback", req.Fallbacks[0].Model)
+	require.NotNil(t, req.Fallbacks[0].MaxTokens)
+	require.Equal(t, 128, *req.Fallbacks[0].MaxTokens)
+
+	got, err := req.ToMap()
+	require.NoError(t, err)
+	items, ok := got["fallbacks"].([]any)
+	require.True(t, ok)
+	require.Len(t, items, 1)
+}
+
+func TestClaudeRequest_FromMap_FallbackNullElementFiltered(t *testing.T) {
+	m := map[string]any{
+		"model":     "claude-opus-4-6",
+		"fallbacks": []any{nil},
+	}
+	var req ClaudeRequest
+	err := req.FromMap(m)
+	if err != nil {
+		t.Fatalf("expected nil error for null fallback element, got %v", err)
+	}
+	if len(req.Fallbacks) != 0 {
+		t.Fatalf("expected empty fallbacks after filtering null, got %d", len(req.Fallbacks))
+	}
+}
+
+func TestClaudeRequest_FromMap_FallbackEmptyModelRejected(t *testing.T) {
+	m := map[string]any{
+		"model":     "claude-opus-4-6",
+		"fallbacks": []any{map[string]any{"model": ""}},
+	}
+	var req ClaudeRequest
+	err := req.FromMap(m)
+	if err == nil {
+		t.Fatal("expected error for empty fallback model, got nil")
+	}
+}
+
+func TestClaudeRequest_FromMap_FallbackMissingModelRejected(t *testing.T) {
+	m := map[string]any{
+		"model":     "claude-opus-4-6",
+		"fallbacks": []any{map[string]any{}},
+	}
+	var req ClaudeRequest
+	err := req.FromMap(m)
+	if err == nil {
+		t.Fatal("expected error for fallback with missing model field, got nil")
+	}
+}
