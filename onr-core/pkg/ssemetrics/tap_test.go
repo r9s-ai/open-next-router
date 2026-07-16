@@ -17,11 +17,38 @@ func (h *recordingHandler) OnSSEEventDataJSON(event string, payload []byte) erro
 	return nil
 }
 
+type recordingDataHandler struct {
+	payloads []string
+}
+
+func (h *recordingDataHandler) OnSSEDataJSON(payload []byte) error {
+	h.payloads = append(h.payloads, string(payload))
+	return nil
+}
+
+type recordingFinishDataHandler struct {
+	recordingDataHandler
+	finished int
+}
+
+func (h *recordingFinishDataHandler) Finish() {
+	h.finished++
+}
+
+type recordingFinishEventHandler struct {
+	recordingHandler
+	finished int
+}
+
+func (h *recordingFinishEventHandler) Finish() {
+	h.finished++
+}
+
 func TestTap_WriteForwardsEventAndPayload(t *testing.T) {
 	t.Parallel()
 
 	handler := &recordingHandler{}
-	tap := NewTap(handler)
+	tap := NewTap(WithEventDataHandler(handler))
 
 	stream := "" +
 		"event: response.completed\n" +
@@ -47,21 +74,40 @@ func TestTap_ProcessLineInvokesPayloadHook(t *testing.T) {
 	t.Parallel()
 
 	handler := &recordingHandler{}
-	var seen string
-	tap := NewTap(handler, WithPayloadHook(func(payload []byte) {
-		seen = string(payload)
-	}))
+	dataHandler := &recordingDataHandler{}
+	tap := NewTap(WithEventDataHandler(handler), WithDataHandler(dataHandler))
 
 	tap.ProcessLine("event: message_delta")
 	tap.ProcessLine(`data: {"delta":"hello"}`)
 	tap.ProcessLine("")
 	tap.Finish()
 
-	if seen != `{"delta":"hello"}` {
-		t.Fatalf("payload hook=%q want delta payload", seen)
+	if len(dataHandler.payloads) != 1 || dataHandler.payloads[0] != `{"delta":"hello"}` {
+		t.Fatalf("data handler payloads=%v want delta payload", dataHandler.payloads)
 	}
-	if len(handler.payloads) != 1 || handler.payloads[0] != seen {
-		t.Fatalf("handler payloads=%v want [%q]", handler.payloads, seen)
+	if len(handler.payloads) != 1 || handler.payloads[0] != dataHandler.payloads[0] {
+		t.Fatalf("handler payloads=%v want [%q]", handler.payloads, dataHandler.payloads[0])
+	}
+}
+
+func TestTap_JoinsMultipleDataLines(t *testing.T) {
+	t.Parallel()
+
+	handler := &recordingHandler{}
+	tap := NewTap(WithEventDataHandler(handler))
+	stream := "event: message_start\n" +
+		"data: {\"message\":{\"usage\":{\"input_tokens\":3,\n" +
+		"data: \"cache_read_input_tokens\":2}}}\n\n"
+	if _, err := tap.Write([]byte(stream)); err != nil {
+		t.Fatalf("tap.Write: %v", err)
+	}
+	tap.Finish()
+
+	if len(handler.payloads) != 1 {
+		t.Fatalf("payloads=%v", handler.payloads)
+	}
+	if got, want := handler.payloads[0], "{\"message\":{\"usage\":{\"input_tokens\":3,\n\"cache_read_input_tokens\":2}}}"; got != want {
+		t.Fatalf("payload=%q want=%q", got, want)
 	}
 }
 
@@ -69,7 +115,7 @@ func TestTap_LargeChunkAcrossWrites(t *testing.T) {
 	t.Parallel()
 
 	handler := &recordingHandler{}
-	tap := NewTap(handler)
+	tap := NewTap(WithEventDataHandler(handler))
 
 	stream := "event: image_generation.completed\n" +
 		`data: {"type":"image_generation.completed","b64_json":"` + strings.Repeat("A", 400000) + `"}` + "\n\n"
@@ -94,7 +140,7 @@ func TestTap_SkipsDonePayload(t *testing.T) {
 	t.Parallel()
 
 	handler := &recordingHandler{}
-	tap := NewTap(handler)
+	tap := NewTap(WithEventDataHandler(handler))
 
 	stream := "" +
 		"event: done\n" +
@@ -107,6 +153,27 @@ func TestTap_SkipsDonePayload(t *testing.T) {
 
 	if len(handler.events) != 0 {
 		t.Fatalf("events=%v want none", handler.events)
+	}
+}
+
+func TestTap_FinishForwardsToHandlers(t *testing.T) {
+	t.Parallel()
+
+	eventHandler := &recordingFinishEventHandler{}
+	dataHandler := &recordingFinishDataHandler{}
+	tap := NewTap(WithEventDataHandler(eventHandler), WithDataHandler(dataHandler))
+
+	tap.ProcessLine(`data: {"delta":"hello"}`)
+	tap.Finish()
+
+	if dataHandler.finished != 1 {
+		t.Fatalf("data handler finished=%d want=1", dataHandler.finished)
+	}
+	if eventHandler.finished != 1 {
+		t.Fatalf("event handler finished=%d want=1", eventHandler.finished)
+	}
+	if len(dataHandler.payloads) != 1 || dataHandler.payloads[0] != `{"delta":"hello"}` {
+		t.Fatalf("data handler payloads=%v want delta payload", dataHandler.payloads)
 	}
 }
 
@@ -123,7 +190,7 @@ func TestSSEEventHandlerChain_ForwardsToAllHandlers(t *testing.T) {
 
 	first := &recordingHandler{}
 	second := &recordingHandler{}
-	chain := NewSSEEventHandlerChain(nil, first, erroringHandler{err: errors.New("ignored")}, second)
+	chain := NewEventDataHandlerChain(nil, first, erroringHandler{err: errors.New("ignored")}, second)
 
 	if err := chain.OnSSEEventDataJSON("response.completed", []byte(`{"ok":true}`)); err != nil {
 		t.Fatalf("OnSSEEventDataJSON err=%v, want nil", err)
@@ -139,5 +206,22 @@ func TestSSEEventHandlerChain_ForwardsToAllHandlers(t *testing.T) {
 		if len(handler.payloads) != 1 || handler.payloads[0] != `{"ok":true}` {
 			t.Fatalf("%s payloads=%v want payload", name, handler.payloads)
 		}
+	}
+}
+
+func TestSSEHandlerChains_ForwardFinish(t *testing.T) {
+	t.Parallel()
+
+	eventHandler := &recordingFinishEventHandler{}
+	dataHandler := &recordingFinishDataHandler{}
+
+	NewEventDataHandlerChain(nil, eventHandler).Finish()
+	NewDataHandlerChain(nil, dataHandler).Finish()
+
+	if eventHandler.finished != 1 {
+		t.Fatalf("event handler finished=%d want=1", eventHandler.finished)
+	}
+	if dataHandler.finished != 1 {
+		t.Fatalf("data handler finished=%d want=1", dataHandler.finished)
 	}
 }

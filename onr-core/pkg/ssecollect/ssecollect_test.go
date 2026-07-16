@@ -120,3 +120,35 @@ data: {"candidates":[{"index":0,"content":{"parts":[{"text":"lo"}]},"finishReaso
 		t.Fatalf("usage=%#v", usage)
 	}
 }
+
+func TestCollectByModeRejectsSparseIndexes(t *testing.T) {
+	tests := []struct {
+		name string
+		mode string
+		src  string
+	}{
+		{
+			name: "openai responses",
+			mode: "openai_responses",
+			src:  "event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"output_index\":101,\"item\":{\"type\":\"message\"}}\n\n",
+		},
+		{
+			name: "anthropic messages",
+			mode: "anthropic_messages",
+			src:  "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":101,\"content_block\":{\"type\":\"text\"}}\n\n",
+		},
+		{
+			name: "gemini generate content",
+			mode: "gemini_generate_content",
+			src:  "data: {\"candidates\":[{\"index\":101,\"content\":{\"parts\":[{\"text\":\"x\"}]}}]}\n\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := CollectByMode(context.Background(), tt.mode, strings.NewReader(tt.src), Options{}); err == nil {
+				t.Fatalf("expected CollectByMode error")
+			}
+		})
+	}
+}

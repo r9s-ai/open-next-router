@@ -211,6 +211,30 @@ The command validates the provider DSL before writing. If validation fails, no o
 - `required-usage`: fails OpenAI-compatible `chat.completions` routes whose upstream path looks like `*/chat/completions` when no matching `metrics { usage_extract ... }` is configured.
 - `all`: runs all known extra checks.
 
+### Extract usage facts from a response
+
+`onr-usage-extract` is a local debugging utility for testing one explicit `usage_mode` against a response. It prints only the matched `usage_fact` items as a JSON array.
+
+```bash
+go run ./cmd/onr-usage-extract \
+  --usage-mode-file ./config/modes/usage_modes.conf \
+  --usage-mode anthropic_messages \
+  --usage '{"usage":{"input_tokens":10,"output_tokens":4,"cache_read_input_tokens":2}}'
+```
+
+Pass mode DSL directly with `--usage-mode-dsl`, or load it from `--usage-mode-file`; these flags are mutually exclusive. `--usage-mode` selects a named block and may be omitted only when the supplied DSL defines exactly one `usage_mode`. The response can be supplied with `--usage`, `--usage-file`, or stdin.
+
+For an SSE response, pipe the raw `text/event-stream` body and add `--stream`. The command keeps the existing DSL event filtering, multi-line `data:` framing, blank-line flush, `[DONE]`, `usage_root` merge, and fallback behavior.
+
+```bash
+curl -sS https://example.invalid/stream | go run ./cmd/onr-usage-extract \
+  --stream \
+  --usage-mode-file ./config/modes/usage_modes.conf \
+  --usage-mode anthropic_messages_stream
+```
+
+Rules that explicitly use `source=request` or `source=derived` can be supplied with `--request` / `--request-file` and `--derived` / `--derived-file` respectively.
+
 6) Setup Git hooks with prek
 
 ```bash
