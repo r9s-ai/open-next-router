@@ -136,6 +136,13 @@ func TestRunCLIRejectsInvalidInputsAndReturnsEmptyFacts(t *testing.T) {
 	if code != 0 || stderr != "" || strings.TrimSpace(stdout) != "[]" {
 		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
+	stdout, stderr, code = runCLI(t, []string{
+		"--usage-mode-dsl", mode,
+		"--usage", `{"input_tokens":0}`,
+	}, "")
+	if code != 0 || stderr != "" || strings.TrimSpace(stdout) != "[]" {
+		t.Fatalf("zero quantity code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
 
 	_, stderr, code = runCLI(t, []string{
 		"--usage-mode-dsl", mode,
