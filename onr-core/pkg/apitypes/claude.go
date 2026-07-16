@@ -3442,17 +3442,31 @@ func decodeClaudeToolChoicePtrFromMapField(m map[string]any, key string) (*Claud
 }
 
 func decodeFallbackListFromMapField(m map[string]any, key string) ([]*Fallback, error) {
-	items, err := mapListValue(m, key)
-	if err != nil {
-		return nil, err
+	v, ok := m[key]
+	if !ok || v == nil {
+		return nil, nil
+	}
+	items, ok := v.([]any)
+	if !ok {
+		return nil, fmt.Errorf("%s must be an array, got %T", key, v)
 	}
 	out := make([]*Fallback, 0, len(items))
-	for _, item := range items {
-		var v Fallback
-		if err := v.FromMap(item); err != nil {
-			return nil, err
+	for i, item := range items {
+		if item == nil {
+			continue
 		}
-		out = append(out, &v)
+		mv, ok := item.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("%s[%d]: expected object, got %T", key, i, item)
+		}
+		var fb Fallback
+		if err := fb.FromMap(mv); err != nil {
+			return nil, fmt.Errorf("%s[%d]: %w", key, i, err)
+		}
+		if fb.Model == "" {
+			return nil, fmt.Errorf("%s[%d]: model is required", key, i)
+		}
+		out = append(out, &fb)
 	}
 	return out, nil
 }

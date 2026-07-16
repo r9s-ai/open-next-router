@@ -608,3 +608,94 @@ func TestApplyReqMap_OpenAIChatToAnthropicMessages_ResponseFormat(t *testing.T) 
 		}
 	})
 }
+
+func TestApplyReqMap_OpenAIChatToAnthropicMessages_FallbackMaxTokensCapped(t *testing.T) {
+	// Fallback max_tokens exceeding the fallback model's limit must be capped,
+	// mirroring the primary model's max_tokens cap.
+	body := []byte(`{
+		"model":"claude-opus-4-6",
+		"messages":[{"role":"user","content":"hi"}],
+		"fallbacks":[{"model":"claude-opus-4-1","max_tokens":999999}]
+	}`)
+	_, root, err := ApplyReqMap("openai_chat_to_anthropic_messages", body, nil, ApplyOptions{})
+	if err != nil {
+		t.Fatalf("ApplyReqMap() error = %v", err)
+	}
+	fallbacks, ok := root["fallbacks"].([]any)
+	if !ok || len(fallbacks) != 1 {
+		t.Fatalf("fallbacks=%v", root["fallbacks"])
+	}
+	fb, ok := fallbacks[0].(map[string]any)
+	if !ok {
+		t.Fatalf("fallback type=%T", fallbacks[0])
+	}
+	// claude-opus-4-1 has a 32k limit; 999999 must be capped to 32000.
+	if got, want := mustInt(t, fb["max_tokens"]), 32*1000; got != want {
+		t.Fatalf("fallback max_tokens=%d want=%d", got, want)
+	}
+}
+
+func TestApplyReqMap_OpenAIChatToAnthropicMessages_FallbackAdaptiveThinkingDowngraded(t *testing.T) {
+	// A fallback with adaptive thinking targeting a model that does not support
+	// adaptive thinking must be downgraded to enabled/high.
+	body := []byte(`{
+		"model":"claude-opus-4-6",
+		"messages":[{"role":"user","content":"hi"}],
+		"fallbacks":[{"model":"claude-haiku-4-5","thinking":{"type":"adaptive","display":"omitted"}}]
+	}`)
+	_, root, err := ApplyReqMap("openai_chat_to_anthropic_messages", body, nil, ApplyOptions{})
+	if err != nil {
+		t.Fatalf("ApplyReqMap() error = %v", err)
+	}
+	fallbacks, ok := root["fallbacks"].([]any)
+	if !ok || len(fallbacks) != 1 {
+		t.Fatalf("fallbacks=%v", root["fallbacks"])
+	}
+	fb, ok := fallbacks[0].(map[string]any)
+	if !ok {
+		t.Fatalf("fallback type=%T", fallbacks[0])
+	}
+	thinking, ok := fb["thinking"].(map[string]any)
+	if !ok {
+		t.Fatalf("fallback thinking type=%T", fb["thinking"])
+	}
+	if got, want := thinking["type"], "enabled"; got != want {
+		t.Fatalf("fallback thinking.type=%v want=%v", got, want)
+	}
+	if got, want := mustInt(t, thinking["budget_tokens"]), 16*1024; got != want {
+		t.Fatalf("fallback thinking.budget_tokens=%d want=%d", got, want)
+	}
+}
+
+func TestApplyReqMap_OpenAIChatToAnthropicMessages_FallbackNullElementFiltered(t *testing.T) {
+	body := []byte(`{
+		"model":"claude-opus-4-6",
+		"messages":[{"role":"user","content":"hi"}],
+		"fallbacks":[null]
+	}`)
+	outBody, _, err := ApplyReqMap("openai_chat_to_anthropic_messages", body, nil, ApplyOptions{})
+	if err != nil {
+		t.Fatalf("expected nil error for null fallback element, got %v", err)
+	}
+	var out map[string]any
+	if e := json.Unmarshal(outBody, &out); e != nil {
+		t.Fatalf("unmarshal output: %v", e)
+	}
+	if fbs, ok := out["fallbacks"]; ok && fbs != nil {
+		if arr, ok := fbs.([]any); ok && len(arr) > 0 {
+			t.Fatalf("expected no fallbacks after filtering null, got %v", arr)
+		}
+	}
+}
+
+func TestApplyReqMap_OpenAIChatToAnthropicMessages_FallbackEmptyModelRejected(t *testing.T) {
+	body := []byte(`{
+		"model":"claude-opus-4-6",
+		"messages":[{"role":"user","content":"hi"}],
+		"fallbacks":[{"model":""}]
+	}`)
+	_, _, err := ApplyReqMap("openai_chat_to_anthropic_messages", body, nil, ApplyOptions{})
+	if err == nil {
+		t.Fatal("expected error for empty fallback model, got nil")
+	}
+}

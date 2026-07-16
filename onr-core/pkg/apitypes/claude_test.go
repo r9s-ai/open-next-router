@@ -706,3 +706,42 @@ func TestClaudeRequestFallbacksMapRoundTrip(t *testing.T) {
 	require.True(t, ok)
 	require.Len(t, items, 1)
 }
+
+func TestClaudeRequest_FromMap_FallbackNullElementFiltered(t *testing.T) {
+	m := map[string]any{
+		"model":     "claude-opus-4-6",
+		"fallbacks": []any{nil},
+	}
+	var req ClaudeRequest
+	err := req.FromMap(m)
+	if err != nil {
+		t.Fatalf("expected nil error for null fallback element, got %v", err)
+	}
+	if len(req.Fallbacks) != 0 {
+		t.Fatalf("expected empty fallbacks after filtering null, got %d", len(req.Fallbacks))
+	}
+}
+
+func TestClaudeRequest_FromMap_FallbackEmptyModelRejected(t *testing.T) {
+	m := map[string]any{
+		"model":     "claude-opus-4-6",
+		"fallbacks": []any{map[string]any{"model": ""}},
+	}
+	var req ClaudeRequest
+	err := req.FromMap(m)
+	if err == nil {
+		t.Fatal("expected error for empty fallback model, got nil")
+	}
+}
+
+func TestClaudeRequest_FromMap_FallbackMissingModelRejected(t *testing.T) {
+	m := map[string]any{
+		"model":     "claude-opus-4-6",
+		"fallbacks": []any{map[string]any{}},
+	}
+	var req ClaudeRequest
+	err := req.FromMap(m)
+	if err == nil {
+		t.Fatal("expected error for fallback with missing model field, got nil")
+	}
+}

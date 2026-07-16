@@ -270,7 +270,28 @@ func mapOpenAIChatCompletionsToClaudeRequest(req *apitypes.OpenAIChatCompletions
 		dst.Metadata = &apitypes.ClaudeMetadata{UserId: req.User}
 	}
 	if len(req.Fallbacks) > 0 {
+		// Fallback shares the same struct type as ClaudeRequest.Fallbacks, so the
+		// slice is forwarded directly. Per-fallback adjustments below mirror what is
+		// done for the primary model in this function:
+		//   - MaxTokens: capped against the fallback model's limit (primary model cap is at line 291).
+		//   - Thinking: adaptive is downgraded if the fallback model does not support it
+		//     (primary model thinking is derived from ReasoningEffort at line 285).
+		//   - Model: forwarded as-is; relay's channel filter replaces the slug with the
+		//     configured upstream slug before the request reaches the upstream, so alias
+		//     normalization (e.g. claude-2 → claude-2.1) is not applied here.
 		dst.Fallbacks = req.Fallbacks
+		for _, fb := range dst.Fallbacks {
+			if fb == nil || fb.Model == "" {
+				// nil and empty-model elements are rejected by decodeFallbackListFromMapField;
+				// skip defensively in case the caller constructs the slice directly.
+				continue
+			}
+			modelMax := claudeModelMaxTokens(fb.Model)
+			if fb.MaxTokens != nil && *fb.MaxTokens > modelMax {
+				fb.MaxTokens = &modelMax
+			}
+			fb.Thinking = normalizeFallbackThinking(fb.Thinking, fb.Model)
+		}
 	}
 	if stopSequences := normalizeStopSequences(req.Stop); len(stopSequences) > 0 {
 		dst.StopSequences = stopSequences
@@ -663,6 +684,27 @@ func convertReasoningEffortToThinking(reasoning string, model string) *apitypes.
 func supportsAdaptiveThinking(model string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(model))
 	return strings.HasPrefix(normalized, "claude-opus-4-6") || strings.HasPrefix(normalized, "claude-sonnet-4-6")
+}
+
+// normalizeFallbackThinking returns a thinking config appropriate for model.
+// Adaptive thinking is downgraded to enabled with high budget for models that don't support it.
+func normalizeFallbackThinking(thinking *apitypes.ThinkingConfig, model string) *apitypes.ThinkingConfig {
+	if thinking == nil || thinking.Data == nil {
+		return thinking
+	}
+	if _, ok := thinking.Data.(*apitypes.ThinkingConfigAdaptive); !ok {
+		return thinking
+	}
+	if supportsAdaptiveThinking(model) {
+		return thinking
+	}
+	return &apitypes.ThinkingConfig{
+		Data: &apitypes.ThinkingConfigEnabled{
+			BaseThinkingConfig: apitypes.BaseThinkingConfig{Type: "enabled"},
+			BudgetTokens:       claudeReasoningBudgetHigh,
+			Display:            "omitted",
+		},
+	}
 }
 
 func claudeModelMaxTokens(model string) int {
