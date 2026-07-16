@@ -661,6 +661,27 @@ func TestClaudeUsageIterationsMapRoundTrip(t *testing.T) {
 	require.Equal(t, 1, fallbackCacheCreation["ephemeral_5m_input_tokens"])
 }
 
+func TestClaudeUsageByModelGetClaudeUsage(t *testing.T) {
+	t.Parallel()
+	cacheDetail := &CacheCreationUsageDetail{Ephemeral5mInputTokens: 2, Ephemeral1hInputTokens: 4}
+	u := ClaudeUsageByModel{
+		Type:                     "fallback_message",
+		Model:                    "claude-fallback",
+		InputTokens:              100,
+		OutputTokens:             50,
+		CacheCreationInputTokens: 10,
+		CacheReadInputTokens:     5,
+		CacheCreation:            cacheDetail,
+	}
+	got := u.GetClaudeUsage()
+	require.Equal(t, u.InputTokens, got.InputTokens)
+	require.Equal(t, u.OutputTokens, got.OutputTokens)
+	require.Equal(t, u.CacheCreationInputTokens, got.CacheCreationInputTokens)
+	require.Equal(t, u.CacheReadInputTokens, got.CacheReadInputTokens)
+	require.Equal(t, cacheDetail, got.CacheCreation)
+	require.Nil(t, got.Iterations)
+}
+
 func TestClaudeRequestFallbacksMapRoundTrip(t *testing.T) {
 	t.Parallel()
 

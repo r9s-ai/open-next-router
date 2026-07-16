@@ -2859,6 +2859,17 @@ type ClaudeUsageByModel struct {
 	Type                     string                    `json:"type"`
 }
 
+// GetClaudeUsage constructs a ClaudeUsage from the per-model fields, without the Iterations slice.
+func (c ClaudeUsageByModel) GetClaudeUsage() *ClaudeUsage {
+	return &ClaudeUsage{
+		InputTokens:              c.InputTokens,
+		OutputTokens:             c.OutputTokens,
+		CacheCreationInputTokens: c.CacheCreationInputTokens,
+		CacheReadInputTokens:     c.CacheReadInputTokens,
+		CacheCreation:            c.CacheCreation,
+	}
+}
+
 func (c *ClaudeUsageByModel) FromMap(m map[string]any) error {
 	var err error
 	c.CacheCreation, err = decodeCacheCreationUsageDetailPtrFromMapField(m, "cache_creation")

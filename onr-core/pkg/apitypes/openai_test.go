@@ -400,6 +400,28 @@ func TestOpenAIResponsesRequestFromMap_DecodesConcreteInputSlices(t *testing.T) 
 	require.Equal(t, "hello", req.Input.Items[0].Content.Parts[0].Text)
 }
 
+func TestOpenAIUsageByModelGetUsage(t *testing.T) {
+	t.Parallel()
+	promptDetails := &OpenAITokenDetails{CachedTokens: 8}
+	completionDetails := &OpenAITokenDetails{ReasoningTokens: 3}
+	u := OpenAIUsageByModel{
+		Type:                    "fallback_message",
+		Model:                   "gpt-fallback",
+		PromptTokens:            80,
+		CompletionTokens:        40,
+		TotalTokens:             120,
+		PromptTokenDetails:      promptDetails,
+		CompletionTokensDetails: completionDetails,
+	}
+	got := u.GetUsage()
+	require.Equal(t, u.PromptTokens, got.PromptTokens)
+	require.Equal(t, u.CompletionTokens, got.CompletionTokens)
+	require.Equal(t, u.TotalTokens, got.TotalTokens)
+	require.Equal(t, promptDetails, got.PromptTokensDetails)
+	require.Equal(t, completionDetails, got.CompletionTokensDetails)
+	require.Nil(t, got.Iterations)
+}
+
 func TestOpenAIChatCompletionsUsageIterationsMapRoundTrip(t *testing.T) {
 	t.Parallel()
 

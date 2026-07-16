@@ -1633,6 +1633,17 @@ type OpenAIChatCompletionsUsage struct {
 	Iterations              []*OpenAIUsageByModel `json:"iterations,omitempty"`
 }
 
+// GetUsage constructs an OpenAIChatCompletionsUsage from the per-model fields, without the Iterations slice.
+func (u OpenAIUsageByModel) GetUsage() *OpenAIChatCompletionsUsage {
+	return &OpenAIChatCompletionsUsage{
+		PromptTokens:            u.PromptTokens,
+		CompletionTokens:        u.CompletionTokens,
+		TotalTokens:             u.TotalTokens,
+		PromptTokensDetails:     u.PromptTokenDetails,
+		CompletionTokensDetails: u.CompletionTokensDetails,
+	}
+}
+
 func (u *OpenAIUsageByModel) FromMap(m map[string]any) error {
 	var err error
 	u.Type, err = stringValue(m, "type")
