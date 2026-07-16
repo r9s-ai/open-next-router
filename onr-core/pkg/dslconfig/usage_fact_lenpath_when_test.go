@@ -111,6 +111,57 @@ func TestExtractUsage_UsageFactWhenBranchesOnUsageType(t *testing.T) {
 	}
 }
 
+// when_eq 接受裸数字(数值文本存储,运行时数值比较),并与带引号写法、
+// JSON 数字/字符串取值交叉等价。
+func TestExtractUsage_UsageFactWhenEqAcceptsNumbers(t *testing.T) {
+	pf := writeUsageFactTestProvider(t, `
+      usage_root path="$.usage";
+      usage_fact audio.stt second path="$.seconds" when_path="$.code" when_eq=2;
+      usage_fact audio.stt second path="$.seconds" scale=2 when_path="$.ratio" when_eq=2.5 fallback=true;
+      usage_fact audio.translate second path="$.seconds" when_path="$.code" when_eq="2";
+`)
+
+	// 裸数字 when_eq=2 vs JSON 数字 2:数值比较命中;
+	// 带引号 when_eq="2" 对同一取值等价命中(audio.translate)。
+	usage, _, err := ExtractUsage(&dslmeta.Meta{}, &pf.Usage.Defaults, []byte(`{"usage":{"code":2,"seconds":7}}`))
+	if err != nil {
+		t.Fatalf("ExtractUsage(code=2): %v", err)
+	}
+	if fact, ok := findDebugFact(usage.DebugFacts, "audio.stt", "second"); !ok || fact.Quantity != 7 {
+		t.Fatalf("bare-number when_eq: ok=%v got=%v want=7", ok, fact.Quantity)
+	}
+	if fact, ok := findDebugFact(usage.DebugFacts, "audio.translate", "second"); !ok || fact.Quantity != 7 {
+		t.Fatalf("quoted-number when_eq: ok=%v got=%v want=7", ok, fact.Quantity)
+	}
+
+	// 裸数字 when_eq=2 vs JSON 字符串 "2":跨类型仍按数值等价命中。
+	usage, _, err = ExtractUsage(&dslmeta.Meta{}, &pf.Usage.Defaults, []byte(`{"usage":{"code":"2","seconds":5}}`))
+	if err != nil {
+		t.Fatalf("ExtractUsage(code=\"2\"): %v", err)
+	}
+	if fact, ok := findDebugFact(usage.DebugFacts, "audio.stt", "second"); !ok || fact.Quantity != 5 {
+		t.Fatalf("string-value cross compare: ok=%v got=%v want=5", ok, fact.Quantity)
+	}
+
+	// 裸小数 when_eq=2.5 vs JSON 2.5:命中且 scale 生效。
+	usage, _, err = ExtractUsage(&dslmeta.Meta{}, &pf.Usage.Defaults, []byte(`{"usage":{"ratio":2.5,"seconds":3}}`))
+	if err != nil {
+		t.Fatalf("ExtractUsage(ratio=2.5): %v", err)
+	}
+	if fact, ok := findDebugFact(usage.DebugFacts, "audio.stt", "second"); !ok || fact.Quantity != 6 {
+		t.Fatalf("decimal when_eq with scale: ok=%v got=%v want=6", ok, fact.Quantity)
+	}
+
+	// 不相等的数值不命中。
+	usage, _, err = ExtractUsage(&dslmeta.Meta{}, &pf.Usage.Defaults, []byte(`{"usage":{"code":3,"seconds":9}}`))
+	if err != nil {
+		t.Fatalf("ExtractUsage(code=3): %v", err)
+	}
+	if _, ok := findDebugFact(usage.DebugFacts, "audio.stt", "second"); ok {
+		t.Fatalf("expected no match for code=3, got %#v", usage.DebugFacts)
+	}
+}
+
 func TestValidateProviderFile_UsageFactLenPathMutuallyExclusive(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "demo.conf")

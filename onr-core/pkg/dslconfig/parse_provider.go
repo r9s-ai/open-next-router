@@ -2,6 +2,7 @@ package dslconfig
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -770,11 +771,22 @@ func parseUsageFactMetaOption(s *scanner, keyTok token, key string, valTok token
 		fact.WhenPath = val
 		return nil
 	case key == "when_eq":
-		val, err := parseUsageFactStringValue(s, valTok, "when_eq")
-		if err != nil {
-			return err
+		// 接受字符串/标识符,也接受裸数字(when_eq=2、when_eq=2.5):数值转回
+		// 文本存储,交由运行时 jsonValueEqualsLiteral 的数值比较分支处理。
+		switch valTok.kind {
+		case tokString, tokIdent:
+			val, err := parseUsageFactStringValue(s, valTok, "when_eq")
+			if err != nil {
+				return err
+			}
+			fact.WhenEq = val
+		default:
+			num, err := parseNumberValueTokens(s, valTok)
+			if err != nil {
+				return s.errAt(valTok, "when_eq expects string literal, identifier or number")
+			}
+			fact.WhenEq = strconv.FormatFloat(num, 'f', -1, 64)
 		}
-		fact.WhenEq = val
 		return nil
 	case strings.HasPrefix(key, "attr."):
 		val, err := parseUsageFactStringValue(s, valTok, key)
