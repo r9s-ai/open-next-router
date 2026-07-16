@@ -2432,6 +2432,43 @@ func (c *ThinkingConfig) ToMap() (map[string]any, error) {
 	}
 }
 
+type Fallback struct {
+	Model     string          `json:"model"`
+	MaxTokens *int            `json:"max_tokens,omitempty"`
+	Thinking  *ThinkingConfig `json:"thinking,omitempty"`
+}
+
+func (f *Fallback) FromMap(m map[string]any) error {
+	var err error
+	f.Model, err = stringValue(m, "model")
+	if err != nil {
+		return err
+	}
+	f.MaxTokens, err = intPtrValue(m, "max_tokens")
+	if err != nil {
+		return err
+	}
+	f.Thinking, err = decodeThinkingConfigPtrFromMapField(m, "thinking")
+	return err
+}
+
+func (f *Fallback) ToMap() (map[string]any, error) {
+	out := map[string]any{
+		"model": f.Model,
+	}
+	if f.MaxTokens != nil {
+		out["max_tokens"] = *f.MaxTokens
+	}
+	if f.Thinking != nil {
+		thinking, err := f.Thinking.ToMap()
+		if err != nil {
+			return nil, err
+		}
+		out["thinking"] = thinking
+	}
+	return out, nil
+}
+
 type ClaudeToolChoice struct {
 	Type                   string `json:"type"`
 	DisableParallelToolUse bool   `json:"disable_parallel_tool_use,omitempty"`
@@ -2467,6 +2504,7 @@ type ClaudeRequest struct {
 	CacheControl     *CacheControl       `json:"cache_control,omitempty"`
 	Container        string              `json:"container,omitempty"`
 	InferenceGeo     string              `json:"inference_geo,omitempty"`
+	Fallbacks        []*Fallback         `json:"fallbacks,omitempty"`
 	OutputConfig     *ClaudeOutputConfig `json:"output_config,omitempty"`
 	ServiceTier      string              `json:"service_tier,omitempty"`
 	StopSequences    []string            `json:"stop_sequences,omitempty"`
@@ -2519,6 +2557,7 @@ func (c *ClaudeRequest) UnmarshalJSON(b []byte) error {
 		CacheControl     *CacheControl       `json:"cache_control,omitempty"`
 		Container        string              `json:"container,omitempty"`
 		InferenceGeo     string              `json:"inference_geo,omitempty"`
+		Fallbacks        []*Fallback         `json:"fallbacks,omitempty"`
 		OutputConfig     *ClaudeOutputConfig `json:"output_config,omitempty"`
 		ServiceTier      string              `json:"service_tier,omitempty"`
 		StopSequences    []string            `json:"stop_sequences,omitempty"`
@@ -2544,6 +2583,7 @@ func (c *ClaudeRequest) UnmarshalJSON(b []byte) error {
 		CacheControl:     w.CacheControl,
 		Container:        w.Container,
 		InferenceGeo:     w.InferenceGeo,
+		Fallbacks:        w.Fallbacks,
 		OutputConfig:     w.OutputConfig,
 		ServiceTier:      w.ServiceTier,
 		StopSequences:    w.StopSequences,
@@ -2617,6 +2657,10 @@ func (c *ClaudeRequest) FromMap(m map[string]any) error {
 		return err
 	}
 	c.InferenceGeo, err = stringValue(m, "inference_geo")
+	if err != nil {
+		return err
+	}
+	c.Fallbacks, err = decodeFallbackListFromMapField(m, "fallbacks")
 	if err != nil {
 		return err
 	}
@@ -2700,6 +2744,13 @@ func (c *ClaudeRequest) ToMap() (map[string]any, error) {
 	}
 	setMapString(out, "container", c.Container)
 	setMapString(out, "inference_geo", c.InferenceGeo)
+	if len(c.Fallbacks) > 0 {
+		fallbacks, err := fallbackListToMaps(c.Fallbacks)
+		if err != nil {
+			return nil, err
+		}
+		out["fallbacks"] = fallbacks
+	}
 	if c.OutputConfig != nil {
 		outputConfig, err := c.OutputConfig.ToMap()
 		if err != nil {
@@ -2776,14 +2827,108 @@ func (c *ClaudeServerToolUsage) ToMap() (map[string]any, error) {
 	return out, nil
 }
 
+type CacheCreationUsageDetail struct {
+	Ephemeral5mInputTokens int `json:"ephemeral_5m_input_tokens"`
+	Ephemeral1hInputTokens int `json:"ephemeral_1h_input_tokens"`
+}
+
+func (c *CacheCreationUsageDetail) FromMap(m map[string]any) error {
+	var err error
+	c.Ephemeral5mInputTokens, err = intValue(m, "ephemeral_5m_input_tokens")
+	if err != nil {
+		return err
+	}
+	c.Ephemeral1hInputTokens, err = intValue(m, "ephemeral_1h_input_tokens")
+	return err
+}
+
+func (c *CacheCreationUsageDetail) ToMap() (map[string]any, error) {
+	return map[string]any{
+		"ephemeral_5m_input_tokens": c.Ephemeral5mInputTokens,
+		"ephemeral_1h_input_tokens": c.Ephemeral1hInputTokens,
+	}, nil
+}
+
+type ClaudeUsageByModel struct {
+	CacheCreation            *CacheCreationUsageDetail `json:"cache_creation,omitempty"`
+	CacheCreationInputTokens int                       `json:"cache_creation_input_tokens,omitempty"`
+	CacheReadInputTokens     int                       `json:"cache_read_input_tokens,omitempty"`
+	InputTokens              int                       `json:"input_tokens"`
+	Model                    string                    `json:"model"`
+	OutputTokens             int                       `json:"output_tokens"`
+	Type                     string                    `json:"type"`
+}
+
+// GetClaudeUsage constructs a ClaudeUsage from the per-model fields, without the Iterations slice.
+func (c ClaudeUsageByModel) GetClaudeUsage() *ClaudeUsage {
+	return &ClaudeUsage{
+		InputTokens:              c.InputTokens,
+		OutputTokens:             c.OutputTokens,
+		CacheCreationInputTokens: c.CacheCreationInputTokens,
+		CacheReadInputTokens:     c.CacheReadInputTokens,
+		CacheCreation:            c.CacheCreation,
+	}
+}
+
+func (c *ClaudeUsageByModel) FromMap(m map[string]any) error {
+	var err error
+	c.CacheCreation, err = decodeCacheCreationUsageDetailPtrFromMapField(m, "cache_creation")
+	if err != nil {
+		return err
+	}
+	c.CacheCreationInputTokens, err = intValue(m, "cache_creation_input_tokens")
+	if err != nil {
+		return err
+	}
+	c.CacheReadInputTokens, err = intValue(m, "cache_read_input_tokens")
+	if err != nil {
+		return err
+	}
+	c.InputTokens, err = intValue(m, "input_tokens")
+	if err != nil {
+		return err
+	}
+	c.Model, err = stringValue(m, "model")
+	if err != nil {
+		return err
+	}
+	c.OutputTokens, err = intValue(m, "output_tokens")
+	if err != nil {
+		return err
+	}
+	c.Type, err = stringValue(m, "type")
+	return err
+}
+
+func (c *ClaudeUsageByModel) ToMap() (map[string]any, error) {
+	out := map[string]any{
+		"input_tokens":  c.InputTokens,
+		"model":         c.Model,
+		"output_tokens": c.OutputTokens,
+		"type":          c.Type,
+	}
+	if c.CacheCreation != nil {
+		cacheCreation, err := c.CacheCreation.ToMap()
+		if err != nil {
+			return nil, err
+		}
+		out["cache_creation"] = cacheCreation
+	}
+	setMapInt(out, "cache_creation_input_tokens", c.CacheCreationInputTokens)
+	setMapInt(out, "cache_read_input_tokens", c.CacheReadInputTokens)
+	return out, nil
+}
+
 type ClaudeUsage struct {
-	InputTokens              int                    `json:"input_tokens"`
-	OutputTokens             int                    `json:"output_tokens"`
-	CacheCreationInputTokens int                    `json:"cache_creation_input_tokens,omitempty"`
-	CacheReadInputTokens     int                    `json:"cache_read_input_tokens,omitempty"`
-	InferenceGeo             string                 `json:"inference_geo,omitempty"`
-	ServiceTier              string                 `json:"service_tier,omitempty"`
-	ServerToolUse            *ClaudeServerToolUsage `json:"server_tool_use,omitempty"`
+	InputTokens              int                       `json:"input_tokens"`
+	OutputTokens             int                       `json:"output_tokens"`
+	CacheCreationInputTokens int                       `json:"cache_creation_input_tokens,omitempty"`
+	CacheReadInputTokens     int                       `json:"cache_read_input_tokens,omitempty"`
+	CacheCreation            *CacheCreationUsageDetail `json:"cache_creation,omitempty"`
+	InferenceGeo             string                    `json:"inference_geo,omitempty"`
+	ServiceTier              string                    `json:"service_tier,omitempty"`
+	ServerToolUse            *ClaudeServerToolUsage    `json:"server_tool_use,omitempty"`
+	Iterations               []ClaudeUsageByModel      `json:"iterations,omitempty"`
 }
 
 // ClaudeStreamMessage models one SSE event payload from Claude /v1/messages streaming.
@@ -2836,6 +2981,10 @@ func (c *ClaudeUsage) FromMap(m map[string]any) error {
 	if err != nil {
 		return err
 	}
+	c.CacheCreation, err = decodeCacheCreationUsageDetailPtrFromMapField(m, "cache_creation")
+	if err != nil {
+		return err
+	}
 	c.InferenceGeo, err = stringValue(m, "inference_geo")
 	if err != nil {
 		return err
@@ -2845,6 +2994,10 @@ func (c *ClaudeUsage) FromMap(m map[string]any) error {
 		return err
 	}
 	c.ServerToolUse, err = decodeClaudeServerToolUsagePtrFromMapField(m, "server_tool_use")
+	if err != nil {
+		return err
+	}
+	c.Iterations, err = decodeClaudeUsageByModelListFromMapField(m, "iterations")
 	return err
 }
 
@@ -2855,6 +3008,13 @@ func (c *ClaudeUsage) ToMap() (map[string]any, error) {
 	}
 	setMapInt(out, "cache_creation_input_tokens", c.CacheCreationInputTokens)
 	setMapInt(out, "cache_read_input_tokens", c.CacheReadInputTokens)
+	if c.CacheCreation != nil {
+		cacheCreation, err := c.CacheCreation.ToMap()
+		if err != nil {
+			return nil, err
+		}
+		out["cache_creation"] = cacheCreation
+	}
 	setMapString(out, "inference_geo", c.InferenceGeo)
 	setMapString(out, "service_tier", c.ServiceTier)
 	if c.ServerToolUse != nil {
@@ -2863,6 +3023,13 @@ func (c *ClaudeUsage) ToMap() (map[string]any, error) {
 			return nil, err
 		}
 		out["server_tool_use"] = serverToolUse
+	}
+	if len(c.Iterations) > 0 {
+		iterations, err := claudeUsageByModelListToMaps(c.Iterations)
+		if err != nil {
+			return nil, err
+		}
+		out["iterations"] = iterations
 	}
 	return out, nil
 }
@@ -3274,6 +3441,51 @@ func decodeClaudeToolChoicePtrFromMapField(m map[string]any, key string) (*Claud
 	return &out, out.FromMap(mv)
 }
 
+func decodeFallbackListFromMapField(m map[string]any, key string) ([]*Fallback, error) {
+	v, ok := m[key]
+	if !ok || v == nil {
+		return nil, nil
+	}
+	items, ok := v.([]any)
+	if !ok {
+		return nil, fmt.Errorf("%s must be an array, got %T", key, v)
+	}
+	out := make([]*Fallback, 0, len(items))
+	for i, item := range items {
+		if item == nil {
+			continue
+		}
+		mv, ok := item.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("%s[%d]: expected object, got %T", key, i, item)
+		}
+		var fb Fallback
+		if err := fb.FromMap(mv); err != nil {
+			return nil, fmt.Errorf("%s[%d]: %w", key, i, err)
+		}
+		if fb.Model == "" {
+			return nil, fmt.Errorf("%s[%d]: model is required", key, i)
+		}
+		out = append(out, &fb)
+	}
+	return out, nil
+}
+
+func fallbackListToMaps(items []*Fallback) ([]any, error) {
+	out := make([]any, 0, len(items))
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		m, err := item.ToMap()
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, nil
+}
+
 func decodeClaudeToolListFromMapField(m map[string]any, key string) ([]ClaudeTool, error) {
 	items, err := mapListValue(m, key)
 	if err != nil {
@@ -3306,6 +3518,19 @@ func decodeClaudeMessageListFromMapField(m map[string]any, key string) ([]Claude
 	return out, nil
 }
 
+func decodeCacheCreationUsageDetailPtrFromMapField(m map[string]any, key string) (*CacheCreationUsageDetail, error) {
+	v, ok := mapValue(m, key)
+	if !ok || v == nil {
+		return nil, nil
+	}
+	mv, ok := v.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("%s must be map[string]any, got %T", key, v)
+	}
+	var out CacheCreationUsageDetail
+	return &out, out.FromMap(mv)
+}
+
 func decodeClaudeServerToolUsagePtrFromMapField(m map[string]any, key string) (*ClaudeServerToolUsage, error) {
 	v, ok := mapValue(m, key)
 	if !ok || v == nil {
@@ -3330,6 +3555,34 @@ func decodeClaudeContainerPtrFromMapField(m map[string]any, key string) (*Claude
 	}
 	var out ClaudeContainer
 	return &out, out.FromMap(mv)
+}
+
+func decodeClaudeUsageByModelListFromMapField(m map[string]any, key string) ([]ClaudeUsageByModel, error) {
+	items, err := mapListValue(m, key)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ClaudeUsageByModel, 0, len(items))
+	for _, item := range items {
+		var v ClaudeUsageByModel
+		if err := v.FromMap(item); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
+
+func claudeUsageByModelListToMaps(items []ClaudeUsageByModel) ([]any, error) {
+	out := make([]any, 0, len(items))
+	for i := range items {
+		m, err := items[i].ToMap()
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, nil
 }
 
 func decodeClaudeUsagePtrFromMapField(m map[string]any, key string) (*ClaudeUsage, error) {

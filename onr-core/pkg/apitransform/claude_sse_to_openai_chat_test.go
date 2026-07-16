@@ -103,6 +103,43 @@ func TestTransformClaudeMessagesSSEToOpenAIChatCompletionsSSE_EmitsFinalUsageChu
 	}
 }
 
+func TestTransformClaudeMessagesSSEToOpenAIChatCompletionsSSE_PreservesUsageIterations(t *testing.T) {
+	in := strings.Join([]string{
+		"event: message_start",
+		`data: {"type":"message_start","message":{"id":"msg_usage_iterations","model":"claude-fable-5","usage":{"input_tokens":97}}}`,
+		"",
+		"event: content_block_delta",
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hi"}}`,
+		"",
+		"event: message_delta",
+		`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1120,"iterations":[{"model":"claude-fable-5","type":"message","input_tokens":97,"output_tokens":0},{"model":"claude-opus-4-8","type":"fallback_message","input_tokens":97,"output_tokens":1120}]}}`,
+		"",
+		"event: message_stop",
+		`data: {"type":"message_stop"}`,
+		"",
+	}, "\n")
+
+	var out bytes.Buffer
+	if err := TransformClaudeMessagesSSEToOpenAIChatCompletionsSSE(bytes.NewBufferString(in), &out); err != nil {
+		t.Fatalf("transform error: %v", err)
+	}
+	s := out.String()
+	if !containsAll(
+		s,
+		`"choices":[]`,
+		`"usage"`,
+		`"iterations"`,
+		`"model":"claude-fable-5"`,
+		`"type":"fallback_message"`,
+		`"model":"claude-opus-4-8"`,
+		`"completion_tokens":1120`,
+		`"total_tokens":1217`,
+		"data: [DONE]",
+	) {
+		t.Fatalf("unexpected output: %s", s)
+	}
+}
+
 func TestTransformClaudeMessagesSSEToOpenAIChatCompletionsSSE_MergesUsageAcrossEvents(t *testing.T) {
 	in := strings.Join([]string{
 		"event: message_start",

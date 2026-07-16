@@ -6,6 +6,30 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/apitypes"
 )
 
+func TestMapOpenAIResponsesToChatCompletions_PreservesUsageIterations(t *testing.T) {
+	in := []byte(`{
+  "id":"resp_1",
+  "created_at":1700000000,
+  "model":"gpt-5",
+  "status":"completed",
+  "output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Hello"}]}],
+  "usage":{
+    "input_tokens":1,
+    "output_tokens":2,
+    "total_tokens":3,
+    "iterations":[{"model":"model-a","input_tokens":1,"output_tokens":0},{"model":"model-b","input_tokens":1,"output_tokens":2}]
+  }
+}`)
+	out, err := MapOpenAIResponsesToChatCompletions(in)
+	if err != nil {
+		t.Fatalf("map response: %v", err)
+	}
+	s := string(out)
+	if !containsAll(s, `"usage"`, `"iterations"`, `"model":"model-a"`, `"model":"model-b"`) {
+		t.Fatalf("expected usage iterations, got %s", s)
+	}
+}
+
 func TestMapOpenAIResponsesToChatCompletions_Basic(t *testing.T) {
 	in := []byte(`{
   "id":"resp_123",

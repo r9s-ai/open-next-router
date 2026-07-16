@@ -224,6 +224,9 @@ func mapResponsesUsageToChat(root map[string]any) map[string]any {
 		out["prompt_tokens_details"] = map[string]any{"cached_tokens": v}
 		out["input_tokens_details"] = map[string]any{"cached_tokens": v}
 	}
+	if iterations, ok := u["iterations"].([]any); ok && len(iterations) > 0 {
+		out["iterations"] = iterations
+	}
 	return out
 }
 
