@@ -12,9 +12,11 @@ import (
 )
 
 const (
-	claudeContentTypeToolUse = "tool_use"
-	finishReasonToolCalls    = "tool_calls"
-	claudeStopReasonMax      = "max_tokens"
+	claudeContentTypeToolUse    = "tool_use"
+	claudeStopReasonRefusal     = "refusal"
+	finishReasonToolCalls       = "tool_calls"
+	finishReasonContentFilter   = "content_filter"
+	claudeStopReasonMax         = "max_tokens"
 )
 
 // MapOpenAIChatCompletionsToClaudeMessagesRequestObject is unused in production.
@@ -248,7 +250,8 @@ func MapClaudeMessagesResponseToOpenAIChatCompletionsObject(root apitypes.JSONOb
 			contentParts = append(contentParts, v.Thinking)
 		}
 	}
-	if len(contentParts) == 0 && len(toolCalls) == 0 {
+	isRefusal := src.StopReason == claudeStopReasonRefusal
+	if len(contentParts) == 0 && len(toolCalls) == 0 && !isRefusal {
 		return nil, fmt.Errorf("content is required")
 	}
 	message := apitypes.JSONObject{
@@ -312,6 +315,8 @@ func stopReasonClaude2OpenAI(reason string) string {
 		return finishReasonLength
 	case claudeContentTypeToolUse:
 		return finishReasonToolCalls
+	case claudeStopReasonRefusal:
+		return finishReasonContentFilter
 	default:
 		return strings.TrimSpace(reason)
 	}

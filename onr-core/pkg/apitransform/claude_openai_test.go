@@ -272,3 +272,51 @@ func TestMapClaudeMessagesResponseToOpenAIChatCompletions_FinishReasonMaxTokensT
 		t.Fatalf("unexpected finish_reason: %#v", choice["finish_reason"])
 	}
 }
+
+func TestMapClaudeMessagesResponseToOpenAIChatCompletions_RefusalEmptyContent(t *testing.T) {
+	in := []byte(`{
+  "content":[],
+  "id":"msg_011Cd6eo43MEFGG8EvAvBki2",
+  "model":"claude-fable-5",
+  "role":"assistant",
+  "stop_details":{"category":"cyber","explanation":"This request triggered restrictions on violative cyber content and was blocked under Anthropic's Usage Policy.","type":"refusal"},
+  "stop_reason":"refusal",
+  "stop_sequence":null,
+  "type":"message",
+  "usage":{"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"input_tokens":98,"output_tokens":2}
+}`)
+	var root map[string]any
+	if err := json.Unmarshal(in, &root); err != nil {
+		t.Fatalf("unmarshal input: %v", err)
+	}
+	outObj, err := MapClaudeMessagesResponseToOpenAIChatCompletionsObject(root)
+	if err != nil {
+		t.Fatalf("unexpected error for refusal response: %v", err)
+	}
+	out, err := json.Marshal(outObj)
+	if err != nil {
+		t.Fatalf("marshal output: %v", err)
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(out, &obj); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	choices, ok := obj["choices"].([]any)
+	if !ok || len(choices) != 1 {
+		t.Fatalf("choices must contain a single item, got %#v", obj["choices"])
+	}
+	choice, ok := choices[0].(map[string]any)
+	if !ok {
+		t.Fatalf("choice must be object, got %#v", choices[0])
+	}
+	if choice["finish_reason"] != "content_filter" {
+		t.Fatalf("expected finish_reason=content_filter, got %#v", choice["finish_reason"])
+	}
+	msg, ok := choice["message"].(map[string]any)
+	if !ok {
+		t.Fatalf("choice.message must be object, got %#v", choice["message"])
+	}
+	if _, hasContent := msg["content"]; hasContent {
+		t.Fatalf("choice.message must not have content key for refusal, got %#v", msg)
+	}
+}
