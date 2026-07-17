@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 
@@ -47,19 +48,47 @@ func estimateNonStreamUsage(
 	return usageMap(out.Usage), out.Stage, nil
 }
 
-// populateNonStreamDerivedUsage requires a non-nil meta and response.
-func populateNonStreamDerivedUsage(meta *dslmeta.Meta, pf dslconfig.ProviderFile, resp *http.Response, respBody []byte) {
-	if len(respBody) == 0 {
-		return
-	}
+// populateNonStreamDerivedUsage requires a non-nil meta and response. It
+// prepares the derived usage keys the selected usage mode references:
+// TTS 响应音频的时长/估算 tokens,以及 whisper 类计费需要的请求音频时长与
+// 输入/输出文本 token 预估(与 relay 侧派生键对齐)。
+func populateNonStreamDerivedUsage(gc *gin.Context, meta *dslmeta.Meta, pf dslconfig.ProviderFile, model string, resp *http.Response, respBody []byte) {
 	if resp.StatusCode != http.StatusOK {
 		return
 	}
 	usageCfg, ok := pf.Usage.Select(meta)
-	if !ok || !dslconfig.UsesDerivedUsagePath(meta, usageCfg, "$.audio_duration_seconds") {
+	if !ok {
 		return
 	}
-	derived := onraudio.BuildSpeechDerivedUsage(respBody, 0)
+	derived := map[string]any{}
+
+	if len(respBody) > 0 &&
+		(dslconfig.UsesDerivedUsagePath(meta, usageCfg, "$.audio_duration_seconds") ||
+			dslconfig.UsesDerivedUsagePath(meta, usageCfg, "$.audio_estimated_tokens")) {
+		for k, v := range onraudio.BuildSpeechDerivedUsage(respBody, 0) {
+			derived[k] = v
+		}
+	}
+	if dslconfig.UsesDerivedUsagePath(meta, usageCfg, "$.input_text_tokens") {
+		if input, _ := meta.RequestRoot()["input"].(string); input != "" {
+			if n, err := usageestimate.EstimateToken(model, meta.API, input, usageestimate.EstimateInput); err == nil && n > 0 {
+				derived["input_text_tokens"] = float64(n)
+			}
+		}
+	}
+	if dslconfig.UsesDerivedUsagePath(meta, usageCfg, "$.output_text_tokens") {
+		if text := responseTextField(respBody); text != "" {
+			if n, err := usageestimate.EstimateToken(model, meta.API, text, usageestimate.EstimateOutput); err == nil && n > 0 {
+				derived["output_text_tokens"] = float64(n)
+			}
+		}
+	}
+	if dslconfig.UsesDerivedUsagePath(meta, usageCfg, "$.request_audio_duration_seconds") {
+		if payloads := requestAudioPayloads(gc); len(payloads) > 0 {
+			derived["request_audio_duration_seconds"] = onraudio.SumDurationsFromPayloadsOrDefault(payloads, 1.0)
+		}
+	}
+
 	if len(derived) == 0 {
 		return
 	}
@@ -69,6 +98,37 @@ func populateNonStreamDerivedUsage(meta *dslmeta.Meta, pf dslconfig.ProviderFile
 	for k, v := range derived {
 		meta.DerivedUsage[k] = v
 	}
+}
+
+// responseTextField parses the upstream JSON body and returns its top-level
+// "text" field, or "" for non-JSON/binary bodies.
+func responseTextField(respBody []byte) string {
+	if len(respBody) == 0 {
+		return ""
+	}
+	var parsed struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(respBody, &parsed); err != nil {
+		return ""
+	}
+	return parsed.Text
+}
+
+// requestAudioPayloads reads the uploaded audio file bytes from the multipart
+// request ("file" field, matching the OpenAI audio endpoints). Returns nil
+// when the request carries no readable audio file.
+func requestAudioPayloads(gc *gin.Context) [][]byte {
+	file, _, err := gc.Request.FormFile("file")
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = file.Close() }()
+	data, err := io.ReadAll(file)
+	if err != nil || len(data) == 0 {
+		return nil
+	}
+	return [][]byte{data}
 }
 
 func extractNonStreamFinishReason(
