@@ -12,11 +12,11 @@ import (
 )
 
 const (
-	claudeContentTypeToolUse    = "tool_use"
-	claudeStopReasonRefusal     = "refusal"
-	finishReasonToolCalls       = "tool_calls"
-	finishReasonContentFilter   = "content_filter"
-	claudeStopReasonMax         = "max_tokens"
+	claudeContentTypeToolUse  = "tool_use"
+	claudeStopReasonRefusal   = "refusal"
+	finishReasonToolCalls     = "tool_calls"
+	finishReasonContentFilter = "content_filter"
+	claudeStopReasonMax       = "max_tokens"
 )
 
 // MapOpenAIChatCompletionsToClaudeMessagesRequestObject is unused in production.
