@@ -6,7 +6,7 @@ require (
 	github.com/anthropics/anthropic-sdk-go v1.6.0
 	github.com/openai/openai-go/v3 v3.5.0
 	github.com/spf13/cobra v1.10.2
-	google.golang.org/genai v1.23.0
+	google.golang.org/genai v1.64.0
 )
 
 require (
