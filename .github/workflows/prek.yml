@@ -30,4 +30,4 @@ jobs:
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Run prek hooks
-        uses: j178/prek-action@v1
+        uses: j178/prek-action@v2
