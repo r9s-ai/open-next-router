@@ -62,19 +62,35 @@ func copyContextFieldsBySpec(ctx *gin.Context, dst map[string]any, specs []logx.
 
 // copyUsageExtraFields requires a non-nil Gin context from Collect.
 func copyUsageExtraFields(ctx *gin.Context, dst map[string]any) {
-	if len(ctx.Keys) == 0 {
+	switch keys := any(ctx.Keys).(type) {
+	case map[string]any:
+		for key, value := range keys {
+			copyUsageExtraField(dst, key, value)
+		}
+	case map[any]any:
+		copyUsageExtraFieldsFromAnyKeyedMap(dst, keys)
+	}
+}
+
+func copyUsageExtraFieldsFromAnyKeyedMap(dst map[string]any, keys map[any]any) {
+	for key, value := range keys {
+		key, ok := key.(string)
+		if !ok {
+			continue
+		}
+		copyUsageExtraField(dst, key, value)
+	}
+}
+
+func copyUsageExtraField(dst map[string]any, key string, value any) {
+	if !strings.HasPrefix(key, "onr.usage_extra.") {
 		return
 	}
-	for k, v := range ctx.Keys {
-		if !strings.HasPrefix(k, "onr.usage_extra.") {
-			continue
-		}
-		logKey := strings.TrimPrefix(k, "onr.usage_extra.")
-		if strings.TrimSpace(logKey) == "" {
-			continue
-		}
-		dst[logKey] = v
+	logKey := strings.TrimPrefix(key, "onr.usage_extra.")
+	if strings.TrimSpace(logKey) == "" {
+		return
 	}
+	dst[logKey] = value
 }
 
 // resolveAppNameForLog requires a non-nil Gin context from Collect.

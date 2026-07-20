@@ -108,157 +108,7 @@ func parseRequestPhaseWithTransform(s *scanner, phase *PhaseHeaders, transform *
 		return s.errAt(lb, "expected '{' after request")
 	}
 
-	handlers := map[string]func(*scanner, *PhaseHeaders, *RequestTransform) error{
-		"set_header": func(s *scanner, phase *PhaseHeaders, _ *RequestTransform) error {
-			return parseSetHeaderStmt(s, phase)
-		},
-		"pass_header": func(s *scanner, phase *PhaseHeaders, _ *RequestTransform) error {
-			return parsePassHeaderStmt(s, phase)
-		},
-		"filter_header_values": func(s *scanner, phase *PhaseHeaders, _ *RequestTransform) error {
-			return parseFilterHeaderValuesStmt(s, phase)
-		},
-		"del_header": func(s *scanner, phase *PhaseHeaders, _ *RequestTransform) error {
-			return parseDelHeaderStmt(s, phase)
-		},
-		"model_map": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
-			if t == nil {
-				return skipStmtOrBlock(s)
-			}
-			return parseModelMapStmt(s, &t.ModelMap)
-		},
-		"model_map_default": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
-			if t == nil {
-				return skipStmtOrBlock(s)
-			}
-			return parseModelMapDefaultStmt(s, &t.ModelMap)
-		},
-		"json_set": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
-			if t == nil {
-				return skipStmtOrBlock(s)
-			}
-			return parseJSONSetStmt(s, t, jsonOpSet)
-		},
-		"json_replace": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
-			if t == nil {
-				return skipStmtOrBlock(s)
-			}
-			return parseJSONSetStmt(s, t, jsonOpReplace)
-		},
-		"json_set_if_absent": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
-			if t == nil {
-				return skipStmtOrBlock(s)
-			}
-			return parseJSONSetStmt(s, t, jsonOpSetIfAbsent)
-		},
-		"json_del": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
-			if t == nil {
-				return skipStmtOrBlock(s)
-			}
-			return parseJSONDelStmt(s, t)
-		},
-		"json_del_if_missing": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
-			if t == nil {
-				return skipStmtOrBlock(s)
-			}
-			return parseJSONDelIfMissingStmt(s, t)
-		},
-		"json_rename": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
-			if t == nil {
-				return skipStmtOrBlock(s)
-			}
-			return parseJSONRenameStmt(s, t)
-		},
-		"json_wrap_input_text": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
-			if t == nil {
-				return skipStmtOrBlock(s)
-			}
-			return parseJSONWrapInputTextStmt(s, t)
-		},
-		"json_set_header_values": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
-			if t == nil {
-				return skipStmtOrBlock(s)
-			}
-			return parseJSONSetHeaderValuesStmt(s, t)
-		},
-		"json_filter_values": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
-			if t == nil {
-				return skipStmtOrBlock(s)
-			}
-			return parseJSONFilterValuesStmt(s, t)
-		},
-		"json_del_with_condition": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
-			if t == nil {
-				return skipStmtOrBlock(s)
-			}
-			return parseJSONDelWithConditionStmt(s, t)
-		},
-		"json_map_value": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
-			if t == nil {
-				return skipStmtOrBlock(s)
-			}
-			return parseJSONMapValueStmt(s, t)
-		},
-		"json_clamp": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
-			if t == nil {
-				return skipStmtOrBlock(s)
-			}
-			return parseJSONClampStmt(s, t)
-		},
-		"after_req_map": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
-			if t == nil {
-				return skipStmtOrBlock(s)
-			}
-			return parseAfterReqMapBlock(s, t)
-		},
-		"req_map": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
-			if t == nil {
-				return skipStmtOrBlock(s)
-			}
-			mode, err := parseModeArgStmt(s, "req_map")
-			if err != nil {
-				return err
-			}
-			t.ReqMapMode = mode
-			return nil
-		},
-		"req_required": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
-			if t == nil {
-				return skipStmtOrBlock(s)
-			}
-			return parseReqRequiredStmt(s, t)
-		},
-		"req_forbid": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
-			if t == nil {
-				return skipStmtOrBlock(s)
-			}
-			return parseReqForbidStmt(s, t)
-		},
-		"req_type": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
-			if t == nil {
-				return skipStmtOrBlock(s)
-			}
-			return parseReqTypeStmt(s, t)
-		},
-		"req_range": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
-			if t == nil {
-				return skipStmtOrBlock(s)
-			}
-			return parseReqRangeStmt(s, t)
-		},
-		"req_len": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
-			if t == nil {
-				return skipStmtOrBlock(s)
-			}
-			return parseReqLenStmt(s, t)
-		},
-		"req_enum": func(s *scanner, _ *PhaseHeaders, t *RequestTransform) error {
-			if t == nil {
-				return skipStmtOrBlock(s)
-			}
-			return parseReqEnumStmt(s, t)
-		},
-	}
+	handlers := requestPhaseHandlers()
 
 	removed := map[string]string{
 		"header_set":       "header_set has been removed; use: set_header <Header-Name> <expr>;",
@@ -290,6 +140,87 @@ func parseRequestPhaseWithTransform(s *scanner, phase *PhaseHeaders, transform *
 			// ignore
 		}
 	}
+}
+
+type requestPhaseHandler func(*scanner, *PhaseHeaders, *RequestTransform) error
+
+type requestHeaderParser func(*scanner, *PhaseHeaders) error
+
+type requestTransformParser func(*scanner, *RequestTransform) error
+
+func requestPhaseHandlers() map[string]requestPhaseHandler {
+	return map[string]requestPhaseHandler{
+		"set_header":              requestHeaderHandler(parseSetHeaderStmt),
+		"pass_header":             requestHeaderHandler(parsePassHeaderStmt),
+		"filter_header_values":    requestHeaderHandler(parseFilterHeaderValuesStmt),
+		"del_header":              requestHeaderHandler(parseDelHeaderStmt),
+		"model_map":               requestTransformHandler(parseRequestModelMapStmt),
+		"model_map_default":       requestTransformHandler(parseRequestModelMapDefaultStmt),
+		"json_set":                requestTransformHandler(parseRequestJSONSetStmt),
+		"json_replace":            requestTransformHandler(parseRequestJSONReplaceStmt),
+		"json_set_if_absent":      requestTransformHandler(parseRequestJSONSetIfAbsentStmt),
+		"json_del":                requestTransformHandler(parseJSONDelStmt),
+		"json_del_if_missing":     requestTransformHandler(parseJSONDelIfMissingStmt),
+		"json_rename":             requestTransformHandler(parseJSONRenameStmt),
+		"json_wrap_input_text":    requestTransformHandler(parseJSONWrapInputTextStmt),
+		"json_set_header_values":  requestTransformHandler(parseJSONSetHeaderValuesStmt),
+		"json_filter_values":      requestTransformHandler(parseJSONFilterValuesStmt),
+		"json_del_with_condition": requestTransformHandler(parseJSONDelWithConditionStmt),
+		"json_map_value":          requestTransformHandler(parseJSONMapValueStmt),
+		"json_clamp":              requestTransformHandler(parseJSONClampStmt),
+		"after_req_map":           requestTransformHandler(parseAfterReqMapBlock),
+		"req_map":                 requestTransformHandler(parseRequestMapStmt),
+		"req_required":            requestTransformHandler(parseReqRequiredStmt),
+		"req_forbid":              requestTransformHandler(parseReqForbidStmt),
+		"req_type":                requestTransformHandler(parseReqTypeStmt),
+		"req_range":               requestTransformHandler(parseReqRangeStmt),
+		"req_len":                 requestTransformHandler(parseReqLenStmt),
+		"req_enum":                requestTransformHandler(parseReqEnumStmt),
+	}
+}
+
+func requestHeaderHandler(parse requestHeaderParser) requestPhaseHandler {
+	return func(s *scanner, phase *PhaseHeaders, _ *RequestTransform) error {
+		return parse(s, phase)
+	}
+}
+
+func requestTransformHandler(parse requestTransformParser) requestPhaseHandler {
+	return func(s *scanner, _ *PhaseHeaders, transform *RequestTransform) error {
+		if transform == nil {
+			return skipStmtOrBlock(s)
+		}
+		return parse(s, transform)
+	}
+}
+
+func parseRequestModelMapStmt(s *scanner, transform *RequestTransform) error {
+	return parseModelMapStmt(s, &transform.ModelMap)
+}
+
+func parseRequestModelMapDefaultStmt(s *scanner, transform *RequestTransform) error {
+	return parseModelMapDefaultStmt(s, &transform.ModelMap)
+}
+
+func parseRequestJSONSetStmt(s *scanner, transform *RequestTransform) error {
+	return parseJSONSetStmt(s, transform, jsonOpSet)
+}
+
+func parseRequestJSONReplaceStmt(s *scanner, transform *RequestTransform) error {
+	return parseJSONSetStmt(s, transform, jsonOpReplace)
+}
+
+func parseRequestJSONSetIfAbsentStmt(s *scanner, transform *RequestTransform) error {
+	return parseJSONSetStmt(s, transform, jsonOpSetIfAbsent)
+}
+
+func parseRequestMapStmt(s *scanner, transform *RequestTransform) error {
+	mode, err := parseModeArgStmt(s, "req_map")
+	if err != nil {
+		return err
+	}
+	transform.ReqMapMode = mode
+	return nil
 }
 
 func parseAfterReqMapBlock(s *scanner, t *RequestTransform) error {
