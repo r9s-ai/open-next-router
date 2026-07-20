@@ -33,7 +33,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "@google/genai": "^1.17.0",
-    "commander": "^14.0.0",
+    "commander": "^15.0.0",
     "openai": "^6.4.0"
   },
   "devDependencies": {
