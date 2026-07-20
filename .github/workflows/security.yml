@@ -1,0 +1,100 @@
+name: Security scans
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  schedule:
+    - cron: "23 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.work
+          cache: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: go
+          queries: security-extended
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v4
+
+      - name: Analyze code
+        uses: github/codeql-action/analyze@v4
+
+  go-vulnerabilities:
+    name: Go vulnerabilities (${{ matrix.module.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - name: onr
+            path: .
+            go_mod: go.mod
+          - name: onr-core
+            path: onr-core
+            go_mod: onr-core/go.mod
+          - name: go-sdk
+            path: client/sdk/golang
+            go_mod: client/sdk/golang/go.mod
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.module.go_mod }}
+          cache: true
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Scan dependencies
+        working-directory: ${{ matrix.module.path }}
+        run: |
+          govulncheck_path="$(go env GOPATH)/bin/govulncheck"
+          "$govulncheck_path" ./...
+
+  npm-vulnerabilities:
+    name: npm vulnerabilities
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/sdk/typescript/package-lock.json
+
+      - name: Install dependencies
+        working-directory: client/sdk/typescript
+        run: npm ci --ignore-scripts
+
+      - name: Scan dependencies
+        working-directory: client/sdk/typescript
+        run: npm audit --audit-level=high
