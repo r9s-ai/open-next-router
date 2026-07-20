@@ -381,17 +381,29 @@ func validateUsageFactConfig(path, providerName, scope string, idx int, fact usa
 			return fmt.Errorf("provider %q in %q: %s usage_fact[%d] sum_path must start with $. ", providerName, path, scope, idx)
 		}
 	}
+	if strings.TrimSpace(fact.LenPath) != "" {
+		primitiveCount++
+		if !strings.HasPrefix(strings.TrimSpace(fact.LenPath), "$.") {
+			return fmt.Errorf("provider %q in %q: %s usage_fact[%d] len_path must start with $. ", providerName, path, scope, idx)
+		}
+	}
 	if fact.Expr != nil {
 		primitiveCount++
 	}
 	if primitiveCount != 1 {
-		return fmt.Errorf("provider %q in %q: %s usage_fact[%d] requires exactly one of path, count_path, sum_path or expr", providerName, path, scope, idx)
+		return fmt.Errorf("provider %q in %q: %s usage_fact[%d] requires exactly one of path, count_path, sum_path, len_path or expr", providerName, path, scope, idx)
 	}
 
 	if strings.TrimSpace(fact.Type) != "" || strings.TrimSpace(fact.Status) != "" {
 		if strings.TrimSpace(fact.CountPath) == "" {
 			return fmt.Errorf("provider %q in %q: %s usage_fact[%d] type/status requires count_path", providerName, path, scope, idx)
 		}
+	}
+	if (strings.TrimSpace(fact.WhenPath) == "") != (strings.TrimSpace(fact.WhenEq) == "") {
+		return fmt.Errorf("provider %q in %q: %s usage_fact[%d] when_path and when_eq must be set together", providerName, path, scope, idx)
+	}
+	if whenPath := strings.TrimSpace(fact.WhenPath); whenPath != "" && !strings.HasPrefix(whenPath, "$.") {
+		return fmt.Errorf("provider %q in %q: %s usage_fact[%d] when_path must start with $. ", providerName, path, scope, idx)
 	}
 	if strings.TrimSpace(fact.Event) == "" {
 		if fact.EventOptional {

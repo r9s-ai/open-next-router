@@ -2,6 +2,7 @@ package dslconfig
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -680,12 +681,12 @@ func parseUsageRootExcludeFields(raw string) []string {
 
 func parseUsageFactPrimitiveOption(s *scanner, keyTok token, key string, valTok token, fact *usageFactConfig, primitiveSet *bool) (bool, error) {
 	switch key {
-	case "path", "count_path", "sum_path", "expr":
+	case "path", "count_path", "sum_path", "len_path", "expr":
 	default:
 		return false, nil
 	}
 	if *primitiveSet {
-		return true, s.errAt(keyTok, "usage_fact allows only one of path, count_path, sum_path or expr")
+		return true, s.errAt(keyTok, "usage_fact allows only one of path, count_path, sum_path, len_path or expr")
 	}
 	val, err := parseUsageFactStringValue(s, valTok, key)
 	if err != nil {
@@ -698,6 +699,8 @@ func parseUsageFactPrimitiveOption(s *scanner, keyTok token, key string, valTok 
 		fact.CountPath = val
 	case "sum_path":
 		fact.SumPath = val
+	case "len_path":
+		fact.LenPath = val
 	case "expr":
 		expr, err := ParseUsageExpr(val)
 		if err != nil {
@@ -759,6 +762,31 @@ func parseUsageFactMetaOption(s *scanner, keyTok token, key string, valTok token
 			return s.errAt(valTok, "scale expects positive number")
 		}
 		fact.Scale = val
+		return nil
+	case key == "when_path":
+		val, err := parseUsageFactStringValue(s, valTok, "when_path")
+		if err != nil {
+			return err
+		}
+		fact.WhenPath = val
+		return nil
+	case key == "when_eq":
+		// 接受字符串/标识符,也接受裸数字(when_eq=2、when_eq=2.5):数值转回
+		// 文本存储,交由运行时 jsonValueEqualsLiteral 的数值比较分支处理。
+		switch valTok.kind {
+		case tokString, tokIdent:
+			val, err := parseUsageFactStringValue(s, valTok, "when_eq")
+			if err != nil {
+				return err
+			}
+			fact.WhenEq = val
+		default:
+			num, err := parseNumberValueTokens(s, valTok)
+			if err != nil {
+				return s.errAt(valTok, "when_eq expects string literal, identifier or number")
+			}
+			fact.WhenEq = strconv.FormatFloat(num, 'f', -1, 64)
+		}
 		return nil
 	case strings.HasPrefix(key, "attr."):
 		val, err := parseUsageFactStringValue(s, valTok, key)

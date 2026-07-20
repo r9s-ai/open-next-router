@@ -93,8 +93,11 @@ func cloneUsageFactsForIntrospection(facts []usageFactConfig, usageRootConfigure
 			Path:          fact.Path,
 			CountPath:     fact.CountPath,
 			SumPath:       fact.SumPath,
+			LenPath:       fact.LenPath,
 			Type:          fact.Type,
 			Status:        fact.Status,
+			WhenPath:      fact.WhenPath,
+			WhenEq:        fact.WhenEq,
 			Scale:         fact.Scale,
 		}
 		if fact.Expr != nil {

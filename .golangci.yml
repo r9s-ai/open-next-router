@@ -28,3 +28,10 @@ linters:
     govet:
       enable:
         - httpresponse
+  exclusions:
+    rules:
+      # SA5011 在测试里对 `if x == nil { t.Fatalf(...) }` 后的解引用误报
+      # (CI 的 staticcheck 组合未识别 t.Fatalf 的 noreturn 语义,main 自
+      # 2d05cff 起 Lint (onr-core) 即红)。正式代码不豁免。
+      - path: _test\.go
+        text: "SA5011"

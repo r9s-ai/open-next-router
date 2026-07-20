@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/jsonutil"
 )
@@ -18,12 +19,22 @@ type usageFactConfig struct {
 	Path      string
 	CountPath string
 	SumPath   string
-	Expr      *UsageExpr
+	// LenPath reads the string at the path and yields its rune count as the
+	// quantity (e.g. character-billed TTS input text). Mutually exclusive with
+	// Path/CountPath/SumPath/Expr.
+	LenPath string
+	Expr    *UsageExpr
 
 	Type          string
 	Status        string
 	Event         string
 	EventOptional bool
+
+	// WhenPath/WhenEq gate the fact: it only matches when the value at WhenPath
+	// (in the same source root) equals WhenEq (numeric or string comparison).
+	// A missing WhenPath value never matches. Both must be set together.
+	WhenPath string
+	WhenEq   string
 
 	Attrs    map[string]string
 	Fallback bool
@@ -75,6 +86,8 @@ var defaultUsageDimensionRegistry = NewUsageDimensionRegistry(
 	UsageDimension{Dimension: "audio.tts", Unit: "second"},
 	UsageDimension{Dimension: "audio.stt", Unit: "second"},
 	UsageDimension{Dimension: "audio.translate", Unit: "second"},
+	UsageDimension{Dimension: "input", Unit: "character"},
+	UsageDimension{Dimension: "output", Unit: "character"},
 )
 
 func NewUsageDimensionRegistry(keys ...UsageDimension) UsageDimensionRegistry {
@@ -306,9 +319,12 @@ func usageFactEventOptionalFallbackKey(fact usageFactConfig) string {
 		fact.Path,
 		fact.CountPath,
 		fact.SumPath,
+		fact.LenPath,
 		fact.Expr.String(),
 		fact.Type,
 		fact.Status,
+		fact.WhenPath,
+		fact.WhenEq,
 		strconv.FormatFloat(fact.Scale, 'f', -1, 64),
 		strings.Join(attrs, ","),
 	}, "\x1f")
@@ -322,6 +338,9 @@ func evaluateUsageFactWithEvent(event string, reqRoot, respRoot, usageRoot, deri
 	if !matchesUsageEvent(event, fact.Event, fact.EventOptional) {
 		return 0, false
 	}
+	if fact.WhenPath != "" && !jsonValueEqualsLiteral(root, fact.WhenPath, fact.WhenEq) {
+		return 0, false
+	}
 	switch {
 	case fact.Expr != nil:
 		quantity, matched = float64(fact.Expr.Eval(root)), true
@@ -329,6 +348,8 @@ func evaluateUsageFactWithEvent(event string, reqRoot, respRoot, usageRoot, deri
 		quantity, matched = evaluateUsageFactCountPath(root, fact.CountPath, fact.Type, fact.Status)
 	case fact.SumPath != "":
 		quantity, matched = jsonutil.GetFloatByPathWithMatch(root, fact.SumPath)
+	case fact.LenPath != "":
+		quantity, matched = evaluateUsageFactLenPath(root, fact.LenPath)
 	case fact.Path != "":
 		quantity, matched = jsonutil.GetFloatByPathWithMatch(root, fact.Path)
 	default:
@@ -338,6 +359,17 @@ func evaluateUsageFactWithEvent(event string, reqRoot, respRoot, usageRoot, deri
 		quantity *= fact.Scale
 	}
 	return quantity, matched
+}
+
+// evaluateUsageFactLenPath yields the rune count of the string at path (rune,
+// not byte, matching character-based billing). Missing paths or empty strings
+// do not match, so fallback facts can take over.
+func evaluateUsageFactLenPath(root map[string]any, path string) (quantity float64, matched bool) {
+	value := jsonutil.GetStringByPath(root, path)
+	if value == "" {
+		return 0, false
+	}
+	return float64(utf8.RuneCountInString(value)), true
 }
 
 func usageFactSourceRoot(reqRoot, respRoot, usageRoot, derivedRoot map[string]any, source string, usageRootConfigured bool) map[string]any {
@@ -498,8 +530,11 @@ func buildUsageDebugFacts(facts []usageFactEval, usageRootConfigured bool) []Usa
 			Path:          fact.cfg.Path,
 			CountPath:     fact.cfg.CountPath,
 			SumPath:       fact.cfg.SumPath,
+			LenPath:       fact.cfg.LenPath,
 			Type:          fact.cfg.Type,
 			Status:        fact.cfg.Status,
+			WhenPath:      fact.cfg.WhenPath,
+			WhenEq:        fact.cfg.WhenEq,
 			Scale:         fact.cfg.Scale,
 		}
 		if len(fact.cfg.Attrs) > 0 {

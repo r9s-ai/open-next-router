@@ -1,6 +1,11 @@
 package audio
 
-const speechDurationDerivedPath = "audio_duration_seconds"
+const (
+	speechDurationDerivedPath = "audio_duration_seconds"
+	// speechTokensDerivedPath estimates output audio tokens from the decoded
+	// duration at 1250 tokens/minute (OpenAI audio token convention).
+	speechTokensDerivedPath = "audio_estimated_tokens"
+)
 
 // BuildSpeechDerivedUsage derives common audio.speech usage fields from raw
 // audio bytes. When decoding fails and fallbackSeconds > 0, the fallback value
@@ -21,5 +26,6 @@ func BuildSpeechDerivedUsage(data []byte, fallbackSeconds float64) map[string]an
 	}
 	return map[string]any{
 		speechDurationDerivedPath: duration,
+		speechTokensDerivedPath:   float64(EstimatedTokensFromDuration(duration)),
 	}
 }

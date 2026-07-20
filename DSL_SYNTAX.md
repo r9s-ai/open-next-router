@@ -2127,7 +2127,15 @@ Multiple: yes
 
 - Recommended with `usage_extract custom;`, but builtin modes may also supplement canonical facts.
 - The registry is intentionally fixed; arbitrary dimensions are not accepted.
-- Supports `path`, `count_path`, `sum_path`, and `expr`.
+- Supports `path`, `count_path`, `sum_path`, `len_path`, and `expr` (exactly one per rule).
+- `len_path` reads the string at the path and yields its rune count as the quantity, for character-billed dimensions (e.g. TTS input text: `usage_fact input character source=request len_path="$.input";`).
+- `when_path="$.x" when_eq="v"` gates the rule: it only matches when the value at `when_path` (in the same source root) equals `when_eq` (numeric or string comparison). Missing paths never match, so gated rules chain naturally with `fallback=true` alternatives — e.g. branch on OpenAI STT `usage.type`:
+
+```conf
+usage_fact audio.stt second path="$.seconds" when_path="$.type" when_eq="duration";
+usage_fact audio.stt second path="$.input_token_details.audio_tokens" scale=0.048 when_path="$.type" when_eq="tokens" fallback=true;
+```
+
 - `count_path` may be combined with `type` / `status`.
 - Constant attributes such as `attr.ttl="5m"` and `attr.modality="image"` are supported.
 - `attr.modality` is meaningful for `cache_read token` when an upstream reports real per-modality cached token counts. Supported values are `text`, `image`, `audio`, and `video`; OpenAI cache detail uses text/image/audio, while Gemini cache detail uses text/image/audio/video.
@@ -2174,6 +2182,8 @@ Multiple: yes
   - `audio.tts second`
   - `audio.stt second`
   - `audio.translate second`
+  - `input character`
+  - `output character`
 
 ### 7.10 balance (upstream balance query)
 

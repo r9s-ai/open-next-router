@@ -99,7 +99,8 @@ func TestValidateProviderFile_OpenAIUsageFacts(t *testing.T) {
 		"audio.translations": {
 			dimension: "audio.translate",
 			unit:      "second",
-			path:      "$.seconds",
+			path:      "$.request_audio_duration_seconds",
+			source:    "derived",
 		},
 		"claude.messages": {
 			dimension: "input",

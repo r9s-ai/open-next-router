@@ -344,15 +344,15 @@ func TestExtractUsage_OpenAI_AudioTranscriptionsCanonicalFact(t *testing.T) {
 }
 
 func TestExtractUsage_OpenAI_AudioTranslationsCanonicalFact(t *testing.T) {
-	meta := &dslmeta.Meta{API: "audio.translations", IsStream: false}
+	meta := &dslmeta.Meta{
+		API:          "audio.translations",
+		IsStream:     false,
+		DerivedUsage: map[string]any{"request_audio_duration_seconds": 4},
+	}
 	cfg, _ := mustLoadProviderMatchConfigs(t, "openai.conf", meta.API, meta.IsStream)
 
 	resp := []byte(`{
-	  "text":"hello translated",
-	  "usage": {
-	    "type":"duration",
-	    "seconds": 4
-	  }
+	  "text":"hello translated"
 	}`)
 
 	u, _, err := ExtractUsage(meta, cfg, resp)
