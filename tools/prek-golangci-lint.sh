@@ -19,7 +19,7 @@ skipped_dirs=()
 should_lint_dir() {
   local dir="${1#./}"
   case "${dir}" in
-    client/sdk/golang|client/sdk/golang/*|onr-lsp|onr-lsp/*)
+    onr-lsp|onr-lsp/*)
       return 1
       ;;
   esac

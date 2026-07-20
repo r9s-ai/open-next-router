@@ -113,6 +113,23 @@ provider "anthropic" {
 
 More examples: `config/providers/` • Full reference: [DSL_SYNTAX.md](https://github.com/r9s-ai/open-next-router/blob/main/DSL_SYNTAX.md)
 
+## Source Checkout
+
+Clone with the SDK, documentation, and language-server submodules:
+
+```bash
+git clone --recurse-submodules https://github.com/r9s-ai/open-next-router.git
+cd open-next-router
+```
+
+For an existing clone, initialize them before running Go workspace commands:
+
+```bash
+git submodule update --init --recursive
+```
+
+The `client/sdk` submodule is maintained in [r9s-ai/onr-sdk](https://github.com/r9s-ai/onr-sdk).
+
 ## Quick Start
 
 ### One-click install (Linux, recommended)
