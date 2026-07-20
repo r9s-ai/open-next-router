@@ -2,6 +2,7 @@ package accesslog
 
 import (
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
@@ -89,5 +90,22 @@ func TestCollector_CollectUsageExtraFields(t *testing.T) {
 	}
 	if got["cache_write_ttl_1h_tokens"] != 0 {
 		t.Fatalf("unexpected cache_write_ttl_1h_tokens: %#v", got["cache_write_ttl_1h_tokens"])
+	}
+}
+
+func TestCopyUsageExtraFieldsFromAnyKeyedMap(t *testing.T) {
+	dst := make(map[string]any)
+	keys := map[any]any{
+		"onr.usage_extra.cache_read_tokens": 42,
+		"onr.usage_extra.":                  1,
+		"unrelated":                         2,
+		42:                                  3,
+	}
+
+	copyUsageExtraFieldsFromAnyKeyedMap(dst, keys)
+
+	want := map[string]any{"cache_read_tokens": 42}
+	if !reflect.DeepEqual(dst, want) {
+		t.Fatalf("unexpected usage extra fields: %#v", dst)
 	}
 }
