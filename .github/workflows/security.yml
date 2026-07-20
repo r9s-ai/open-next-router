@@ -21,6 +21,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          submodules: recursive
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -53,13 +55,12 @@ jobs:
           - name: onr-core
             path: onr-core
             go_mod: onr-core/go.mod
-          - name: go-sdk
-            path: client/sdk/golang
-            go_mod: client/sdk/golang/go.mod
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          submodules: recursive
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -75,26 +76,3 @@ jobs:
         run: |
           govulncheck_path="$(go env GOPATH)/bin/govulncheck"
           "$govulncheck_path" ./...
-
-  npm-vulnerabilities:
-    name: npm vulnerabilities
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: client/sdk/typescript/package-lock.json
-
-      - name: Install dependencies
-        working-directory: client/sdk/typescript
-        run: npm ci --ignore-scripts
-
-      - name: Scan dependencies
-        working-directory: client/sdk/typescript
-        run: npm audit --audit-level=high

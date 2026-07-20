@@ -4,3 +4,6 @@
 [submodule "onr-lsp"]
 	path = onr-lsp
 	url = https://github.com/r9s-ai/onr-lsp
+[submodule "client/sdk"]
+	path = client/sdk
+	url = https://github.com/r9s-ai/onr-sdk.git
