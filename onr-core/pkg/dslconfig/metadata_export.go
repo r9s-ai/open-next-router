@@ -102,10 +102,34 @@ func exportRequestTransform(t RequestTransform) dslmetadata.RequestTransform {
 			Map:         cloneStringMapForMetadata(t.ModelMap.Map),
 			DefaultExpr: strings.TrimSpace(t.ModelMap.DefaultExpr),
 		},
+		ValidationRules:    exportValidationRules(t.ValidationRules),
 		JSONOps:            exportJSONOps(t.JSONOps),
 		AfterReqMapJSONOps: exportJSONOps(t.AfterReqMapJSONOps),
 		ReqMapMode:         strings.TrimSpace(t.ReqMapMode),
 	}
+}
+
+func exportValidationRules(in []RequestValidationRule) []dslmetadata.RequestValidationRule {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]dslmetadata.RequestValidationRule, 0, len(in))
+	for _, rule := range in {
+		out = append(out, dslmetadata.RequestValidationRule{
+			Op:        strings.TrimSpace(rule.Op),
+			Source:    strings.TrimSpace(rule.Source),
+			Path:      strings.TrimSpace(rule.Path),
+			Name:      strings.TrimSpace(rule.Name),
+			Type:      strings.TrimSpace(rule.Type),
+			Min:       rule.Min,
+			Max:       rule.Max,
+			MinLen:    rule.MinLen,
+			MaxLen:    rule.MaxLen,
+			Values:    trimStringSliceForMetadata(rule.Values),
+			AllowNull: rule.AllowNull,
+		})
+	}
+	return out
 }
 
 func exportJSONOps(in []JSONOp) []dslmetadata.JSONOp {

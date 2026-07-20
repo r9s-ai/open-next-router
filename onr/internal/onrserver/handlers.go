@@ -11,6 +11,7 @@ import (
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/requestcanon"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/requestid"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/requestvalidate"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/trafficdump"
 	"github.com/r9s-ai/open-next-router/onr/internal/auth"
 	"github.com/r9s-ai/open-next-router/onr/internal/proxy"
@@ -109,7 +110,7 @@ func makeHandler(cfg *config.Config, st *state, pclient *proxy.Client, api strin
 			AWSRegion:          kawsRegion,
 		}, api, stream)
 		if perr != nil {
-			writeOpenAIError(c, requestIDHeaderKey, "proxy_error", perr.Error())
+			writeProxyError(c, requestIDHeaderKey, perr)
 			return
 		}
 		setProxyResultContext(c, res)
@@ -186,6 +187,35 @@ func writeOpenAIError(c *gin.Context, requestIDHeaderKey string, code, msg strin
 		"error": gin.H{
 			"message": msg,
 			"type":    openAIInvalidRequestType,
+			"code":    code,
+		},
+	})
+}
+
+// writeProxyError maps a ProxyJSON error to a downstream 400 response.
+// Request validation failures get a stable code and the failing param path;
+// all other proxy errors keep the generic proxy_error code.
+func writeProxyError(c *gin.Context, requestIDHeaderKey string, err error) {
+	var verr *requestvalidate.RequestValidationError
+	if errors.As(err, &verr) {
+		writeOpenAIErrorWithParam(c, requestIDHeaderKey, "request_validation_failed", err.Error(), verr.PathOrName)
+		return
+	}
+	writeOpenAIError(c, requestIDHeaderKey, "proxy_error", err.Error())
+}
+
+func writeOpenAIErrorWithParam(c *gin.Context, requestIDHeaderKey string, code, msg, param string) {
+	requestIDHeaderKey = requestid.ResolveHeaderKey(requestIDHeaderKey)
+	if c != nil {
+		if rid := strings.TrimSpace(c.GetString(requestIDHeaderKey)); rid != "" {
+			msg = msg + " (request id: " + rid + ")"
+		}
+	}
+	c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+		"error": gin.H{
+			"message": msg,
+			"type":    openAIInvalidRequestType,
+			"param":   param,
 			"code":    code,
 		},
 	})

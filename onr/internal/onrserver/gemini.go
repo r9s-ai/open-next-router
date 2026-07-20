@@ -125,7 +125,7 @@ func makeGeminiHandler(cfg *config.Config, st *state, pclient *proxy.Client, req
 			AWSRegion:          kawsRegion,
 		}, api, stream)
 		if perr != nil {
-			writeOpenAIError(c, requestIDHeaderKey, "proxy_error", perr.Error())
+			writeProxyError(c, requestIDHeaderKey, perr)
 			return
 		}
 		setProxyResultContext(c, res)

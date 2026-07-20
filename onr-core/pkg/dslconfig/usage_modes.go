@@ -281,7 +281,8 @@ func validateAndBuildProviderFile(path string, content string, usageModes usageM
 	if err := validateProviderRouting(path, providerName, routing); err != nil {
 		return ProviderFile{}, false, err
 	}
-	if err := validateProviderRequestTransform(path, providerName, req); err != nil {
+	resolvedReq, err := validateProviderRequestTransform(path, providerName, req)
+	if err != nil {
 		return ProviderFile{}, false, err
 	}
 	if err := validateProviderHeaders(path, providerName, headers); err != nil {
@@ -313,7 +314,7 @@ func validateAndBuildProviderFile(path string, content string, usageModes usageM
 		Metadata: metadata,
 		Routing:  routing,
 		Headers:  headers,
-		Request:  req,
+		Request:  resolvedReq,
 		Response: response,
 		Error:    perr,
 		Usage:    resolvedUsage,

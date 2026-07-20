@@ -118,10 +118,32 @@ func normalizeRequestTransform(in RequestTransform) RequestTransform {
 			Map:         normalizeStringMap(in.ModelMap.Map),
 			DefaultExpr: strings.TrimSpace(in.ModelMap.DefaultExpr),
 		},
+		ValidationRules:    normalizeValidationRules(in.ValidationRules),
 		JSONOps:            normalizeJSONOps(in.JSONOps),
 		AfterReqMapJSONOps: normalizeJSONOps(in.AfterReqMapJSONOps),
 		ReqMapMode:         strings.TrimSpace(in.ReqMapMode),
 	}
+}
+
+func normalizeValidationRules(in []RequestValidationRule) []RequestValidationRule {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]RequestValidationRule, 0, len(in))
+	for _, rule := range in {
+		item := rule
+		item.Op = strings.TrimSpace(rule.Op)
+		item.Source = strings.TrimSpace(rule.Source)
+		item.Path = strings.TrimSpace(rule.Path)
+		item.Name = strings.TrimSpace(rule.Name)
+		item.Type = strings.TrimSpace(rule.Type)
+		item.Values = trimStringSlice(rule.Values)
+		if item.Op == "" || item.Source == "" {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 func normalizeJSONOps(in []JSONOp) []JSONOp {
@@ -358,6 +380,7 @@ func providerRequestHasRules(cfg ProviderRequest) bool {
 func requestTransformHasRules(t RequestTransform) bool {
 	return len(t.ModelMap.Map) > 0 ||
 		strings.TrimSpace(t.ModelMap.DefaultExpr) != "" ||
+		len(t.ValidationRules) > 0 ||
 		len(t.JSONOps) > 0 ||
 		len(t.AfterReqMapJSONOps) > 0 ||
 		strings.TrimSpace(t.ReqMapMode) != ""

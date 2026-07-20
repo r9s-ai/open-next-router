@@ -51,10 +51,28 @@ type RequestTransformMatch struct {
 }
 
 type RequestTransform struct {
-	ModelMap           ModelMap `json:"model_map,omitempty"`
-	JSONOps            []JSONOp `json:"json_ops,omitempty"`
-	AfterReqMapJSONOps []JSONOp `json:"after_req_map_json_ops,omitempty"`
-	ReqMapMode         string   `json:"req_map_mode,omitempty"`
+	ModelMap           ModelMap                `json:"model_map,omitempty"`
+	ValidationRules    []RequestValidationRule `json:"validation_rules,omitempty"`
+	JSONOps            []JSONOp                `json:"json_ops,omitempty"`
+	AfterReqMapJSONOps []JSONOp                `json:"after_req_map_json_ops,omitempty"`
+	ReqMapMode         string                  `json:"req_map_mode,omitempty"`
+}
+
+// RequestValidationRule mirrors the raw req_* directive fields from dslconfig.
+// Compiled execution plan fields are intentionally not exported.
+type RequestValidationRule struct {
+	Op     string `json:"op"`
+	Source string `json:"source"`
+
+	Path      string   `json:"path,omitempty"`
+	Name      string   `json:"name,omitempty"`
+	Type      string   `json:"type,omitempty"`
+	Min       *float64 `json:"min,omitempty"`
+	Max       *float64 `json:"max,omitempty"`
+	MinLen    *int     `json:"min_len,omitempty"`
+	MaxLen    *int     `json:"max_len,omitempty"`
+	Values    []string `json:"values,omitempty"`
+	AllowNull bool     `json:"allow_null,omitempty"`
 }
 
 type ModelMap struct {
