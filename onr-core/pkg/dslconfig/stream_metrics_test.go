@@ -85,6 +85,33 @@ func TestStreamMetricsAggregator_AnthropicSnapshot(t *testing.T) {
 	}
 }
 
+func TestStreamMetricsAggregator_AnthropicSnapshot_EmptyNestedUsageThenNonEmpty(t *testing.T) {
+	meta := &dslmeta.Meta{API: "claude.messages", IsStream: true}
+	usageCfg, finishCfg := mustLoadProviderMatchConfigs(t, "anthropic.conf", meta.API, meta.IsStream)
+	agg := NewStreamMetricsAggregator(meta, usageCfg, finishCfg)
+
+	if err := agg.OnSSEEventDataJSON("message_start", []byte(`{
+	  "type":"message_start",
+	  "message":{"usage":{"input_tokens":3,"cache_creation":{}}}
+	}`)); err != nil {
+		t.Fatalf("message_start: %v", err)
+	}
+	if err := agg.OnSSEEventDataJSON("message_delta", []byte(`{
+	  "type":"message_delta",
+	  "usage":{"output_tokens":7,"cache_creation":{"ephemeral_5m_input_tokens":5}}
+	}`)); err != nil {
+		t.Fatalf("message_delta: %v", err)
+	}
+
+	u, _, _, ok := agg.Result()
+	if !ok || u == nil {
+		t.Fatalf("expected usage ok, got usage=%+v ok=%v", u, ok)
+	}
+	if got, want := u.FlatFields["cache_write_ttl_5m_tokens"], 5; got != want {
+		t.Fatalf("cache_write_ttl_5m_tokens got %v, want %v", got, want)
+	}
+}
+
 func TestStreamMetricsAggregator_AnthropicSnapshot_DoesNotOverridePositiveWithZero(t *testing.T) {
 	meta := &dslmeta.Meta{API: "claude.messages", IsStream: true}
 	usageCfg, finishCfg := mustLoadProviderMatchConfigs(t, "anthropic.conf", meta.API, meta.IsStream)
