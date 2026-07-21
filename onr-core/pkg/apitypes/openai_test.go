@@ -472,3 +472,97 @@ func TestOpenAIChatCompletionsRequestFallbacksMapRoundTrip(t *testing.T) {
 	require.True(t, ok)
 	require.Len(t, items, 1)
 }
+
+func TestOpenAIChatCompletionsRequest_FallbackCreditTokenMapRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	input := map[string]any{
+		"model":                 "gpt-5",
+		"fallback_credit_token": "tok-abc123",
+	}
+
+	var req OpenAIChatCompletionsRequest
+	require.NoError(t, req.FromMap(input))
+	require.Equal(t, "tok-abc123", req.FallbackCreditToken)
+
+	got, err := req.ToMap()
+	require.NoError(t, err)
+	require.Equal(t, "tok-abc123", got["fallback_credit_token"])
+}
+
+func TestOpenAIChatCompletionsResponse_ChoiceStopDetailsMapRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	input := map[string]any{
+		"id":      "chatcmpl-1",
+		"object":  "chat.completion",
+		"created": int64(1710000000),
+		"model":   "claude-fable-5",
+		"choices": []any{
+			map[string]any{
+				"index": 0,
+				"message": map[string]any{
+					"role":    "assistant",
+					"content": "",
+				},
+				"finish_reason": "stop",
+				"stop_details": map[string]any{
+					"type":        "refusal",
+					"category":    "cyber",
+					"explanation": "violative content",
+				},
+			},
+		},
+	}
+
+	var resp OpenAIChatCompletionsResponse
+	require.NoError(t, resp.FromMap(input))
+	require.Len(t, resp.Choices, 1)
+	require.NotNil(t, resp.Choices[0].StopDetails)
+	require.Equal(t, "refusal", resp.Choices[0].StopDetails.Type)
+	require.Equal(t, "cyber", resp.Choices[0].StopDetails.Category)
+	require.Equal(t, "violative content", resp.Choices[0].StopDetails.Explanation)
+
+	got, err := resp.Choices[0].ToMap()
+	require.NoError(t, err)
+	sd, ok := got["stop_details"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "refusal", sd["type"])
+	require.Equal(t, "cyber", sd["category"])
+}
+
+func TestOpenAIChatCompletionsStreamResponse_ChunkChoiceStopDetailsMapRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	input := map[string]any{
+		"id":      "chatcmpl-1",
+		"object":  "chat.completion.chunk",
+		"created": float64(1710000001),
+		"model":   "claude-fable-5",
+		"choices": []any{
+			map[string]any{
+				"index":         0,
+				"delta":         map[string]any{"role": "assistant"},
+				"finish_reason": "stop",
+				"stop_details": map[string]any{
+					"type":        "refusal",
+					"category":    "cyber",
+					"explanation": "violative content",
+				},
+			},
+		},
+	}
+
+	var resp OpenAIChatCompletionsStreamResponse
+	require.NoError(t, resp.FromMap(input))
+	require.Len(t, resp.Choices, 1)
+	require.NotNil(t, resp.Choices[0].StopDetails)
+	require.Equal(t, "refusal", resp.Choices[0].StopDetails.Type)
+	require.Equal(t, "cyber", resp.Choices[0].StopDetails.Category)
+
+	got, err := resp.Choices[0].ToMap()
+	require.NoError(t, err)
+	sd, ok := got["stop_details"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "refusal", sd["type"])
+}

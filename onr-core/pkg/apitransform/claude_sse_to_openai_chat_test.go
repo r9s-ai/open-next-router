@@ -209,6 +209,29 @@ func TestTransformClaudeMessagesSSEToOpenAIChatCompletionsSSE_PingIgnored(t *tes
 	}
 }
 
+func TestTransformClaudeMessagesSSEToOpenAIChatCompletionsSSE_StopDetails(t *testing.T) {
+	in := strings.Join([]string{
+		"event: message_start",
+		`data: {"type":"message_start","message":{"id":"msg_refusal_1","model":"claude-fable-5"}}`,
+		"",
+		"event: message_delta",
+		`data: {"type":"message_delta","delta":{"stop_reason":"refusal","stop_details":{"type":"refusal","category":"cyber","explanation":"violative content"}}}`,
+		"",
+		"event: message_stop",
+		`data: {"type":"message_stop"}`,
+		"",
+	}, "\n")
+
+	var out bytes.Buffer
+	if err := TransformClaudeMessagesSSEToOpenAIChatCompletionsSSE(bytes.NewBufferString(in), &out); err != nil {
+		t.Fatalf("transform error: %v", err)
+	}
+	s := out.String()
+	if !containsAll(s, `"finish_reason"`, `"stop_details"`, `"type":"refusal"`, `"category":"cyber"`, `"explanation":"violative content"`) {
+		t.Fatalf("unexpected output: %s", s)
+	}
+}
+
 func TestTransformClaudeMessagesSSEToOpenAIChatCompletionsSSE_UnknownTypeIgnored(t *testing.T) {
 	in := strings.Join([]string{
 		"event: message_start",

@@ -745,3 +745,149 @@ func TestClaudeRequest_FromMap_FallbackMissingModelRejected(t *testing.T) {
 		t.Fatal("expected error for fallback with missing model field, got nil")
 	}
 }
+
+func TestClaudeRequest_FallbackCreditTokenMapRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	input := map[string]any{
+		"model":                 "claude-fable-5",
+		"fallback_credit_token": "tok-abc123",
+	}
+	var req ClaudeRequest
+	require.NoError(t, req.FromMap(input))
+	require.Equal(t, "tok-abc123", req.FallbackCreditToken)
+
+	got, err := req.ToMap()
+	require.NoError(t, err)
+	require.Equal(t, "tok-abc123", got["fallback_credit_token"])
+}
+
+func TestClaudeStopDetailsMapRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	tok := "tok-xyz"
+	hasClaim := true
+	s := ClaudeStopDetails{
+		Type:                    "refusal",
+		Category:                "cyber",
+		Explanation:             "violative content",
+		FallbackCreditToken:     &tok,
+		FallbackHasPrefillClaim: &hasClaim,
+	}
+
+	got, err := s.ToMap()
+	require.NoError(t, err)
+	require.Equal(t, "refusal", got["type"])
+	require.Equal(t, "cyber", got["category"])
+	require.Equal(t, "violative content", got["explanation"])
+	require.Equal(t, "tok-xyz", got["fallback_credit_token"])
+	require.Equal(t, true, got["fallback_has_prefill_claim"])
+
+	var decoded ClaudeStopDetails
+	require.NoError(t, decoded.FromMap(got))
+	require.Equal(t, "refusal", decoded.Type)
+	require.Equal(t, "cyber", decoded.Category)
+	require.Equal(t, "violative content", decoded.Explanation)
+	require.NotNil(t, decoded.FallbackCreditToken)
+	require.Equal(t, "tok-xyz", *decoded.FallbackCreditToken)
+	require.NotNil(t, decoded.FallbackHasPrefillClaim)
+	require.Equal(t, true, *decoded.FallbackHasPrefillClaim)
+}
+
+func TestClaudeStopDetails_NullableFieldsFromMap(t *testing.T) {
+	t.Parallel()
+
+	input := map[string]any{
+		"type":                       "refusal",
+		"category":                   "cyber",
+		"explanation":                "violative content",
+		"fallback_credit_token":      nil,
+		"fallback_has_prefill_claim": nil,
+	}
+	var s ClaudeStopDetails
+	require.NoError(t, s.FromMap(input))
+	require.Equal(t, "refusal", s.Type)
+	require.Nil(t, s.FallbackCreditToken)
+	require.Nil(t, s.FallbackHasPrefillClaim)
+
+	got, err := s.ToMap()
+	require.NoError(t, err)
+	_, hasToken := got["fallback_credit_token"]
+	_, hasClaim := got["fallback_has_prefill_claim"]
+	require.False(t, hasToken)
+	require.False(t, hasClaim)
+}
+
+func TestClaudeResponseFromMap_StopDetails(t *testing.T) {
+	t.Parallel()
+
+	input := map[string]any{
+		"id":          "msg_1",
+		"type":        "message",
+		"role":        "assistant",
+		"model":       "claude-fable-5",
+		"stop_reason": "refusal",
+		"content":     []any{},
+		"usage":       map[string]any{"input_tokens": float64(10), "output_tokens": float64(0)},
+		"stop_details": map[string]any{
+			"type":        "refusal",
+			"category":    "cyber",
+			"explanation": "violative content",
+		},
+	}
+
+	var resp ClaudeResponse
+	require.NoError(t, resp.FromMap(input))
+	require.NotNil(t, resp.StopDetails)
+	require.Equal(t, "refusal", resp.StopDetails.Type)
+	require.Equal(t, "cyber", resp.StopDetails.Category)
+	require.Equal(t, "violative content", resp.StopDetails.Explanation)
+}
+
+func TestClaudeResponseToMap_StopDetails(t *testing.T) {
+	t.Parallel()
+
+	tok := "tok-abc"
+	hasClaim := false
+	resp := ClaudeResponse{
+		Id:         "msg_1",
+		StopReason: "refusal",
+		StopDetails: &ClaudeStopDetails{
+			Type:                    "refusal",
+			Category:                "cyber",
+			Explanation:             "violative content",
+			FallbackCreditToken:     &tok,
+			FallbackHasPrefillClaim: &hasClaim,
+		},
+	}
+
+	got, err := resp.ToMap()
+	require.NoError(t, err)
+	sd, ok := got["stop_details"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "refusal", sd["type"])
+	require.Equal(t, "cyber", sd["category"])
+	require.Equal(t, "tok-abc", sd["fallback_credit_token"])
+	require.Equal(t, false, sd["fallback_has_prefill_claim"])
+}
+
+func TestClaudeResponseUnmarshalJSON_StopDetails(t *testing.T) {
+	t.Parallel()
+
+	raw := `{
+		"id":"msg_1",
+		"type":"message",
+		"role":"assistant",
+		"model":"claude-fable-5",
+		"content":[],
+		"stop_reason":"refusal",
+		"stop_details":{"type":"refusal","category":"cyber","explanation":"violative content","fallback_credit_token":null,"fallback_has_prefill_claim":null}
+	}`
+	var resp ClaudeResponse
+	require.NoError(t, resp.UnmarshalJSON([]byte(raw)))
+	require.NotNil(t, resp.StopDetails)
+	require.Equal(t, "refusal", resp.StopDetails.Type)
+	require.Equal(t, "cyber", resp.StopDetails.Category)
+	require.Nil(t, resp.StopDetails.FallbackCreditToken)
+	require.Nil(t, resp.StopDetails.FallbackHasPrefillClaim)
+}

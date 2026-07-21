@@ -209,6 +209,11 @@ func (s *claudeSSEToChatState) handleMessageDelta(msg *apitypes.ClaudeStreamMess
 	if finish != "" {
 		choice["finish_reason"] = finish
 	}
+	if msg.Delta.StopDetails != nil {
+		if sd, err := msg.Delta.StopDetails.ToMap(); err == nil {
+			choice["stop_details"] = sd
+		}
+	}
 	return s.emitChunk([]any{choice})
 }
 

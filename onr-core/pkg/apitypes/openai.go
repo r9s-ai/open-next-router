@@ -10,6 +10,7 @@ type OpenAIChatCompletionsRequest struct {
 	Audio                *OpenAIChatAudioParam         `json:"audio,omitempty"`
 	FrequencyPenalty     *float64                      `json:"frequency_penalty,omitempty"`
 	Fallbacks            []*Fallback                   `json:"fallbacks,omitempty"`
+	FallbackCreditToken  string                        `json:"fallback_credit_token,omitempty"`
 	FunctionCall         *OpenAIChatFunctionCallOption `json:"function_call,omitempty"`
 	Functions            []OpenAIFunctionDefinition    `json:"functions,omitempty"`
 	LogitBias            map[string]float64            `json:"logit_bias,omitempty"`
@@ -83,6 +84,10 @@ func (r *OpenAIChatCompletionsRequest) fromMapPart1(m map[string]any) error {
 		return err
 	}
 	r.Fallbacks, err = decodeFallbackListFromMapField(m, "fallbacks")
+	if err != nil {
+		return err
+	}
+	r.FallbackCreditToken, err = stringValue(m, "fallback_credit_token")
 	if err != nil {
 		return err
 	}
@@ -253,6 +258,7 @@ func (r *OpenAIChatCompletionsRequest) toMapPart1(out map[string]any) error {
 		}
 		out["fallbacks"] = fallbacks
 	}
+	setMapString(out, "fallback_credit_token", r.FallbackCreditToken)
 	if r.FunctionCall != nil {
 		functionCall, err := r.FunctionCall.ToAny()
 		if err != nil {
@@ -1791,9 +1797,10 @@ func (u *OpenAIChatCompletionsUsage) ToMap() (map[string]any, error) {
 }
 
 type OpenAIChatCompletionsChoice struct {
-	Index        int               `json:"index,omitempty"`
-	Message      OpenAIChatMessage `json:"message"`
-	FinishReason string            `json:"finish_reason,omitempty"`
+	Index        int                `json:"index,omitempty"`
+	Message      OpenAIChatMessage  `json:"message"`
+	FinishReason string             `json:"finish_reason,omitempty"`
+	StopDetails  *ClaudeStopDetails `json:"stop_details,omitempty"`
 }
 
 func (c *OpenAIChatCompletionsChoice) FromMap(m map[string]any) error {
@@ -1807,6 +1814,10 @@ func (c *OpenAIChatCompletionsChoice) FromMap(m map[string]any) error {
 		return err
 	}
 	c.FinishReason, err = stringValue(m, "finish_reason")
+	if err != nil {
+		return err
+	}
+	c.StopDetails, err = decodeClaudeStopDetailsPtrFromMapField(m, "stop_details")
 	return err
 }
 
@@ -1820,6 +1831,13 @@ func (c *OpenAIChatCompletionsChoice) ToMap() (map[string]any, error) {
 		"message": message,
 	}
 	setMapString(out, "finish_reason", c.FinishReason)
+	if c.StopDetails != nil {
+		stopDetails, err := c.StopDetails.ToMap()
+		if err != nil {
+			return nil, err
+		}
+		out["stop_details"] = stopDetails
+	}
 	return out, nil
 }
 
@@ -1978,6 +1996,7 @@ type OpenAIChatCompletionsChunkChoice struct {
 	Index        int                        `json:"index,omitempty"`
 	Delta        OpenAIChatCompletionsDelta `json:"delta"`
 	FinishReason string                     `json:"finish_reason,omitempty"`
+	StopDetails  *ClaudeStopDetails         `json:"stop_details,omitempty"`
 }
 
 func (c *OpenAIChatCompletionsChunkChoice) FromMap(m map[string]any) error {
@@ -1991,6 +2010,10 @@ func (c *OpenAIChatCompletionsChunkChoice) FromMap(m map[string]any) error {
 		return err
 	}
 	c.FinishReason, err = stringValue(m, "finish_reason")
+	if err != nil {
+		return err
+	}
+	c.StopDetails, err = decodeClaudeStopDetailsPtrFromMapField(m, "stop_details")
 	return err
 }
 
@@ -2001,6 +2024,13 @@ func (c *OpenAIChatCompletionsChunkChoice) ToMap() (map[string]any, error) {
 	}
 	out := map[string]any{"index": c.Index, "delta": delta}
 	setMapString(out, "finish_reason", c.FinishReason)
+	if c.StopDetails != nil {
+		stopDetails, err := c.StopDetails.ToMap()
+		if err != nil {
+			return nil, err
+		}
+		out["stop_details"] = stopDetails
+	}
 	return out, nil
 }
 

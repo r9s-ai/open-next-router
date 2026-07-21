@@ -282,6 +282,9 @@ func mapOpenAIChatCompletionsToClaudeRequest(req *apitypes.OpenAIChatCompletions
 	if req.User != "" {
 		dst.Metadata = &apitypes.ClaudeMetadata{UserId: req.User}
 	}
+	if req.FallbackCreditToken != "" {
+		dst.FallbackCreditToken = req.FallbackCreditToken
+	}
 	if len(req.Fallbacks) > 0 {
 		// Fallback shares the same struct type as ClaudeRequest.Fallbacks, so the
 		// slice is forwarded directly. Per-fallback adjustments below mirror what is
