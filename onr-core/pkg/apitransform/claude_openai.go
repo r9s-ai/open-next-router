@@ -263,11 +263,17 @@ func MapClaudeMessagesResponseToOpenAIChatCompletionsObject(root apitypes.JSONOb
 	if len(toolCalls) > 0 {
 		message["tool_calls"] = toolCalls
 	}
-	choices := []any{apitypes.JSONObject{
+	choice := apitypes.JSONObject{
 		"index":         0,
 		"message":       message,
 		"finish_reason": stopReasonClaude2OpenAI(src.StopReason),
-	}}
+	}
+	if src.StopDetails != nil {
+		if stopDetails, err := src.StopDetails.ToMap(); err == nil {
+			choice["stop_details"] = stopDetails
+		}
+	}
+	choices := []any{choice}
 
 	out := apitypes.JSONObject{
 		"id":      normalizeChatCompletionID(src.Id),

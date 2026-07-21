@@ -2497,27 +2497,28 @@ func (c *ClaudeToolChoice) ToMap() (map[string]any, error) {
 }
 
 type ClaudeRequest struct {
-	Model            string              `json:"model"`
-	Messages         []ClaudeMessage     `json:"messages"`
-	System           any                 `json:"system,omitempty"`
-	MaxTokens        *int                `json:"max_tokens"`
-	CacheControl     *CacheControl       `json:"cache_control,omitempty"`
-	Container        string              `json:"container,omitempty"`
-	InferenceGeo     string              `json:"inference_geo,omitempty"`
-	Fallbacks        []*Fallback         `json:"fallbacks,omitempty"`
-	OutputConfig     *ClaudeOutputConfig `json:"output_config,omitempty"`
-	ServiceTier      string              `json:"service_tier,omitempty"`
-	StopSequences    []string            `json:"stop_sequences,omitempty"`
-	Stream           *bool               `json:"stream,omitempty"`
-	Temperature      *float64            `json:"temperature,omitempty"`
-	Thinking         *ThinkingConfig     `json:"thinking,omitempty"`
-	TopP             *float64            `json:"top_p,omitempty"`
-	TopK             *int                `json:"top_k,omitempty"`
-	Tools            []ClaudeTool        `json:"tools,omitempty"`
-	ToolChoice       *ClaudeToolChoice   `json:"tool_choice,omitempty"`
-	Metadata         *ClaudeMetadata     `json:"metadata,omitempty"`
-	AnthropicVersion string              `json:"anthropic_version,omitempty"`
-	AnthropicBeta    []string            `json:"anthropic_beta,omitempty"`
+	Model               string              `json:"model"`
+	Messages            []ClaudeMessage     `json:"messages"`
+	System              any                 `json:"system,omitempty"`
+	MaxTokens           *int                `json:"max_tokens"`
+	CacheControl        *CacheControl       `json:"cache_control,omitempty"`
+	Container           string              `json:"container,omitempty"`
+	InferenceGeo        string              `json:"inference_geo,omitempty"`
+	Fallbacks           []*Fallback         `json:"fallbacks,omitempty"`
+	FallbackCreditToken string              `json:"fallback_credit_token,omitempty"`
+	OutputConfig        *ClaudeOutputConfig `json:"output_config,omitempty"`
+	ServiceTier         string              `json:"service_tier,omitempty"`
+	StopSequences       []string            `json:"stop_sequences,omitempty"`
+	Stream              *bool               `json:"stream,omitempty"`
+	Temperature         *float64            `json:"temperature,omitempty"`
+	Thinking            *ThinkingConfig     `json:"thinking,omitempty"`
+	TopP                *float64            `json:"top_p,omitempty"`
+	TopK                *int                `json:"top_k,omitempty"`
+	Tools               []ClaudeTool        `json:"tools,omitempty"`
+	ToolChoice          *ClaudeToolChoice   `json:"tool_choice,omitempty"`
+	Metadata            *ClaudeMetadata     `json:"metadata,omitempty"`
+	AnthropicVersion    string              `json:"anthropic_version,omitempty"`
+	AnthropicBeta       []string            `json:"anthropic_beta,omitempty"`
 }
 
 func (c *ClaudeRequest) GetPrompt() string {
@@ -2550,53 +2551,55 @@ func (c *ClaudeRequest) GetPrompt() string {
 
 func (c *ClaudeRequest) UnmarshalJSON(b []byte) error {
 	type wire struct {
-		Model            string              `json:"model"`
-		Messages         []ClaudeMessage     `json:"messages"`
-		System           json.RawMessage     `json:"system,omitempty"`
-		MaxTokens        *int                `json:"max_tokens,omitempty"`
-		CacheControl     *CacheControl       `json:"cache_control,omitempty"`
-		Container        string              `json:"container,omitempty"`
-		InferenceGeo     string              `json:"inference_geo,omitempty"`
-		Fallbacks        []*Fallback         `json:"fallbacks,omitempty"`
-		OutputConfig     *ClaudeOutputConfig `json:"output_config,omitempty"`
-		ServiceTier      string              `json:"service_tier,omitempty"`
-		StopSequences    []string            `json:"stop_sequences,omitempty"`
-		Stream           *bool               `json:"stream,omitempty"`
-		Temperature      *float64            `json:"temperature,omitempty"`
-		Thinking         *ThinkingConfig     `json:"thinking,omitempty"`
-		TopP             *float64            `json:"top_p,omitempty"`
-		TopK             *int                `json:"top_k,omitempty"`
-		Tools            []ClaudeTool        `json:"tools,omitempty"`
-		ToolChoice       *ClaudeToolChoice   `json:"tool_choice,omitempty"`
-		Metadata         *ClaudeMetadata     `json:"metadata,omitempty"`
-		AnthropicVersion string              `json:"anthropic_version,omitempty"`
-		AnthropicBeta    []string            `json:"anthropic_beta,omitempty"`
+		Model               string              `json:"model"`
+		Messages            []ClaudeMessage     `json:"messages"`
+		System              json.RawMessage     `json:"system,omitempty"`
+		MaxTokens           *int                `json:"max_tokens,omitempty"`
+		CacheControl        *CacheControl       `json:"cache_control,omitempty"`
+		Container           string              `json:"container,omitempty"`
+		InferenceGeo        string              `json:"inference_geo,omitempty"`
+		Fallbacks           []*Fallback         `json:"fallbacks,omitempty"`
+		FallbackCreditToken string              `json:"fallback_credit_token,omitempty"`
+		OutputConfig        *ClaudeOutputConfig `json:"output_config,omitempty"`
+		ServiceTier         string              `json:"service_tier,omitempty"`
+		StopSequences       []string            `json:"stop_sequences,omitempty"`
+		Stream              *bool               `json:"stream,omitempty"`
+		Temperature         *float64            `json:"temperature,omitempty"`
+		Thinking            *ThinkingConfig     `json:"thinking,omitempty"`
+		TopP                *float64            `json:"top_p,omitempty"`
+		TopK                *int                `json:"top_k,omitempty"`
+		Tools               []ClaudeTool        `json:"tools,omitempty"`
+		ToolChoice          *ClaudeToolChoice   `json:"tool_choice,omitempty"`
+		Metadata            *ClaudeMetadata     `json:"metadata,omitempty"`
+		AnthropicVersion    string              `json:"anthropic_version,omitempty"`
+		AnthropicBeta       []string            `json:"anthropic_beta,omitempty"`
 	}
 	var w wire
 	if err := json.Unmarshal(b, &w); err != nil {
 		return err
 	}
 	*c = ClaudeRequest{
-		Model:            w.Model,
-		Messages:         w.Messages,
-		MaxTokens:        w.MaxTokens,
-		CacheControl:     w.CacheControl,
-		Container:        w.Container,
-		InferenceGeo:     w.InferenceGeo,
-		Fallbacks:        w.Fallbacks,
-		OutputConfig:     w.OutputConfig,
-		ServiceTier:      w.ServiceTier,
-		StopSequences:    w.StopSequences,
-		Stream:           w.Stream,
-		Temperature:      w.Temperature,
-		Thinking:         w.Thinking,
-		TopP:             w.TopP,
-		TopK:             w.TopK,
-		Tools:            w.Tools,
-		ToolChoice:       w.ToolChoice,
-		Metadata:         w.Metadata,
-		AnthropicVersion: w.AnthropicVersion,
-		AnthropicBeta:    w.AnthropicBeta,
+		Model:               w.Model,
+		Messages:            w.Messages,
+		MaxTokens:           w.MaxTokens,
+		CacheControl:        w.CacheControl,
+		Container:           w.Container,
+		InferenceGeo:        w.InferenceGeo,
+		Fallbacks:           w.Fallbacks,
+		FallbackCreditToken: w.FallbackCreditToken,
+		OutputConfig:        w.OutputConfig,
+		ServiceTier:         w.ServiceTier,
+		StopSequences:       w.StopSequences,
+		Stream:              w.Stream,
+		Temperature:         w.Temperature,
+		Thinking:            w.Thinking,
+		TopP:                w.TopP,
+		TopK:                w.TopK,
+		Tools:               w.Tools,
+		ToolChoice:          w.ToolChoice,
+		Metadata:            w.Metadata,
+		AnthropicVersion:    w.AnthropicVersion,
+		AnthropicBeta:       w.AnthropicBeta,
 	}
 	raw := bytes.TrimSpace(w.System)
 	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
@@ -2661,6 +2664,10 @@ func (c *ClaudeRequest) FromMap(m map[string]any) error {
 		return err
 	}
 	c.Fallbacks, err = decodeFallbackListFromMapField(m, "fallbacks")
+	if err != nil {
+		return err
+	}
+	c.FallbackCreditToken, err = stringValue(m, "fallback_credit_token")
 	if err != nil {
 		return err
 	}
@@ -2751,6 +2758,7 @@ func (c *ClaudeRequest) ToMap() (map[string]any, error) {
 		}
 		out["fallbacks"] = fallbacks
 	}
+	setMapString(out, "fallback_credit_token", c.FallbackCreditToken)
 	if c.OutputConfig != nil {
 		outputConfig, err := c.OutputConfig.ToMap()
 		if err != nil {
@@ -2957,10 +2965,11 @@ type ClaudeStreamContentBlock struct {
 
 // ClaudeStreamDelta carries incremental text/tool stop data from Claude SSE.
 type ClaudeStreamDelta struct {
-	Type        string `json:"type,omitempty"`
-	Text        string `json:"text,omitempty"`
-	PartialJSON string `json:"partial_json,omitempty"`
-	StopReason  string `json:"stop_reason,omitempty"`
+	Type        string             `json:"type,omitempty"`
+	Text        string             `json:"text,omitempty"`
+	PartialJSON string             `json:"partial_json,omitempty"`
+	StopReason  string             `json:"stop_reason,omitempty"`
+	StopDetails *ClaudeStopDetails `json:"stop_details,omitempty"`
 }
 
 func (c *ClaudeUsage) FromMap(m map[string]any) error {
@@ -3078,31 +3087,93 @@ func (c *ClaudeError) ToMap() (map[string]any, error) {
 	}, nil
 }
 
+type ClaudeStopDetails struct {
+	Type                    string  `json:"type,omitempty"`
+	Category                string  `json:"category,omitempty"`
+	Explanation             string  `json:"explanation,omitempty"`
+	FallbackCreditToken     *string `json:"fallback_credit_token,omitempty"`
+	FallbackHasPrefillClaim *bool   `json:"fallback_has_prefill_claim,omitempty"`
+}
+
+func (s *ClaudeStopDetails) FromMap(m map[string]any) error {
+	var err error
+	s.Type, err = stringValue(m, "type")
+	if err != nil {
+		return err
+	}
+	s.Category, err = stringValue(m, "category")
+	if err != nil {
+		return err
+	}
+	s.Explanation, err = stringValue(m, "explanation")
+	if err != nil {
+		return err
+	}
+	s.FallbackCreditToken, err = stringPtrValue(m, "fallback_credit_token")
+	if err != nil {
+		return err
+	}
+	s.FallbackHasPrefillClaim, err = boolPtrValue(m, "fallback_has_prefill_claim")
+	return err
+}
+
+func (s *ClaudeStopDetails) ToMap() (map[string]any, error) {
+	out := map[string]any{}
+	setMapString(out, "type", s.Type)
+	setMapString(out, "category", s.Category)
+	setMapString(out, "explanation", s.Explanation)
+	if s.FallbackCreditToken != nil {
+		out["fallback_credit_token"] = *s.FallbackCreditToken
+	}
+	if s.FallbackHasPrefillClaim != nil {
+		out["fallback_has_prefill_claim"] = *s.FallbackHasPrefillClaim
+	}
+	return out, nil
+}
+
+func decodeClaudeStopDetailsPtrFromMapField(m map[string]any, key string) (*ClaudeStopDetails, error) {
+	v, ok := m[key]
+	if !ok || v == nil {
+		return nil, nil
+	}
+	obj, ok := v.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("field %q: expected object, got %T", key, v)
+	}
+	var s ClaudeStopDetails
+	if err := s.FromMap(obj); err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
 type ClaudeResponse struct {
-	Id           string           `json:"id"`
-	Container    *ClaudeContainer `json:"container"`
-	Type         string           `json:"type"`
-	Role         string           `json:"role"`
-	Content      []ClaudeContent  `json:"content"`
-	Model        string           `json:"model"`
-	StopReason   string           `json:"stop_reason"`
-	StopSequence string           `json:"stop_sequence"`
-	Usage        *ClaudeUsage     `json:"usage"`
-	Error        *ClaudeError     `json:"error,omitempty"`
+	Id           string             `json:"id"`
+	Container    *ClaudeContainer   `json:"container"`
+	Type         string             `json:"type"`
+	Role         string             `json:"role"`
+	Content      []ClaudeContent    `json:"content"`
+	Model        string             `json:"model"`
+	StopReason   string             `json:"stop_reason"`
+	StopSequence string             `json:"stop_sequence"`
+	StopDetails  *ClaudeStopDetails `json:"stop_details,omitempty"`
+	Usage        *ClaudeUsage       `json:"usage"`
+	Error        *ClaudeError       `json:"error,omitempty"`
 }
 
 func (c *ClaudeResponse) UnmarshalJSON(b []byte) error {
 	type wire struct {
-		Id           string            `json:"id"`
-		Container    *ClaudeContainer  `json:"container"`
-		Type         string            `json:"type"`
-		Role         string            `json:"role"`
-		Content      []json.RawMessage `json:"content"`
-		Model        string            `json:"model"`
-		StopReason   string            `json:"stop_reason"`
-		StopSequence string            `json:"stop_sequence"`
-		Usage        *ClaudeUsage      `json:"usage"`
-		Error        *ClaudeError      `json:"error,omitempty"`
+		Id           string             `json:"id"`
+		Container    *ClaudeContainer   `json:"container"`
+		Type         string             `json:"type"`
+		Role         string             `json:"role"`
+		Content      []json.RawMessage  `json:"content"`
+		Model        string             `json:"model"`
+		StopReason   string             `json:"stop_reason"`
+		StopSequence string             `json:"stop_sequence"`
+		StopDetails  *ClaudeStopDetails `json:"stop_details,omitempty"`
+		Usage        *ClaudeUsage       `json:"usage"`
+		Error        *ClaudeError       `json:"error,omitempty"`
 	}
 	var w wire
 	if err := json.Unmarshal(b, &w); err != nil {
@@ -3116,6 +3187,7 @@ func (c *ClaudeResponse) UnmarshalJSON(b []byte) error {
 		Model:        w.Model,
 		StopReason:   w.StopReason,
 		StopSequence: w.StopSequence,
+		StopDetails:  w.StopDetails,
 		Usage:        w.Usage,
 		Error:        w.Error,
 	}
@@ -3161,6 +3233,10 @@ func (c *ClaudeResponse) FromMap(m map[string]any) error {
 	if err != nil {
 		return err
 	}
+	c.StopDetails, err = decodeClaudeStopDetailsPtrFromMapField(m, "stop_details")
+	if err != nil {
+		return err
+	}
 	c.Usage, err = decodeClaudeUsagePtrFromMapField(m, "usage")
 	if err != nil {
 		return err
@@ -3190,6 +3266,13 @@ func (c *ClaudeResponse) ToMap() (map[string]any, error) {
 		return nil, err
 	}
 	out["content"] = content
+	if c.StopDetails != nil {
+		stopDetails, err := c.StopDetails.ToMap()
+		if err != nil {
+			return nil, err
+		}
+		out["stop_details"] = stopDetails
+	}
 	if c.Usage != nil {
 		usage, err := c.Usage.ToMap()
 		if err != nil {

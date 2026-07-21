@@ -138,6 +138,17 @@ func boolPtrValue(m map[string]any, key string) (*bool, error) {
 	return &v, nil
 }
 
+func stringPtrValue(m map[string]any, key string) (*string, error) {
+	if _, ok := m[key]; !ok || m[key] == nil {
+		return nil, nil
+	}
+	v, err := stringValue(m, key)
+	if err != nil {
+		return nil, err
+	}
+	return &v, nil
+}
+
 func stringSliceValue(m map[string]any, key string) ([]string, error) {
 	v, ok := m[key]
 	if !ok || v == nil {

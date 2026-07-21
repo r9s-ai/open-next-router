@@ -319,4 +319,14 @@ func TestMapClaudeMessagesResponseToOpenAIChatCompletions_RefusalEmptyContent(t 
 	if _, hasContent := msg["content"]; hasContent {
 		t.Fatalf("choice.message must not have content key for refusal, got %#v", msg)
 	}
+	stopDetails, ok := choice["stop_details"].(map[string]any)
+	if !ok {
+		t.Fatalf("choice.stop_details must be object, got %#v", choice["stop_details"])
+	}
+	if stopDetails["type"] != "refusal" {
+		t.Fatalf("stop_details.type must be refusal, got %#v", stopDetails["type"])
+	}
+	if stopDetails["category"] != "cyber" {
+		t.Fatalf("stop_details.category must be cyber, got %#v", stopDetails["category"])
+	}
 }

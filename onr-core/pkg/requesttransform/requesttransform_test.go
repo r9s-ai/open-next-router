@@ -699,3 +699,32 @@ func TestApplyReqMap_OpenAIChatToAnthropicMessages_FallbackEmptyModelRejected(t 
 		t.Fatal("expected error for empty fallback model, got nil")
 	}
 }
+
+func TestApplyReqMap_OpenAIChatToAnthropicMessages_FallbackCreditTokenForwarded(t *testing.T) {
+	body := []byte(`{
+		"model":"claude-fable-5",
+		"messages":[{"role":"user","content":"hi"}],
+		"fallback_credit_token":"tok-abc123"
+	}`)
+	_, root, err := ApplyReqMap("openai_chat_to_anthropic_messages", body, nil, ApplyOptions{})
+	if err != nil {
+		t.Fatalf("ApplyReqMap() error = %v", err)
+	}
+	if got, want := root["fallback_credit_token"], "tok-abc123"; got != want {
+		t.Fatalf("fallback_credit_token=%v want=%v", got, want)
+	}
+}
+
+func TestApplyReqMap_OpenAIChatToAnthropicMessages_FallbackCreditTokenAbsentWhenEmpty(t *testing.T) {
+	body := []byte(`{
+		"model":"claude-fable-5",
+		"messages":[{"role":"user","content":"hi"}]
+	}`)
+	_, root, err := ApplyReqMap("openai_chat_to_anthropic_messages", body, nil, ApplyOptions{})
+	if err != nil {
+		t.Fatalf("ApplyReqMap() error = %v", err)
+	}
+	if _, ok := root["fallback_credit_token"]; ok {
+		t.Fatalf("fallback_credit_token should be absent when not set, got %v", root["fallback_credit_token"])
+	}
+}
