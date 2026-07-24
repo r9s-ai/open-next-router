@@ -441,6 +441,7 @@ v0.1 内置：
 - `anthropic_to_openai_chat`：Anthropic `/v1/messages` 请求 JSON → OpenAI `chat.completions` 请求 JSON
 - `gemini_to_openai_chat`：Gemini `generateContent` 请求 JSON → OpenAI `chat.completions` 请求 JSON
 - `openai_chat_to_gemini_generate_content`：OpenAI `chat.completions` 请求 JSON → Gemini `generateContent` 请求 JSON
+- `openai_images_to_gemini_generate_content`：OpenAI `images.generations` 请求 JSON → Gemini `generateContent`（Nano Banana）。prompt → `contents[].parts[].text`、`n` → `candidateCount`；gemini-3 另将 `size` → `imageConfig.aspectRatio`、`quality` → `imageConfig.imageSize`,并设 `responseModalities=[TEXT,IMAGE]`。内置按 model 条件校验并报错:`response_format=url` 拒绝;gemini-3 仅接受已知比例/像素尺寸与 `standard`/`hd` quality;gemini-3 以下不接受 `size`/`quality`。
 - `openai_chat_to_anthropic_messages`：OpenAI `chat.completions` 请求 JSON → Anthropic `/v1/messages` 请求 JSON。
   映射字段包括 `model`、`messages`、`system`、`tools`、`tool_choice`、`max_tokens`、`temperature`、`top_p`、`stream` 和 `response_format`。
   `response_format` 约束：
@@ -630,6 +631,7 @@ response { sse_collect <mode>; }
 - `openai_to_anthropic_chunks`（`sse_parse`）：OpenAI-compatible `chat.completions` SSE → Anthropic `/v1/messages` SSE
 - `openai_to_gemini_chat` / `openai_to_gemini_generate_content`（`resp_map`）：OpenAI-compatible `chat.completions` JSON → Gemini `generateContent` JSON
 - `gemini_to_openai_chat`（`resp_map`）：Gemini `generateContent` JSON → OpenAI `chat.completions` JSON
+- `gemini_to_openai_images`（`resp_map`）：Gemini `generateContent` JSON → OpenAI `images.generations` JSON。`candidates[].content.parts[].inlineData.data` → `data[].b64_json`（同 part 的 text 作 `revised_prompt`）,`usageMetadata` → `usage`。
 - `openai_to_gemini_chunks`（`sse_parse`）：OpenAI-compatible `chat.completions` SSE → Gemini SSE
 - `gemini_to_openai_chat_chunks`（`sse_parse`）：Gemini SSE → OpenAI `chat.completions` SSE chunks
 - `openai_responses_to_openai_chat`（`resp_map`）：OpenAI/Azure `/responses` JSON → OpenAI `chat.completions` JSON

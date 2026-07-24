@@ -182,6 +182,12 @@ func applyReqMapObject(mode string, root apitypes.JSONObject) ([]byte, map[strin
 		}
 		dst := mapOpenAIChatCompletionsToGeminiGenerateContentRequest(&src)
 		return marshalReqMapResult(dst)
+	case "openai_images_to_gemini_generate_content":
+		dst, err := apitransform.MapOpenAIImagesToGeminiGenerateContentRequest(root)
+		if err != nil {
+			return nil, nil, err
+		}
+		return marshalReqMapResult(dst)
 	case "anthropic_to_openai_chat":
 		var src apitypes.ClaudeRequest
 		if err := src.FromMap(root); err != nil {
