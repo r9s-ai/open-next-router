@@ -420,6 +420,7 @@ v0.1 includes:
 - `anthropic_to_openai_chat`: Anthropic `/v1/messages` request JSON → OpenAI `chat.completions` request JSON
 - `gemini_to_openai_chat`: Gemini `generateContent` request JSON → OpenAI `chat.completions` request JSON
 - `openai_chat_to_gemini_generate_content`: OpenAI `chat.completions` request JSON → Gemini `generateContent` request JSON
+- `openai_images_to_gemini_generate_content`: OpenAI `images.generations` request JSON → Gemini `generateContent` request JSON (Nano Banana). Maps prompt → `contents[].parts[].text`, `n` → `candidateCount`; for gemini-3 models also maps `size` → `imageConfig.aspectRatio`, `quality` → `imageConfig.imageSize`, and sets `responseModalities=[TEXT,IMAGE]`. Performs model-conditional validation and errors on violation: `response_format=url` is rejected; gemini-3 accepts only known aspect ratios/pixel sizes and `standard`/`hd` quality; models below gemini-3 accept neither `size` nor `quality`.
 - `openai_chat_to_anthropic_messages`: OpenAI `chat.completions` request JSON → Anthropic `/v1/messages` request JSON.
   Mapped fields include `model`, `messages`, `system`, `tools`, `tool_choice`, `max_tokens`, `temperature`, `top_p`, `stream`, and `response_format`.
   `response_format` constraints:
@@ -604,6 +605,7 @@ Available modes depend on the built-in implementation. v0.1 includes:
 - `openai_to_anthropic_chunks` (`sse_parse`): OpenAI-compatible `chat.completions` SSE → Anthropic `/v1/messages` SSE
 - `openai_to_gemini_chat` / `openai_to_gemini_generate_content` (`resp_map`): OpenAI-compatible `chat.completions` JSON → Gemini `generateContent` JSON
 - `gemini_to_openai_chat` (`resp_map`): Gemini `generateContent` JSON → OpenAI `chat.completions` JSON
+- `gemini_to_openai_images` (`resp_map`): Gemini `generateContent` JSON → OpenAI `images.generations` JSON. Extracts `candidates[].content.parts[].inlineData.data` → `data[].b64_json` (+ `revised_prompt` from the same part's text) and maps `usageMetadata` → `usage`.
 - `openai_to_gemini_chunks` (`sse_parse`): OpenAI-compatible `chat.completions` SSE → Gemini SSE
 - `gemini_to_openai_chat_chunks` (`sse_parse`): Gemini SSE → OpenAI `chat.completions` SSE chunks
 - `openai_responses_to_openai_chat` (`resp_map`): OpenAI/Azure `/responses` JSON → OpenAI `chat.completions` JSON
