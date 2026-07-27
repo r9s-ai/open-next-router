@@ -1,6 +1,8 @@
 package apitransform
 
 import (
+	"errors"
+	"net/http"
 	"testing"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/apitypes"
@@ -84,7 +86,15 @@ func TestMapOpenAIImagesToGeminiGenerateContentRequest_Validation(t *testing.T) 
 		wantErr bool
 	}{
 		{"url_rejected", apitypes.JSONObject{"model": "gemini-3-pro-image", "prompt": "x", "response_format": "url"}, true},
+		// 大小写归一化后再比较,挡住 Go 侧会静默放行的 "URL"(客户端要 url 却收到 b64_json)。
+		{"url_uppercase_rejected", apitypes.JSONObject{"model": "gemini-3-pro-image", "prompt": "x", "response_format": "URL"}, true},
 		{"unknown_format_passes", apitypes.JSONObject{"model": "gemini-3-pro-image", "prompt": "x", "response_format": "webp"}, false},
+		{"quality_uppercase_ok", apitypes.JSONObject{"model": "gemini-3-pro-image", "prompt": "x", "quality": "HD"}, false},
+		// prompt / n 对齐 Go validateGeminiImagePrompt / validateGeminiImageCount。
+		{"prompt_missing", apitypes.JSONObject{"model": "gemini-3-pro-image"}, true},
+		{"prompt_blank", apitypes.JSONObject{"model": "gemini-3-pro-image", "prompt": "   "}, true},
+		{"n_gt_1_rejected", apitypes.JSONObject{"model": "gemini-3-pro-image", "prompt": "x", "n": float64(4)}, true},
+		{"n_1_ok", apitypes.JSONObject{"model": "gemini-3-pro-image", "prompt": "x", "n": float64(1)}, false},
 		{"gemini3_bad_size", apitypes.JSONObject{"model": "gemini-3-pro-image", "prompt": "x", "size": "999x999"}, true},
 		{"gemini3_bad_quality", apitypes.JSONObject{"model": "gemini-3-pro-image", "prompt": "x", "quality": "ultra"}, true},
 		{"below3_size_rejected", apitypes.JSONObject{"model": "gemini-2.5-flash-image", "prompt": "x", "size": "1024x1024"}, true},
@@ -163,18 +173,84 @@ func TestMapGeminiGenerateContentToOpenAIImagesResponse(t *testing.T) {
 	}
 }
 
+// 无图输出必须报错而不是回 200 空 data,否则客户端拿不到失败信号却照样被计费。
+// 两种成因分别对齐 Go handler 的 "No candidates returned" / "No image data found in response"。
 func TestMapGeminiGenerateContentToOpenAIImagesResponse_NoImage(t *testing.T) {
-	// 无 inlineData:data 为空数组(运行时/conf 侧据此判错),不 panic
+	cases := []struct {
+		name     string
+		root     apitypes.JSONObject
+		wantCode string
+	}{
+		{
+			name:     "no_candidates",
+			root:     apitypes.JSONObject{"promptFeedback": map[string]any{"blockReason": "SAFETY"}},
+			wantCode: "upstream_no_candidates",
+		},
+		{
+			name: "candidates_without_inline_data",
+			root: apitypes.JSONObject{
+				"candidates": []any{
+					map[string]any{"finishReason": "IMAGE_SAFETY", "content": map[string]any{"parts": []any{map[string]any{"text": "sorry"}}}},
+				},
+			},
+			wantCode: "upstream_no_image",
+		},
+	}
+	for _, tc := range cases {
+		out, err := MapGeminiGenerateContentToOpenAIImagesResponseObject(tc.root)
+		if out != nil {
+			t.Fatalf("%s: expected no body, got %#v", tc.name, out)
+		}
+		var uerr *UpstreamResponseError
+		if !errors.As(err, &uerr) {
+			t.Fatalf("%s: expected *UpstreamResponseError, got %v", tc.name, err)
+		}
+		if uerr.Code != tc.wantCode {
+			t.Fatalf("%s: code got %q want %q", tc.name, uerr.Code, tc.wantCode)
+		}
+		if uerr.StatusCode != http.StatusInternalServerError {
+			t.Fatalf("%s: status got %d want 500", tc.name, uerr.StatusCode)
+		}
+	}
+}
+
+// 计费维度:completion 用 Go 口径(total-prompt,含 thoughts),IMAGE modality 明细
+// 必须落到 output_tokens_details.image_tokens —— metrics 在 resp_map 之后提取,
+// 没搬过来的字段 usage_fact 就再也读不到。
+func TestMapGeminiGenerateContentToOpenAIImagesResponse_UsageDetails(t *testing.T) {
 	root := apitypes.JSONObject{
 		"candidates": []any{
-			map[string]any{"content": map[string]any{"parts": []any{map[string]any{"text": "sorry"}}}},
+			map[string]any{"content": map[string]any{"parts": []any{
+				map[string]any{"inlineData": map[string]any{"data": "AAAA"}},
+			}}},
+		},
+		"usageMetadata": map[string]any{
+			"promptTokenCount":     float64(12),
+			"candidatesTokenCount": float64(1290),
+			"thoughtsTokenCount":   float64(64),
+			"totalTokenCount":      float64(1366),
+			"candidatesTokensDetails": []any{
+				map[string]any{"modality": "IMAGE", "tokenCount": float64(1290)},
+			},
 		},
 	}
 	out, err := MapGeminiGenerateContentToOpenAIImagesResponseObject(root)
 	if err != nil {
 		t.Fatalf("map response: %v", err)
 	}
-	if data, _ := out["data"].([]any); len(data) != 0 {
-		t.Fatalf("expected empty data, got %#v", out["data"])
+	usage, _ := out["usage"].(apitypes.JSONObject)
+	if usage == nil {
+		t.Fatalf("missing usage: %#v", out)
+	}
+	// Go 口径:1366-12=1354,而不是 candidatesTokenCount 的 1290。
+	if usage["completion_tokens"] != 1354 {
+		t.Fatalf("completion_tokens got %v want 1354", usage["completion_tokens"])
+	}
+	details, _ := usage["output_tokens_details"].(apitypes.JSONObject)
+	if details == nil || details["image_tokens"] != 1290 {
+		t.Fatalf("output_tokens_details got %#v", usage["output_tokens_details"])
+	}
+	if details["reasoning_tokens"] != 64 {
+		t.Fatalf("reasoning_tokens got %v want 64", details["reasoning_tokens"])
 	}
 }

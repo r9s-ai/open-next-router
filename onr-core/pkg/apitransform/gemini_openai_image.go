@@ -1,7 +1,7 @@
 package apitransform
 
 import (
-	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -63,30 +63,49 @@ func geminiImageAspectRatio(size string) string {
 }
 
 // validateGeminiImageOptions replicates the relay Go adaptor's
+// validateGeminiImagePrompt, validateGeminiImageCount,
 // validateGeminiImageResponseFormat and validateGeminiImageModelOptions:
-// response_format "url" is rejected (other values pass), and size/quality are
-// model-conditional — gemini-3 accepts known aspect ratios and
-// standard/hd quality, models below 3.0 accept neither.
-func validateGeminiImageOptions(model, size, quality, responseFormat string) error {
-	if responseFormat == "url" {
-		return fmt.Errorf("response_format 'url' is not supported for this channel")
+// prompt is required, n must be <= 1, response_format "url" is rejected (other
+// values pass), and size/quality are model-conditional — gemini-3 accepts known
+// aspect ratios and standard/hd quality, models below 3.0 accept neither.
+//
+// response_format and quality are compared case-insensitively. The Go adaptor
+// compares them verbatim, which lets "URL" through and silently downgrades the
+// client to b64_json; rejecting it here is a deliberate tightening.
+// Rejections carry the Go adaptor's error code and the offending parameter, so
+// a client sees the same code on both routes.
+func validateGeminiImageOptions(model, prompt, size, quality, responseFormat string, n int) error {
+	if prompt == "" {
+		return newRequestMappingError(CodeRequestPromptMissing, "prompt", "prompt is required")
 	}
+	if n > 1 {
+		return newRequestMappingError(CodeRequestNOutOfRange, "n", "Gemini image generation only supports n=1")
+	}
+	if strings.ToLower(responseFormat) == "url" {
+		return newRequestMappingError(CodeRequestInvalidParameter, "response_format",
+			"response_format 'url' is not supported for this channel")
+	}
+	normalizedQuality := strings.ToLower(quality)
 	if geminiImageIsGemini3Model(model) {
 		if size != "" {
 			if _, ok := geminiImageAspectRatios[geminiImageNormalizeSize(size)]; !ok {
-				return fmt.Errorf("invalid size/aspect_ratio for Gemini: %s. Supported: 1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 5:4, 4:5, 21:9 or equivalent pixel dimensions", size)
+				return newRequestMappingError(CodeRequestSizeNotSupported, "size",
+					"invalid size/aspect_ratio for Gemini: %s. Supported: 1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 5:4, 4:5, 21:9 or equivalent pixel dimensions", size)
 			}
 		}
-		if quality != "" && quality != "standard" && quality != "hd" {
-			return fmt.Errorf("invalid quality: %s. Supported: standard, hd", quality)
+		if normalizedQuality != "" && normalizedQuality != "standard" && normalizedQuality != "hd" {
+			return newRequestMappingError(CodeRequestInvalidParameter, "quality",
+				"invalid quality: %s. Supported: standard, hd", quality)
 		}
 		return nil
 	}
 	if size != "" {
-		return fmt.Errorf("size/aspect_ratio is not supported for Gemini models below 3.0")
+		return newRequestMappingError(CodeRequestSizeNotSupported, "size",
+			"size/aspect_ratio is not supported for Gemini models below 3.0")
 	}
 	if quality != "" {
-		return fmt.Errorf("quality is not supported for Gemini models below 3.0")
+		return newRequestMappingError(CodeRequestInvalidParameter, "quality",
+			"quality is not supported for Gemini models below 3.0")
 	}
 	return nil
 }
@@ -113,11 +132,14 @@ func geminiImageSize(model, quality string) string {
 // validation of size/quality/response_format and returns an error on violation.
 func MapOpenAIImagesToGeminiGenerateContentRequest(root apitypes.JSONObject) (*apitypes.ChatRequest, error) {
 	model := strings.TrimSpace(jsonutil.CoerceString(root["model"]))
+	// The prompt is validated trimmed but forwarded verbatim, so leading or
+	// trailing whitespace the caller intended is preserved.
 	prompt := jsonutil.CoerceString(root["prompt"])
 	size := strings.TrimSpace(jsonutil.CoerceString(root["size"]))
 	quality := strings.TrimSpace(jsonutil.CoerceString(root["quality"]))
 	responseFormat := strings.TrimSpace(jsonutil.CoerceString(root["response_format"]))
-	if err := validateGeminiImageOptions(model, size, quality, responseFormat); err != nil {
+	n := jsonutil.CoerceInt(root["n"])
+	if err := validateGeminiImageOptions(model, strings.TrimSpace(prompt), size, quality, responseFormat, n); err != nil {
 		return nil, err
 	}
 
@@ -126,7 +148,7 @@ func MapOpenAIImagesToGeminiGenerateContentRequest(root apitypes.JSONObject) (*a
 			{Parts: []apitypes.Part{{Text: prompt}}},
 		},
 	}
-	if n := jsonutil.CoerceInt(root["n"]); n > 0 {
+	if n > 0 {
 		req.GenerationConfig.CandidateCount = n
 	}
 	if geminiImageIsGemini3Model(model) {
@@ -143,10 +165,22 @@ func MapOpenAIImagesToGeminiGenerateContentRequest(root apitypes.JSONObject) (*a
 // generateContent response object into an OpenAI images response object:
 // candidates[].content.parts[].inlineData.data -> data[].b64_json, plus a usage
 // block derived from usageMetadata. It mirrors the relay Go adaptor's image
-// response handling.
+// response handling, including its two "no image produced" failure modes: a
+// response with no candidates (typically a safety block) and a response whose
+// candidates carry no inline image data both return an *UpstreamResponseError
+// rather than a success body with an empty data array.
 func MapGeminiGenerateContentToOpenAIImagesResponseObject(root apitypes.JSONObject) (apitypes.JSONObject, error) {
-	data := make([]any, 0, 2)
 	candidates, _ := root["candidates"].([]any)
+	if len(candidates) == 0 {
+		return nil, &UpstreamResponseError{
+			StatusCode: http.StatusInternalServerError,
+			Type:       "server_error",
+			Code:       "upstream_no_candidates",
+			Message:    "No candidates returned",
+		}
+	}
+
+	data := make([]any, 0, 2)
 	for _, rawCandidate := range candidates {
 		candidate, _ := rawCandidate.(map[string]any)
 		content, _ := candidate["content"].(map[string]any)
@@ -169,14 +203,75 @@ func MapGeminiGenerateContentToOpenAIImagesResponseObject(root apitypes.JSONObje
 		}
 	}
 
+	if len(data) == 0 {
+		return nil, &UpstreamResponseError{
+			StatusCode: http.StatusInternalServerError,
+			Type:       "server_error",
+			Code:       "upstream_no_image",
+			Message:    "No image data found in response",
+		}
+	}
+
 	out := apitypes.JSONObject{
 		"created": time.Now().Unix(),
 		"data":    data,
 	}
 	if usageRaw, _ := root["usageMetadata"].(map[string]any); usageRaw != nil {
-		if usage, err := mapGeminiUsageToOpenAI(usageRaw); err == nil && usage != nil {
+		if usage, err := mapGeminiImageUsageToOpenAI(usageRaw); err == nil && usage != nil {
 			out["usage"] = usage
 		}
 	}
 	return out, nil
+}
+
+// mapGeminiImageUsageToOpenAI derives the OpenAI images usage block from Gemini
+// usageMetadata. It deliberately does not reuse mapGeminiUsageToOpenAI:
+//
+//   - completion tokens follow the relay Go adaptor's image accounting
+//     (totalTokenCount - promptTokenCount, floored at 0) rather than preferring
+//     candidatesTokenCount, so DSL and Go routes bill the same amount for
+//     gemini-3 responses that carry thoughts tokens.
+//   - the IMAGE modality entry of candidatesTokensDetails is surfaced as
+//     output_tokens_details.image_tokens. Metrics are extracted after resp_map,
+//     so anything not copied here is unavailable to usage_fact rules; this is
+//     the field the openai_images_generations usage_mode preset reads.
+func mapGeminiImageUsageToOpenAI(raw map[string]any) (apitypes.JSONObject, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	var usage apitypes.UsageMetadata
+	if err := usage.FromMap(raw); err != nil {
+		return nil, err
+	}
+	completionTokens := usage.TotalTokenCount - usage.PromptTokenCount
+	if completionTokens < 0 {
+		completionTokens = 0
+	}
+	out := apitypes.JSONObject{
+		"prompt_tokens":     usage.PromptTokenCount,
+		"completion_tokens": completionTokens,
+		"total_tokens":      usage.TotalTokenCount,
+	}
+	details := apitypes.JSONObject{}
+	if imageTokens := modalityTokenCount(usage.CandidatesTokensDetails, "IMAGE"); imageTokens > 0 {
+		details["image_tokens"] = imageTokens
+	}
+	if usage.ThoughtsTokenCount > 0 {
+		details["reasoning_tokens"] = usage.ThoughtsTokenCount
+	}
+	if len(details) > 0 {
+		out["output_tokens_details"] = details
+	}
+	return out, nil
+}
+
+// modalityTokenCount returns the token count of the first entry matching the
+// given modality, or 0 when absent.
+func modalityTokenCount(details []apitypes.ModalityTokenCount, modality string) int {
+	for _, detail := range details {
+		if strings.EqualFold(detail.Modality, modality) {
+			return detail.TokenCount
+		}
+	}
+	return 0
 }

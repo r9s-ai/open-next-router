@@ -1040,6 +1040,7 @@ func mapGeminiGenerateContentRequestToOpenAIChatCompletions(req *apitypes.Gemini
 func parseReqMapInputObject(mode string, raw []byte) (apitypes.JSONObject, error) {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case "openai_chat_to_openai_responses", "openai_chat_to_anthropic_messages", "openai_chat_to_gemini_generate_content":
+	case "openai_images_to_gemini_generate_content":
 	case "anthropic_to_openai_chat":
 	case "gemini_to_openai_chat":
 	default:
