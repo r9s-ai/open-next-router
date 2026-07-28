@@ -23,6 +23,7 @@ func FuzzApply(f *testing.F) {
 		"openai_chat_to_openai_responses",
 		"openai_chat_to_anthropic_messages",
 		"openai_chat_to_gemini_generate_content",
+		"openai_images_to_gemini_generate_content",
 		"anthropic_to_openai_chat",
 		"gemini_to_openai_chat",
 	}

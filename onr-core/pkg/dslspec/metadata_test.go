@@ -128,7 +128,7 @@ func TestMetadata_ContextualModeOptions(t *testing.T) {
 	assertSetEqual(t, "models_mode.top", ModesByDirectiveInBlock("models_mode", "top"), nil)
 	assertSetEqual(t, "balance_mode.balance", ModesByDirectiveInBlock("balance_mode", "balance"), []string{"openai", "custom"})
 	assertSetEqual(t, "balance_mode.top", ModesByDirectiveInBlock("balance_mode", "top"), nil)
-	assertSetEqual(t, "req_map.request", ModesByDirectiveInBlock("req_map", "request"), []string{"openai_chat_to_openai_responses", "openai_chat_to_anthropic_messages", "openai_chat_to_gemini_generate_content", "anthropic_to_openai_chat", "gemini_to_openai_chat"})
+	assertSetEqual(t, "req_map.request", ModesByDirectiveInBlock("req_map", "request"), []string{"openai_chat_to_openai_responses", "openai_chat_to_anthropic_messages", "openai_chat_to_gemini_generate_content", "openai_images_to_gemini_generate_content", "anthropic_to_openai_chat", "gemini_to_openai_chat"})
 }
 
 func TestMetadata_EnumArgOptionsConsistency(t *testing.T) {

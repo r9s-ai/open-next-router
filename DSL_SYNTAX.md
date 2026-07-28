@@ -420,6 +420,7 @@ v0.1 includes:
 - `anthropic_to_openai_chat`: Anthropic `/v1/messages` request JSON → OpenAI `chat.completions` request JSON
 - `gemini_to_openai_chat`: Gemini `generateContent` request JSON → OpenAI `chat.completions` request JSON
 - `openai_chat_to_gemini_generate_content`: OpenAI `chat.completions` request JSON → Gemini `generateContent` request JSON
+- `openai_images_to_gemini_generate_content`: OpenAI `images.generations` request JSON → Gemini `generateContent` request JSON (Nano Banana). Maps prompt → `contents[].parts[].text`, `n` → `candidateCount`; for gemini-3 models also maps `size` → `imageConfig.aspectRatio`, `quality` → `imageConfig.imageSize`, and sets `responseModalities=[TEXT,IMAGE]`. Performs validation and errors on violation: `prompt` is required; `n` must be `<= 1`; `response_format=url` is rejected (compared case-insensitively, so `URL` is rejected too); gemini-3 accepts only known aspect ratios/pixel sizes and `standard`/`hd` quality; models below gemini-3 accept neither `size` nor `quality`. Rejections carry the relay Go adaptors' error codes (`request_prompt_missing`, `request_n_out_of_range`, `request_size_not_supported`, `request_invalid_parameter`) and the offending parameter name, so clients can branch on `error.code`/`error.param` instead of parsing the message.
 - `openai_chat_to_anthropic_messages`: OpenAI `chat.completions` request JSON → Anthropic `/v1/messages` request JSON.
   Mapped fields include `model`, `messages`, `system`, `tools`, `tool_choice`, `max_tokens`, `temperature`, `top_p`, `stream`, and `response_format`.
   `response_format` constraints:
@@ -604,6 +605,7 @@ Available modes depend on the built-in implementation. v0.1 includes:
 - `openai_to_anthropic_chunks` (`sse_parse`): OpenAI-compatible `chat.completions` SSE → Anthropic `/v1/messages` SSE
 - `openai_to_gemini_chat` / `openai_to_gemini_generate_content` (`resp_map`): OpenAI-compatible `chat.completions` JSON → Gemini `generateContent` JSON
 - `gemini_to_openai_chat` (`resp_map`): Gemini `generateContent` JSON → OpenAI `chat.completions` JSON
+- `gemini_to_openai_images` (`resp_map`): Gemini `generateContent` JSON → OpenAI `images.generations` JSON. Extracts `candidates[].content.parts[].inlineData.data` → `data[].b64_json` (+ `revised_prompt` from the same part's text) and maps `usageMetadata` → `usage`. A response with no candidates or with no inline image data is an error (HTTP 500), not a success body with an empty `data` array. `usage` follows the relay Go adaptor's image accounting (`completion_tokens = totalTokenCount - promptTokenCount`) and carries the IMAGE modality entry of `candidatesTokensDetails` as `output_tokens_details.image_tokens`, which the `openai_images_generations` usage_mode preset reads — metrics are extracted after `resp_map`, so fields not mapped here are unavailable to `usage_fact`.
 - `openai_to_gemini_chunks` (`sse_parse`): OpenAI-compatible `chat.completions` SSE → Gemini SSE
 - `gemini_to_openai_chat_chunks` (`sse_parse`): Gemini SSE → OpenAI `chat.completions` SSE chunks
 - `openai_responses_to_openai_chat` (`resp_map`): OpenAI/Azure `/responses` JSON → OpenAI `chat.completions` JSON

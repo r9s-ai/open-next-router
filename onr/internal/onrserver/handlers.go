@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/apitransform"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/requestcanon"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/requestid"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/requestvalidate"
@@ -177,28 +178,54 @@ func cacheRequestInspection(c *gin.Context, body []byte, root map[string]any, mo
 }
 
 func writeOpenAIError(c *gin.Context, requestIDHeaderKey string, code, msg string) {
+	writeOpenAIErrorWithStatus(c, requestIDHeaderKey, http.StatusBadRequest, openAIInvalidRequestType, code, msg)
+}
+
+// writeOpenAIErrorWithStatus writes an OpenAI-shaped error with an explicit
+// status and error type. status <= 0 or an empty errType fall back to the
+// 400/invalid_request_error defaults.
+func writeOpenAIErrorWithStatus(c *gin.Context, requestIDHeaderKey string, status int, errType, code, msg string) {
+	if status <= 0 {
+		status = http.StatusBadRequest
+	}
+	if strings.TrimSpace(errType) == "" {
+		errType = openAIInvalidRequestType
+	}
 	requestIDHeaderKey = requestid.ResolveHeaderKey(requestIDHeaderKey)
 	if c != nil {
 		if rid := strings.TrimSpace(c.GetString(requestIDHeaderKey)); rid != "" {
 			msg = msg + " (request id: " + rid + ")"
 		}
 	}
-	c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+	c.AbortWithStatusJSON(status, gin.H{
 		"error": gin.H{
 			"message": msg,
-			"type":    openAIInvalidRequestType,
+			"type":    errType,
 			"code":    code,
 		},
 	})
 }
 
-// writeProxyError maps a ProxyJSON error to a downstream 400 response.
+// writeProxyError maps a ProxyJSON error to a downstream response.
 // Request validation failures get a stable code and the failing param path;
-// all other proxy errors keep the generic proxy_error code.
+// request mapping rejections keep the mapping builtin's own code and param;
+// upstream response failures keep their own status/type/code so an upstream
+// fault is not reported to the client as an invalid request; all other proxy
+// errors fall back to a 400 with the generic proxy_error code.
 func writeProxyError(c *gin.Context, requestIDHeaderKey string, err error) {
 	var verr *requestvalidate.RequestValidationError
 	if errors.As(err, &verr) {
 		writeOpenAIErrorWithParam(c, requestIDHeaderKey, "request_validation_failed", err.Error(), verr.PathOrName)
+		return
+	}
+	var merr *apitransform.RequestMappingError
+	if errors.As(err, &merr) {
+		writeOpenAIErrorWithParam(c, requestIDHeaderKey, merr.Code, merr.Message, merr.Param)
+		return
+	}
+	var uerr *apitransform.UpstreamResponseError
+	if errors.As(err, &uerr) {
+		writeOpenAIErrorWithStatus(c, requestIDHeaderKey, uerr.StatusCode, uerr.Type, uerr.Code, uerr.Message)
 		return
 	}
 	writeOpenAIError(c, requestIDHeaderKey, "proxy_error", err.Error())
