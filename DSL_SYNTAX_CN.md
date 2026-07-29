@@ -442,6 +442,7 @@ v0.1 内置：
 - `gemini_to_openai_chat`：Gemini `generateContent` 请求 JSON → OpenAI `chat.completions` 请求 JSON
 - `openai_chat_to_gemini_generate_content`：OpenAI `chat.completions` 请求 JSON → Gemini `generateContent` 请求 JSON
 - `openai_images_to_gemini_generate_content`：OpenAI `images.generations` 请求 JSON → Gemini `generateContent`（Nano Banana）。prompt → `contents[].parts[].text`、`n` → `candidateCount`；gemini-3 另将 `size` → `imageConfig.aspectRatio`、`quality` → `imageConfig.imageSize`,并设 `responseModalities=[TEXT,IMAGE]`。内置校验并报错:`prompt` 必填;`n` 必须 `<= 1`;`response_format=url` 拒绝(大小写不敏感,`URL` 同样拒绝);gemini-3 仅接受已知比例/像素尺寸与 `standard`/`hd` quality;gemini-3 以下不接受 `size`/`quality`。被拒时会带上与 relay Go 侧一致的 code(`request_prompt_missing`、`request_n_out_of_range`、`request_size_not_supported`、`request_invalid_parameter`)与出错参数名,客户端可直接按 `error.code`/`error.param` 分支,无需解析文案。
+- `openai_images_to_minimax_image`：OpenAI `images.generations` 请求 JSON → Minimax `/v1/image_generation` 请求 JSON。`size` → `aspect_ratio`(文档像素尺寸与裸比例均可)或 `width`/`height`(512–2048 且为 8 的倍数);`response_format=b64_json` → `base64`;缺省 `n` 补 1、缺省 `response_format` 补 `url`;`seed`/`watermark` 透传。prompt 是否存在与长度、`n` 范围、`response_format` 取值等通用边界交由 `req_required`/`req_len`/`req_range`/`req_enum` 指令表达。
 - `openai_chat_to_anthropic_messages`：OpenAI `chat.completions` 请求 JSON → Anthropic `/v1/messages` 请求 JSON。
   映射字段包括 `model`、`messages`、`system`、`tools`、`tool_choice`、`max_tokens`、`temperature`、`top_p`、`stream` 和 `response_format`。
   `response_format` 约束：
@@ -632,6 +633,7 @@ response { sse_collect <mode>; }
 - `openai_to_gemini_chat` / `openai_to_gemini_generate_content`（`resp_map`）：OpenAI-compatible `chat.completions` JSON → Gemini `generateContent` JSON
 - `gemini_to_openai_chat`（`resp_map`）：Gemini `generateContent` JSON → OpenAI `chat.completions` JSON
 - `gemini_to_openai_images`（`resp_map`）：Gemini `generateContent` JSON → OpenAI `images.generations` JSON。`candidates[].content.parts[].inlineData.data` → `data[].b64_json`（同 part 的 text 作 `revised_prompt`）,`usageMetadata` → `usage`。无 candidates 或无内联图像数据时报错（HTTP 500）,而不是回一个 `data` 为空数组的成功响应。`usage` 采用 relay Go 适配器的图像口径（`completion_tokens = totalTokenCount - promptTokenCount`）,并把 `candidatesTokensDetails` 的 IMAGE 项带成 `output_tokens_details.image_tokens` 供 `openai_images_generations` usage_mode 预设读取 —— metrics 在 `resp_map` 之后提取,此处没映射的字段 `usage_fact` 就读不到。
+- `minimax_image_to_openai_images`（`resp_map`）：Minimax `/v1/image_generation` JSON → OpenAI `images.generations` JSON。把 `data.image_base64`/`data.image_urls`(优先 base64)摊平成 `data[].b64_json`/`data[].url`。藏在 HTTP 200 里的业务错误(`base_resp.status_code != 0`)转成 400 并带出 minimax 的 `status_msg`;一张图都没有则为 500。
 - `openai_to_gemini_chunks`（`sse_parse`）：OpenAI-compatible `chat.completions` SSE → Gemini SSE
 - `gemini_to_openai_chat_chunks`（`sse_parse`）：Gemini SSE → OpenAI `chat.completions` SSE chunks
 - `openai_responses_to_openai_chat`（`resp_map`）：OpenAI/Azure `/responses` JSON → OpenAI `chat.completions` JSON
