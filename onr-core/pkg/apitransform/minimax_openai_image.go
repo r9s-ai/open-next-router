@@ -145,10 +145,16 @@ func MapOpenAIImagesToMinimaxImageRequest(root apitypes.JSONObject) (apitypes.JS
 		"response_format": minimaxImageResponseFormat(jsonutil.CoerceString(root["response_format"])),
 	}
 
-	// A missing or zero n means "one image" in the OpenAI API. The Go adaptor
-	// defaults it the same way in convertImageRequest, but its
-	// ValidateImageRequest rejects n < 1 first, so an omitted n never reaches
-	// the default; not replicating that contradiction.
+	// An omitted n means "one image". The Go adaptor defaults it the same way in
+	// convertImageRequest, but its ValidateImageRequest rejects n < 1 first and
+	// an absent n decodes to 0, so the default is unreachable there and every
+	// request without an explicit n is rejected; that contradiction is what is
+	// not replicated.
+	//
+	// An explicitly sent n=0 is a different case and never reaches here: the
+	// req_range min=1 rule rejects it, matching both the Go adaptor and the
+	// OpenAI images API, which require n >= 1. The `n <= 0` test below is only
+	// about the absent-field decode, not about honouring a literal 0.
 	n := jsonutil.CoerceInt(root["n"])
 	if n <= 0 {
 		n = 1

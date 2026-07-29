@@ -167,6 +167,35 @@ func TestE2EMock_ImagesGenerations_Minimax_Base64(t *testing.T) {
 	}
 }
 
+// 省略 n 时上游应收到 n=1。Go 适配器把缺失的 n 解码成 0 后直接拒,
+// 导致不带 n 的请求全部 400;这里补默认值。
+func TestE2EMock_ImagesGenerations_Minimax_OmittedNDefaultsToOne(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var gotUpstreamBody map[string]any
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &gotUpstreamBody)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":{"image_urls":["https://example.com/a.png"]},"base_resp":{"status_code":0}}`))
+	}))
+	t.Cleanup(mock.Close)
+
+	c := newMockE2EClient(t, map[string]string{
+		"minimax.conf": providerConfMinimaxImages(mock.URL),
+	})
+	gc, _ := newGinJSONRequestPath(t, "/v1/images/generations", []byte(
+		`{"model":"image-01","prompt":"x"}`))
+
+	if _, err := c.ProxyJSON(gc, "minimax", ProviderKey{Name: "minimax-key", Value: "mock-key"}, "images.generations", false); err != nil {
+		t.Fatalf("proxy error: %v", err)
+	}
+	if gotUpstreamBody["n"] != float64(1) {
+		t.Fatalf("upstream n got %v want 1 (body=%#v)", gotUpstreamBody["n"], gotUpstreamBody)
+	}
+}
+
 // 业务错误藏在 HTTP 200 的 base_resp 里,必须被 resp_map builtin 判为错误,
 // 并把 minimax 的 status_msg/status_code 带给客户端。
 func TestE2EMock_ImagesGenerations_Minimax_BaseRespError(t *testing.T) {
@@ -255,6 +284,9 @@ func TestE2EMock_ImagesGenerations_Minimax_Rejected(t *testing.T) {
 		{"prompt_missing", `{"model":"image-01"}`, false},
 		{"prompt_too_long", fmt.Sprintf(`{"model":"image-01","prompt":%q}`, string(longPrompt)), false},
 		{"n_too_large", `{"model":"image-01","prompt":"x","n":10}`, false},
+		// 显式 n=0 由 req_range 拒绝(OpenAI images 与 Go 适配器同样要求 n>=1),
+		// 到不了 builtin 的缺省逻辑 —— 那条只处理"字段缺失解码成 0"。
+		{"n_zero", `{"model":"image-01","prompt":"x","n":0}`, false},
 		{"bad_response_format", `{"model":"image-01","prompt":"x","response_format":"webp"}`, false},
 		{"bad_size", `{"model":"image-01","prompt":"x","size":"999x999"}`, true},
 		{"size_out_of_range", `{"model":"image-01","prompt":"x","size":"256x256"}`, true},
