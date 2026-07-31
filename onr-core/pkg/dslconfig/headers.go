@@ -81,6 +81,12 @@ func (p *ProviderHeaders) Apply(meta *dslmeta.Meta, srcHdr http.Header, dstHdr h
 				Patterns:  append([]string(nil), op.Patterns...),
 				Separator: op.Separator,
 			})
+		case "header_keep_values":
+			applyHeaderValueKeepRule(dstHdr, HeaderValueFilterRule{
+				Name:      name,
+				Patterns:  append([]string(nil), op.Patterns...),
+				Separator: op.Separator,
+			})
 		}
 	}
 }
@@ -145,7 +151,18 @@ func (p *ProviderHeaders) selectMatch(api string, stream bool) (MatchHeaders, bo
 	return MatchHeaders{}, false
 }
 
+func applyHeaderValueKeepRule(hdr http.Header, rule HeaderValueFilterRule) {
+	applyHeaderValueRule(hdr, rule, true)
+}
+
 func applyHeaderValueFilterRule(hdr http.Header, rule HeaderValueFilterRule) {
+	applyHeaderValueRule(hdr, rule, false)
+}
+
+// applyHeaderValueRule filters values of a header in place. When keepMatching
+// is true, only items that match a pattern are kept (allowlist); when false,
+// items that match are removed (denylist).
+func applyHeaderValueRule(hdr http.Header, rule HeaderValueFilterRule, keepMatching bool) {
 	name := strings.TrimSpace(rule.Name)
 	if name == "" {
 		return
@@ -161,10 +178,9 @@ func applyHeaderValueFilterRule(hdr http.Header, rule HeaderValueFilterRule) {
 	}
 	kept := items[:0]
 	for _, item := range items {
-		if matchesAnyHeaderValuePattern(item, rule.Patterns) {
-			continue
+		if matchesAnyHeaderValuePattern(item, rule.Patterns) == keepMatching {
+			kept = append(kept, item)
 		}
-		kept = append(kept, item)
 	}
 	if len(kept) == 0 {
 		hdr.Del(name)

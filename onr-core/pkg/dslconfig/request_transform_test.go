@@ -576,6 +576,94 @@ provider "t" {
 	}
 }
 
+func TestRequestJSONKeepValues_Parsed(t *testing.T) {
+	conf := `
+syntax "next-router/0.1";
+
+provider "t" {
+  defaults {
+    request {
+      json_set_header_values "$.anthropic_beta" "anthropic-beta";
+      json_keep_values "$.anthropic_beta" "computer-use-2025-01-24" "context-management-*";
+    }
+  }
+}
+`
+	_, _, req, _, _, _, _, _, _, err := parseProviderConfig("t.conf", conf)
+	if err != nil {
+		t.Fatalf("parseProviderConfig: %v", err)
+	}
+	if len(req.Defaults.JSONOps) != 2 {
+		t.Fatalf("expected 2 json ops, got %d", len(req.Defaults.JSONOps))
+	}
+	keepOp := req.Defaults.JSONOps[1]
+	if keepOp.Op != "json_keep_values" || keepOp.Path != "$.anthropic_beta" {
+		t.Fatalf("unexpected keep op: %#v", keepOp)
+	}
+	if len(keepOp.Patterns) != 2 || keepOp.Patterns[0] != "computer-use-2025-01-24" || keepOp.Patterns[1] != "context-management-*" {
+		t.Fatalf("unexpected patterns: %#v", keepOp.Patterns)
+	}
+}
+
+func TestRequestJSONKeepValues_ParsedInAfterReqMap(t *testing.T) {
+	conf := `
+syntax "next-router/0.1";
+
+provider "t" {
+  defaults {
+    request {
+      after_req_map {
+        json_set_header_values "$.anthropic_beta" "anthropic-beta";
+        json_keep_values "$.anthropic_beta" "computer-use-2025-01-24";
+      }
+    }
+  }
+}
+`
+	_, _, req, _, _, _, _, _, _, err := parseProviderConfig("t.conf", conf)
+	if err != nil {
+		t.Fatalf("parseProviderConfig: %v", err)
+	}
+	if len(req.Defaults.AfterReqMapJSONOps) != 2 {
+		t.Fatalf("expected 2 after_req_map json ops, got %d", len(req.Defaults.AfterReqMapJSONOps))
+	}
+	if got := req.Defaults.AfterReqMapJSONOps[1].Op; got != "json_keep_values" {
+		t.Fatalf("AfterReqMapJSONOps[1].Op=%q want json_keep_values", got)
+	}
+}
+
+func TestRequestJSONKeepValues_RejectsNoPatterns(t *testing.T) {
+	conf := `
+syntax "next-router/0.1";
+
+provider "t" {
+  defaults {
+    request {
+      json_keep_values "$.anthropic_beta";
+    }
+  }
+}
+`
+	_, _, _, _, _, _, _, _, _, err := parseProviderConfig("t.conf", conf)
+	if err == nil {
+		t.Fatalf("expected parse error for json_keep_values with no patterns")
+	}
+	if !strings.Contains(err.Error(), "json_keep_values requires at least one pattern") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRequestJSONKeepValues_RejectsInvalidPath(t *testing.T) {
+	path := writeProviderConfig(t, `request { json_keep_values "not-a-json-path" "computer-use-*"; }`)
+	_, err := ValidateProviderFile(path)
+	if err == nil {
+		t.Fatalf("expected validation error for json_keep_values with invalid path")
+	}
+	if !strings.Contains(err.Error(), "invalid json path") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestRequestJSONSetHeaderValues_RejectsUnusedExtraArgs(t *testing.T) {
 	conf := `
 syntax "next-router/0.1";
@@ -592,7 +680,7 @@ provider "t" {
 	if err == nil {
 		t.Fatalf("expected parse error")
 	}
-	if !strings.Contains(err.Error(), "use json_filter_values to filter values") {
+	if !strings.Contains(err.Error(), "use json_keep_values or json_filter_values to filter values") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

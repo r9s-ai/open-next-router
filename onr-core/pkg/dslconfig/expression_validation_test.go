@@ -125,6 +125,33 @@ provider "template-literals" {
 	}
 }
 
+func TestValidateProviderFile_KeepHeaderValuesParsedAndValidated(t *testing.T) {
+	path := writeProviderConfig(t, `
+request {
+  keep_header_values "anthropic-beta" "computer-use-*" "context-management-*";
+  keep_header_values "x-feature-flags" "stable-*" separator=";";
+}
+`)
+	pf, err := ValidateProviderFile(path)
+	if err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+	if len(pf.Headers.Defaults.Request) != 2 {
+		t.Fatalf("request header ops=%d, want 2", len(pf.Headers.Defaults.Request))
+	}
+	op := pf.Headers.Defaults.Request[0]
+	if op.Op != "header_keep_values" {
+		t.Fatalf("op.Op=%q want header_keep_values", op.Op)
+	}
+	if len(op.Patterns) != 2 || op.Patterns[0] != "computer-use-*" || op.Patterns[1] != "context-management-*" {
+		t.Fatalf("unexpected patterns: %#v", op.Patterns)
+	}
+	op2 := pf.Headers.Defaults.Request[1]
+	if op2.Separator != ";" {
+		t.Fatalf("separator=%q want ;", op2.Separator)
+	}
+}
+
 func writeProviderConfig(t *testing.T, defaultsBody string) string {
 	t.Helper()
 	dir := t.TempDir()

@@ -312,7 +312,7 @@ request {
 }
 ```
 
-- Filters itemized values inside an upstream request header.
+- Removes items matching any pattern from an upstream request header's value list.
 - Syntax: `filter_header_values <header> <pattern>... [separator="<sep>"];`
 - Recommended style: keep the pattern list as plain positional arguments. Do not use comma-delimited argument style.
 - The default separator is `,`.
@@ -327,6 +327,20 @@ request {
   - If `separator == ","`, items are joined with `", "`
   - Otherwise items are joined with `"<sep> "`, for example `"; "`
 - Pattern matching uses simple `*` wildcards; regex is not supported.
+
+#### keep_header_values (multiple allowed)
+
+```conf
+request {
+  keep_header_values "anthropic-beta" "computer-use-*" "context-management-*";
+  keep_header_values "x-feature-flags" "stable-*" separator=";";
+}
+```
+
+- Keeps only items matching any pattern from an upstream request header's value list; all other items are removed.
+- Syntax: `keep_header_values <header> <pattern>... [separator="<sep>"];`
+- Mirror of `filter_header_values` with inverted match logic: patterns select what to **keep** rather than what to remove.
+- The default separator is `,`; all other runtime and formatting behavior is identical to `filter_header_values`.
 
 #### model_map (multiple allowed)
 
@@ -352,7 +366,7 @@ request {
 - If no `model_map <from> ...;` matches, the default expression is used for `$request.model_mapped`.
 - If not configured, `$request.model_mapped` defaults to `$request.model`.
 
-#### json_set / json_replace / json_set_if_absent / json_del / json_del_if_missing / json_rename / json_wrap_input_text / json_set_header_values / json_filter_values / json_del_with_condition (multiple allowed)
+#### json_set / json_replace / json_set_if_absent / json_del / json_del_if_missing / json_rename / json_wrap_input_text / json_set_header_values / json_filter_values / json_keep_values / json_del_with_condition (multiple allowed)
 
 ```conf
 request {
@@ -363,7 +377,8 @@ request {
   json_rename "$.max_tokens" "$.max_completion_tokens";
   json_wrap_input_text "$.input";
   json_set_header_values "$.anthropic_beta" "anthropic-beta";
-  json_filter_values "$.anthropic_beta" "computer-use-2025-01-24";
+  json_keep_values "$.anthropic_beta" "computer-use-2025-01-24" "context-management-*";
+  json_filter_values "$.anthropic_beta" "context-1m-*";
   after_req_map {
     json_set "$.anthropic_version" "bedrock-2023-05-31";
     json_del_with_condition "$.tools" "type" "web_search*" "web_fetch*";
@@ -382,7 +397,8 @@ request {
 - `json_del_if_missing` deletes the target path when a required path is missing; useful for removing companion fields after previous transforms remove their dependency.
 - `json_wrap_input_text` wraps a string value as an OpenAI Responses `input` message list. Missing paths and already-array values are no-op; other types are rejected.
 - `json_set_header_values` sets a JSON array from downstream request header values. Values are split by comma unless `separator="<sep>"` is provided.
-- `json_filter_values` filters an existing JSON string array by allowed values or wildcard patterns.
+- `json_keep_values` filters an existing JSON string array, **keeping** only values that match any of the patterns (allowlist). Use this after `json_set_header_values` to restrict a header-sourced array to a known-safe set.
+- `json_filter_values` filters an existing JSON string array, **removing** values that match any of the patterns (denylist).
 - `json_del_with_condition` deletes an object, or matching objects from an array, when the object's field matches an allowed value or wildcard pattern.
 - `after_req_map { ... }` runs nested JSON operations after `req_map`. If no `req_map` is configured, it runs after the normal request JSON operations.
 
@@ -1620,8 +1636,23 @@ Context: request
 Multiple: yes
 ```
 
-- Filters itemized values from one upstream request header.
-- Split by `separator`, trim each item, remove items matching any pattern, then re-join survivors.
+- Removes items matching any pattern from one upstream request header's value list (denylist).
+- Split by `separator`, trim each item, remove matching items, then re-join survivors.
+- If nothing remains after filtering, the whole header is deleted.
+- Join formatting is normalized to `", "` for comma and `"<sep> "` for any other separator.
+
+#### keep_header_values
+
+```text
+Syntax:  keep_header_values <Header-Name> <pattern>... [separator="<sep>"];
+Default: separator=","
+Context: request
+Multiple: yes
+```
+
+- Keeps only items matching any pattern from one upstream request header's value list (allowlist); all other items are removed.
+- Mirror of `filter_header_values` with inverted match logic.
+- Split by `separator`, trim each item, remove non-matching items, then re-join survivors.
 - If nothing remains after filtering, the whole header is deleted.
 - Join formatting is normalized to `", "` for comma and `"<sep> "` for any other separator.
 
@@ -1809,7 +1840,7 @@ Multiple: yes
 ```
 
 - Reads original downstream user request header values, splits them into items, and writes them as a JSON string array. It does not read the upstream headers prepared by request header rules.
-- Extra value patterns are not accepted here. Use `json_filter_values` after `json_set_header_values` when only a whitelist should be kept.
+- Extra value patterns are not accepted here. Use `json_keep_values` after `json_set_header_values` to keep only an allowlist, or `json_filter_values` to remove a denylist.
 - If no header item exists, the JSON path is not written.
 - JSONPath is limited to object paths: `$.a.b.c`.
 
@@ -1818,6 +1849,29 @@ Example:
 ```conf
 request {
   json_set_header_values "$.anthropic_beta" "anthropic-beta";
+}
+```
+
+#### json_keep_values
+
+```text
+Syntax:  json_keep_values <jsonpath> <pattern>...;
+Default: —
+Context: request
+Multiple: yes
+```
+
+- Filters a JSON string array in place, **keeping only** values that match one of the patterns (allowlist).
+- Matching is case-insensitive and supports `*` wildcards.
+- If no values remain after filtering, the JSON path is removed.
+- Missing paths are no-op.
+- JSONPath is limited to object paths: `$.a.b.c`.
+
+Example:
+
+```conf
+request {
+  json_keep_values "$.anthropic_beta" "computer-use-2025-01-24" "context-management-2025-06-27";
 }
 ```
 
@@ -1830,9 +1884,9 @@ Context: request
 Multiple: yes
 ```
 
-- Filters a JSON string array in place, keeping only values that match one of the patterns.
+- Filters a JSON string array in place, **removing** values that match one of the patterns (denylist).
 - Matching is case-insensitive and supports `*` wildcards.
-- If no values remain, the JSON path is removed.
+- If no values remain after filtering, the JSON path is removed.
 - Missing paths are no-op.
 - JSONPath is limited to object paths: `$.a.b.c`.
 
@@ -1840,7 +1894,7 @@ Example:
 
 ```conf
 request {
-  json_filter_values "$.anthropic_beta" "computer-use-2025-01-24" "context-management-2025-06-27";
+  json_filter_values "$.anthropic_beta" "context-1m-*";
 }
 ```
 

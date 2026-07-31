@@ -20,6 +20,7 @@ const (
 	jsonOpWrapInputText = "json_wrap_input_text"
 	jsonOpSetHeaderVals = "json_set_header_values"
 	jsonOpFilterValues  = "json_filter_values"
+	jsonOpKeepValues    = "json_keep_values"
 	jsonOpDelWithCond   = "json_del_with_condition"
 	jsonOpMapValue      = "json_map_value"
 	jsonOpClamp         = "json_clamp"

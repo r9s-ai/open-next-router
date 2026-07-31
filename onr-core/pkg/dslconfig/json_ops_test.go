@@ -127,7 +127,7 @@ func TestApplyJSONOps_TableDriven(t *testing.T) {
 			},
 		},
 		{
-			name: "json_set_header_values_sets_header_items_then_filter_values_filters",
+			name: "json_keep_values_keeps_matching_items",
 			in:   map[string]any{"model": "claude"},
 			ops: []JSONOp{
 				{
@@ -136,7 +136,7 @@ func TestApplyJSONOps_TableDriven(t *testing.T) {
 					HeaderName: "anthropic-beta",
 				},
 				{
-					Op:   "json_filter_values",
+					Op:   "json_keep_values",
 					Path: "$.anthropic_beta",
 					Patterns: []string{
 						"computer-use-2025-01-24",
@@ -149,6 +149,64 @@ func TestApplyJSONOps_TableDriven(t *testing.T) {
 				"anthropic_beta": []string{"computer-use-2025-01-24", "CONTEXT-MANAGEMENT-2025-06-27"},
 			},
 		},
+		{
+			name: "json_keep_values_wildcard_pattern",
+			in:   map[string]any{"flags": []string{"computer-use-2025-01-24", "unknown", "context-management-2025-06-27", "beta-feature"}},
+			ops: []JSONOp{
+				{Op: "json_keep_values", Path: "$.flags", Patterns: []string{"computer-use-*", "context-management-*"}},
+			},
+			want: map[string]any{
+				"flags": []string{"computer-use-2025-01-24", "context-management-2025-06-27"},
+			},
+		},
+		{
+			name: "json_keep_values_deletes_field_when_none_match",
+			in:   map[string]any{"flags": []string{"unknown", "other"}},
+			ops: []JSONOp{
+				{Op: "json_keep_values", Path: "$.flags", Patterns: []string{"computer-use-*"}},
+			},
+			want: map[string]any{},
+		},
+		{
+			name: "json_keep_values_case_insensitive_matching",
+			in:   map[string]any{"flags": []string{"COMPUTER-USE-2025-01-24", "Other"}},
+			ops: []JSONOp{
+				{Op: "json_keep_values", Path: "$.flags", Patterns: []string{"computer-use-*"}},
+			},
+			want: map[string]any{"flags": []string{"COMPUTER-USE-2025-01-24"}},
+		},
+		// json_filter_values keeps matching values for now (backward compat with allowlist semantics).
+		// TODO: After release, uncomment the denylist tests below and remove this keep-matching test.
+		{
+			name: "json_filter_values_keeps_matching_items",
+			in:   map[string]any{"anthropic_beta": []string{"computer-use-2025-01-24", "unknown", "context-management-2025-06-27"}},
+			ops: []JSONOp{
+				{
+					Op:   "json_filter_values",
+					Path: "$.anthropic_beta",
+					Patterns: []string{
+						"computer-use-2025-01-24",
+						"context-management-2025-06-27",
+					},
+				},
+			},
+			want: map[string]any{
+				"anthropic_beta": []string{"computer-use-2025-01-24", "context-management-2025-06-27"},
+			},
+		},
+		// TODO: After release, uncomment when json_filter_values switches to denylist semantics:
+		// {
+		// 	name: "json_filter_values_removes_matching_items",
+		// 	in:   map[string]any{"anthropic_beta": []string{"computer-use-2025-01-24", "unknown", "context-management-2025-06-27"}},
+		// 	ops: []JSONOp{{Op: "json_filter_values", Path: "$.anthropic_beta", Patterns: []string{"computer-use-2025-01-24", "context-management-2025-06-27"}}},
+		// 	want: map[string]any{"anthropic_beta": []string{"unknown"}},
+		// },
+		// {
+		// 	name: "json_filter_values_deletes_field_when_all_removed",
+		// 	in:   map[string]any{"anthropic_beta": []string{"computer-use-2025-01-24"}},
+		// 	ops:  []JSONOp{{Op: "json_filter_values", Path: "$.anthropic_beta", Patterns: []string{"computer-use-2025-01-24"}}},
+		// 	want: map[string]any{},
+		// },
 		{
 			name: "json_del_with_condition_filters_tools_and_tool_choice",
 			in: map[string]any{

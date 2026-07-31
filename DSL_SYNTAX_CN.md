@@ -314,15 +314,15 @@ request {
 
 ```conf
 request {
-  filter_header_values "anthropic-beta" "context-1m-*" "fast-mode-*";
-  filter_header_values "x-feature-flags" "exp-*" "debug" separator=";";
+  filter_header_values “anthropic-beta” “context-1m-*” “fast-mode-*”;
+  filter_header_values “x-feature-flags” “exp-*” “debug” separator=”;”;
 }
 ```
 
 说明：
 
-- 用于过滤某个上游请求 header 中的“列表型值”。
-- 语法：`filter_header_values <header> <pattern>... [separator="<sep>"];`
+- 用于从上游请求 header 的”列表型值”中**移除**匹配 pattern 的项（黑名单语义）。
+- 语法：`filter_header_values <header> <pattern>... [separator=”<sep>”];`
 - 推荐风格：pattern 统一写成连续位置参数，不要使用逗号分隔参数的写法。
 - 默认分隔符是 `,`。
 - 运行时行为：
@@ -333,9 +333,25 @@ request {
   - 如果结果为空，则删除整个 header
   - 否则将剩余项重新拼接
 - 输出格式会被规范化：
-  - 如果 `separator == ","`，使用 `", "` 连接
-  - 否则使用 `"<sep> "` 连接，例如 `"; "`
+  - 如果 `separator == “,”`，使用 `”, “` 连接
+  - 否则使用 `”<sep> “` 连接，例如 `”; “`
 - pattern 使用简单的 `*` 通配语义；不支持正则表达式。
+
+#### keep_header_values（可多条）
+
+```conf
+request {
+  keep_header_values “anthropic-beta” “computer-use-*” “context-management-*”;
+  keep_header_values “x-feature-flags” “stable-*” separator=”;”;
+}
+```
+
+说明：
+
+- 用于从上游请求 header 的”列表型值”中**仅保留**匹配 pattern 的项（白名单语义）；不匹配的项会被移除。
+- 语法：`keep_header_values <header> <pattern>... [separator=”<sep>”];`
+- 与 `filter_header_values` 逻辑相反：pattern 选择**保留**哪些项，而不是移除哪些项。
+- 默认分隔符是 `,`；其他运行时行为与输出格式与 `filter_header_values` 完全相同。
 
 #### model_map（可多条）
 
@@ -365,30 +381,31 @@ request {
 - 当没有任何 `model_map <from> ...;` 命中时，使用该默认表达式作为 `$request.model_mapped`
 - 如未配置该指令：`$request.model_mapped` 默认等于 `$request.model`
 
-#### json_set / json_replace / json_set_if_absent / json_del / json_del_if_missing / json_rename / json_wrap_input_text / json_set_header_values / json_filter_values / json_del_with_condition（可多条）
+#### json_set / json_replace / json_set_if_absent / json_del / json_del_if_missing / json_rename / json_wrap_input_text / json_set_header_values / json_keep_values / json_filter_values / json_del_with_condition（可多条）
 
 ```conf
 request {
-  json_set "$.stream" true;
-  json_replace "$.model" $request.model;
-  json_set_if_absent "$.instructions" "";
-  json_set "$.user" "alice";
-  json_rename "$.max_tokens" "$.max_completion_tokens";
-  json_wrap_input_text "$.input";
-  json_set_header_values "$.anthropic_beta" "anthropic-beta";
-  json_filter_values "$.anthropic_beta" "computer-use-2025-01-24";
+  json_set “$.stream” true;
+  json_replace “$.model” $request.model;
+  json_set_if_absent “$.instructions” “”;
+  json_set “$.user” “alice”;
+  json_rename “$.max_tokens” “$.max_completion_tokens”;
+  json_wrap_input_text “$.input”;
+  json_set_header_values “$.anthropic_beta” “anthropic-beta”;
+  json_keep_values “$.anthropic_beta” “computer-use-2025-01-24” “context-management-*”;
+  json_filter_values “$.anthropic_beta” “context-1m-*”;
   after_req_map {
-    json_set "$.anthropic_version" "bedrock-2023-05-31";
-    json_del_with_condition "$.tools" "type" "web_search*" "web_fetch*";
-    json_del_if_missing "$.tool_choice" "$.tools";
+    json_set “$.anthropic_version” “bedrock-2023-05-31”;
+    json_del_with_condition “$.tools” “type” “web_search*” “web_fetch*”;
+    json_del_if_missing “$.tool_choice” “$.tools”;
   }
-  json_del "$.tools";
+  json_del “$.tools”;
 }
 ```
 
 说明：
 
-- 用途：对“已生成的上游请求 JSON”做轻量变换（在旧 adaptor 的 `ConvertRequest` 之后执行）
+- 用途：对”已生成的上游请求 JSON”做轻量变换（在旧 adaptor 的 `ConvertRequest` 之后执行）
 - JSONPath（v0.1）仅支持对象路径：`$.a.b.c`（不支持数组下标 `[]`）
 - `json_set` 的值表达式支持：`true/false/null`、整数、字符串字面量、变量、`concat(...)`、`template(...)`
 - `json_set`：设置字段；不存在的对象路径会自动创建
@@ -396,8 +413,9 @@ request {
 - `json_set_if_absent`：仅当路径不存在时写入；已存在值会保留
 - `json_del_if_missing`：当依赖路径不存在时删除目标路径，常用于前序变换删除依赖对象后同步移除伴随字段
 - `json_wrap_input_text`：当路径值是字符串时，将其包装成 OpenAI Responses `input` message 列表；路径不存在或值已经是数组时为 no-op，其他类型会报错
-- `json_set_header_values`：从原始下游用户请求 header 中读取条目并写成 JSON 字符串数组，不读取 request header 规则准备发送给上游的 header。默认按逗号拆分，可用 `separator="<sep>"` 覆盖；不接受额外过滤参数，需要过滤时在后面显式配置 `json_filter_values`
-- `json_filter_values`：过滤已有 JSON 字符串数组，只保留允许的值或通配符匹配项
+- `json_set_header_values`：从原始下游用户请求 header 中读取条目并写成 JSON 字符串数组，不读取 request header 规则准备发送给上游的 header。默认按逗号拆分，可用 `separator=”<sep>”` 覆盖；不接受额外过滤参数，需要保留白名单时在后面配置 `json_keep_values`，需要移除黑名单时配置 `json_filter_values`
+- `json_keep_values`：过滤已有 JSON 字符串数组，**仅保留**匹配 pattern 的值（白名单语义）
+- `json_filter_values`：过滤已有 JSON 字符串数组，**移除**匹配 pattern 的值（黑名单语义）
 - `json_del_with_condition`：当对象字段匹配允许值或通配符时，删除该对象或数组中的匹配对象
 - `after_req_map { ... }`：在 `req_map` 之后执行内部 JSON 操作；如果没有配置 `req_map`，则在普通请求 JSON 操作之后执行
 
@@ -1653,8 +1671,23 @@ Context: request
 Multiple: yes
 ```
 
-- 用于过滤上游请求 header 中的列表型值。
+- 从上游请求 header 的列表型值中**移除**匹配任一 pattern 的项（黑名单语义）。
 - 执行过程为：按 `separator` 分割，对每项做 trim，删除匹配项，再重组剩余项。
+- 如果过滤后没有剩余项，则删除整个 header。
+- 输出连接格式会被规范化：`,` 使用 `", "`，其他分隔符使用 `"<sep> "`。
+
+#### keep_header_values
+
+```text
+Syntax:  keep_header_values <Header-Name> <pattern>... [separator="<sep>"];
+Default: separator=","
+Context: request
+Multiple: yes
+```
+
+- 从上游请求 header 的列表型值中**仅保留**匹配任一 pattern 的项（白名单语义）；不匹配的项会被移除。
+- 与 `filter_header_values` 逻辑相反：pattern 选择**保留**哪些项。
+- 执行过程为：按 `separator` 分割，对每项做 trim，移除不匹配项，再重组剩余项。
 - 如果过滤后没有剩余项，则删除整个 header。
 - 输出连接格式会被规范化：`,` 使用 `", "`，其他分隔符使用 `"<sep> "`。
 
@@ -1831,6 +1864,52 @@ request {
       ]
     }
   ]
+}
+```
+
+#### json_keep_values
+
+```text
+Syntax:  json_keep_values <jsonpath> <pattern>...;
+Default: —
+Context: request
+Multiple: yes
+```
+
+- 原地过滤 JSON 字符串数组，**仅保留**匹配任一 pattern 的值（白名单语义）。
+- 匹配不区分大小写，支持 `*` 通配符。
+- 如果过滤后没有剩余值，则删除该 JSON 路径。
+- 路径不存在时为 no-op。
+- JSONPath 仅支持对象路径：`$.a.b.c`。
+
+示例：
+
+```conf
+request {
+  json_keep_values "$.anthropic_beta" "computer-use-2025-01-24" "context-management-2025-06-27";
+}
+```
+
+#### json_filter_values
+
+```text
+Syntax:  json_filter_values <jsonpath> <pattern>...;
+Default: —
+Context: request
+Multiple: yes
+```
+
+- 原地过滤 JSON 字符串数组，**移除**匹配任一 pattern 的值（黑名单语义）。
+- 匹配不区分大小写，支持 `*` 通配符。
+- 如果过滤后没有剩余值，则删除该 JSON 路径。
+- 路径不存在时为 no-op。
+- JSONPath 仅支持对象路径：`$.a.b.c`。
+
+示例：
+
+```conf
+request {
+  json_filter_values "$.anthropic_beta" "context-1m-*";
 }
 ```
 
