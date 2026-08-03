@@ -73,6 +73,8 @@ func applyJSONOp(meta *dslmeta.Meta, obj map[string]any, op JSONOp) (bool, error
 		return jsonSet(obj, op.Path, vals)
 	case jsonOpFilterValues:
 		return jsonFilterValues(obj, op.Path, op.Patterns)
+	case jsonOpKeepValues:
+		return jsonKeepValues(obj, op.Path, op.Patterns)
 	case jsonOpDelWithCond:
 		return jsonDelWithCondition(obj, op.Path, op.FieldName, op.Patterns)
 	case jsonOpMapValue:
@@ -448,7 +450,21 @@ func jsonWrapInputText(root map[string]any, path string) (bool, error) {
 	return false, fmt.Errorf("json_wrap_input_text %s expects string or array, got %T", path, val)
 }
 
+// jsonFilterValues keeps values that match any of the patterns (allowlist, backward-compatible behavior).
+// TODO: After release, switch to denylist semantics to align with filter_header_values:
+//
+//	return jsonApplyValueFilter(root, path, patterns, false, "json_filter_values")
 func jsonFilterValues(root map[string]any, path string, patterns []string) (bool, error) {
+	return jsonApplyValueFilter(root, path, patterns, true, "json_filter_values")
+}
+
+// jsonKeepValues keeps only values from the string array at path that match any
+// of the patterns (allowlist semantics, same as keep_header_values).
+func jsonKeepValues(root map[string]any, path string, patterns []string) (bool, error) {
+	return jsonApplyValueFilter(root, path, patterns, true, "json_keep_values")
+}
+
+func jsonApplyValueFilter(root map[string]any, path string, patterns []string, keepMatching bool, opName string) (bool, error) {
 	parts, err := parseObjectPath(path)
 	if err != nil {
 		return false, err
@@ -475,12 +491,13 @@ func jsonFilterValues(root map[string]any, path string, patterns []string) (bool
 	}
 	values, ok := stringSliceValue(val)
 	if !ok {
-		return false, fmt.Errorf("json_filter_values %s expects string array, got %T", path, val)
+		return false, fmt.Errorf("%s %s expects string array, got %T", opName, path, val)
 	}
 	loweredPatterns := lowerPatterns(patterns)
 	filtered := make([]string, 0, len(values))
 	for _, value := range values {
-		if matchesAnyHeaderValuePattern(strings.ToLower(value), loweredPatterns) {
+		matches := matchesAnyHeaderValuePattern(strings.ToLower(value), loweredPatterns)
+		if matches == keepMatching {
 			filtered = append(filtered, value)
 		}
 	}

@@ -116,14 +116,16 @@ func validateRequestJSONOp(path, providerName, opScope string, op JSONOp) error 
 		if len(op.Patterns) == 0 {
 			return requireErr("json_del_with_condition requires at least one pattern")
 		}
-	case jsonOpSet, jsonOpReplace, jsonOpSetIfAbsent, jsonOpDel, jsonOpWrapInputText:
+	case jsonOpDel, jsonOpWrapInputText:
 		if _, err := parseObjectPath(op.Path); err != nil {
 			return invalidPath("json path", err)
 		}
-		if op.Op == jsonOpSet || op.Op == jsonOpReplace || op.Op == jsonOpSetIfAbsent {
-			if err := validateJSONValueExpr(op.ValueExpr); err != nil {
-				return invalidPath("value expression", err)
-			}
+	case jsonOpSet, jsonOpReplace, jsonOpSetIfAbsent:
+		if _, err := parseObjectPath(op.Path); err != nil {
+			return invalidPath("json path", err)
+		}
+		if err := validateJSONValueExpr(op.ValueExpr); err != nil {
+			return invalidPath("value expression", err)
 		}
 	case jsonOpDelIfMissing:
 		if _, err := parseObjectPath(op.Path); err != nil {
@@ -139,12 +141,12 @@ func validateRequestJSONOp(path, providerName, opScope string, op JSONOp) error 
 		if strings.TrimSpace(op.HeaderName) == "" {
 			return requireErr("json_set_header_values requires header name")
 		}
-	case jsonOpFilterValues:
+	case jsonOpFilterValues, jsonOpKeepValues:
 		if _, err := parseObjectPath(op.Path); err != nil {
 			return invalidPath("json path", err)
 		}
 		if len(op.Patterns) == 0 {
-			return requireErr("json_filter_values requires at least one pattern")
+			return requireErr(op.Op + " requires at least one pattern")
 		}
 	case jsonOpRename:
 		if _, err := parseObjectPath(op.FromPath); err != nil {

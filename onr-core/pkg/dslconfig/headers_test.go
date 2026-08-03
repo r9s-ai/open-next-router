@@ -189,6 +189,112 @@ func TestProviderHeadersApply_FilterHeaderValuesRunsAfterSetHeader(t *testing.T)
 	}
 }
 
+func TestProviderHeadersApply_KeepHeaderValues(t *testing.T) {
+	t.Parallel()
+
+	boolPtr := func(v bool) *bool { return &v }
+
+	cfg := ProviderHeaders{
+		Defaults: PhaseHeaders{
+			Request: []HeaderOp{
+				{Op: "header_set", NameExpr: `"anthropic-beta"`, ValueExpr: `"keep, context-1m-2025-08-07, fast-mode-fast, final"`},
+				{Op: "header_keep_values", NameExpr: `"anthropic-beta"`, Patterns: []string{"context-1m-*", "fast-mode-*"}, Separator: ","},
+			},
+		},
+		Matches: []MatchHeaders{{API: "claude.messages", Stream: boolPtr(false)}},
+	}
+
+	h := http.Header{}
+	cfg.Apply(&dslmeta.Meta{API: "claude.messages", IsStream: false}, nil, h)
+
+	if got := h.Get("anthropic-beta"); got != "context-1m-2025-08-07, fast-mode-fast" {
+		t.Fatalf("anthropic-beta=%q want=%q", got, "context-1m-2025-08-07, fast-mode-fast")
+	}
+}
+
+func TestProviderHeadersApply_KeepHeaderValuesDeletesWhenNoneMatch(t *testing.T) {
+	t.Parallel()
+
+	boolPtr := func(v bool) *bool { return &v }
+
+	cfg := ProviderHeaders{
+		Matches: []MatchHeaders{
+			{
+				API:    "chat.completions",
+				Stream: boolPtr(true),
+				Headers: PhaseHeaders{
+					Request: []HeaderOp{
+						{Op: "header_keep_values", NameExpr: `"x-feature-flags"`, Patterns: []string{"exp-*"}, Separator: ";"},
+					},
+				},
+			},
+		},
+	}
+
+	h := http.Header{}
+	h.Set("x-feature-flags", "keep ; stay")
+	cfg.Apply(&dslmeta.Meta{API: "chat.completions", IsStream: true}, nil, h)
+	if got := h.Get("x-feature-flags"); got != "" {
+		t.Fatalf("expected x-feature-flags removed, got %q", got)
+	}
+}
+
+func TestProviderHeadersApply_KeepHeaderValuesCustomSeparator(t *testing.T) {
+	t.Parallel()
+
+	boolPtr := func(v bool) *bool { return &v }
+
+	cfg := ProviderHeaders{
+		Matches: []MatchHeaders{
+			{
+				API:    "chat.completions",
+				Stream: boolPtr(false),
+				Headers: PhaseHeaders{
+					Request: []HeaderOp{
+						{Op: "header_keep_values", NameExpr: `"x-feature-flags"`, Patterns: []string{"exp-*", "beta"}, Separator: ";"},
+					},
+				},
+			},
+		},
+	}
+
+	h := http.Header{}
+	h.Set("x-feature-flags", "exp-a ; keep ; beta ; other")
+	cfg.Apply(&dslmeta.Meta{API: "chat.completions", IsStream: false}, nil, h)
+	if got := h.Get("x-feature-flags"); got != "exp-a; beta" {
+		t.Fatalf("x-feature-flags=%q want=%q", got, "exp-a; beta")
+	}
+}
+
+func TestProviderHeadersApply_KeepHeaderValuesAcrossRepeatedHeaderLines(t *testing.T) {
+	t.Parallel()
+
+	boolPtr := func(v bool) *bool { return &v }
+
+	cfg := ProviderHeaders{
+		Matches: []MatchHeaders{
+			{
+				API:    "chat.completions",
+				Stream: boolPtr(false),
+				Headers: PhaseHeaders{
+					Request: []HeaderOp{
+						{Op: "header_keep_values", NameExpr: `"x-feature-flags"`, Patterns: []string{"exp-*", "beta"}, Separator: ";"},
+					},
+				},
+			},
+		},
+	}
+
+	h := http.Header{}
+	h.Add("x-feature-flags", "exp-a; keep")
+	h.Add("x-feature-flags", "beta; stay")
+	cfg.Apply(&dslmeta.Meta{API: "chat.completions", IsStream: false}, nil, h)
+
+	if got := h.Values("x-feature-flags"); len(got) != 1 || got[0] != "exp-a; beta" {
+		t.Fatalf("x-feature-flags=%#v want=%#v", got, []string{"exp-a; beta"})
+	}
+}
+
 func TestProviderHeadersApply_PassHeader(t *testing.T) {
 	t.Parallel()
 
@@ -353,6 +459,30 @@ provider "demo" {
 	}
 }
 
+func TestParseKeepHeaderValuesRequiresPattern(t *testing.T) {
+	t.Parallel()
+
+	conf := `
+syntax "next-router/0.1";
+
+provider "demo" {
+  match api = "claude.messages" {
+    request {
+      keep_header_values "anthropic-beta";
+    }
+  }
+}
+`
+
+	_, _, _, _, _, _, _, _, _, err := parseProviderConfig("demo.conf", conf)
+	if err == nil {
+		t.Fatalf("expected parse error")
+	}
+	if got := err.Error(); got == "" || !containsAll(got, "keep_header_values", "at least one pattern") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestParseFilterHeaderValuesRequiresPattern(t *testing.T) {
 	t.Parallel()
 
@@ -373,6 +503,31 @@ provider "demo" {
 		t.Fatalf("expected parse error")
 	}
 	if got := err.Error(); got == "" || !containsAll(got, "filter_header_values", "at least one pattern") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateProviderHeadersRejectsEmptyKeepSeparator(t *testing.T) {
+	t.Parallel()
+
+	headers := ProviderHeaders{
+		Matches: []MatchHeaders{
+			{
+				API: "claude.messages",
+				Headers: PhaseHeaders{
+					Request: []HeaderOp{
+						{Op: "header_keep_values", NameExpr: `"anthropic-beta"`, Patterns: []string{"context-1m-*"}, Separator: ""},
+					},
+				},
+			},
+		},
+	}
+
+	err := validateProviderHeaders("demo.conf", "demo", headers)
+	if err == nil {
+		t.Fatalf("expected validation error")
+	}
+	if got := err.Error(); got == "" || !containsAll(got, "separator", "non-empty") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

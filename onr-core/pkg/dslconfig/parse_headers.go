@@ -153,6 +153,7 @@ func requestPhaseHandlers() map[string]requestPhaseHandler {
 		"set_header":              requestHeaderHandler(parseSetHeaderStmt),
 		"pass_header":             requestHeaderHandler(parsePassHeaderStmt),
 		"filter_header_values":    requestHeaderHandler(parseFilterHeaderValuesStmt),
+		"keep_header_values":      requestHeaderHandler(parseKeepHeaderValuesStmt),
 		"del_header":              requestHeaderHandler(parseDelHeaderStmt),
 		"model_map":               requestTransformHandler(parseRequestModelMapStmt),
 		"model_map_default":       requestTransformHandler(parseRequestModelMapDefaultStmt),
@@ -165,6 +166,7 @@ func requestPhaseHandlers() map[string]requestPhaseHandler {
 		"json_wrap_input_text":    requestTransformHandler(parseJSONWrapInputTextStmt),
 		"json_set_header_values":  requestTransformHandler(parseJSONSetHeaderValuesStmt),
 		"json_filter_values":      requestTransformHandler(parseJSONFilterValuesStmt),
+		"json_keep_values":        requestTransformHandler(parseJSONKeepValuesStmt),
 		"json_del_with_condition": requestTransformHandler(parseJSONDelWithConditionStmt),
 		"json_map_value":          requestTransformHandler(parseJSONMapValueStmt),
 		"json_clamp":              requestTransformHandler(parseJSONClampStmt),
@@ -280,6 +282,10 @@ func parseRequestJSONOpsOnlyBlock(s *scanner, t *RequestTransform, blockName str
 				}
 			case "json_filter_values":
 				if err := parseJSONFilterValuesStmt(s, t); err != nil {
+					return err
+				}
+			case "json_keep_values":
+				if err := parseJSONKeepValuesStmt(s, t); err != nil {
 					return err
 				}
 			case "json_del_with_condition":
@@ -690,7 +696,7 @@ func buildJSONSetHeaderValuesOp(s *scanner, path string, headerName string, args
 		args = args[:len(args)-3]
 	}
 	if len(args) > 0 {
-		return JSONOp{}, s.errAt(args[0], `json_set_header_values only accepts path, header name, and optional separator="<sep>"; use json_filter_values to filter values`)
+		return JSONOp{}, s.errAt(args[0], `json_set_header_values only accepts path, header name, and optional separator="<sep>"; use json_keep_values or json_filter_values to filter values`)
 	}
 	return op, nil
 }
@@ -741,6 +747,125 @@ func buildJSONFilterValuesOp(s *scanner, pathTok token, path string, args []toke
 			op.Patterns = append(op.Patterns, strings.TrimSpace(unquoteString(tok.text)))
 		default:
 			return JSONOp{}, s.errAt(tok, "json_filter_values expects patterns")
+		}
+	}
+	return op, nil
+}
+
+func parseJSONKeepValuesStmt(s *scanner, t *RequestTransform) error {
+	pathTok := s.nextNonTrivia()
+	switch pathTok.kind {
+	case tokIdent, tokString:
+	default:
+		return s.errAt(pathTok, "json_keep_values expects json path")
+	}
+	path := pathTok.text
+	if pathTok.kind == tokString {
+		path = unquoteString(pathTok.text)
+	}
+	args := make([]token, 0, 4)
+	for {
+		tok := s.nextNonTrivia()
+		switch tok.kind {
+		case tokEOF:
+			return s.errAt(tok, "unexpected EOF in json_keep_values")
+		case tokSemicolon:
+			op, err := buildJSONKeepValuesOp(s, pathTok, path, args)
+			if err != nil {
+				return err
+			}
+			t.JSONOps = append(t.JSONOps, op)
+			return nil
+		default:
+			args = append(args, tok)
+		}
+	}
+}
+
+func buildJSONKeepValuesOp(s *scanner, pathTok token, path string, args []token) (JSONOp, error) {
+	op := JSONOp{
+		Op:   jsonOpKeepValues,
+		Path: strings.TrimSpace(path),
+	}
+	if len(args) == 0 {
+		return JSONOp{}, s.errAt(pathTok, "json_keep_values requires at least one pattern")
+	}
+	for _, tok := range args {
+		switch tok.kind {
+		case tokIdent:
+			op.Patterns = append(op.Patterns, strings.TrimSpace(tok.text))
+		case tokString:
+			op.Patterns = append(op.Patterns, strings.TrimSpace(unquoteString(tok.text)))
+		default:
+			return JSONOp{}, s.errAt(tok, "json_keep_values expects patterns")
+		}
+	}
+	return op, nil
+}
+
+func parseKeepHeaderValuesStmt(s *scanner, phase *PhaseHeaders) error {
+	headerTok := s.nextNonTrivia()
+	switch headerTok.kind {
+	case tokIdent, tokString:
+	default:
+		return s.errAt(headerTok, "keep_header_values expects header name")
+	}
+	headerName := headerTok.text
+	if headerTok.kind == tokString {
+		headerName = unquoteString(headerTok.text)
+	}
+
+	args := make([]token, 0, 8)
+	for {
+		tok := s.nextNonTrivia()
+		switch tok.kind {
+		case tokEOF:
+			return s.errAt(tok, "unexpected EOF in keep_header_values")
+		case tokSemicolon:
+			op, err := buildKeepHeaderValuesOp(s, headerTok, headerName, args)
+			if err != nil {
+				return err
+			}
+			phase.Request = append(phase.Request, op)
+			return nil
+		default:
+			args = append(args, tok)
+		}
+	}
+}
+
+func buildKeepHeaderValuesOp(s *scanner, headerTok token, headerName string, args []token) (HeaderOp, error) {
+	op := HeaderOp{
+		Op:        "header_keep_values",
+		NameExpr:  strconv.Quote(strings.TrimSpace(headerName)),
+		Separator: ",",
+	}
+	if len(args) == 0 {
+		return HeaderOp{}, s.errAt(headerTok, "keep_header_values requires at least one pattern")
+	}
+	patternTokens := args
+	if len(args) >= 3 && args[len(args)-3].kind == tokIdent && args[len(args)-3].text == "separator" {
+		if args[len(args)-2].kind != tokOther || args[len(args)-2].text != "=" {
+			return HeaderOp{}, s.errAt(args[len(args)-2], "keep_header_values separator must use '='")
+		}
+		valueTok := args[len(args)-1]
+		if valueTok.kind != tokString {
+			return HeaderOp{}, s.errAt(valueTok, `keep_header_values separator expects string literal, use: separator="<sep>"`)
+		}
+		op.Separator = unquoteString(valueTok.text)
+		patternTokens = args[:len(args)-3]
+	}
+	if len(patternTokens) == 0 {
+		return HeaderOp{}, s.errAt(headerTok, "keep_header_values requires at least one pattern")
+	}
+	for _, tok := range patternTokens {
+		switch tok.kind {
+		case tokIdent:
+			op.Patterns = append(op.Patterns, strings.TrimSpace(tok.text))
+		case tokString:
+			op.Patterns = append(op.Patterns, strings.TrimSpace(unquoteString(tok.text)))
+		default:
+			return HeaderOp{}, s.errAt(tok, "keep_header_values expects patterns followed by optional separator=\"<sep>\"")
 		}
 	}
 	return op, nil

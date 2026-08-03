@@ -80,10 +80,11 @@ func validateHeaderOps(path, providerName, scope string, headers []HeaderOp) err
 		opHeaderDel    = "header_del"
 		opHeaderPass   = "header_pass"
 		opHeaderFilter = "header_filter_values"
+		opHeaderKeep   = "header_keep_values"
 	)
 	for i, op := range headers {
 		opScope := fmt.Sprintf("%s[%d]", scope, i)
-		if op.Op != opHeaderSet && op.Op != opHeaderDel && op.Op != opHeaderPass && op.Op != opHeaderFilter {
+		if op.Op != opHeaderSet && op.Op != opHeaderDel && op.Op != opHeaderPass && op.Op != opHeaderFilter && op.Op != opHeaderKeep {
 			return fmt.Errorf("provider %q in %q: %s unsupported header op %q", providerName, path, opScope, op.Op)
 		}
 		if strings.TrimSpace(op.NameExpr) == "" {
@@ -97,7 +98,7 @@ func validateHeaderOps(path, providerName, scope string, headers []HeaderOp) err
 				return fmt.Errorf("provider %q in %q: %s invalid header value expression: %w", providerName, path, opScope, err)
 			}
 		}
-		if op.Op == opHeaderFilter {
+		if op.Op == opHeaderFilter || op.Op == opHeaderKeep {
 			if len(op.Patterns) == 0 {
 				return fmt.Errorf("provider %q in %q: %s requires at least one pattern", providerName, path, opScope)
 			}
