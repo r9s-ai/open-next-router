@@ -1133,7 +1133,9 @@ metrics {
 - `event_optional=true` 可选，需要与 `event="..."` 一起使用，用于兼容“有时有 event、有时没有 event”的上游
 - `attr.ttl` 用于区分 Anthropic 的 `5m` / `1h` cache write
 - `attr.modality="text|image|audio|video"` 可用于 `cache_read token`，表示上游真实返回的分模态 cached token。Relay 会用它生成 `openai_cache` / `gemini_cache` 这类 provider cache detail 字段。
-- 同一 `dimension + unit` 可声明多条 `usage_fact`；所有命中的非 fallback 规则会按声明顺序累计求和
+- 多条 `usage_fact` 可以使用同一个计费身份。计费身份由规范化后的 `dimension + unit` 和完整的 `attr.*` 集合组成
+- 完成 fallback 选择后，计费身份相同的命中规则会输出为一条规范化事实，其数量为各规则数量之和。属性不同的规则仍保持为独立事实，例如 `attr.ttl="5m"` 与 `attr.ttl="1h"`
+- 合并后的事实保留声明顺序中第一条命中规则的提取和调试元数据，因此其数量可能还包含后续同计费身份规则读取到的值
 - `fallback=true` 用于在更具体的事实不存在时回退到总量字段
 - `source` 在配置了 `usage_root` 时默认是 `usage`，否则默认是 `response`
 - `source=usage` 表示从 `usage_root` 合并后的 usage 对象读取；`source=response` 表示从当前响应 JSON 提取；`source=request` 表示从当前请求 JSON 提取；`source=derived` 表示从 ONR 运行时派生出的聚合结果提取

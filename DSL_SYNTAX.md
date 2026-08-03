@@ -1065,7 +1065,9 @@ metrics {
 - `event_optional=true` may be used together with `event="..."` when a provider sometimes omits SSE `event:` names.
 - `attr.ttl` distinguishes Anthropic cache-write tiers.
 - `attr.modality="text|image|audio|video"` may be used with `cache_read token` when the upstream reports real per-modality cached token counts. Relay uses this metadata to build provider cache detail fields such as `openai_cache` / `gemini_cache`.
-- Multiple `usage_fact` rules may share the same `dimension + unit`; all matched non-fallback rules are summed in declaration order.
+- Multiple `usage_fact` rules may share the same billing identity. A billing identity consists of the normalized `dimension + unit` and the complete `attr.*` set.
+- After fallback selection, matched rules with the same billing identity are emitted as one canonical fact whose quantity is their sum. Rules with different attributes, such as `attr.ttl="5m"` and `attr.ttl="1h"`, remain separate facts.
+- A merged fact keeps the extraction/debug metadata of the first matched rule in declaration order; its quantity may therefore include values read by later rules with the same billing identity.
 - `fallback=true` applies only when no more specific fact exists for the same `dimension + unit`.
 - `source` defaults to `usage` when `usage_root` is configured, otherwise it defaults to `response`.
 - `source` currently supports `usage`, `response`, `request`, and `derived`.

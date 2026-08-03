@@ -40,9 +40,7 @@ func TestRunCLIExtractsFactsFromInlineUsageMode(t *testing.T) {
 	if !strings.Contains(stdout, "\n  {") {
 		t.Fatalf("expected formatted JSON output, got %q", stdout)
 	}
-	assertFact(t, facts, "input", "token", 10, nil)
-	assertFact(t, facts, "input", "token", 2, nil)
-	assertFact(t, facts, "input", "token", 3, nil)
+	assertFact(t, facts, "input", "token", 15, nil)
 	assertFact(t, facts, "output", "token", 4, nil)
 	assertFact(t, facts, "cache_read", "token", 2, nil)
 	assertFact(t, facts, "cache_write", "token", 3, map[string]string{"ttl": "5m"})
