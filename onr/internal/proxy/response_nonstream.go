@@ -15,8 +15,10 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/apitransform"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/respinline"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/ssecollect"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/trafficdump"
+	"github.com/r9s-ai/open-next-router/onr/internal/logx"
 )
 
 func (c *Client) handleNonStreamResponse(
@@ -47,6 +49,12 @@ func (c *Client) handleNonStreamResponse(
 	}
 
 	respOutBody, respOutObj, outCT, didTransform, err := mapNonStreamResponse(gc.Request.Context(), respBody, resp, respDir)
+	if err != nil {
+		return nil, err
+	}
+	// Inlining runs on the mapped object and before it is serialized, so the
+	// downstream body carries the fetched content rather than the link.
+	respOutObj, respOutBody, didTransform, err = c.applyResponseInlineURL(gc, respOutObj, respOutBody, outCT, resp, respDir, didTransform)
 	if err != nil {
 		return nil, err
 	}
@@ -254,4 +262,71 @@ func copyHeadersToClient(gc *gin.Context, hdr http.Header, didTransform bool) {
 			gc.Writer.Header().Add(k, item)
 		}
 	}
+}
+
+// applyResponseInlineURL runs the resp_inline_url rule, if the matched response
+// directive has one, and returns the response object and body to carry forward.
+//
+// It parses a passthrough body on demand: a provider can already answer in the
+// downstream shape and still need its links inlined, so the rule must not
+// depend on resp_map having run.
+//
+// Fetch failures are logged and left in place: the rule degrades to the URL the
+// upstream returned rather than failing a response that already succeeded.
+//
+// The gate reads the client's original request, not the mapped upstream one: a
+// provider that always returns links has no field to carry the caller's choice
+// of response format.
+func (c *Client) applyResponseInlineURL(
+	gc *gin.Context,
+	root map[string]any,
+	body []byte,
+	outCT string,
+	resp *http.Response,
+	respDir *dslconfig.ResponseDirective,
+	didTransform bool,
+) (map[string]any, []byte, bool, error) {
+	if respDir == nil || respDir.InlineURL == nil || c.HTTP == nil {
+		return root, body, didTransform, nil
+	}
+
+	parsedHere := false
+	if root == nil {
+		if !apitransform.ResponseBodyLooksLikeJSON(outCT, body) {
+			return root, body, didTransform, nil
+		}
+		decoded, _, err := apitransform.DecodeResponseBody(body, resp.Header.Get("Content-Encoding"))
+		if err != nil {
+			return nil, nil, didTransform, err
+		}
+		if err := json.Unmarshal(decoded, &root); err != nil || root == nil {
+			// A body that is not a JSON object simply has nothing to inline.
+			return nil, body, didTransform, nil
+		}
+		parsedHere = true
+	}
+
+	var requestRoot map[string]any
+	if cached, ok := gc.Get("onr.request_root"); ok {
+		requestRoot, _ = cached.(map[string]any)
+	}
+	res := respinline.Apply(gc.Request.Context(), root, requestRoot, respDir.InlineURL, c.HTTP)
+	if res.Failed > 0 && c.SystemLogger != nil {
+		c.SystemLogger.Warn(logx.SystemCategoryServer, "resp_inline_url left URLs in place", map[string]any{
+			"attempted": res.Attempted,
+			"inlined":   res.Inlined,
+			"failed":    res.Failed,
+			"error":     fmt.Sprint(res.FirstError),
+		})
+	}
+	if res.Inlined == 0 {
+		if parsedHere {
+			// Nothing changed, so keep the original bytes rather than
+			// re-serializing a body the client did not ask us to rewrite.
+			return nil, body, didTransform, nil
+		}
+		return root, body, didTransform, nil
+	}
+	// Drop the body so the caller re-serializes from the mutated object.
+	return root, nil, true, nil
 }

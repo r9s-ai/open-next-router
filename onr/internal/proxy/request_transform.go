@@ -57,6 +57,12 @@ func readRequestBody(gc *gin.Context, api string) (bodyBytes []byte, root map[st
 			model = strings.TrimSpace(m2)
 		}
 	}
+	// Publish the parsed client request under the same key the HTTP layer uses,
+	// so later phases can read the caller's original parameters whether or not
+	// the request arrived through that layer.
+	if root != nil {
+		gc.Set("onr.request_root", root)
+	}
 	return bodyBytes, root, model, contentType, nil
 }
 
