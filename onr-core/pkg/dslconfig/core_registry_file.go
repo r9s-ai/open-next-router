@@ -166,7 +166,18 @@ func buildMergedProviderFile(path, providerName string, metadata ProviderMetadat
 	if err := validateProviderRouting(path, providerName, routing); err != nil {
 		return ProviderFile{}, err
 	}
+	// Request must go through its resolver, not be stored as parsed: the resolver
+	// compiles the execution-plan fields the runtime indexes into, such as a
+	// validation rule's body path parts. Storing the parsed value left those nil
+	// and the first request panicked.
+	resolvedReq, err := validateProviderRequestTransform(path, providerName, req)
+	if err != nil {
+		return ProviderFile{}, err
+	}
 	if err := validateProviderHeaders(path, providerName, headers); err != nil {
+		return ProviderFile{}, err
+	}
+	if err := validateProviderResponse(path, providerName, response); err != nil {
 		return ProviderFile{}, err
 	}
 	resolvedUsage, err := validateProviderUsage(path, providerName, usage, resolved.usage)
@@ -192,7 +203,7 @@ func buildMergedProviderFile(path, providerName string, metadata ProviderMetadat
 		Metadata: metadata,
 		Routing:  routing,
 		Headers:  headers,
-		Request:  req,
+		Request:  resolvedReq,
 		Response: response,
 		Error:    perr,
 		Usage:    resolvedUsage,
