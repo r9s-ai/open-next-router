@@ -208,6 +208,49 @@ func evaluateUsageFactConfigGroupsWithEvent(event string, reqRoot, respRoot, usa
 	return out
 }
 
+// mergeUsageFactEvals sums matched facts that share the same billing identity.
+// Attributes are part of the identity because facts such as cache TTL and
+// modality can use different prices even when their dimension and unit match.
+func mergeUsageFactEvals(evals []usageFactEval) []usageFactEval {
+	if len(evals) < 2 {
+		return evals
+	}
+
+	merged := make([]usageFactEval, 0, len(evals))
+	indexByKey := make(map[string]int, len(evals))
+	for _, eval := range evals {
+		if !eval.matched {
+			continue
+		}
+		key := usageFactEvalMergeKey(eval.cfg)
+		if idx, ok := indexByKey[key]; ok {
+			merged[idx].quantity += eval.quantity
+			continue
+		}
+		indexByKey[key] = len(merged)
+		merged = append(merged, eval)
+	}
+	return merged
+}
+
+func usageFactEvalMergeKey(fact usageFactConfig) string {
+	key := normalizeUsageFactKey(fact.Dimension, fact.Unit)
+	parts := []string{key.Dimension, key.Unit}
+	if len(fact.Attrs) == 0 {
+		return strings.Join(parts, "\x1f")
+	}
+
+	attrKeys := make([]string, 0, len(fact.Attrs))
+	for key := range fact.Attrs {
+		attrKeys = append(attrKeys, key)
+	}
+	sort.Strings(attrKeys)
+	for _, key := range attrKeys {
+		parts = append(parts, strings.TrimSpace(key)+"="+strings.TrimSpace(fact.Attrs[key]))
+	}
+	return strings.Join(parts, "\x1f")
+}
+
 func filterUsageFactConfigForStream(cfg UsageExtractConfig, keep func(usageFactConfig) bool) UsageExtractConfig {
 	if len(cfg.facts) == 0 {
 		return cfg
@@ -466,6 +509,7 @@ func extractCustomUsageWithEvent(event string, reqRoot, respRoot, derivedRoot ma
 	evals := make([]usageFactEval, 0, len(cfg.facts))
 	usageRoot := extractUsageRootWithEvent(event, respRoot, cfg.usageRoots)
 	evals = append(evals, evaluateUsageFactConfigGroupsWithEvent(event, reqRoot, respRoot, usageRoot, derivedRoot, len(cfg.usageRoots) > 0, cfg.factGroups, len(cfg.facts))...)
+	evals = mergeUsageFactEvals(evals)
 
 	usage, cachedTokens := projectUsageFromFacts(evals, len(cfg.usageRoots) > 0)
 	if cfg.TotalTokensExpr != nil {
@@ -479,6 +523,7 @@ func extractCustomUsageWithEvent(event string, reqRoot, respRoot, derivedRoot ma
 func extractCustomUsageFromMergedUsageRoot(reqRoot, usageRoot, derivedRoot map[string]any, cfg UsageExtractConfig) (*Usage, int) {
 	evals := make([]usageFactEval, 0, len(cfg.facts))
 	evals = append(evals, evaluateUsageFactConfigGroupsWithEvent("", reqRoot, nil, usageRoot, derivedRoot, true, cfg.factGroups, len(cfg.facts))...)
+	evals = mergeUsageFactEvals(evals)
 
 	usage, cachedTokens := projectUsageFromFacts(evals, true)
 	// Stream final-stage facts already read from the merged usage root. Total is

@@ -3,6 +3,8 @@ package dslconfig
 import (
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -1285,7 +1287,7 @@ func TestExtractUsage_CustomLegacyOverrideDoesNotDoubleCount(t *testing.T) {
 	}
 }
 
-func TestExtractUsage_UsageFactSameDimensionDeclarationOrder(t *testing.T) {
+func TestExtractUsage_UsageFactSameDimensionMerged(t *testing.T) {
 	cfg := UsageExtractConfig{
 		Mode: usageModeCustom,
 		facts: []usageFactConfig{
@@ -1321,26 +1323,198 @@ func TestExtractUsage_UsageFactSameDimensionDeclarationOrder(t *testing.T) {
 			inputFacts = append(inputFacts, fact)
 		}
 	}
-	if got, want := len(inputFacts), 2; got != want {
+	if got, want := len(inputFacts), 1; got != want {
 		t.Fatalf("input debug facts len got %d, want %d", got, want)
 	}
 	if got, want := inputFacts[0].Path, "$.usage.first_input_tokens"; got != want {
 		t.Fatalf("first input fact path got %q, want %q", got, want)
 	}
-	if got, want := inputFacts[0].Quantity, 3.0; got != want {
+	if got, want := inputFacts[0].Quantity, 7.0; got != want {
 		t.Fatalf("first input fact quantity got %v, want %v", got, want)
-	}
-	if got, want := inputFacts[1].Path, "$.usage.second_input_tokens"; got != want {
-		t.Fatalf("second input fact path got %q, want %q", got, want)
-	}
-	if got, want := inputFacts[1].Quantity, 4.0; got != want {
-		t.Fatalf("second input fact quantity got %v, want %v", got, want)
 	}
 	for _, fact := range inputFacts {
 		if fact.Fallback {
 			t.Fatalf("unexpected fallback fact in matched input facts: %+v", fact)
 		}
 	}
+}
+
+func TestExtractUsage_UsageFactSameDimensionKeepsDifferentAttributes(t *testing.T) {
+	cfg := UsageExtractConfig{
+		Mode: usageModeCustom,
+		facts: []usageFactConfig{
+			{Dimension: "cache_write", Unit: "token", Path: "$.usage.cache_5m", Attrs: map[string]string{"ttl": "5m"}},
+			{Dimension: "cache_write", Unit: "token", Path: "$.usage.cache_1h", Attrs: map[string]string{"ttl": "1h"}},
+		},
+	}
+
+	body := []byte(`{
+	  "usage": {
+	    "cache_5m": 3,
+	    "cache_1h": 4
+	  }
+	}`)
+
+	usage, _, err := ExtractUsage(&dslmeta.Meta{}, &cfg, body)
+	if err != nil {
+		t.Fatalf("ExtractUsage: %v", err)
+	}
+	if usage == nil {
+		t.Fatalf("expected usage")
+	}
+	if got, want := len(usage.DebugFacts), 2; got != want {
+		t.Fatalf("DebugFacts len got %d, want %d: %#v", got, want, usage.DebugFacts)
+	}
+
+	quantities := make(map[string]float64, len(usage.DebugFacts))
+	for _, fact := range usage.DebugFacts {
+		quantities[fact.Attributes["ttl"]] = fact.Quantity
+	}
+	if got, want := quantities["5m"], 3.0; got != want {
+		t.Fatalf("5m cache quantity got %v, want %v", got, want)
+	}
+	if got, want := quantities["1h"], 4.0; got != want {
+		t.Fatalf("1h cache quantity got %v, want %v", got, want)
+	}
+}
+
+func TestExtractUsage_AllCanonicalUsageFactsMergeSameIdentity(t *testing.T) {
+	for _, key := range canonicalUsageFactTestKeys() {
+		t.Run(key.Dimension+"_"+key.Unit, func(t *testing.T) {
+			cfg := UsageExtractConfig{
+				Mode: usageModeCustom,
+				facts: []usageFactConfig{
+					{Dimension: key.Dimension, Unit: key.Unit, Path: "$.first"},
+					{Dimension: key.Dimension, Unit: key.Unit, Path: "$.second"},
+				},
+			}
+
+			usage, _, err := ExtractUsageObject(&dslmeta.Meta{}, &cfg, map[string]any{
+				"first":  2,
+				"second": 3,
+			})
+			if err != nil {
+				t.Fatalf("ExtractUsageObject: %v", err)
+			}
+			if usage == nil {
+				t.Fatal("expected usage")
+			}
+			if got, want := len(usage.DebugFacts), 1; got != want {
+				t.Fatalf("DebugFacts len got %d, want %d: %#v", got, want, usage.DebugFacts)
+			}
+			fact := usage.DebugFacts[0]
+			if fact.Dimension != key.Dimension || fact.Unit != key.Unit || fact.Quantity != 5 {
+				t.Fatalf("merged fact got %#v, want dimension=%q unit=%q quantity=5", fact, key.Dimension, key.Unit)
+			}
+		})
+	}
+}
+
+func TestExtractUsage_AllCanonicalUsageFactsKeepDifferentAttributes(t *testing.T) {
+	for _, key := range canonicalUsageFactTestKeys() {
+		t.Run(key.Dimension+"_"+key.Unit, func(t *testing.T) {
+			cfg := UsageExtractConfig{
+				Mode: usageModeCustom,
+				facts: []usageFactConfig{
+					{
+						Dimension: key.Dimension,
+						Unit:      key.Unit,
+						Path:      "$.first",
+						Attrs:     map[string]string{"variant": "first"},
+					},
+					{
+						Dimension: key.Dimension,
+						Unit:      key.Unit,
+						Path:      "$.second",
+						Attrs:     map[string]string{"variant": "second"},
+					},
+				},
+			}
+
+			usage, _, err := ExtractUsageObject(&dslmeta.Meta{}, &cfg, map[string]any{
+				"first":  2,
+				"second": 3,
+			})
+			if err != nil {
+				t.Fatalf("ExtractUsageObject: %v", err)
+			}
+			if usage == nil {
+				t.Fatal("expected usage")
+			}
+			if got, want := len(usage.DebugFacts), 2; got != want {
+				t.Fatalf("DebugFacts len got %d, want %d: %#v", got, want, usage.DebugFacts)
+			}
+
+			quantities := make(map[string]float64, len(usage.DebugFacts))
+			for _, fact := range usage.DebugFacts {
+				if fact.Dimension != key.Dimension || fact.Unit != key.Unit {
+					t.Fatalf("unexpected fact identity: %#v", fact)
+				}
+				quantities[fact.Attributes["variant"]] = fact.Quantity
+			}
+			if quantities["first"] != 2 || quantities["second"] != 3 {
+				t.Fatalf("attribute quantities got %#v, want first=2 second=3", quantities)
+			}
+		})
+	}
+}
+
+func TestExtractUsage_AllCanonicalUsageFactsRemainIndependent(t *testing.T) {
+	keys := canonicalUsageFactTestKeys()
+	facts := make([]usageFactConfig, 0, len(keys))
+	root := make(map[string]any, len(keys))
+	want := make(map[usageFactKey]float64, len(keys))
+	for i, key := range keys {
+		field := "value_" + strconv.Itoa(i)
+		quantity := float64(i + 1)
+		facts = append(facts, usageFactConfig{
+			Dimension: key.Dimension,
+			Unit:      key.Unit,
+			Path:      "$." + field,
+		})
+		root[field] = quantity
+		want[key] = quantity
+	}
+
+	cfg := UsageExtractConfig{Mode: usageModeCustom, facts: facts}
+	usage, _, err := ExtractUsageObject(&dslmeta.Meta{}, &cfg, root)
+	if err != nil {
+		t.Fatalf("ExtractUsageObject: %v", err)
+	}
+	if usage == nil {
+		t.Fatal("expected usage")
+	}
+	if got, wantCount := len(usage.DebugFacts), len(keys); got != wantCount {
+		t.Fatalf("DebugFacts len got %d, want %d: %#v", got, wantCount, usage.DebugFacts)
+	}
+	for _, fact := range usage.DebugFacts {
+		key := normalizeUsageFactKey(fact.Dimension, fact.Unit)
+		quantity, ok := want[key]
+		if !ok {
+			t.Fatalf("unexpected fact identity: %#v", fact)
+		}
+		if fact.Quantity != quantity {
+			t.Fatalf("fact %s/%s quantity got %v, want %v", fact.Dimension, fact.Unit, fact.Quantity, quantity)
+		}
+		delete(want, key)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing canonical facts: %#v", want)
+	}
+}
+
+func canonicalUsageFactTestKeys() []usageFactKey {
+	keys := make([]usageFactKey, 0, len(defaultUsageDimensionRegistry.allowed))
+	for key := range defaultUsageDimensionRegistry.allowed {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].Dimension != keys[j].Dimension {
+			return keys[i].Dimension < keys[j].Dimension
+		}
+		return keys[i].Unit < keys[j].Unit
+	})
+	return keys
 }
 
 func TestExtractUsage_UsageFactRequestSource(t *testing.T) {

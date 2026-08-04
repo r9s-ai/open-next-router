@@ -230,7 +230,7 @@ The command validates the provider DSL before writing. If validation fails, no o
 
 ### Extract usage facts from a response
 
-`onr-usage-extract` is a local debugging utility for testing one explicit `usage_mode` against a response. It prints only the matched `usage_fact` items as a JSON array.
+`onr-usage-extract` is a local debugging utility for testing one explicit `usage_mode` against a response. It prints the matched canonical usage facts as a JSON array. Matched rules with the same normalized `dimension`, `unit`, and complete `attributes` set are combined into one fact whose quantity is their sum; facts with different attributes remain separate. A combined fact keeps the extraction metadata of the first matched rule.
 
 ```bash
 go run ./cmd/onr-usage-extract \

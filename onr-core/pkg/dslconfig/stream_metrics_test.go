@@ -389,7 +389,7 @@ func TestStreamMetricsAggregator_UsageRootFactsRunAtResult(t *testing.T) {
 	}
 }
 
-func TestStreamMetricsAggregator_UsageRootFinalDebugFactsKeepAdditiveOutputPaths(t *testing.T) {
+func TestStreamMetricsAggregator_UsageRootFinalDebugFactsMergeAdditiveOutputPaths(t *testing.T) {
 	meta := &dslmeta.Meta{API: "chat.completions", IsStream: true}
 	usageCfg := &UsageExtractConfig{
 		Mode: usageModeCustom,
@@ -435,8 +435,8 @@ func TestStreamMetricsAggregator_UsageRootFinalDebugFactsKeepAdditiveOutputPaths
 			outputFactTotal += fact.Quantity
 		}
 	}
-	if outputFactCount != 2 || outputFactTotal != 23 {
-		t.Fatalf("output debug facts count=%d total=%v want count=2 total=23; facts=%#v", outputFactCount, outputFactTotal, u.DebugFacts)
+	if outputFactCount != 1 || outputFactTotal != 23 {
+		t.Fatalf("output debug facts count=%d total=%v want count=1 total=23; facts=%#v", outputFactCount, outputFactTotal, u.DebugFacts)
 	}
 }
 
