@@ -41,6 +41,14 @@ type ResponseDirective struct {
 	// downstream stream (e.g. hex audio chunks -> binary audio stream).
 	SSEBinaryExtract *SSEBinaryExtractRule
 
+	// InlineURL fetches the URLs a mapped response points at and replaces them
+	// with their base64 content (non-stream). It runs after resp_map, so paths
+	// address the downstream shape.
+	//
+	// This is the one response rule that performs network I/O. It is opt-in per
+	// match block and bounded by the rule's own limits.
+	InlineURL *RespInlineURLRule
+
 	// ErrorWhen rules detect in-body upstream errors on HTTP 2xx responses
 	// (error phase). Matching responses are normalized via error_map.
 	ErrorWhen []ErrorWhenRule
@@ -51,6 +59,35 @@ type ResponseDirective struct {
 type RespBodyExtractRule struct {
 	Path   string
 	Decode string // "hex" or "base64"
+}
+
+// RespInlineURLRule describes resp_inline_url: fetch every URL the response
+// points at and inline its content as base64.
+//
+// Some providers only ever return a link to the generated asset, so a caller
+// asking for inline content can be served only by fetching it. The fetch is
+// gated on a request field so the link-returning path stays untouched, and it
+// degrades to leaving the URL in place: a caller that receives a link can still
+// retrieve the asset, whereas a failed request cannot.
+type RespInlineURLRule struct {
+	// Path addresses the URL strings in the mapped response, e.g.
+	// "$.data[*].url".
+	Path string
+	// SetField is the sibling field that receives the base64 content. The field
+	// named by Path is removed from objects where the fetch succeeded.
+	SetField string
+	// WhenRequestPath and WhenEquals gate the rule on a client request field;
+	// an empty WhenRequestPath means always fetch.
+	WhenRequestPath string
+	WhenEquals      string
+	// MaxBytes caps a single response body. Larger bodies are treated as a
+	// failed fetch rather than truncated, since a truncated image is worse than
+	// a working link.
+	MaxBytes int64
+	// TimeoutMS bounds each fetch.
+	TimeoutMS int
+	// Concurrency caps parallel fetches.
+	Concurrency int
 }
 
 // RespContentTypeRule describes resp_content_type: resolve downstream
@@ -107,7 +144,7 @@ func (p *ProviderResponse) Select(meta *dslmeta.Meta) (*ResponseDirective, bool)
 		out = mergeResponseDirective(out, m.Response)
 	}
 	if strings.TrimSpace(out.Op) == "" && strings.TrimSpace(out.SSECollectMode) == "" && len(out.JSONOps) == 0 && len(out.SSEJSONDelIf) == 0 &&
-		out.BodyExtract == nil && out.ContentTypeRule == nil && out.SSEBinaryExtract == nil && len(out.ErrorWhen) == 0 {
+		out.BodyExtract == nil && out.ContentTypeRule == nil && out.SSEBinaryExtract == nil && out.InlineURL == nil && len(out.ErrorWhen) == 0 {
 		return nil, false
 	}
 	return &out, true
@@ -168,6 +205,9 @@ func mergeResponseDirective(base ResponseDirective, override ResponseDirective) 
 	}
 	if override.SSEBinaryExtract != nil {
 		out.SSEBinaryExtract = override.SSEBinaryExtract
+	}
+	if override.InlineURL != nil {
+		out.InlineURL = override.InlineURL
 	}
 	return out
 }
