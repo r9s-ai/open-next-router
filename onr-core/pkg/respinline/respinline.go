@@ -191,9 +191,9 @@ func fetchBase64(ctx context.Context, doer httpclient.HTTPDoer, rawURL string, r
 	if err != nil {
 		return "", fmt.Errorf("build request: %w", err)
 	}
-	resp, err := doer.Do(req)
+	resp, err := doFetch(doer, req)
 	if err != nil {
-		return "", fmt.Errorf("fetch: %w", err)
+		return "", err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
@@ -221,4 +221,24 @@ const respInlineDefaultMaxBytes = 10 << 20
 // durationMS converts milliseconds to a time.Duration.
 func durationMS(ms int) time.Duration {
 	return time.Duration(ms) * time.Millisecond
+}
+
+// doFetch isolates the caller's HTTP client. A caller can hand over a nil
+// *http.Client held in a non-nil interface, which the nil check in Apply cannot
+// see; the resulting panic would happen on a fetch goroutine and take the
+// process down rather than degrading to the URL the rule promises to keep.
+func doFetch(doer httpclient.HTTPDoer, req *http.Request) (resp *http.Response, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			resp, err = nil, fmt.Errorf("fetch panicked: %v", r)
+		}
+	}()
+	resp, err = doer.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch: %w", err)
+	}
+	if resp == nil {
+		return nil, fmt.Errorf("fetch returned no response")
+	}
+	return resp, nil
 }

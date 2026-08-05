@@ -269,3 +269,19 @@ func TestApply_NoOpCases(t *testing.T) {
 		t.Fatalf("no-op cases must not fetch, got %v", doer.requests)
 	}
 }
+
+// A caller can hand over a nil *http.Client inside a non-nil interface. The
+// fetch runs on its own goroutine, so an unguarded panic there would take the
+// process down instead of degrading to the URL the rule promises to keep.
+func TestApply_TypedNilClientDegradesInsteadOfPanicking(t *testing.T) {
+	var nilClient *http.Client
+	root := rootWithURLs("https://example.invalid/a.png")
+
+	res := Apply(context.Background(), root, nil, baseRule(), nilClient)
+	if res.Failed != 1 {
+		t.Fatalf("result=%+v want 1 failed", res)
+	}
+	if itemAt(t, root, 0)["url"] != "https://example.invalid/a.png" {
+		t.Fatal("url must survive a broken client")
+	}
+}
