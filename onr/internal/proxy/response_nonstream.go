@@ -52,12 +52,6 @@ func (c *Client) handleNonStreamResponse(
 	if err != nil {
 		return nil, err
 	}
-	// Inlining runs on the mapped object and before it is serialized, so the
-	// downstream body carries the fetched content rather than the link.
-	respOutObj, respOutBody, didTransform, err = c.applyResponseInlineURL(gc, respOutObj, respOutBody, outCT, resp, respDir, didTransform)
-	if err != nil {
-		return nil, err
-	}
 	if respOutBody == nil && respOutObj != nil {
 		respOutBody, err = json.Marshal(respOutObj)
 		if err != nil {
@@ -87,6 +81,21 @@ func (c *Client) handleNonStreamResponse(
 		cost = c.computeCost(m, provider, key.Name, usage)
 	}
 	c.logUsageFactsDebug(gc, provider, api, stream, model, usageStage, upstreamUsage)
+
+	// Inlining runs after the metrics snapshot and before the body is serialized
+	// for the client. Metrics count entries, not bytes, so they gain nothing
+	// from the fetched content — while a snapshot taken afterwards would carry
+	// every inlined asset through usage extraction and the traffic dump.
+	respOutObj, respOutBody, didTransform, err = c.applyResponseInlineURL(gc, respOutObj, respOutBody, outCT, resp, respDir, didTransform)
+	if err != nil {
+		return nil, err
+	}
+	if respOutBody == nil && respOutObj != nil {
+		respOutBody, err = json.Marshal(respOutObj)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	var responseJSONOps []dslconfig.JSONOp
 	if respDir != nil {

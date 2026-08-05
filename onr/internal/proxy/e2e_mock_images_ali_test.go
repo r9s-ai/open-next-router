@@ -262,3 +262,50 @@ func TestE2EMock_ImagesGenerations_Ali_CJKPromptWithinLimit(t *testing.T) {
 		t.Fatalf("800 个中文字符应当通过,却被拒: %v", err)
 	}
 }
+
+// 用量按条目数计价,不关心字节。内联发生在用量快照之后,否则每张被抓取的图片
+// 都会以 base64 形式进入用量提取和流量 dump —— 单张上限 10MB。
+func TestE2EMock_ImagesGenerations_Ali_UsageCountUnaffectedByInlining(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	const asset = "QWEN-BYTES"
+	assets := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(asset))
+	}))
+	t.Cleanup(assets.Close)
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(qwenResponse(assets.URL + "/a.png")))
+	}))
+	t.Cleanup(upstream.Close)
+
+	c := newAliClient(t, upstream.URL)
+	gc, rec := newGinJSONRequestPath(t, "/v1/images/generations", []byte(
+		`{"model":"qwen-image","prompt":"x","response_format":"b64_json"}`))
+
+	res, err := c.ProxyJSON(gc, "ali", ProviderKey{Name: "ali-key", Value: "mock-key"}, "images.generations", false)
+	if err != nil {
+		t.Fatalf("proxy error: %v", err)
+	}
+	// 客户端拿到内联内容,而张数仍按条目计。
+	if !json.Valid(rec.Body.Bytes()) {
+		t.Fatalf("invalid downstream body: %s", rec.Body.String())
+	}
+	item := firstDataItem(t, mustUnmarshalObject(t, rec.Body.Bytes()))
+	if item["b64_json"] != base64.StdEncoding.EncodeToString([]byte(asset)) {
+		t.Fatalf("client should receive inlined content: %s", rec.Body.String())
+	}
+	if got, want := asInt(res.Usage["image_generate_images"]), 1; got != want {
+		t.Fatalf("image_generate_images=%d want=%d (usage=%#v)", got, want, res.Usage)
+	}
+}
+
+func mustUnmarshalObject(t *testing.T, body []byte) map[string]any {
+	t.Helper()
+	var out map[string]any
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("unmarshal: %v (%s)", err, body)
+	}
+	return out
+}
