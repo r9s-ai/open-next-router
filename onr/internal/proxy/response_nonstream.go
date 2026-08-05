@@ -308,8 +308,10 @@ func (c *Client) applyResponseInlineURL(
 		if err != nil {
 			return nil, nil, didTransform, err
 		}
-		if err := json.Unmarshal(decoded, &root); err != nil || root == nil {
-			// A body that is not a JSON object simply has nothing to inline.
+		root = jsonObjectOrNil(decoded)
+		if root == nil {
+			// A body that is not a JSON object has nothing to inline. That is
+			// not a failure of the response, only of this rule's applicability.
 			return nil, body, didTransform, nil
 		}
 		parsedHere = true
@@ -338,4 +340,14 @@ func (c *Client) applyResponseInlineURL(
 	}
 	// Drop the body so the caller re-serializes from the mutated object.
 	return root, nil, true, nil
+}
+
+// jsonObjectOrNil decodes body as a JSON object, or returns nil when it is not
+// one. Callers use the nil to mean "not applicable" rather than "failed".
+func jsonObjectOrNil(body []byte) map[string]any {
+	var out map[string]any
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil
+	}
+	return out
 }
