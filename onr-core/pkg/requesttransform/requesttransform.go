@@ -182,6 +182,16 @@ func applyReqMapObject(mode string, root apitypes.JSONObject) ([]byte, map[strin
 		}
 		dst := mapOpenAIChatCompletionsToGeminiGenerateContentRequest(&src)
 		return marshalReqMapResult(dst)
+	case "openai_images_to_qwen_image":
+		dst, err := apitransform.MapOpenAIImagesToQwenImageRequest(root)
+		if err != nil {
+			return nil, nil, err
+		}
+		body, err := json.Marshal(dst)
+		if err != nil {
+			return nil, nil, err
+		}
+		return body, dst, nil
 	case "openai_images_to_minimax_image":
 		// The Minimax request has no typed counterpart in apitypes, so the
 		// builtin returns a plain object root and it is marshalled directly
@@ -1053,7 +1063,7 @@ func mapGeminiGenerateContentRequestToOpenAIChatCompletions(req *apitypes.Gemini
 func parseReqMapInputObject(mode string, raw []byte) (apitypes.JSONObject, error) {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case "openai_chat_to_openai_responses", "openai_chat_to_anthropic_messages", "openai_chat_to_gemini_generate_content":
-	case "openai_images_to_gemini_generate_content", "openai_images_to_minimax_image":
+	case "openai_images_to_gemini_generate_content", "openai_images_to_minimax_image", "openai_images_to_qwen_image":
 	case "anthropic_to_openai_chat":
 	case "gemini_to_openai_chat":
 	default:

@@ -59,6 +59,8 @@ func validateRequestTransform(path, providerName, scope string, t RequestTransfo
 		return t, nil
 	case "openai_images_to_minimax_image":
 		return t, nil
+	case "openai_images_to_qwen_image":
+		return t, nil
 	case "anthropic_to_openai_chat":
 		return t, nil
 	case "gemini_to_openai_chat":

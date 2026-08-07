@@ -23,6 +23,7 @@ func SupportsResponseMapMode(mode string) bool {
 		"gemini_to_openai_chat",
 		"gemini_to_openai_images",
 		"minimax_image_to_openai_images",
+		"qwen_image_to_openai_images",
 		"openai_to_anthropic_messages",
 		"openai_to_gemini_chat",
 		"openai_to_gemini_generate_content":
@@ -59,6 +60,8 @@ func MapResponseObjectByMode(mode string, root map[string]any) (map[string]any, 
 		return MapGeminiGenerateContentToOpenAIImagesResponseObject(root)
 	case "minimax_image_to_openai_images":
 		return MapMinimaxImageToOpenAIImagesResponseObject(root)
+	case "qwen_image_to_openai_images":
+		return MapQwenImageToOpenAIImagesResponseObject(root)
 	case "openai_to_anthropic_messages":
 		return MapOpenAIChatCompletionsToClaudeMessagesResponseObject(root)
 	case "openai_to_gemini_chat", "openai_to_gemini_generate_content":

@@ -15,8 +15,10 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/apitransform"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/respinline"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/ssecollect"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/trafficdump"
+	"github.com/r9s-ai/open-next-router/onr/internal/logx"
 )
 
 func (c *Client) handleNonStreamResponse(
@@ -79,6 +81,21 @@ func (c *Client) handleNonStreamResponse(
 		cost = c.computeCost(m, provider, key.Name, usage)
 	}
 	c.logUsageFactsDebug(gc, provider, api, stream, model, usageStage, upstreamUsage)
+
+	// Inlining runs after the metrics snapshot and before the body is serialized
+	// for the client. Metrics count entries, not bytes, so they gain nothing
+	// from the fetched content — while a snapshot taken afterwards would carry
+	// every inlined asset through usage extraction and the traffic dump.
+	respOutObj, respOutBody, didTransform, err = c.applyResponseInlineURL(gc, respOutObj, respOutBody, outCT, resp, respDir, didTransform)
+	if err != nil {
+		return nil, err
+	}
+	if respOutBody == nil && respOutObj != nil {
+		respOutBody, err = json.Marshal(respOutObj)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	var responseJSONOps []dslconfig.JSONOp
 	if respDir != nil {
@@ -254,4 +271,83 @@ func copyHeadersToClient(gc *gin.Context, hdr http.Header, didTransform bool) {
 			gc.Writer.Header().Add(k, item)
 		}
 	}
+}
+
+// applyResponseInlineURL runs the resp_inline_url rule, if the matched response
+// directive has one, and returns the response object and body to carry forward.
+//
+// It parses a passthrough body on demand: a provider can already answer in the
+// downstream shape and still need its links inlined, so the rule must not
+// depend on resp_map having run.
+//
+// Fetch failures are logged and left in place: the rule degrades to the URL the
+// upstream returned rather than failing a response that already succeeded.
+//
+// The gate reads the client's original request, not the mapped upstream one: a
+// provider that always returns links has no field to carry the caller's choice
+// of response format.
+func (c *Client) applyResponseInlineURL(
+	gc *gin.Context,
+	root map[string]any,
+	body []byte,
+	outCT string,
+	resp *http.Response,
+	respDir *dslconfig.ResponseDirective,
+	didTransform bool,
+) (map[string]any, []byte, bool, error) {
+	if respDir == nil || respDir.InlineURL == nil || c.HTTP == nil {
+		return root, body, didTransform, nil
+	}
+
+	parsedHere := false
+	if root == nil {
+		if !apitransform.ResponseBodyLooksLikeJSON(outCT, body) {
+			return root, body, didTransform, nil
+		}
+		decoded, _, err := apitransform.DecodeResponseBody(body, resp.Header.Get("Content-Encoding"))
+		if err != nil {
+			return nil, nil, didTransform, err
+		}
+		root = jsonObjectOrNil(decoded)
+		if root == nil {
+			// A body that is not a JSON object has nothing to inline. That is
+			// not a failure of the response, only of this rule's applicability.
+			return nil, body, didTransform, nil
+		}
+		parsedHere = true
+	}
+
+	var requestRoot map[string]any
+	if cached, ok := gc.Get("onr.request_root"); ok {
+		requestRoot, _ = cached.(map[string]any)
+	}
+	res := respinline.Apply(gc.Request.Context(), root, requestRoot, respDir.InlineURL, c.HTTP)
+	if res.Failed > 0 && c.SystemLogger != nil {
+		c.SystemLogger.Warn(logx.SystemCategoryServer, "resp_inline_url left URLs in place", map[string]any{
+			"attempted": res.Attempted,
+			"inlined":   res.Inlined,
+			"failed":    res.Failed,
+			"error":     fmt.Sprint(res.FirstError),
+		})
+	}
+	if res.Inlined == 0 {
+		if parsedHere {
+			// Nothing changed, so keep the original bytes rather than
+			// re-serializing a body the client did not ask us to rewrite.
+			return nil, body, didTransform, nil
+		}
+		return root, body, didTransform, nil
+	}
+	// Drop the body so the caller re-serializes from the mutated object.
+	return root, nil, true, nil
+}
+
+// jsonObjectOrNil decodes body as a JSON object, or returns nil when it is not
+// one. Callers use the nil to mean "not applicable" rather than "failed".
+func jsonObjectOrNil(body []byte) map[string]any {
+	var out map[string]any
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil
+	}
+	return out
 }

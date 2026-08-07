@@ -25,6 +25,7 @@ func FuzzApply(f *testing.F) {
 		"openai_chat_to_gemini_generate_content",
 		"openai_images_to_gemini_generate_content",
 		"openai_images_to_minimax_image",
+		"openai_images_to_qwen_image",
 		"anthropic_to_openai_chat",
 		"gemini_to_openai_chat",
 	}
