@@ -116,6 +116,82 @@ func parseJSONObject(payload []byte) (map[string]any, bool) {
 	return obj, true
 }
 
+// SSEEventDataJSONWriter is an [io.Writer] that applies [SSEJSONDelIfRule] and [JSONOp]
+// rules to each complete SSE event's data payload before forwarding to an inner writer.
+// It buffers incomplete lines across Write calls. Callers must invoke Finish after the
+// last Write to flush any trailing buffered state.
+type SSEEventDataJSONWriter struct {
+	dst     io.Writer
+	meta    *dslmeta.Meta
+	rules   []SSEJSONDelIfRule
+	ops     []JSONOp
+	counts  []int
+	ev      sseEventBuf
+	partial bytes.Buffer
+}
+
+// NewSSEEventDataJSONWriter returns an [SSEEventDataJSONWriter] that transforms each SSE
+// event's JSON data payload inline and forwards the result to dst.
+func NewSSEEventDataJSONWriter(dst io.Writer, meta *dslmeta.Meta, rules []SSEJSONDelIfRule, ops []JSONOp) *SSEEventDataJSONWriter {
+	return &SSEEventDataJSONWriter{
+		dst:    dst,
+		meta:   meta,
+		rules:  rules,
+		ops:    ops,
+		counts: make([]int, len(ops)),
+	}
+}
+
+// Write implements [io.Writer]. It buffers bytes until complete SSE lines are available,
+// then applies the configured rules and ops to each complete event.
+func (w *SSEEventDataJSONWriter) Write(p []byte) (int, error) {
+	written := len(p)
+	for len(p) > 0 {
+		idx := bytes.IndexByte(p, '\n')
+		if idx < 0 {
+			w.partial.Write(p)
+			break
+		}
+		w.partial.Write(p[:idx])
+		p = p[idx+1:]
+		if err := w.processLine(); err != nil {
+			return 0, err
+		}
+	}
+	return written, nil
+}
+
+func (w *SSEEventDataJSONWriter) processLine() error {
+	trimmed := bytes.TrimRight(w.partial.Bytes(), "\r")
+	if len(bytes.TrimSpace(trimmed)) == 0 {
+		w.partial.Reset()
+		if err := w.ev.flush(w.dst, w.meta, w.rules, w.ops, w.counts); err != nil {
+			return err
+		}
+		w.ev.reset()
+	} else {
+		w.ev.addLine(trimmed) // addLine copies trimmed before we reset
+		w.partial.Reset()
+	}
+	return nil
+}
+
+// Finish flushes any buffered trailing content. Must be called after the last Write.
+func (w *SSEEventDataJSONWriter) Finish() error {
+	if w.partial.Len() > 0 {
+		if err := w.processLine(); err != nil {
+			return err
+		}
+	}
+	if !w.ev.isEmpty() {
+		if err := w.ev.flush(w.dst, w.meta, w.rules, w.ops, w.counts); err != nil {
+			return err
+		}
+		w.ev.reset()
+	}
+	return nil
+}
+
 // TransformSSEEventDataJSON applies response SSE rules to a text/event-stream.
 //
 // It reads from r and writes to w, event-by-event, using the SSE framing rules:

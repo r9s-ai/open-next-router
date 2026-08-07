@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,12 +15,14 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/pricing"
 	"github.com/r9s-ai/open-next-router/onr/internal/logx"
 )
@@ -664,6 +667,271 @@ func TestE2EMock_ChatCompletions_AnthropicMessages_StreamMaxTokens(t *testing.T)
 		t.Fatalf("unexpected stream body:\n%s", body)
 	}
 	assertGolden(t, "golden/anthropic_stream_max_tokens_openai_chat.sse", normalizeForGolden(body))
+}
+
+func TestE2EMock_ChatCompletions_AnthropicMessages_StreamWithSSEOps(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockResp := mustReadTestData(t, "mock_upstream/anthropic/messages_stream_max_tokens.sse")
+	fixtureReq := []byte(`{"model":"claude-haiku-4-5","messages":[{"role":"user","content":"hi"}],"max_tokens":12,"stream":true}`)
+
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/messages" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(mockResp)
+	}))
+	t.Cleanup(mock.Close)
+
+	// Provider combines sse_parse with sse_json_del_if to strip usage from message_delta events.
+	conf := fmt.Sprintf(`syntax "next-router/0.1";
+
+provider "anthropic" {
+  defaults {
+    upstream_config { base_url = %q; }
+    auth { auth_header_key "x-api-key"; }
+    request { set_header "anthropic-version" "2023-06-01"; }
+    response { resp_passthrough; }
+  }
+  match api = "chat.completions" stream = false {
+    request {
+      req_map openai_chat_to_anthropic_messages;
+      json_del "$.stream_options";
+    }
+    upstream { set_path "/v1/messages"; }
+    response { resp_map anthropic_to_openai_chat; }
+  }
+  match api = "chat.completions" stream = true {
+    request {
+      req_map openai_chat_to_anthropic_messages;
+      json_del "$.stream_options";
+    }
+    upstream { set_path "/v1/messages"; }
+    response {
+      sse_parse anthropic_to_openai_chunks;
+      sse_json_del_if "$.type" "message_delta" "$.usage";
+    }
+  }
+}
+`, mock.URL)
+
+	c := newMockE2EClient(t, map[string]string{"anthropic.conf": conf})
+	gc, rec := newGinJSONRequestPath(t, "/v1/chat/completions", fixtureReq)
+	res, err := c.ProxyJSON(gc, "anthropic", ProviderKey{Name: "anthropic-key", Value: "mock-key"}, "chat.completions", true)
+	if err != nil {
+		t.Fatalf("proxy error: %v", err)
+	}
+	if res == nil || res.Status != http.StatusOK {
+		t.Fatalf("unexpected result: %#v", res)
+	}
+
+	body := rec.Body.String()
+	if !containsAll(body, `"content":"Hello"`, `"finish_reason":"length"`, "data: [DONE]") {
+		t.Fatalf("unexpected stream body:\n%s", body)
+	}
+	// sse_json_del_if must have removed usage from message_delta events in the transformed output.
+	for _, chunk := range strings.Split(body, "\n\n") {
+		if !strings.Contains(chunk, "data:") {
+			continue
+		}
+		if strings.Contains(chunk, `"finish_reason":"length"`) && strings.Contains(chunk, `"usage"`) {
+			t.Fatalf("usage field should have been removed by sse_json_del_if, got chunk: %s", chunk)
+		}
+	}
+}
+
+type failingGinWriter struct {
+	gin.ResponseWriter
+	err error
+}
+
+func (w *failingGinWriter) Write([]byte) (int, error) { return 0, w.err }
+
+func TestE2EMock_ChatCompletions_StreamStrategyTransformWithSSEOps_DownstreamWriteFailure(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockResp := mustReadTestData(t, "mock_upstream/anthropic/messages_stream_max_tokens.sse")
+	fixtureReq := []byte(`{"model":"claude-haiku-4-5","messages":[{"role":"user","content":"hi"}],"max_tokens":12,"stream":true}`)
+
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/messages" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(mockResp)
+	}))
+	t.Cleanup(mock.Close)
+
+	conf := fmt.Sprintf(`syntax "next-router/0.1";
+provider "anthropic" {
+  defaults {
+    upstream_config { base_url = %q; }
+    auth { auth_header_key "x-api-key"; }
+    request { set_header "anthropic-version" "2023-06-01"; }
+    response { resp_passthrough; }
+  }
+  match api = "chat.completions" stream = false {
+    request { req_map openai_chat_to_anthropic_messages; json_del "$.stream_options"; }
+    upstream { set_path "/v1/messages"; }
+    response { resp_map anthropic_to_openai_chat; }
+  }
+  match api = "chat.completions" stream = true {
+    request { req_map openai_chat_to_anthropic_messages; json_del "$.stream_options"; }
+    upstream { set_path "/v1/messages"; }
+    response {
+      sse_parse anthropic_to_openai_chunks;
+      sse_json_del_if "$.type" "message_delta" "$.usage";
+    }
+  }
+}
+`, mock.URL)
+
+	c := newMockE2EClient(t, map[string]string{"anthropic.conf": conf})
+	gc, _ := newGinJSONRequestPath(t, "/v1/chat/completions", fixtureReq)
+	gc.Writer = &failingGinWriter{ResponseWriter: gc.Writer, err: errors.New("downstream write failed")}
+
+	done := make(chan struct{})
+	var proxyErr error
+	go func() {
+		defer close(done)
+		_, proxyErr = c.ProxyJSON(gc, "anthropic", ProviderKey{Name: "anthropic-key", Value: "mock-key"}, "chat.completions", true)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("ProxyJSON blocked after downstream write failure in streamStrategyTransform+SSEOps path")
+	}
+	if proxyErr == nil {
+		t.Fatal("expected ProxyJSON to return error when downstream write fails")
+	}
+}
+
+// providerConfAnthropicStreamWithSSEDelIf returns a provider config that combines
+// sse_parse with sse_json_del_if, exercising the streamStrategyTransform+SSEOps path.
+func providerConfAnthropicStreamWithSSEDelIf(baseURL string) string {
+	return fmt.Sprintf(`syntax "next-router/0.1";
+provider "anthropic" {
+  defaults {
+    upstream_config { base_url = %q; }
+    auth { auth_header_key "x-api-key"; }
+    request { set_header "anthropic-version" "2023-06-01"; }
+    response { resp_passthrough; }
+  }
+  match api = "chat.completions" stream = false {
+    request { req_map openai_chat_to_anthropic_messages; json_del "$.stream_options"; }
+    upstream { set_path "/v1/messages"; }
+    response { resp_map anthropic_to_openai_chat; }
+  }
+  match api = "chat.completions" stream = true {
+    request { req_map openai_chat_to_anthropic_messages; json_del "$.stream_options"; }
+    upstream { set_path "/v1/messages"; }
+    response {
+      sse_parse anthropic_to_openai_chunks;
+      sse_json_del_if "$.type" "message_delta" "$.usage";
+    }
+  }
+}
+`, baseURL)
+}
+
+func TestE2EMock_ChatCompletions_StreamStrategyTransformWithSSEOps_EPIPEDisconnectIgnored(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockResp := mustReadTestData(t, "mock_upstream/anthropic/messages_stream_max_tokens.sse")
+	fixtureReq := []byte(`{"model":"claude-haiku-4-5","messages":[{"role":"user","content":"hi"}],"max_tokens":12,"stream":true}`)
+
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/messages" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(mockResp)
+	}))
+	t.Cleanup(mock.Close)
+
+	c := newMockE2EClient(t, map[string]string{"anthropic.conf": providerConfAnthropicStreamWithSSEDelIf(mock.URL)})
+	gc, _ := newGinJSONRequestPath(t, "/v1/chat/completions", fixtureReq)
+	gc.Writer = &failingGinWriter{ResponseWriter: gc.Writer, err: syscall.EPIPE}
+
+	done := make(chan struct{})
+	var proxyErr error
+	go func() {
+		defer close(done)
+		_, proxyErr = c.ProxyJSON(gc, "anthropic", ProviderKey{Name: "anthropic-key", Value: "mock-key"}, "chat.completions", true)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("ProxyJSON blocked after EPIPE in streamStrategyTransform+SSEOps path")
+	}
+	// EPIPE is treated as a client disconnect: handleStreamResponse ignores it and
+	// returns a non-nil Result with nil error rather than surfacing the write failure.
+	if proxyErr != nil {
+		t.Fatalf("expected nil error for EPIPE client disconnect, got: %v", proxyErr)
+	}
+}
+
+// ctxBlockingReadCloser blocks Read until ctx is cancelled.
+type ctxBlockingReadCloser struct {
+	ctx context.Context
+}
+
+func (r *ctxBlockingReadCloser) Read(p []byte) (int, error) {
+	<-r.ctx.Done()
+	return 0, r.ctx.Err()
+}
+
+func (r *ctxBlockingReadCloser) Close() error { return nil }
+
+// TestStreamStrategyTransform_ContextCancelUnblocksHangingUpstream verifies that
+// streamStrategyTransform returns promptly with an error when the upstream body
+// blocks indefinitely but the request context is cancelled.
+func TestStreamStrategyTransform_ContextCancelUnblocksHangingUpstream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       &ctxBlockingReadCloser{ctx: ctx},
+	}
+
+	rec := httptest.NewRecorder()
+	gc, _ := gin.CreateTestContext(rec)
+	gc.Request = httptest.NewRequest(http.MethodPost, "/", nil).WithContext(ctx)
+
+	cw := &countingWriter{w: io.Discard}
+
+	start := time.Now()
+	err := streamStrategyTransform(
+		gc, resp,
+		&dslmeta.Meta{},
+		"anthropic_to_openai_chunks",
+		&dslconfig.ResponseDirective{},
+		false,
+		nil, nil, nil,
+		false,
+		cw,
+	)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected error when upstream context is cancelled during stream")
+	}
+	if elapsed > time.Second {
+		t.Fatalf("streamStrategyTransform took too long (%v), want < 1s", elapsed)
+	}
 }
 
 func TestE2EMock_ChatCompletions_OpenAIResponses_StreamIncomplete(t *testing.T) {

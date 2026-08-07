@@ -3,8 +3,8 @@ module github.com/r9s-ai/open-next-router
 go 1.25.12
 
 require (
-	github.com/aws/aws-sdk-go-v2 v1.43.1
-	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.15
+	github.com/aws/aws-sdk-go-v2 v1.43.3
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.16
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
@@ -19,7 +19,7 @@ require (
 
 require (
 	github.com/atotto/clipboard v0.1.4 // indirect
-	github.com/aws/smithy-go v1.27.5 // indirect
+	github.com/aws/smithy-go v1.27.6 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic v1.15.0 // indirect
