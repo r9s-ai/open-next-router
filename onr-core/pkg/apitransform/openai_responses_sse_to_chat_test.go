@@ -181,3 +181,50 @@ func TestTransformOpenAIResponsesSSEToChatCompletionsSSE_DoneShouldBeLastWhenCom
 		t.Fatalf("DONE should be emitted after content delta, got output: %s", s)
 	}
 }
+
+// TestSSEEventParser_FeedLine_NoSpaceAfterColon verifies that bytes.CutPrefix correctly
+// parses SSE lines where there is no space between the field name and value (e.g. "event:foo").
+func TestSSEEventParser_FeedLine_NoSpaceAfterColon(t *testing.T) {
+	p := &sseEventParser{}
+
+	// Feed an event line with no space after "event:"
+	ev, ok, err := p.FeedLine([]byte("event:response.output_text.delta"))
+	if err != nil || ok || ev != nil {
+		t.Fatalf("expected no event yet: ev=%v ok=%v err=%v", ev, ok, err)
+	}
+	ev, ok, err = p.FeedLine([]byte("data:{\"delta\":\"hi\"}"))
+	if err != nil || ok || ev != nil {
+		t.Fatalf("expected no event yet after data line: ev=%v ok=%v err=%v", ev, ok, err)
+	}
+	// blank line flushes the event
+	ev, ok, err = p.FeedLine([]byte(""))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok || ev == nil {
+		t.Fatalf("expected flushed event: ev=%v ok=%v", ev, ok)
+	}
+	if ev.Event != "response.output_text.delta" {
+		t.Fatalf("event name=%q want \"response.output_text.delta\"", ev.Event)
+	}
+}
+
+// TestTransformOpenAIResponsesSSEToChatCompletionsSSE_WhitespaceEventLineFallsBackToType verifies
+// that when the SSE event: line contains only whitespace, the transformer falls back to
+// the "type" field in the JSON payload to determine the event name.
+func TestTransformOpenAIResponsesSSEToChatCompletionsSSE_WhitespaceEventLineFallsBackToType(t *testing.T) {
+	// "event:  " (whitespace only after colon) should be treated as no event name.
+	in := "" +
+		"event:  \n" +
+		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hi\"}\n\n" +
+		"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"r1\",\"created_at\":1700000000,\"model\":\"gpt-4o-mini\",\"status\":\"completed\"}}\n\n"
+
+	var buf bytes.Buffer
+	if err := TransformOpenAIResponsesSSEToChatCompletionsSSE(bytes.NewBufferString(in), &buf); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	s := buf.String()
+	if !containsAll(s, "\"delta\":{\"content\":\"Hi\"}", "data: [DONE]") {
+		t.Fatalf("expected delta content and DONE, got: %s", s)
+	}
+}
