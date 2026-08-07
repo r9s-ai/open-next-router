@@ -666,6 +666,80 @@ func TestE2EMock_ChatCompletions_AnthropicMessages_StreamMaxTokens(t *testing.T)
 	assertGolden(t, "golden/anthropic_stream_max_tokens_openai_chat.sse", normalizeForGolden(body))
 }
 
+func TestE2EMock_ChatCompletions_AnthropicMessages_StreamWithSSEOps(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockResp := mustReadTestData(t, "mock_upstream/anthropic/messages_stream_max_tokens.sse")
+	fixtureReq := []byte(`{"model":"claude-haiku-4-5","messages":[{"role":"user","content":"hi"}],"max_tokens":12,"stream":true}`)
+
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/messages" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(mockResp)
+	}))
+	t.Cleanup(mock.Close)
+
+	// Provider combines sse_parse with sse_json_del_if to strip usage from message_delta events.
+	conf := fmt.Sprintf(`syntax "next-router/0.1";
+
+provider "anthropic" {
+  defaults {
+    upstream_config { base_url = %q; }
+    auth { auth_header_key "x-api-key"; }
+    request { set_header "anthropic-version" "2023-06-01"; }
+    response { resp_passthrough; }
+  }
+  match api = "chat.completions" stream = false {
+    request {
+      req_map openai_chat_to_anthropic_messages;
+      json_del "$.stream_options";
+    }
+    upstream { set_path "/v1/messages"; }
+    response { resp_map anthropic_to_openai_chat; }
+  }
+  match api = "chat.completions" stream = true {
+    request {
+      req_map openai_chat_to_anthropic_messages;
+      json_del "$.stream_options";
+    }
+    upstream { set_path "/v1/messages"; }
+    response {
+      sse_parse anthropic_to_openai_chunks;
+      sse_json_del_if "$.type" "message_delta" "$.usage";
+    }
+  }
+}
+`, mock.URL)
+
+	c := newMockE2EClient(t, map[string]string{"anthropic.conf": conf})
+	gc, rec := newGinJSONRequestPath(t, "/v1/chat/completions", fixtureReq)
+	res, err := c.ProxyJSON(gc, "anthropic", ProviderKey{Name: "anthropic-key", Value: "mock-key"}, "chat.completions", true)
+	if err != nil {
+		t.Fatalf("proxy error: %v", err)
+	}
+	if res == nil || res.Status != http.StatusOK {
+		t.Fatalf("unexpected result: %#v", res)
+	}
+
+	body := rec.Body.String()
+	if !containsAll(body, `"content":"Hello"`, `"finish_reason":"length"`, "data: [DONE]") {
+		t.Fatalf("unexpected stream body:\n%s", body)
+	}
+	// sse_json_del_if must have removed usage from message_delta events in the transformed output.
+	for _, chunk := range strings.Split(body, "\n\n") {
+		if !strings.Contains(chunk, "data:") {
+			continue
+		}
+		if strings.Contains(chunk, `"finish_reason":"length"`) && strings.Contains(chunk, `"usage"`) {
+			t.Fatalf("usage field should have been removed by sse_json_del_if, got chunk: %s", chunk)
+		}
+	}
+}
+
 func TestE2EMock_ChatCompletions_OpenAIResponses_StreamIncomplete(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
