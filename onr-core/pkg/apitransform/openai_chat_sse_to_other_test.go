@@ -34,6 +34,26 @@ func TestTransformOpenAIChatCompletionsSSEToClaudeMessagesSSE(t *testing.T) {
 	}
 }
 
+// TestTransformOpenAIChatCompletionsSSEToGeminiSSE_OutputSSEFormat verifies that each
+// transformed chunk uses the "data: {...}\n\n" format written via sseDataLine / sseEventLineEnd.
+func TestTransformOpenAIChatCompletionsSSEToGeminiSSE_OutputSSEFormat(t *testing.T) {
+	in := "" +
+		"data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"}}]}\n\n" +
+		"data: [DONE]\n\n"
+	var out bytes.Buffer
+	if err := TransformOpenAIChatCompletionsSSEToGeminiSSE(bytes.NewBufferString(in), &out); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, chunk := range strings.Split(out.String(), "\n\n") {
+		if chunk = strings.TrimSpace(chunk); chunk == "" {
+			continue
+		}
+		if !strings.HasPrefix(chunk, "data: ") {
+			t.Fatalf("chunk missing \"data: \" prefix: %q", chunk)
+		}
+	}
+}
+
 func TestTransformOpenAIChatCompletionsSSEToClaudeMessagesSSE_IgnoresUsageOnlyTerminalChunk(t *testing.T) {
 	in := strings.Join([]string{
 		`data: {"choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}],"usage":null}`,

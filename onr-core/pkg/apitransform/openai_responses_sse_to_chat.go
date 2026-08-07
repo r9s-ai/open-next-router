@@ -17,6 +17,16 @@ const (
 	finishReasonStop          = "stop"
 )
 
+// Package-level SSE parsing literals — shared by all SSE transform files in this package.
+// Defined once to avoid per-line allocations in hot SSE parsing loops.
+var (
+	sseEventPrefix  = []byte("event:")
+	sseDataPrefix   = []byte("data:")
+	sseDonePayload  = []byte("[DONE]")
+	sseDataLine     = []byte("data: ")
+	sseEventLineEnd = []byte("\n\n")
+)
+
 // TransformOpenAIResponsesSSEToChatCompletionsSSE converts OpenAI Responses SSE stream into
 // OpenAI Chat Completions "data: {...}\n\n" chunks, ending with "data: [DONE]\n\n".
 //
@@ -75,12 +85,12 @@ func (p *sseEventParser) FeedLine(line []byte) (*sseEvent, bool, error) {
 		ev, ok := p.Flush()
 		return ev, ok, nil
 	}
-	if bytes.HasPrefix(trim, []byte("event:")) {
-		p.curEvent = strings.TrimSpace(string(bytes.TrimSpace(bytes.TrimPrefix(trim, []byte("event:")))))
+	if after, ok := bytes.CutPrefix(trim, sseEventPrefix); ok {
+		p.curEvent = string(bytes.TrimSpace(after))
 		return nil, false, nil
 	}
-	if bytes.HasPrefix(trim, []byte("data:")) {
-		p.curData = append(p.curData, bytes.TrimSpace(bytes.TrimPrefix(trim, []byte("data:"))))
+	if after, ok := bytes.CutPrefix(trim, sseDataPrefix); ok {
+		p.curData = append(p.curData, bytes.TrimSpace(after))
 		return nil, false, nil
 	}
 	return nil, false, nil
@@ -96,7 +106,7 @@ func (p *sseEventParser) Flush() (*sseEvent, bool) {
 	p.curData = p.curData[:0]
 	p.curEvent = ""
 
-	if len(payload) == 0 || bytes.Equal(payload, []byte("[DONE]")) {
+	if len(payload) == 0 || bytes.Equal(payload, sseDonePayload) {
 		return nil, false
 	}
 	return &sseEvent{Event: ev, Data: payload}, true
@@ -132,7 +142,7 @@ func (s *responsesSSEToChatState) HandleEvent(ev *sseEvent) error {
 	eventName := s.resolveEventName(ev.Event, root)
 	s.updateCommonFields(eventName, root)
 
-	if handled, err := s.handleTypedEvent(strings.ToLower(strings.TrimSpace(eventName)), root); handled {
+	if handled, err := s.handleTypedEvent(strings.ToLower(eventName), root); handled {
 		return err
 	}
 
@@ -157,8 +167,8 @@ func (s *responsesSSEToChatState) parseEventJSON(payload []byte) (map[string]any
 }
 
 func (s *responsesSSEToChatState) resolveEventName(eventLine string, root map[string]any) string {
-	if strings.TrimSpace(eventLine) != "" {
-		return strings.TrimSpace(eventLine)
+	if trimmed := strings.TrimSpace(eventLine); trimmed != "" {
+		return trimmed
 	}
 	return strings.TrimSpace(jsonutil.CoerceString(root["type"]))
 }
@@ -180,7 +190,7 @@ func (s *responsesSSEToChatState) updateCommonFields(eventName string, root map[
 	if rid := strings.TrimSpace(jsonutil.CoerceString(root["response_id"])); rid != "" {
 		s.ensureChatID(rid)
 	}
-	if rid := strings.TrimSpace(jsonutil.CoerceString(root["id"])); rid != "" && strings.HasPrefix(strings.ToLower(strings.TrimSpace(eventName)), "response.") {
+	if rid := strings.TrimSpace(jsonutil.CoerceString(root["id"])); rid != "" && strings.HasPrefix(strings.ToLower(eventName), "response.") {
 		s.ensureChatID(rid)
 	}
 	if m := strings.TrimSpace(jsonutil.CoerceString(root["model"])); m != "" {
@@ -280,7 +290,7 @@ func (s *responsesSSEToChatState) handleFunctionCallArgsDelta(root map[string]an
 }
 
 func (s *responsesSSEToChatState) shouldCaptureFinal(eventName string, root map[string]any) bool {
-	if strings.Contains(strings.ToLower(strings.TrimSpace(eventName)), "completed") {
+	if strings.Contains(strings.ToLower(eventName), "completed") {
 		return true
 	}
 	if root == nil {
@@ -364,8 +374,8 @@ func (s *responsesSSEToChatState) emitFinalFrom(root map[string]any) error {
 			},
 		},
 	}
-	if strings.TrimSpace(s.model) != "" {
-		finalChunk["model"] = strings.TrimSpace(s.model)
+	if s.model != "" {
+		finalChunk["model"] = s.model
 	}
 	if u, ok := mapped["usage"].(map[string]any); ok && u != nil {
 		finalChunk["usage"] = u
@@ -386,7 +396,7 @@ func (s *responsesSSEToChatState) finishReasonFromMapped(mapped map[string]any) 
 			finishReason = strings.TrimSpace(jsonutil.CoerceString(cm["finish_reason"]))
 		}
 	}
-	if strings.TrimSpace(finishReason) == "" {
+	if finishReason == "" {
 		finishReason = finishReasonStop
 	}
 	// new-api aligned: when only tool calls were emitted (no text), use tool_calls.
@@ -404,7 +414,7 @@ func (s *responsesSSEToChatState) nowCreated() int64 {
 }
 
 func (s *responsesSSEToChatState) ensureChatID(seed string) string {
-	if strings.TrimSpace(s.chatID) != "" {
+	if s.chatID != "" {
 		return s.chatID
 	}
 	id := strings.TrimSpace(seed)
@@ -433,8 +443,8 @@ func (s *responsesSSEToChatState) sendStartIfNeeded() error {
 			},
 		},
 	}
-	if strings.TrimSpace(s.model) != "" {
-		chunk["model"] = strings.TrimSpace(s.model)
+	if s.model != "" {
+		chunk["model"] = s.model
 	}
 	if err := writeSSEDataJSON(s.w, chunk); err != nil {
 		return err
@@ -459,8 +469,8 @@ func (s *responsesSSEToChatState) sendTextDelta(delta string) error {
 			},
 		},
 	}
-	if strings.TrimSpace(s.model) != "" {
-		chunk["model"] = strings.TrimSpace(s.model)
+	if s.model != "" {
+		chunk["model"] = s.model
 	}
 	if err := writeSSEDataJSON(s.w, chunk); err != nil {
 		return err
@@ -517,8 +527,8 @@ func (s *responsesSSEToChatState) sendToolCallDelta(callID string, name string, 
 			},
 		},
 	}
-	if strings.TrimSpace(s.model) != "" {
-		chunk["model"] = strings.TrimSpace(s.model)
+	if s.model != "" {
+		chunk["model"] = s.model
 	}
 	if err := writeSSEDataJSON(s.w, chunk); err != nil {
 		return err
