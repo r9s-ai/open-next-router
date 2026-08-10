@@ -63,40 +63,40 @@ func streamToDownstream(
 		proxyDump = &limitedBuffer{limit: rec.MaxBytes()}
 	}
 
-	src, err := buildStreamSource(gc, resp, rawMode, needSSEOps, useStrategyTransform, upstreamDump, usageTail, metricsTap, tapRawSSEForMetrics)
-	if err != nil {
-		return 0, time.Time{}, err
-	}
-
-	if upstreamDump != nil && !useStrategyTransform {
-		src = io.TeeReader(src, upstreamDump)
-	}
-
-	// Default path: collect metrics from post-strategy stream (pre-response-ops).
-	// When configured, strategy-transform path can collect from raw upstream SSE instead.
-	if !useStrategyTransform || !tapRawSSEForMetrics {
-		src = io.TeeReader(src, usageTail)
-		if metricsTap != nil {
-			src = io.TeeReader(src, metricsTap)
-		}
-	}
-
 	dst := io.Writer(gc.Writer)
 	if proxyDump != nil {
 		dst = io.MultiWriter(dst, proxyDump)
 	}
 	cw := &countingWriter{w: dst}
 
-	ctLower := strings.ToLower(strings.TrimSpace(gc.Writer.Header().Get("Content-Type")))
-	if ctLower == "" {
-		ctLower = strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Type")))
-	}
-	isSSE := strings.Contains(ctLower, "text/event-stream")
-
-	if needSSEOps && isSSE {
-		err = dslconfig.TransformSSEEventDataJSON(src, cw, meta, respDir.SSEJSONDelIf, respDir.JSONOps)
+	var err error
+	if useStrategyTransform {
+		err = streamStrategyTransform(gc, resp, meta, rawMode, respDir, needSSEOps,
+			upstreamDump, usageTail, metricsTap, tapRawSSEForMetrics, cw)
 	} else {
-		_, err = io.Copy(cw, src)
+		src, serr := buildPassthroughSource(gc, resp, needSSEOps)
+		if serr != nil {
+			return 0, time.Time{}, serr
+		}
+		if upstreamDump != nil {
+			src = io.TeeReader(src, upstreamDump)
+		}
+		src = io.TeeReader(src, usageTail)
+		if metricsTap != nil {
+			src = io.TeeReader(src, metricsTap)
+		}
+
+		ctLower := strings.ToLower(strings.TrimSpace(gc.Writer.Header().Get("Content-Type")))
+		if ctLower == "" {
+			ctLower = strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Type")))
+		}
+		isSSE := strings.Contains(ctLower, "text/event-stream")
+
+		if needSSEOps && isSSE {
+			err = dslconfig.TransformSSEEventDataJSON(src, cw, meta, respDir.SSEJSONDelIf, respDir.JSONOps)
+		} else {
+			_, err = io.Copy(cw, src)
+		}
 	}
 
 	if dump != nil && upstreamDump != nil && proxyDump != nil {
@@ -110,53 +110,42 @@ func streamToDownstream(
 	return cw.n, cw.firstWriteAt, err
 }
 
-func buildStreamSource(
+// streamStrategyTransform runs the sse_parse strategy transform synchronously, writing
+// directly into cw without a goroutine or pipe. Upstream decoding, dump capture, and
+// metric collection are composed via readers and writers on the source path.
+func streamStrategyTransform(
 	gc *gin.Context,
 	resp *http.Response,
+	meta *dslmeta.Meta,
 	rawMode string,
+	respDir *dslconfig.ResponseDirective,
 	needSSEOps bool,
-	useStrategyTransform bool,
 	upstreamDump *limitedBuffer,
 	usageTail *tailBuffer,
 	metricsTap *sseMetricsTap,
 	tapRawSSEForMetrics bool,
-) (io.Reader, error) {
-	if useStrategyTransform {
-		return buildStrategyTransformSource(gc, resp, rawMode, upstreamDump, usageTail, metricsTap, tapRawSSEForMetrics)
-	}
-	return buildPassthroughSource(gc, resp, needSSEOps)
-}
-
-func buildStrategyTransformSource(
-	gc *gin.Context,
-	resp *http.Response,
-	rawMode string,
-	upstreamDump *limitedBuffer,
-	usageTail *tailBuffer,
-	metricsTap *sseMetricsTap,
-	tapRawSSEForMetrics bool,
-) (io.Reader, error) {
-	pr, pw := io.Pipe()
-	upSrc, closeUp, err := decodeUpstreamIfNeeded(resp, true)
+	cw *countingWriter,
+) error {
+	src, closeUp, err := decodeUpstreamIfNeeded(resp, true)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if closeUp != nil {
 		defer func() { _ = closeUp() }()
 	}
 	if upstreamDump != nil {
-		upSrc = io.TeeReader(upSrc, upstreamDump)
+		src = io.TeeReader(src, upstreamDump)
 	}
 	if tapRawSSEForMetrics {
-		var writers []io.Writer
+		var taps []io.Writer
 		if usageTail != nil {
-			writers = append(writers, usageTail)
+			taps = append(taps, usageTail)
 		}
 		if metricsTap != nil {
-			writers = append(writers, metricsTap)
+			taps = append(taps, metricsTap)
 		}
-		if len(writers) > 0 {
-			upSrc = io.TeeReader(upSrc, io.MultiWriter(writers...))
+		if len(taps) > 0 {
+			src = io.TeeReader(src, io.MultiWriter(taps...))
 		}
 	}
 
@@ -164,11 +153,38 @@ func buildStrategyTransformSource(
 	gc.Writer.Header().Set("Cache-Control", "no-cache")
 	gc.Status(resp.StatusCode)
 
-	go func() {
-		err := apitransform.TransformSSEByMode(rawMode, upSrc, pw)
-		_ = pw.CloseWithError(err)
-	}()
-	return pr, nil
+	// Build the transform destination from inside out:
+	//   innermost: cw (the client writer, possibly including proxyDump)
+	//   middle:    SSEEventDataJSONWriter (applies JSON ops per event, if configured)
+	//   outermost: MultiWriter fanning to metric writers (when tapping transform output)
+
+	var transformDst io.Writer = cw
+	var sseWriter *dslconfig.SSEEventDataJSONWriter
+	if needSSEOps {
+		sseWriter = dslconfig.NewSSEEventDataJSONWriter(cw, meta, respDir.SSEJSONDelIf, respDir.JSONOps)
+		transformDst = sseWriter
+	}
+
+	if !tapRawSSEForMetrics {
+		// Tap metrics from transform output (post-strategy, pre-JSON-ops).
+		var taps []io.Writer
+		taps = append(taps, transformDst)
+		if usageTail != nil {
+			taps = append(taps, usageTail)
+		}
+		if metricsTap != nil {
+			taps = append(taps, metricsTap)
+		}
+		if len(taps) > 1 {
+			transformDst = io.MultiWriter(taps...)
+		}
+	}
+
+	err = apitransform.TransformSSEByMode(rawMode, src, transformDst)
+	if sseWriter != nil && err == nil {
+		err = sseWriter.Finish()
+	}
+	return err
 }
 
 func buildPassthroughSource(gc *gin.Context, resp *http.Response, needSSEOps bool) (io.Reader, error) {
@@ -220,6 +236,3 @@ func (r *readCloserReader) Read(p []byte) (int, error) {
 	}
 	return n, err
 }
-
-// streamTransformedOpenAIResponses and streamPassthrough were merged into streamToDownstream
-// to support response-phase SSE JSON mutations (json_* / sse_json_del_if).

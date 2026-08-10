@@ -3,6 +3,7 @@ package dslconfig
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -376,6 +377,91 @@ func TestTransformSSEEventDataJSON_ConditionalDelAndJSONOps(t *testing.T) {
 	require.True(t, hasUsage1)
 	_, hasAlways1 := obj1["always"]
 	require.False(t, hasAlways1)
+}
+
+func TestSSEEventDataJSONWriter_MatchesTransformSSEEventDataJSON(t *testing.T) {
+	in := "" +
+		"event: message\n" +
+		"data: {\"type\":\"message_delta\",\"usage\":{\"input_tokens\":9},\"always\":1}\n\n" +
+		"data: {\"type\":\"other\",\"usage\":{\"input_tokens\":1},\"always\":1}\n\n" +
+		"data: [DONE]\n\n"
+
+	rules := []SSEJSONDelIfRule{{CondPath: "$.type", Equals: "message_delta", DelPath: "$.usage"}}
+	ops := []JSONOp{{Op: "json_del", Path: "$.always"}}
+	meta := &dslmeta.Meta{}
+
+	var want bytes.Buffer
+	require.NoError(t, TransformSSEEventDataJSON(bytes.NewBufferString(in), &want, meta, rules, ops))
+
+	var got bytes.Buffer
+	w := NewSSEEventDataJSONWriter(&got, meta, rules, ops)
+	_, err := io.Copy(w, bytes.NewBufferString(in))
+	require.NoError(t, err)
+	require.NoError(t, w.Finish())
+
+	require.Equal(t, want.String(), got.String())
+}
+
+func TestSSEEventDataJSONWriter_ChunkedWrites(t *testing.T) {
+	in := "" +
+		"event: message_start\n" +
+		"data: {\"message\":{\"model\":\"upstream-1\"}}\n\n" +
+		"data: [DONE]\n\n"
+
+	ops := []JSONOp{{Op: "json_replace", Path: "$.message.model", ValueExpr: "$request.model"}}
+	meta := &dslmeta.Meta{OriginModelName: "meta-model"}
+
+	var want bytes.Buffer
+	require.NoError(t, TransformSSEEventDataJSON(bytes.NewBufferString(in), &want, meta, nil, ops))
+
+	var got bytes.Buffer
+	w := NewSSEEventDataJSONWriter(&got, meta, nil, ops)
+	for _, b := range []byte(in) {
+		_, werr := w.Write([]byte{b})
+		require.NoError(t, werr)
+	}
+	require.NoError(t, w.Finish())
+
+	require.Equal(t, want.String(), got.String())
+}
+
+func TestSSEEventDataJSONWriter_FinishFlushesTrailingEvent(t *testing.T) {
+	// No terminal blank line — Finish must flush the buffered event.
+	in := "data: {\"type\":\"msg\",\"drop\":true}"
+
+	ops := []JSONOp{{Op: "json_del", Path: "$.drop"}}
+	meta := &dslmeta.Meta{}
+
+	var got bytes.Buffer
+	w := NewSSEEventDataJSONWriter(&got, meta, nil, ops)
+	_, err := w.Write([]byte(in))
+	require.NoError(t, err)
+	require.NoError(t, w.Finish())
+
+	payloads := responseJSONPayloads(t, got.Bytes())
+	require.Len(t, payloads, 1)
+	require.Equal(t, "msg", payloads[0]["type"])
+	_, hasDrop := payloads[0]["drop"]
+	require.False(t, hasDrop)
+}
+
+func TestSSEEventDataJSONWriter_CRLFLineEndings(t *testing.T) {
+	in := "data: {\"keep\":1,\"remove\":true}\r\n\r\n"
+
+	ops := []JSONOp{{Op: "json_del", Path: "$.remove"}}
+	meta := &dslmeta.Meta{}
+
+	var got bytes.Buffer
+	w := NewSSEEventDataJSONWriter(&got, meta, nil, ops)
+	_, err := w.Write([]byte(in))
+	require.NoError(t, err)
+	require.NoError(t, w.Finish())
+
+	payloads := responseJSONPayloads(t, got.Bytes())
+	require.Len(t, payloads, 1)
+	require.Equal(t, float64(1), payloads[0]["keep"])
+	_, hasRemove := payloads[0]["remove"]
+	require.False(t, hasRemove)
 }
 
 func responseJSONPayloads(t *testing.T, raw []byte) []map[string]any {

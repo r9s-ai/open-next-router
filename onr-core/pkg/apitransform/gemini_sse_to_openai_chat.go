@@ -30,7 +30,7 @@ func TransformGeminiSSEToOpenAIChatCompletionsSSE(r io.Reader, w io.Writer) erro
 		}
 		payload := bytes.TrimSpace(bytes.Join(dataLines, []byte{'\n'}))
 		dataLines = dataLines[:0]
-		if len(payload) == 0 || bytes.Equal(payload, []byte("[DONE]")) {
+		if len(payload) == 0 || bytes.Equal(payload, sseDonePayload) {
 			return nil
 		}
 		return s.handlePayload(payload)
@@ -45,8 +45,8 @@ func TransformGeminiSSEToOpenAIChatCompletionsSSE(r io.Reader, w io.Writer) erro
 				if ferr := flush(); ferr != nil {
 					return ferr
 				}
-			} else if bytes.HasPrefix(trim, []byte("data:")) {
-				dataLines = append(dataLines, bytes.TrimSpace(bytes.TrimPrefix(trim, []byte("data:"))))
+			} else if after, ok := bytes.CutPrefix(trim, sseDataPrefix); ok {
+				dataLines = append(dataLines, bytes.TrimSpace(after))
 			}
 		}
 		if err != nil {

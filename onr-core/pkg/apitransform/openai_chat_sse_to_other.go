@@ -52,7 +52,7 @@ func transformOpenAIChatSSE(r io.Reader, mapper ssePayloadMapper, w io.Writer) e
 		}
 		payload := bytes.TrimSpace(bytes.Join(dataLines, []byte{'\n'}))
 		dataLines = dataLines[:0]
-		if len(payload) == 0 || bytes.Equal(payload, []byte("[DONE]")) {
+		if len(payload) == 0 || bytes.Equal(payload, sseDonePayload) {
 			return nil
 		}
 
@@ -64,13 +64,13 @@ func transformOpenAIChatSSE(r io.Reader, mapper ssePayloadMapper, w io.Writer) e
 			if len(item) == 0 {
 				continue
 			}
-			if _, err := w.Write([]byte("data: ")); err != nil {
+			if _, err := w.Write(sseDataLine); err != nil {
 				return err
 			}
 			if _, err := w.Write(item); err != nil {
 				return err
 			}
-			if _, err := w.Write([]byte("\n\n")); err != nil {
+			if _, err := w.Write(sseEventLineEnd); err != nil {
 				return err
 			}
 		}
@@ -86,8 +86,8 @@ func transformOpenAIChatSSE(r io.Reader, mapper ssePayloadMapper, w io.Writer) e
 				if ferr := flush(); ferr != nil {
 					return ferr
 				}
-			} else if bytes.HasPrefix(trim, []byte("data:")) {
-				dataLines = append(dataLines, bytes.TrimSpace(bytes.TrimPrefix(trim, []byte("data:"))))
+			} else if after, ok := bytes.CutPrefix(trim, sseDataPrefix); ok {
+				dataLines = append(dataLines, bytes.TrimSpace(after))
 			}
 		}
 		if err != nil {
