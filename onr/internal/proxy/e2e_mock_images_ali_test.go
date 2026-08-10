@@ -22,6 +22,10 @@ import (
 func providerConfAliImages(baseURL string) string {
 	return fmt.Sprintf(`syntax "next-router/0.1";
 
+usage_mode "image_generations_by_picture" {
+  usage_fact image.generate image source="response" count_path="$.data[*]";
+}
+
 provider "ali" {
   defaults {
     upstream_config {
@@ -54,7 +58,7 @@ provider "ali" {
                       when_request="$.response_format" when_eq="b64_json";
     }
     metrics {
-      usage_fact image.generate image source="response" count_path="$.data[*]";
+      usage_extract image_generations_by_picture;
     }
   }
 }
