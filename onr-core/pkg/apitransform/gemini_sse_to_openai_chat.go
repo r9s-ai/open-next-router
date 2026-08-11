@@ -95,7 +95,7 @@ func (s *geminiSSEToChatState) handlePayload(payload []byte) error {
 				if len(toolCalls) > 0 {
 					delta["tool_calls"] = toolCalls
 				}
-				finish := strings.TrimSpace(cand.FinishReason)
+				finish := mapGeminiFinishToOpenAI(cand.FinishReason, len(toolCalls) > 0)
 				if len(delta) == 1 && finish == "" {
 					continue
 				}
@@ -187,14 +187,25 @@ func geminiUsageToChatChunkUsage(usage *apitypes.UsageMetadata) apitypes.JSONObj
 	if usage == nil {
 		return nil
 	}
-	completionTokens := usage.TotalTokenCount - usage.PromptTokenCount
+	promptTokens := usage.PromptTokenCount
+	totalTokens := usage.TotalTokenCount
+	var completionTokens int
+	if totalTokens > 0 {
+		completionTokens = totalTokens - promptTokens
+	} else {
+		completionTokens = usage.CandidatesTokenCount + usage.ThoughtsTokenCount
+		totalTokens = promptTokens + completionTokens
+	}
 	if completionTokens < 0 {
 		completionTokens = 0
 	}
 	out := apitypes.JSONObject{
 		"prompt_tokens":     usage.PromptTokenCount,
 		"completion_tokens": completionTokens,
-		"total_tokens":      usage.TotalTokenCount,
+		"total_tokens":      totalTokens,
+	}
+	out["prompt_tokens_details"] = apitypes.JSONObject{
+		"cached_tokens": usage.CachedContentTokenCount,
 	}
 	out["completion_tokens_details"] = apitypes.JSONObject{
 		"reasoning_tokens": usage.ThoughtsTokenCount,

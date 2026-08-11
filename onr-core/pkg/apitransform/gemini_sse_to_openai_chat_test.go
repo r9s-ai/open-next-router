@@ -16,7 +16,7 @@ func TestTransformGeminiSSEToOpenAIChatCompletionsSSE_Basic(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	s := out.String()
-	if !containsAll(s, `"chat.completion.chunk"`, `"role":"assistant"`, `"content":"Hi"`, `"finish_reason":"STOP"`) {
+	if !containsAll(s, `"chat.completion.chunk"`, `"role":"assistant"`, `"content":"Hi"`, `"finish_reason":"stop"`) {
 		t.Fatalf("unexpected output: %s", s)
 	}
 	if !containsAll(s, `"usage"`, `"prompt_tokens":1`, `"completion_tokens":2`, `"total_tokens":3`) {
