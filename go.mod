@@ -3,7 +3,7 @@ module github.com/r9s-ai/open-next-router
 go 1.25.12
 
 require (
-	github.com/aws/aws-sdk-go-v2 v1.43.3
+	github.com/aws/aws-sdk-go-v2 v1.43.4
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.16
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
