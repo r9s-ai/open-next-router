@@ -378,7 +378,7 @@ func MapGeminiGenerateContentToOpenAIChatCompletionsResponseObject(root apitypes
 		choices = append(choices, apitypes.JSONObject{
 			"index":         idx,
 			"message":       msg,
-			"finish_reason": strings.TrimSpace(jsonutil.CoerceString(cand["finishReason"])),
+			"finish_reason": mapGeminiFinishToOpenAI(jsonutil.CoerceString(cand["finishReason"]), len(toolCalls) > 0),
 		})
 	}
 
@@ -454,21 +454,26 @@ func mapGeminiUsageToOpenAI(raw map[string]any) (apitypes.JSONObject, error) {
 		return nil, err
 	}
 	promptTokens := usage.PromptTokenCount
-	completionTokens := usage.CandidatesTokenCount
+	completionTokens := 0
 	totalTokens := usage.TotalTokenCount
-	if totalTokens <= 0 {
+	cachedTokens := usage.CachedContentTokenCount
+	if totalTokens > 0 {
+		completionTokens = totalTokens - promptTokens
+	} else {
+		completionTokens = usage.CandidatesTokenCount + usage.ThoughtsTokenCount
 		totalTokens = promptTokens + completionTokens
 	}
 	if completionTokens <= 0 {
-		completionTokens = totalTokens - promptTokens
-	}
-	if completionTokens < 0 {
 		completionTokens = 0
 	}
+
 	out := apitypes.JSONObject{
 		"prompt_tokens":     usage.PromptTokenCount,
 		"completion_tokens": completionTokens,
 		"total_tokens":      totalTokens,
+		"prompt_tokens_details": apitypes.JSONObject{
+			"cached_tokens": cachedTokens,
+		},
 	}
 	if usage.ThoughtsTokenCount > 0 {
 		out["completion_tokens_details"] = apitypes.JSONObject{
@@ -591,5 +596,24 @@ func mapOpenAIFinishToGemini(finish string) string {
 		return "SAFETY"
 	default:
 		return "STOP"
+	}
+}
+
+func mapGeminiFinishToOpenAI(finish string, hasToolCalls bool) string {
+	normalized := strings.ToUpper(strings.TrimSpace(finish))
+	if normalized == "" {
+		return ""
+	}
+	if hasToolCalls {
+		return "tool_calls"
+	}
+	switch normalized {
+	case "MAX_TOKENS":
+		return "length"
+	case "SAFETY", "RECITATION", "LANGUAGE", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII",
+		"IMAGE_SAFETY", "IMAGE_PROHIBITED_CONTENT", "IMAGE_RECITATION":
+		return finishContentFilter
+	default:
+		return "stop"
 	}
 }

@@ -429,7 +429,7 @@ func TestE2EMock_ChatCompletions_Gemini_Stream(t *testing.T) {
 		`"object":"chat.completion.chunk"`,
 		`"role":"assistant"`,
 		`"content":"Hi"`,
-		`"finish_reason":"STOP"`,
+		`"finish_reason":"stop"`,
 		`"total_tokens":3`,
 		"data: [DONE]",
 	) {

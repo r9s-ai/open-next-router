@@ -130,3 +130,32 @@ func TestMapGeminiGenerateContentToOpenAIChatCompletionsResponse_UsageFallbackWi
 		t.Fatalf("unexpected mapped output: %s", s)
 	}
 }
+
+func TestMapGeminiFinishToOpenAI(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		finish       string
+		hasToolCalls bool
+		want         string
+	}{
+		{name: "empty", want: ""},
+		{name: "stop", finish: "STOP", want: "stop"},
+		{name: "max tokens", finish: "MAX_TOKENS", want: "length"},
+		{name: "safety", finish: "SAFETY", want: "content_filter"},
+		{name: "image safety", finish: "IMAGE_SAFETY", want: "content_filter"},
+		{name: "unknown", finish: "OTHER", want: "stop"},
+		{name: "unfinished tool call", hasToolCalls: true, want: ""},
+		{name: "tool calls", finish: "STOP", hasToolCalls: true, want: "tool_calls"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := mapGeminiFinishToOpenAI(tt.finish, tt.hasToolCalls); got != tt.want {
+				t.Fatalf("mapGeminiFinishToOpenAI(%q, %v)=%q want=%q", tt.finish, tt.hasToolCalls, got, tt.want)
+			}
+		})
+	}
+}

@@ -189,7 +189,7 @@ func TestMapResponseBodyByMode_GeminiToOpenAIChat(t *testing.T) {
 		`"object":"chat.completion"`,
 		`"model":"gemini-2.5-pro"`,
 		`"content":"hello"`,
-		`"finish_reason":"STOP"`,
+		`"finish_reason":"tool_calls"`,
 		`"name":"lookup_weather"`,
 		`"name":"emit_media"`,
 		`"prompt_tokens":11`,
