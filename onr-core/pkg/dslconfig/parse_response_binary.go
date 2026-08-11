@@ -197,3 +197,76 @@ func consumeDirectiveOptions(s *scanner, directive string) ([]directiveOption, e
 		}
 	}
 }
+
+// Bounds for resp_inline_url. The defaults match what a single image response
+// needs; the maxima keep a misconfigured rule from turning one client request
+// into an unbounded fan-out of large fetches.
+const (
+	respInlineURLDefaultMaxBytes    = 10 << 20 // 10 MiB
+	respInlineURLLimitMaxBytes      = 64 << 20
+	respInlineURLDefaultTimeoutMS   = 30000
+	respInlineURLLimitTimeoutMS     = 120000
+	respInlineURLDefaultConcurrency = 4
+	respInlineURLLimitConcurrency   = 16
+)
+
+// parseRespInlineURLStmt parses:
+// resp_inline_url path="$.data[*].url" set=b64_json
+//
+//	[when_request="$.response_format" when_eq="b64_json"]
+//	[max_bytes=10485760] [timeout_ms=30000] [concurrency=4];
+func parseRespInlineURLStmt(s *scanner, resp *ResponseDirective) error {
+	opts, err := consumeDirectiveOptions(s, "resp_inline_url")
+	if err != nil {
+		return err
+	}
+	rule := &RespInlineURLRule{
+		MaxBytes:    respInlineURLDefaultMaxBytes,
+		TimeoutMS:   respInlineURLDefaultTimeoutMS,
+		Concurrency: respInlineURLDefaultConcurrency,
+	}
+	for _, opt := range opts {
+		switch opt.key {
+		case "path":
+			rule.Path = opt.value
+		case "set":
+			rule.SetField = opt.value
+		case "when_request":
+			rule.WhenRequestPath = opt.value
+		case "when_eq":
+			rule.WhenEquals = opt.value
+		case "max_bytes":
+			v, perr := strconv.ParseInt(strings.TrimSpace(opt.value), 10, 64)
+			if perr != nil || v <= 0 || v > respInlineURLLimitMaxBytes {
+				return s.errAt(opt.tok, "resp_inline_url max_bytes expects an integer in (0, 67108864]")
+			}
+			rule.MaxBytes = v
+		case "timeout_ms":
+			v, perr := strconv.Atoi(strings.TrimSpace(opt.value))
+			if perr != nil || v <= 0 || v > respInlineURLLimitTimeoutMS {
+				return s.errAt(opt.tok, "resp_inline_url timeout_ms expects an integer in (0, 120000]")
+			}
+			rule.TimeoutMS = v
+		case "concurrency":
+			v, perr := strconv.Atoi(strings.TrimSpace(opt.value))
+			if perr != nil || v <= 0 || v > respInlineURLLimitConcurrency {
+				return s.errAt(opt.tok, "resp_inline_url concurrency expects an integer in (0, 16]")
+			}
+			rule.Concurrency = v
+		default:
+			return s.errAt(opt.tok, "unsupported resp_inline_url option "+opt.key)
+		}
+	}
+	if strings.TrimSpace(rule.Path) == "" {
+		return s.errAt(token{pos: s.lastPos}, "resp_inline_url requires path")
+	}
+	if strings.TrimSpace(rule.SetField) == "" {
+		return s.errAt(token{pos: s.lastPos}, "resp_inline_url requires set")
+	}
+	// when_eq without when_request would read as a gate but never gate anything.
+	if strings.TrimSpace(rule.WhenRequestPath) == "" && strings.TrimSpace(rule.WhenEquals) != "" {
+		return s.errAt(token{pos: s.lastPos}, "resp_inline_url when_eq requires when_request")
+	}
+	resp.InlineURL = rule
+	return nil
+}

@@ -438,6 +438,7 @@ v0.1 includes:
 - `openai_chat_to_gemini_generate_content`: OpenAI `chat.completions` request JSON → Gemini `generateContent` request JSON
 - `openai_images_to_gemini_generate_content`: OpenAI `images.generations` request JSON → Gemini `generateContent` request JSON (Nano Banana). Maps prompt → `contents[].parts[].text`, `n` → `candidateCount`; for gemini-3 models also maps `size` → `imageConfig.aspectRatio`, `quality` → `imageConfig.imageSize`, and sets `responseModalities=[TEXT,IMAGE]`. Performs validation and errors on violation: `prompt` is required; `n` must be `<= 1`; `response_format=url` is rejected (compared case-insensitively, so `URL` is rejected too); gemini-3 accepts only known aspect ratios/pixel sizes and `standard`/`hd` quality; models below gemini-3 accept neither `size` nor `quality`. Rejections carry the relay Go adaptors' error codes (`request_prompt_missing`, `request_n_out_of_range`, `request_size_not_supported`, `request_invalid_parameter`) and the offending parameter name, so clients can branch on `error.code`/`error.param` instead of parsing the message.
 - `openai_images_to_minimax_image`: OpenAI `images.generations` request JSON → Minimax `/v1/image_generation` request JSON. Maps `size` → `aspect_ratio` (documented pixel sizes and bare ratios alike) or `width`/`height` (512–2048, multiple of 8), `response_format=b64_json` → `base64`, and defaults a missing `n` to 1 and a missing `response_format` to `url`; `seed` and `watermark` pass through. Generic bounds (prompt presence/length, `n` range, `response_format` membership) are left to the `req_required`/`req_len`/`req_range`/`req_enum` directives.
+- `openai_images_to_qwen_image`: OpenAI `images.generations` request JSON → DashScope `multimodal-generation` request JSON. Wraps the prompt in `input.messages[].content[].text`, moves the rest under `parameters`, respells `size` with a star (`1024x1024` → `1024*1024`, default `1328*1328`), defaults a missing `n` to 1, `prompt_extend` to true and `watermark` to false, and passes `negative_prompt`/`seed` through. Generic bounds are left to the `req_required`/`req_len`/`req_range` directives.
 - `openai_chat_to_anthropic_messages`: OpenAI `chat.completions` request JSON → Anthropic `/v1/messages` request JSON.
   Mapped fields include `model`, `messages`, `system`, `tools`, `tool_choice`, `max_tokens`, `temperature`, `top_p`, `stream`, and `response_format`.
   `response_format` constraints:
@@ -624,6 +625,7 @@ Available modes depend on the built-in implementation. v0.1 includes:
 - `gemini_to_openai_chat` (`resp_map`): Gemini `generateContent` JSON → OpenAI `chat.completions` JSON
 - `gemini_to_openai_images` (`resp_map`): Gemini `generateContent` JSON → OpenAI `images.generations` JSON. Extracts `candidates[].content.parts[].inlineData.data` → `data[].b64_json` (+ `revised_prompt` from the same part's text) and maps `usageMetadata` → `usage`. A response with no candidates or with no inline image data is an error (HTTP 500), not a success body with an empty `data` array. `usage` follows the relay Go adaptor's image accounting (`completion_tokens = totalTokenCount - promptTokenCount`) and carries the IMAGE modality entry of `candidatesTokensDetails` as `output_tokens_details.image_tokens`, which the `openai_images_generations` usage_mode preset reads — metrics are extracted after `resp_map`, so fields not mapped here are unavailable to `usage_fact`.
 - `minimax_image_to_openai_images` (`resp_map`): Minimax `/v1/image_generation` JSON → OpenAI `images.generations` JSON. Flattens `data.image_base64`/`data.image_urls` (base64 preferred) into `data[].b64_json`/`data[].url`. A business failure carried inside an HTTP 200 (`base_resp.status_code != 0`) becomes a 400 with Minimax's `status_msg`; a response with no image is a 500.
+- `qwen_image_to_openai_images` (`resp_map`): DashScope `multimodal-generation` JSON → OpenAI `images.generations` JSON. Flattens `output.choices[].message.content[].image` into `data[].url`. A business failure carried inside an HTTP 200 (a non-empty top-level `code`) becomes a 400 with DashScope's own message; a response with no image is a 500. DashScope never returns inline content, so pair this with `resp_inline_url` to serve `response_format=b64_json`.
 - `openai_to_gemini_chunks` (`sse_parse`): OpenAI-compatible `chat.completions` SSE → Gemini SSE
 - `gemini_to_openai_chat_chunks` (`sse_parse`): Gemini SSE → OpenAI `chat.completions` SSE chunks
 - `openai_responses_to_openai_chat` (`resp_map`): OpenAI/Azure `/responses` JSON → OpenAI `chat.completions` JSON
@@ -718,6 +720,36 @@ response {
 - Only applies to `text/event-stream`.
 - Condition requires the value at `<cond_path>` to be a string and to **exactly** equal `<equals>`.
 - Rules are executed in order, before `json_*` response ops.
+
+#### resp_inline_url (fetch linked assets)
+
+For providers that only ever return a link to the generated asset, while the
+caller asked for inline content:
+
+```conf
+match api = "images.generations" {
+  response {
+    resp_map qwen_image_to_openai_images;
+    resp_inline_url path="$.data[*].url" set="b64_json"
+                    when_request="$.response_format" when_eq="b64_json";
+  }
+}
+```
+
+- Runs after `resp_map`, so `path` addresses the downstream shape. It also works
+  without `resp_map`, on a passthrough body.
+- Each matched URL is fetched and replaced by its base64 content under `set`;
+  the original field is removed only on success.
+- `when_request`/`when_eq` gate the rule on a field of the **client's** request,
+  so the link-returning path stays untouched. Without a satisfied condition
+  nothing is fetched.
+- This is the only response directive that performs network I/O. It issues GET
+  requests over http/https only, and every fetch is bounded by `timeout_ms`
+  (default 30000, max 120000), `max_bytes` (default 10485760, max 67108864) and
+  `concurrency` (default 4, max 16).
+- A failed or oversized fetch leaves the URL in place rather than failing the
+  response: a caller holding a link can still retrieve the asset, while an
+  oversized body would only yield a truncated one.
 
 #### resp_body_extract / resp_content_type (JSON -> binary response)
 

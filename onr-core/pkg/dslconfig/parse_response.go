@@ -25,6 +25,7 @@ func parseResponsePhase(s *scanner, resp *ResponseDirective) error {
 		"resp_body_extract":  parseRespBodyExtractStmt,
 		"resp_content_type":  parseRespContentTypeStmt,
 		"sse_binary_extract": parseSSEBinaryExtractStmt,
+		"resp_inline_url":    parseRespInlineURLStmt,
 	}
 	for {
 		tok := s.nextNonTrivia()

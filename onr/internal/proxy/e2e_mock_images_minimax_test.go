@@ -20,6 +20,10 @@ import (
 func providerConfMinimaxImages(baseURL string) string {
 	return fmt.Sprintf(`syntax "next-router/0.1";
 
+usage_mode "image_generations_by_picture" {
+  usage_fact image.generate image source="response" count_path="$.data[*]";
+}
+
 provider "minimax" {
   defaults {
     upstream_config {
@@ -49,7 +53,7 @@ provider "minimax" {
       resp_map minimax_image_to_openai_images;
     }
     metrics {
-      usage_fact image.generate image source="response" count_path="$.data[*]";
+      usage_extract image_generations_by_picture;
     }
   }
 }
