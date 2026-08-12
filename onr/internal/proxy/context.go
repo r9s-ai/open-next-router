@@ -16,17 +16,21 @@ import (
 )
 
 type proxyCtx struct {
-	start        time.Time
-	provider     string
-	key          ProviderKey
-	api          string
-	stream       bool
-	pf           dslconfig.ProviderFile
-	meta         *dslmeta.Meta
-	model        string
-	reqBody      []byte
-	respDir      *dslconfig.ResponseDirective
-	reqTransform *dslconfig.RequestTransform
+	start    time.Time
+	provider string
+	key      ProviderKey
+	api      string
+	stream   bool
+	pf       dslconfig.ProviderFile
+	meta     *dslmeta.Meta
+	model    string
+	reqBody  []byte
+	// reqContentType is the content type of reqBody after the request
+	// transform, which is not the client's when req_map rewrote a multipart
+	// upload into JSON.
+	reqContentType string
+	respDir        *dslconfig.ResponseDirective
+	reqTransform   *dslconfig.RequestTransform
 }
 
 func normalizeUpstreamBaseURL(raw string) string {
@@ -141,17 +145,18 @@ func (c *Client) buildProxyCtx(gc *gin.Context, provider string, key ProviderKey
 	reqBody := reqResult.Body
 
 	return &proxyCtx{
-		start:        start,
-		provider:     provider,
-		key:          key,
-		api:          api,
-		stream:       stream,
-		pf:           pf,
-		meta:         m,
-		model:        model,
-		reqBody:      reqBody,
-		respDir:      respDir,
-		reqTransform: reqTransform,
+		start:          start,
+		provider:       provider,
+		key:            key,
+		api:            api,
+		stream:         stream,
+		pf:             pf,
+		meta:           m,
+		model:          model,
+		reqBody:        reqBody,
+		reqContentType: reqResult.ContentType,
+		respDir:        respDir,
+		reqTransform:   reqTransform,
 	}, nil
 }
 

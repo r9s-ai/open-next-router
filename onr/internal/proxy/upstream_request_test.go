@@ -39,7 +39,7 @@ func TestDoUpstreamRequest_DoesNotCancelBodyImmediately(t *testing.T) {
 		RequestURLPath: "/",
 	}
 
-	resp, cancel, err := c.doUpstreamRequest(gc, "openai", &dslconfig.ProviderFile{}, meta, []byte(`{"x":1}`))
+	resp, cancel, err := c.doUpstreamRequest(gc, "openai", &dslconfig.ProviderFile{}, meta, []byte(`{"x":1}`), "")
 	if err != nil {
 		t.Fatalf("doUpstreamRequest error: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestDoUpstreamRequest_AppliesFilterHeaderValuesAfterSetHeader(t *testing.T)
 		RequestURLPath: "/",
 	}
 
-	resp, cancel, err := c.doUpstreamRequest(gc, "openai", &pf, meta, []byte(`{"x":1}`))
+	resp, cancel, err := c.doUpstreamRequest(gc, "openai", &pf, meta, []byte(`{"x":1}`), "")
 	if err != nil {
 		t.Fatalf("doUpstreamRequest error: %v", err)
 	}
@@ -168,7 +168,7 @@ func TestDoUpstreamRequest_AppliesFilterHeaderValuesAcrossRepeatedHeaderLines(t 
 		RequestURLPath: "/",
 	}
 
-	resp, cancel, err := c.doUpstreamRequest(gc, "openai", &pf, meta, []byte(`{"x":1}`))
+	resp, cancel, err := c.doUpstreamRequest(gc, "openai", &pf, meta, []byte(`{"x":1}`), "")
 	if err != nil {
 		t.Fatalf("doUpstreamRequest error: %v", err)
 	}
@@ -230,7 +230,7 @@ func TestDoUpstreamRequest_PassesHeaderFromOriginRequest(t *testing.T) {
 		RequestURLPath: "/",
 	}
 
-	resp, cancel, err := c.doUpstreamRequest(gc, "anthropic", &pf, meta, []byte(`{"x":1}`))
+	resp, cancel, err := c.doUpstreamRequest(gc, "anthropic", &pf, meta, []byte(`{"x":1}`), "")
 	if err != nil {
 		t.Fatalf("doUpstreamRequest error: %v", err)
 	}

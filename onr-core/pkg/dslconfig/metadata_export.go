@@ -103,10 +103,26 @@ func exportRequestTransform(t RequestTransform) dslmetadata.RequestTransform {
 			DefaultExpr: strings.TrimSpace(t.ModelMap.DefaultExpr),
 		},
 		ValidationRules:    exportValidationRules(t.ValidationRules),
+		InlineFiles:        exportInlineFiles(t.InlineFiles),
 		JSONOps:            exportJSONOps(t.JSONOps),
 		AfterReqMapJSONOps: exportJSONOps(t.AfterReqMapJSONOps),
 		ReqMapMode:         strings.TrimSpace(t.ReqMapMode),
 	}
+}
+
+func exportInlineFiles(in []ReqInlineFileRule) []dslmetadata.ReqInlineFileRule {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]dslmetadata.ReqInlineFileRule, 0, len(in))
+	for _, rule := range in {
+		out = append(out, dslmetadata.ReqInlineFileRule{
+			Field:    strings.TrimSpace(rule.Field),
+			MaxBytes: rule.MaxBytes,
+			MaxCount: rule.MaxCount,
+		})
+	}
+	return out
 }
 
 func exportValidationRules(in []RequestValidationRule) []dslmetadata.RequestValidationRule {

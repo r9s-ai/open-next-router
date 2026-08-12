@@ -31,6 +31,8 @@ const (
 	CodeRequestPromptMissing    = "request_prompt_missing"
 	CodeRequestSizeNotSupported = "request_size_not_supported"
 	CodeRequestNOutOfRange      = "request_n_out_of_range"
+
+	CodeRequestMissingRequiredField = "request_missing_required_field"
 )
 
 // RequestMappingError reports a client request that a req_map builtin rejected,

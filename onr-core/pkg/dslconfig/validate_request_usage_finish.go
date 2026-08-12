@@ -57,6 +57,8 @@ func validateRequestTransform(path, providerName, scope string, t RequestTransfo
 		return t, nil
 	case "openai_images_to_gemini_generate_content":
 		return t, nil
+	case "openai_images_edits_to_gemini_generate_content":
+		return t, nil
 	case "openai_images_to_minimax_image":
 		return t, nil
 	case "openai_images_to_qwen_image":

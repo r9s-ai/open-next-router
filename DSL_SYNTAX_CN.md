@@ -445,6 +445,34 @@ request {
 - `json_clamp <jsonpath> min=<f> max=<f>;`：把路径上的数值钳制到 `[min, max]`（小于 `min` 取 `min`，大于 `max` 取 `max`，区间内原值不变）；路径缺失或非数值时为 no-op。`min`/`max` 均必填且要求 `max >= min`。
 - 值表达式的数字字面量支持小数（如 `1.0`、`0.5`），`json_set` / `json_set_if_absent` 等写入时会以 JSON number 输出。
 
+#### req_inline_file（把上传文件读进请求 root）
+
+```conf
+request { req_inline_file field="<multipart 字段名>" [max_bytes=<n>] [max_count=<n>]; }
+```
+
+用于"上游协议不同、需要把上传的字节放进 JSON body"的 multipart 端点
+（`images.edits`、`audio.transcriptions` 等）：
+
+```conf
+match api = "images.edits" {
+  request {
+    req_inline_file field="image" max_bytes=20971520 max_count=8;
+    req_inline_file field="mask" max_bytes=20971520 max_count=1;
+
+    req_map openai_images_edits_to_gemini_generate_content;
+  }
+}
+```
+
+- 请求规范化默认**丢弃 multipart 的文件分片**，因此普通透传上传时从不缓冲文件。本指令是那个"显式开关"，且只读取点名的字段
+- 每个字段以其表单字段名落在请求 root 上，值为 `{filename, content_type, b64}` 对象**数组** —— 即使只有一个文件也是数组，这样 builtin 只需处理一种形状
+- 在校验之前、`req_map` 之前执行，因此 `req_*` 规则与 builtin 看到的都是已经带上文件的 root
+- `content_type` 取分片声明的类型；若声明的是通用的 `application/octet-stream`，则改用文件扩展名判断，最后才回退到嗅探字节。很多客户端把所有上传都标成 octet-stream，而要求真实图片类型的上游会直接拒绝
+- 超过 `max_bytes`（缺省 20971520，上限 67108864）的文件**直接拒绝，不截断** —— 半张图片只会换回一个让人摸不着头脑的上游错误；超过 `max_count`（缺省 4，上限 16）同样拒绝。两者都以 400 返回
+- 声明了但没上传的字段不算错误，因此可选上传（如 mask）可以无条件声明；是否允许缺失由 builtin 决定
+- 当 `req_map` 作用在 multipart 请求上时，发往上游的 `Content-Type` 会切成 `application/json`，与 builtin 产出的 body 一致
+
 #### req_map
 
 ```conf
@@ -460,6 +488,7 @@ v0.1 内置：
 - `gemini_to_openai_chat`：Gemini `generateContent` 请求 JSON → OpenAI `chat.completions` 请求 JSON
 - `openai_chat_to_gemini_generate_content`：OpenAI `chat.completions` 请求 JSON → Gemini `generateContent` 请求 JSON
 - `openai_images_to_gemini_generate_content`：OpenAI `images.generations` 请求 JSON → Gemini `generateContent`（Nano Banana）。prompt → `contents[].parts[].text`、`n` → `candidateCount`；gemini-3 另将 `size` → `imageConfig.aspectRatio`、`quality` → `imageConfig.imageSize`,并设 `responseModalities=[TEXT,IMAGE]`。内置校验并报错:`prompt` 必填;`n` 必须 `<= 1`;`response_format=url` 拒绝(大小写不敏感,`URL` 同样拒绝);gemini-3 仅接受已知比例/像素尺寸与 `standard`/`hd` quality;gemini-3 以下不接受 `size`/`quality`。被拒时会带上与 relay Go 侧一致的 code(`request_prompt_missing`、`request_n_out_of_range`、`request_size_not_supported`、`request_invalid_parameter`)与出错参数名,客户端可直接按 `error.code`/`error.param` 分支,无需解析文案。
+- `openai_images_edits_to_gemini_generate_content`：OpenAI `images.edits` 请求 → Gemini `generateContent` 请求 JSON。Gemini 没有独立的编辑端点:编辑就是一次 `generateContent`,把原图内联放进 `contents`。必须搭配 `req_inline_file` 读取上传字段,否则请求 root 里根本没有图片字节。parts 顺序为 原图 → mask 及一句固定的 mask 说明 → prompt —— 多模态模型按顺序读取 parts,顺序本身是契约的一部分。校验与 `openai_images_to_gemini_generate_content` 共用,并额外要求至少一张原图(`request_missing_required_field`,参数 `image`),且该检查最先执行。响应侧不需要对应 builtin:编辑的响应就是普通 `generateContent` 响应,直接由 `gemini_to_openai_images` 处理。
 - `openai_images_to_minimax_image`：OpenAI `images.generations` 请求 JSON → Minimax `/v1/image_generation` 请求 JSON。`size` → `aspect_ratio`(文档像素尺寸与裸比例均可)或 `width`/`height`(512–2048 且为 8 的倍数);`response_format=b64_json` → `base64`;缺省 `n` 补 1、缺省 `response_format` 补 `url`;`seed`/`watermark` 透传。prompt 是否存在与长度、`n` 范围、`response_format` 取值等通用边界交由 `req_required`/`req_len`/`req_range`/`req_enum` 指令表达。
 - `openai_images_to_qwen_image`：OpenAI `images.generations` 请求 JSON → DashScope `multimodal-generation` 请求 JSON。prompt 包进 `input.messages[].content[].text`,其余参数放 `parameters`;`size` 改用星号分隔(`1024x1024` → `1024*1024`,缺省 `1328*1328`);缺省 `n` 补 1、`prompt_extend` 补 true、`watermark` 补 false;`negative_prompt`/`seed` 透传。通用边界交由 `req_required`/`req_len`/`req_range` 指令表达。
 - `openai_chat_to_anthropic_messages`：OpenAI `chat.completions` 请求 JSON → Anthropic `/v1/messages` 请求 JSON。

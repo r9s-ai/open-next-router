@@ -19,7 +19,7 @@ import (
 )
 
 // doUpstreamRequest requires a non-nil provider file and request meta from buildProxyCtx.
-func (c *Client) doUpstreamRequest(gc *gin.Context, provider string, pf *dslconfig.ProviderFile, m *dslmeta.Meta, reqBody []byte) (*http.Response, context.CancelFunc, error) {
+func (c *Client) doUpstreamRequest(gc *gin.Context, provider string, pf *dslconfig.ProviderFile, m *dslmeta.Meta, reqBody []byte, reqContentType string) (*http.Response, context.CancelFunc, error) {
 	if strings.EqualFold(strings.TrimSpace(m.UpstreamTransport), "aws_sdk") {
 		return c.doBedrockRuntimeRequest(gc, provider, pf, m, reqBody)
 	}
@@ -43,7 +43,13 @@ func (c *Client) doUpstreamRequest(gc *gin.Context, provider string, pf *dslconf
 			cancel()
 			return nil, func() {}, reqErr
 		}
-		if ct := strings.TrimSpace(gc.Request.Header.Get("Content-Type")); ct != "" {
+		// Prefer the content type the request transform produced: req_map turns a
+		// multipart upload into a JSON body, and forwarding the client's
+		// multipart header (boundary included) alongside that body describes a
+		// payload that is no longer there.
+		if ct := strings.TrimSpace(reqContentType); ct != "" {
+			req.Header.Set("Content-Type", ct)
+		} else if ct := strings.TrimSpace(gc.Request.Header.Get("Content-Type")); ct != "" {
 			req.Header.Set("Content-Type", ct)
 		} else {
 			req.Header.Set("Content-Type", "application/json")

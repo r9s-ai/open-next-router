@@ -13,9 +13,31 @@ type ModelMapConfig struct {
 	DefaultExpr string
 }
 
+// ReqInlineFileRule reads one multipart file field into the request object root
+// so req_map builtins can reach the uploaded bytes. Without it the request root
+// carries only the multipart text fields: file parts are discarded while the
+// body is canonicalized, precisely so that ordinary passthrough of an upload
+// never buffers it.
+//
+// The files land at the root under the form field's own name, as an array of
+// {filename, content_type, b64} objects — always an array, including for a
+// single file, so a builtin reads one shape regardless of how many were sent.
+type ReqInlineFileRule struct {
+	// Field is the multipart form field name to read, e.g. "image".
+	Field string
+	// MaxBytes caps each individual file. Bodies over the cap are rejected
+	// rather than truncated.
+	MaxBytes int64
+	// MaxCount caps how many files one repeated field may contribute.
+	MaxCount int
+}
+
 type RequestTransform struct {
-	ModelMap           ModelMapConfig
-	ValidationRules    []RequestValidationRule
+	ModelMap        ModelMapConfig
+	ValidationRules []RequestValidationRule
+	// InlineFiles run before any JSON transform, so validation and req_map both
+	// observe a root that already carries the uploads.
+	InlineFiles        []ReqInlineFileRule
 	JSONOps            []JSONOp
 	AfterReqMapJSONOps []JSONOp
 	// ReqMapMode selects a built-in request mapping mode (non-streaming JSON transform),
@@ -53,7 +75,7 @@ func (p *ProviderRequestTransform) Select(meta *dslmeta.Meta) (*RequestTransform
 		out = mergeRequestTransform(out, m.Transform)
 	}
 	out.ReqMapMode = normalizedReqMapMode(out.ReqMapMode)
-	if out.ModelMap.Map == nil && strings.TrimSpace(out.ModelMap.DefaultExpr) == "" && len(out.ValidationRules) == 0 && len(out.JSONOps) == 0 && len(out.AfterReqMapJSONOps) == 0 && out.ReqMapMode == "" {
+	if out.ModelMap.Map == nil && strings.TrimSpace(out.ModelMap.DefaultExpr) == "" && len(out.ValidationRules) == 0 && len(out.InlineFiles) == 0 && len(out.JSONOps) == 0 && len(out.AfterReqMapJSONOps) == 0 && out.ReqMapMode == "" {
 		return nil, false
 	}
 	return &out, true
@@ -87,6 +109,9 @@ func mergeRequestTransform(base, override RequestTransform) RequestTransform {
 	if len(base.ValidationRules) > 0 {
 		out.ValidationRules = append([]RequestValidationRule(nil), base.ValidationRules...)
 	}
+	if len(base.InlineFiles) > 0 {
+		out.InlineFiles = append([]ReqInlineFileRule(nil), base.InlineFiles...)
+	}
 	if len(base.AfterReqMapJSONOps) > 0 {
 		out.AfterReqMapJSONOps = append([]JSONOp(nil), base.AfterReqMapJSONOps...)
 	}
@@ -106,6 +131,9 @@ func mergeRequestTransform(base, override RequestTransform) RequestTransform {
 	}
 	if len(override.ValidationRules) > 0 {
 		out.ValidationRules = append(out.ValidationRules, override.ValidationRules...)
+	}
+	if len(override.InlineFiles) > 0 {
+		out.InlineFiles = append(out.InlineFiles, override.InlineFiles...)
 	}
 	if len(override.AfterReqMapJSONOps) > 0 {
 		out.AfterReqMapJSONOps = append(out.AfterReqMapJSONOps, override.AfterReqMapJSONOps...)

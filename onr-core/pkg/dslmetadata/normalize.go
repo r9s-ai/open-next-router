@@ -119,10 +119,24 @@ func normalizeRequestTransform(in RequestTransform) RequestTransform {
 			DefaultExpr: strings.TrimSpace(in.ModelMap.DefaultExpr),
 		},
 		ValidationRules:    normalizeValidationRules(in.ValidationRules),
+		InlineFiles:        normalizeInlineFiles(in.InlineFiles),
 		JSONOps:            normalizeJSONOps(in.JSONOps),
 		AfterReqMapJSONOps: normalizeJSONOps(in.AfterReqMapJSONOps),
 		ReqMapMode:         strings.TrimSpace(in.ReqMapMode),
 	}
+}
+
+func normalizeInlineFiles(in []ReqInlineFileRule) []ReqInlineFileRule {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]ReqInlineFileRule, 0, len(in))
+	for _, rule := range in {
+		item := rule
+		item.Field = strings.TrimSpace(rule.Field)
+		out = append(out, item)
+	}
+	return out
 }
 
 func normalizeValidationRules(in []RequestValidationRule) []RequestValidationRule {
@@ -381,6 +395,7 @@ func requestTransformHasRules(t RequestTransform) bool {
 	return len(t.ModelMap.Map) > 0 ||
 		strings.TrimSpace(t.ModelMap.DefaultExpr) != "" ||
 		len(t.ValidationRules) > 0 ||
+		len(t.InlineFiles) > 0 ||
 		len(t.JSONOps) > 0 ||
 		len(t.AfterReqMapJSONOps) > 0 ||
 		strings.TrimSpace(t.ReqMapMode) != ""
