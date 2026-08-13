@@ -264,7 +264,7 @@ func validateAndBuildProviderFile(path string, content string, usageModes usageM
 			path, providerName, expected,
 		)
 	}
-	routing, headers, req, response, perr, usage, finish, balance, models, err := parseProviderConfig(path, content)
+	routing, headers, req, response, perr, usage, finish, balance, models, observability, err := parseProviderConfigWithObservability(path, content)
 	if err != nil {
 		return ProviderFile{}, false, err
 	}
@@ -308,19 +308,20 @@ func validateAndBuildProviderFile(path string, content string, usageModes usageM
 		return ProviderFile{}, false, err
 	}
 	return ProviderFile{
-		Name:     providerName,
-		Path:     path,
-		Content:  content,
-		Metadata: metadata,
-		Routing:  routing,
-		Headers:  headers,
-		Request:  resolvedReq,
-		Response: response,
-		Error:    perr,
-		Usage:    resolvedUsage,
-		Finish:   resolvedFinish,
-		Balance:  resolvedBalance,
-		Models:   resolvedModels,
+		Name:          providerName,
+		Path:          path,
+		Content:       content,
+		Metadata:      metadata,
+		Routing:       routing,
+		Headers:       headers,
+		Request:       resolvedReq,
+		Response:      response,
+		Error:         perr,
+		Usage:         resolvedUsage,
+		Finish:        resolvedFinish,
+		Balance:       resolvedBalance,
+		Models:        resolvedModels,
+		Observability: observability,
 	}, true, nil
 }
 
