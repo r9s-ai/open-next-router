@@ -8,6 +8,35 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
 )
 
+func TestApplyJSONOps_ModelChannelMaxPriceIsJSONNumber(t *testing.T) {
+	price := 2.5
+	meta := &dslmeta.Meta{
+		ModelChannelMaxPrice: &dslmeta.ModelChannelMaxPrice{Prompt: price},
+	}
+	root, err := ApplyJSONOps(meta, map[string]any{}, []JSONOp{{
+		Op: "json_set", Path: "$.provider.max_price.prompt", ValueExpr: "$model_channel.max_price.prompt",
+	}})
+	if err != nil {
+		t.Fatalf("ApplyJSONOps: %v", err)
+	}
+	got := root["provider"].(map[string]any)["max_price"].(map[string]any)["prompt"]
+	if got != price {
+		t.Fatalf("prompt=%v (%T), want %v (float64)", got, got, price)
+	}
+}
+
+func TestApplyJSONOps_RequestModelNumericStringRemainsString(t *testing.T) {
+	root, err := ApplyJSONOps(&dslmeta.Meta{OriginModelName: "123"}, map[string]any{}, []JSONOp{{
+		Op: "json_set", Path: "$.model", ValueExpr: "$request.model",
+	}})
+	if err != nil {
+		t.Fatalf("ApplyJSONOps: %v", err)
+	}
+	if got, ok := root["model"].(string); !ok || got != "123" {
+		t.Fatalf("model=%v (%T), want string 123", root["model"], root["model"])
+	}
+}
+
 func TestApplyJSONOps_TableDriven(t *testing.T) {
 	t.Parallel()
 

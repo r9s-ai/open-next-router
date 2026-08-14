@@ -166,8 +166,31 @@ func evalJSONValueExpr(meta *dslmeta.Meta, expr string) any {
 	if f, ok := parseFloatLiteral(raw); ok {
 		return f
 	}
+	if value, ok := evalBuiltinJSONNumberVariable(meta, raw); ok {
+		return value
+	}
 	// fall back to string expression evaluation
 	return evalStringExpr(raw, meta)
+}
+
+func evalBuiltinJSONNumberVariable(meta *dslmeta.Meta, expr string) (float64, bool) {
+	if meta == nil || meta.ModelChannelMaxPrice == nil {
+		return 0, false
+	}
+	var value float64
+	switch strings.TrimSpace(expr) {
+	case exprModelChannelMaxPricePrompt:
+		value = meta.ModelChannelMaxPrice.Prompt
+	case exprModelChannelMaxPriceCompletion:
+		value = meta.ModelChannelMaxPrice.Completion
+	case exprModelChannelMaxPriceRequest:
+		value = meta.ModelChannelMaxPrice.Request
+	case exprModelChannelMaxPriceImage:
+		value = meta.ModelChannelMaxPrice.Image
+	default:
+		return 0, false
+	}
+	return value, true
 }
 
 // parseFloatLiteral parses a plain decimal float literal like "1.0" or "-0.5".

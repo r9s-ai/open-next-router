@@ -33,6 +33,21 @@ func validateValidationConf(t *testing.T, requestBody string) (ProviderRequestTr
 	return validateProviderRequestTransform("demo.conf", "demo", req)
 }
 
+func TestValidateRequestJSONOpsAcceptsModelChannelMaxPriceVariables(t *testing.T) {
+	resolved, err := validateValidationConf(t, `
+      json_set "$.provider.max_price.prompt" $model_channel.max_price.prompt;
+      json_set "$.provider.max_price.completion" $model_channel.max_price.completion;
+      json_set "$.provider.max_price.request" $model_channel.max_price.request;
+      json_set "$.provider.max_price.image" $model_channel.max_price.image;
+`)
+	if err != nil {
+		t.Fatalf("validateProviderRequestTransform: %v", err)
+	}
+	if len(resolved.Defaults.JSONOps) != 4 {
+		t.Fatalf("JSONOps len=%d, want 4", len(resolved.Defaults.JSONOps))
+	}
+}
+
 func mustValidateRules(t *testing.T, requestBody string) []RequestValidationRule {
 	t.Helper()
 	resolved, err := validateValidationConf(t, requestBody)
