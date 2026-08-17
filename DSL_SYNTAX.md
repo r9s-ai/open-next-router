@@ -109,6 +109,26 @@ but it is recommended to keep it.
 provider "<name>" { ... }
 ```
 
+### 3.3 observability
+
+`observability` is provider-scoped and is shared by every `match` in that provider:
+
+```conf
+provider "openai" {
+  observability {
+    upstream_request_id "x-request-id" "openai-request-id";
+  }
+}
+```
+
+- `upstream_request_id` requires at least one quoted HTTP response-header name and must end with `;`.
+- Header names are checked in declaration order; the first non-empty, whitespace-trimmed value wins.
+- Header lookup is case-insensitive according to HTTP semantics. Only explicitly declared headers are examined.
+- The rule runs when upstream response headers arrive, before the response body is consumed, for both streaming and non-streaming responses.
+- The value is recorded as the `upstream_request_id` access-log field. It does not replace the client `request_id`.
+- Missing or empty headers do not fail or change forwarding. The value is not copied to the downstream response; use an explicit response header directive if forwarding is required.
+- Values are trimmed and limited to 256 bytes for logging.
+
 ## 4. match rules (selection)
 
 Supported forms:
