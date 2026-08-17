@@ -35,7 +35,6 @@ func parseObservabilityBlock(s *scanner) (ProviderObservability, error) {
 }
 
 func parseUpstreamRequestIDHeaders(s *scanner) ([]string, error) {
-	const maxHeaders = 16
 	headers := make([]string, 0, 2)
 	seen := map[string]struct{}{}
 	for {
@@ -52,10 +51,10 @@ func parseUpstreamRequestIDHeaders(s *scanner) ([]string, error) {
 			}
 			seen[key] = struct{}{}
 			headers = append(headers, name)
-			if len(headers) > maxHeaders {
-				return nil, s.errAt(tok, fmt.Sprintf("too many upstream request ID headers (maximum %d)", maxHeaders))
-			}
 		case tokSemicolon:
+			if len(headers) == 0 {
+				return nil, s.errAt(tok, "upstream_request_id requires at least one header name")
+			}
 			return headers, nil
 		case tokEOF:
 			return nil, s.errAt(tok, "expected ';' after upstream_request_id")

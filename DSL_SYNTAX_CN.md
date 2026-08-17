@@ -111,6 +111,26 @@ provider "openai" {
 provider "<name>" { ... }
 ```
 
+### 3.3 observability
+
+`observability` 位于 provider 块内，对该 provider 的所有 `match` 生效：
+
+```conf
+provider "openai" {
+  observability {
+    upstream_request_id "x-request-id" "openai-request-id";
+  }
+}
+```
+
+- `upstream_request_id` 至少需要一个带引号的 HTTP 响应头名称，并且语句必须以 `;` 结束。
+- 按声明顺序检查 Header，使用第一个去除首尾空白后仍非空的值。
+- Header 名称遵循 HTTP 语义大小写不敏感；只检查 DSL 明确声明的 Header，不做隐式猜测。
+- 收到上游响应头后、读取响应体之前执行；流式和非流式响应行为一致。
+- 结果写入观测/访问日志字段 `upstream_request_id`，不会覆盖客户端 `request_id`。
+- Header 缺失或为空不会导致请求失败，也不会改变转发；默认不会复制到下游响应，需要透传时必须使用显式响应 Header 指令。
+- 记录值会裁剪首尾空白，并限制为 256 字节。
+
 ## 4. match 规则（选择逻辑）
 
 语法（支持的条件）：
