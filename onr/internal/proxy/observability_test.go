@@ -45,7 +45,7 @@ func TestDoUpstreamRequestRecordsProviderRequestID(t *testing.T) {
 	}}
 	resp, cancel, err := c.doUpstreamRequest(gc, "openai", &pf, &dslmeta.Meta{
 		API: "chat.completions", BaseURL: srv.URL, RequestURLPath: "/",
-	}, []byte(`{}`))
+	}, []byte(`{}`), "")
 	if err != nil {
 		t.Fatalf("doUpstreamRequest error: %v", err)
 	}
