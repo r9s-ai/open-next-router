@@ -14,7 +14,10 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/requestvalidate"
 )
 
-const contentEncodingIdentity = "identity"
+const (
+	contentEncodingIdentity = "identity"
+	contentTypeJSON         = "application/json"
+)
 
 // ValidationError is returned when the caller's request does not meet the target provider's
 // schema requirements (e.g. unsupported response_format type, missing required schema field).
@@ -72,6 +75,21 @@ func Apply(meta *dslmeta.Meta, contentType string, body []byte, value map[string
 		}
 	}
 
+	// Uploads are inlined before validation so req_* rules can assert on them
+	// (an images.edits config wants req_required on the image field), and before
+	// req_map so the builtin sees them.
+	if len(t.InlineFiles) > 0 {
+		inlined, err := applyInlineFiles(t.InlineFiles, result.Body, result.ContentType, out)
+		if err != nil {
+			return Result{}, err
+		}
+		if inlined != nil {
+			out = inlined
+			result.Value = out
+			result.Root = out
+		}
+	}
+
 	// Validation runs before any JSON transform so errors reflect the client's
 	// original parameters. Not gated on out != nil: header/query rules must run
 	// for non-JSON bodies too; body rules with a nil root fail inside Validate.
@@ -117,6 +135,13 @@ func Apply(meta *dslmeta.Meta, contentType string, body []byte, value map[string
 		return Result{}, err
 	}
 	result.Body = mappedBody
+	// req_map always emits a JSON object body. When the client sent multipart
+	// the declared content type still describes the upload — boundary and all —
+	// and forwarding it with a JSON body makes the upstream reject a request
+	// that is otherwise correct.
+	if requestcanon.IsMultipartFormData(result.ContentType) {
+		result.ContentType = contentTypeJSON
+	}
 
 	result.Value = mappedRoot
 	result.Root = mappedRoot
@@ -207,6 +232,12 @@ func applyReqMapObject(mode string, root apitypes.JSONObject) ([]byte, map[strin
 		return body, dst, nil
 	case "openai_images_to_gemini_generate_content":
 		dst, err := apitransform.MapOpenAIImagesToGeminiGenerateContentRequest(root)
+		if err != nil {
+			return nil, nil, err
+		}
+		return marshalReqMapResult(dst)
+	case "openai_images_edits_to_gemini_generate_content":
+		dst, err := apitransform.MapOpenAIImagesEditsToGeminiGenerateContentRequest(root)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1064,6 +1095,7 @@ func parseReqMapInputObject(mode string, raw []byte) (apitypes.JSONObject, error
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case "openai_chat_to_openai_responses", "openai_chat_to_anthropic_messages", "openai_chat_to_gemini_generate_content":
 	case "openai_images_to_gemini_generate_content", "openai_images_to_minimax_image", "openai_images_to_qwen_image":
+	case "openai_images_edits_to_gemini_generate_content":
 	case "anthropic_to_openai_chat":
 	case "gemini_to_openai_chat":
 	default:

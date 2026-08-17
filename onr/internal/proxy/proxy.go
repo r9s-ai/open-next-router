@@ -20,7 +20,7 @@ func (c *Client) ProxyJSON(
 	reqBody := bctx.reqBody
 	respDir := bctx.respDir
 
-	resp, cancelUpstream, err := c.doUpstreamRequest(gc, provider, &pf, m, reqBody)
+	resp, cancelUpstream, err := c.doUpstreamRequest(gc, provider, &pf, m, reqBody, bctx.reqContentType)
 	if err != nil {
 		return nil, err
 	}

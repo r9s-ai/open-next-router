@@ -171,6 +171,7 @@ func requestPhaseHandlers() map[string]requestPhaseHandler {
 		"json_map_value":          requestTransformHandler(parseJSONMapValueStmt),
 		"json_clamp":              requestTransformHandler(parseJSONClampStmt),
 		"after_req_map":           requestTransformHandler(parseAfterReqMapBlock),
+		"req_inline_file":         requestTransformHandler(parseReqInlineFileStmt),
 		"req_map":                 requestTransformHandler(parseRequestMapStmt),
 		"req_required":            requestTransformHandler(parseReqRequiredStmt),
 		"req_forbid":              requestTransformHandler(parseReqForbidStmt),

@@ -95,6 +95,9 @@ func MergeRequestTransform(defaults, override RequestTransform) RequestTransform
 	if len(base.ValidationRules) > 0 {
 		out.ValidationRules = append([]RequestValidationRule(nil), base.ValidationRules...)
 	}
+	if len(base.InlineFiles) > 0 {
+		out.InlineFiles = append([]ReqInlineFileRule(nil), base.InlineFiles...)
+	}
 	if len(base.AfterReqMapJSONOps) > 0 {
 		out.AfterReqMapJSONOps = append([]JSONOp(nil), base.AfterReqMapJSONOps...)
 	}
@@ -114,6 +117,9 @@ func MergeRequestTransform(defaults, override RequestTransform) RequestTransform
 	}
 	if len(over.ValidationRules) > 0 {
 		out.ValidationRules = append(out.ValidationRules, over.ValidationRules...)
+	}
+	if len(over.InlineFiles) > 0 {
+		out.InlineFiles = append(out.InlineFiles, over.InlineFiles...)
 	}
 	if len(over.AfterReqMapJSONOps) > 0 {
 		out.AfterReqMapJSONOps = append(out.AfterReqMapJSONOps, over.AfterReqMapJSONOps...)

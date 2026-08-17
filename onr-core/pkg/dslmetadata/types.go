@@ -53,9 +53,17 @@ type RequestTransformMatch struct {
 type RequestTransform struct {
 	ModelMap           ModelMap                `json:"model_map,omitempty"`
 	ValidationRules    []RequestValidationRule `json:"validation_rules,omitempty"`
+	InlineFiles        []ReqInlineFileRule     `json:"inline_files,omitempty"`
 	JSONOps            []JSONOp                `json:"json_ops,omitempty"`
 	AfterReqMapJSONOps []JSONOp                `json:"after_req_map_json_ops,omitempty"`
 	ReqMapMode         string                  `json:"req_map_mode,omitempty"`
+}
+
+// ReqInlineFileRule mirrors dslconfig's req_inline_file directive.
+type ReqInlineFileRule struct {
+	Field    string `json:"field"`
+	MaxBytes int64  `json:"max_bytes,omitempty"`
+	MaxCount int    `json:"max_count,omitempty"`
 }
 
 // RequestValidationRule mirrors the raw req_* directive fields from dslconfig.

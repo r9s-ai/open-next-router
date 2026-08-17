@@ -422,6 +422,48 @@ request {
 - `json_clamp <jsonpath> min=<f> max=<f>;`: clamps the numeric value at path to `[min, max]` (below `min` becomes `min`, above `max` becomes `max`, values inside the range are unchanged). Missing/non-numeric fields are left unchanged. Both options are required and `max >= min`.
 - Numeric value expressions now support decimal float literals (e.g. `1.0`, `0.5`), emitted as JSON numbers.
 
+#### req_inline_file (read uploads into the request root)
+
+```conf
+request { req_inline_file field="<multipart field>" [max_bytes=<n>] [max_count=<n>]; }
+```
+
+For multipart endpoints (`images.edits`, `audio.transcriptions`, …) whose upstream
+speaks a different protocol and needs the uploaded bytes inside a JSON body:
+
+```conf
+match api = "images.edits" {
+  request {
+    req_inline_file field="image" max_bytes=20971520 max_count=8;
+    req_inline_file field="mask" max_bytes=20971520 max_count=1;
+
+    req_map openai_images_edits_to_gemini_generate_content;
+  }
+}
+```
+
+- Request canonicalization **discards multipart file parts** by default, so
+  ordinary passthrough of an upload never buffers it. This directive is the
+  opt-in that makes named fields readable, and only those fields are read.
+- Each field lands at the request root under its own form field name, as an
+  array of `{filename, content_type, b64}` objects — always an array, including
+  for a single file, so a builtin reads one shape regardless of how many were sent.
+- Runs before validation and before `req_map`, so `req_*` rules and the builtin
+  both observe a root that already carries the uploads.
+- `content_type` follows the declared part type, unless that is the generic
+  `application/octet-stream`, in which case the filename extension decides and
+  the bytes are sniffed as a last resort. Many clients label every upload
+  octet-stream, and an upstream that requires a real image type would reject it.
+- A file over `max_bytes` (default 20971520, max 67108864) is **rejected, not
+  truncated** — a half-read image would only earn a confusing upstream error.
+  Exceeding `max_count` (default 4, max 16) is rejected the same way. Both
+  surface as a 400.
+- A declared field that was not uploaded is not an error, so an optional upload
+  (a mask) can be declared unconditionally; the builtin decides whether its
+  absence is acceptable.
+- When `req_map` runs on a multipart request, the outgoing `Content-Type`
+  becomes `application/json`, matching the body the builtin produced.
+
 #### req_map
 
 ```conf
@@ -437,6 +479,7 @@ v0.1 includes:
 - `gemini_to_openai_chat`: Gemini `generateContent` request JSON → OpenAI `chat.completions` request JSON
 - `openai_chat_to_gemini_generate_content`: OpenAI `chat.completions` request JSON → Gemini `generateContent` request JSON
 - `openai_images_to_gemini_generate_content`: OpenAI `images.generations` request JSON → Gemini `generateContent` request JSON (Nano Banana). Maps prompt → `contents[].parts[].text`, `n` → `candidateCount`; for gemini-3 models also maps `size` → `imageConfig.aspectRatio`, `quality` → `imageConfig.imageSize`, and sets `responseModalities=[TEXT,IMAGE]`. Performs validation and errors on violation: `prompt` is required; `n` must be `<= 1`; `response_format=url` is rejected (compared case-insensitively, so `URL` is rejected too); gemini-3 accepts only known aspect ratios/pixel sizes and `standard`/`hd` quality; models below gemini-3 accept neither `size` nor `quality`. Rejections carry the relay Go adaptors' error codes (`request_prompt_missing`, `request_n_out_of_range`, `request_size_not_supported`, `request_invalid_parameter`) and the offending parameter name, so clients can branch on `error.code`/`error.param` instead of parsing the message.
+- `openai_images_edits_to_gemini_generate_content`: OpenAI `images.edits` request → Gemini `generateContent` request JSON. Gemini has no dedicated edit endpoint: an edit is a `generateContent` call whose `contents` carry the source images inline. Requires `req_inline_file` on the upload fields, because the uploaded bytes are otherwise not in the request root. Part order is source images, then the mask plus a fixed instruction sentence explaining it, then the prompt — a multimodal model reads its parts in order, so the order is part of the contract. Shares the validation of `openai_images_to_gemini_generate_content` and additionally requires at least one image (`request_missing_required_field`, param `image`), which is checked first. The response needs no counterpart: an edit response is an ordinary `generateContent` response, so `gemini_to_openai_images` handles it unchanged.
 - `openai_images_to_minimax_image`: OpenAI `images.generations` request JSON → Minimax `/v1/image_generation` request JSON. Maps `size` → `aspect_ratio` (documented pixel sizes and bare ratios alike) or `width`/`height` (512–2048, multiple of 8), `response_format=b64_json` → `base64`, and defaults a missing `n` to 1 and a missing `response_format` to `url`; `seed` and `watermark` pass through. Generic bounds (prompt presence/length, `n` range, `response_format` membership) are left to the `req_required`/`req_len`/`req_range`/`req_enum` directives.
 - `openai_images_to_qwen_image`: OpenAI `images.generations` request JSON → DashScope `multimodal-generation` request JSON. Wraps the prompt in `input.messages[].content[].text`, moves the rest under `parameters`, respells `size` with a star (`1024x1024` → `1024*1024`, default `1328*1328`), defaults a missing `n` to 1, `prompt_extend` to true and `watermark` to false, and passes `negative_prompt`/`seed` through. Generic bounds are left to the `req_required`/`req_len`/`req_range` directives.
 - `openai_chat_to_anthropic_messages`: OpenAI `chat.completions` request JSON → Anthropic `/v1/messages` request JSON.
