@@ -20,6 +20,7 @@ func TestCollector_CollectMapsContextFields(t *testing.T) {
 	ctx.Set("X-Onr-Request-Id", "rid-1")
 	ctx.Set("onr.provider", "openai")
 	ctx.Set("onr.model", "gpt-4o-mini")
+	ctx.Set("onr.upstream_request_id", "upstream-req-1")
 	ctx.Set("onr.ttft_ms", int64(123))
 	ctx.Set("onr.tps", 45.6)
 
@@ -36,6 +37,9 @@ func TestCollector_CollectMapsContextFields(t *testing.T) {
 	if got["model"] != "gpt-4o-mini" {
 		t.Fatalf("unexpected model: %#v", got["model"])
 	}
+	if got["upstream_request_id"] != "upstream-req-1" {
+		t.Fatalf("unexpected upstream_request_id: %#v", got["upstream_request_id"])
+	}
 	if got["ttft_ms"] != int64(123) {
 		t.Fatalf("unexpected ttft_ms: %#v", got["ttft_ms"])
 	}
@@ -44,6 +48,23 @@ func TestCollector_CollectMapsContextFields(t *testing.T) {
 	}
 	if got["latency_ms"] != int64(2000) {
 		t.Fatalf("unexpected latency_ms: %#v", got["latency_ms"])
+	}
+}
+
+func TestCollector_CollectKeepsClientAndUpstreamRequestIDsSeparate(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest("GET", "/v1/models", nil)
+	ctx.Set("X-Onr-Request-Id", "client-request-1")
+	ctx.Set("onr.upstream_request_id", "upstream-request-1")
+
+	got := NewCollector("X-Onr-Request-Id", false, "").Collect(ctx, time.Second)
+	if got["request_id"] != "client-request-1" {
+		t.Fatalf("unexpected request_id: %#v", got["request_id"])
+	}
+	if got["upstream_request_id"] != "upstream-request-1" {
+		t.Fatalf("unexpected upstream_request_id: %#v", got["upstream_request_id"])
 	}
 }
 

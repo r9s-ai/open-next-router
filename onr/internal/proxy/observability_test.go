@@ -70,6 +70,27 @@ func TestRecordUpstreamRequestIDMissingDoesNotSetOrForward(t *testing.T) {
 	}
 }
 
+func TestUpstreamRequestIDIsStillPassedThroughToDownstream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	header := http.Header{}
+	header.Set("X-Request-ID", "upstream-123")
+
+	// Extraction records the value but does not mutate the upstream response headers.
+	recordUpstreamRequestID(c, dslconfig.ProviderFile{Observability: dslconfig.ProviderObservability{
+		UpstreamRequestID: &dslconfig.UpstreamRequestIDRule{Headers: []string{"x-request-id"}},
+	}}, &http.Response{Header: header})
+	copyHeadersToClient(c, header, false)
+
+	if got := c.GetString("onr.upstream_request_id"); got != "upstream-123" {
+		t.Fatalf("upstream_request_id=%q want upstream-123", got)
+	}
+	if got := w.Header().Get("X-Request-ID"); got != "upstream-123" {
+		t.Fatalf("downstream X-Request-ID=%q want upstream-123", got)
+	}
+}
+
 func TestRecordUpstreamRequestIDTruncatesAt256Bytes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
