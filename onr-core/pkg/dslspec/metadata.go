@@ -41,6 +41,8 @@ var directiveMetadata = []DirectiveMetadata{
 	{Name: "defaults", Block: "provider", Hover: "`defaults { ... }`\n\nDefault phases shared by all `match` rules unless overridden.", IsBlock: true},
 	{Name: "match", Block: "provider", Hover: "`match api = \"...\" [stream = true|false] { ... }`\n\nRoute rule. First match wins.", IsBlock: true, BlockHeader: true},
 	{Name: "metadata", Block: "provider", Hover: "`metadata { provider_family <family>; signal_profile <profile>; }`\n\nDeclares provider identity and capacity signal profile metadata.", IsBlock: true},
+	{Name: "observability", Block: "provider", Hover: "`observability { upstream_request_id \"x-request-id\"; }`\n\nProvider-scoped upstream response observation rules.", IsBlock: true},
+	{Name: "upstream_request_id", Block: "observability", Hover: "`upstream_request_id \"Header-A\" \"Header-B\";`\n\nChecks configured upstream response headers in order and records the first non-empty value as upstream_request_id. Missing values do not affect forwarding and are not automatically passed downstream."},
 
 	{Name: "provider_family", Block: "metadata", Hover: "`provider_family <family>;`\n\nProvider family used for operations, debug output, and later capacity-signal grouping."},
 	{Name: "signal_profile", Block: "metadata", Hover: "`signal_profile <profile>;`\n\nSignal profile used by later provider capacity signal adaptors."},

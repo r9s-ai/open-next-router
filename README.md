@@ -7,7 +7,6 @@
 [![CI](https://github.com/r9s-ai/open-next-router/actions/workflows/ci.yml/badge.svg)](https://github.com/r9s-ai/open-next-router/actions/workflows/ci.yml)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/r9s-ai/open-next-router)](https://github.com/r9s-ai/open-next-router/blob/main/go.mod)
 [![Go Reference](https://pkg.go.dev/badge/github.com/r9s-ai/open-next-router.svg)](https://pkg.go.dev/github.com/r9s-ai/open-next-router)
-[![Go Report Card](https://goreportcard.com/badge/github.com/r9s-ai/open-next-router)](https://goreportcard.com/report/github.com/r9s-ai/open-next-router)
 [![GitHub Release](https://img.shields.io/github/v/release/r9s-ai/open-next-router)](https://github.com/r9s-ai/open-next-router/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Docs](https://img.shields.io/badge/docs-official-0ea5e9)](https://onr.mintlify.app/)

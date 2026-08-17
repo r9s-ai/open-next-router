@@ -11,19 +11,20 @@ import (
 )
 
 type ProviderFile struct {
-	Name     string
-	Path     string
-	Content  string
-	Metadata ProviderMetadata
-	Routing  ProviderRouting
-	Headers  ProviderHeaders
-	Request  ProviderRequestTransform
-	Response ProviderResponse
-	Error    ProviderError
-	Usage    ProviderUsage
-	Finish   ProviderFinishReason
-	Balance  ProviderBalance
-	Models   ProviderModels
+	Name          string
+	Path          string
+	Content       string
+	Metadata      ProviderMetadata
+	Routing       ProviderRouting
+	Headers       ProviderHeaders
+	Request       ProviderRequestTransform
+	Response      ProviderResponse
+	Error         ProviderError
+	Usage         ProviderUsage
+	Finish        ProviderFinishReason
+	Balance       ProviderBalance
+	Models        ProviderModels
+	Observability ProviderObservability
 }
 
 type Registry struct {

@@ -232,7 +232,7 @@ func TestBlockDirectiveNamesAndIsBlockDirective(t *testing.T) {
 	if IsBlockDirective("req_map") != false {
 		t.Fatalf("req_map should not be a block directive")
 	}
-	for _, must := range []string{"provider", "defaults", "match", "request", "after_req_map", "response", "usage_mode", "finish_reason_mode", "models_mode", "balance_mode"} {
+	for _, must := range []string{"provider", "defaults", "match", "observability", "request", "after_req_map", "response", "usage_mode", "finish_reason_mode", "models_mode", "balance_mode"} {
 		found := false
 		for _, b := range blocks {
 			if b == must {

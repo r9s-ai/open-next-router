@@ -133,7 +133,7 @@ func parseProvidersFromMergedFile(path string, content string, inherited modeReg
 			if lb.kind != tokLBrace {
 				return nil, nil, s.errAt(lb, "expected '{' after provider name")
 			}
-			routing, headers, req, response, perr, usage, finish, balance, models, err := parseProviderBody(s)
+			routing, headers, req, response, perr, usage, finish, balance, models, observability, err := parseProviderBody(s)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -141,7 +141,7 @@ func parseProvidersFromMergedFile(path string, content string, inherited modeReg
 			if err != nil {
 				return nil, nil, err
 			}
-			pf, err := buildMergedProviderFile(path, providerName, metadata, routing, headers, req, response, perr, usage, finish, balance, models, resolved)
+			pf, err := buildMergedProviderFile(path, providerName, metadata, routing, headers, req, response, perr, usage, finish, balance, models, observability, resolved)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -156,7 +156,7 @@ func parseProvidersFromMergedFile(path string, content string, inherited modeReg
 	return next, loaded, nil
 }
 
-func buildMergedProviderFile(path, providerName string, metadata ProviderMetadata, routing ProviderRouting, headers ProviderHeaders, req ProviderRequestTransform, response ProviderResponse, perr ProviderError, usage ProviderUsage, finish ProviderFinishReason, balance ProviderBalance, models ProviderModels, resolved modeRegistryState) (ProviderFile, error) {
+func buildMergedProviderFile(path, providerName string, metadata ProviderMetadata, routing ProviderRouting, headers ProviderHeaders, req ProviderRequestTransform, response ProviderResponse, perr ProviderError, usage ProviderUsage, finish ProviderFinishReason, balance ProviderBalance, models ProviderModels, observability ProviderObservability, resolved modeRegistryState) (ProviderFile, error) {
 	if err := validateProviderBaseURL(path, providerName, routing); err != nil {
 		return ProviderFile{}, err
 	}
@@ -197,18 +197,19 @@ func buildMergedProviderFile(path, providerName string, metadata ProviderMetadat
 		return ProviderFile{}, err
 	}
 	return ProviderFile{
-		Name:     providerName,
-		Path:     path,
-		Content:  "",
-		Metadata: metadata,
-		Routing:  routing,
-		Headers:  headers,
-		Request:  resolvedReq,
-		Response: response,
-		Error:    perr,
-		Usage:    resolvedUsage,
-		Finish:   resolvedFinish,
-		Balance:  resolvedBalance,
-		Models:   resolvedModels,
+		Name:          providerName,
+		Path:          path,
+		Content:       "",
+		Metadata:      metadata,
+		Routing:       routing,
+		Headers:       headers,
+		Request:       resolvedReq,
+		Response:      response,
+		Error:         perr,
+		Usage:         resolvedUsage,
+		Finish:        resolvedFinish,
+		Balance:       resolvedBalance,
+		Models:        resolvedModels,
+		Observability: observability,
 	}, nil
 }
