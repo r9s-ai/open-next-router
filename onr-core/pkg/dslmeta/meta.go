@@ -14,10 +14,10 @@ type TaskMeta struct {
 }
 
 type ModelChannelMaxPrice struct {
-	Prompt     float64
-	Completion float64
-	Request    float64
-	Image      float64
+	Prompt     *float64
+	Completion *float64
+	Request    *float64
+	Image      *float64
 }
 
 // Meta is the minimal context required by the DSL engine.

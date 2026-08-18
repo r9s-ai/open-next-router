@@ -41,15 +41,27 @@ func ApplyJSONOps(meta *dslmeta.Meta, in map[string]any, ops []JSONOp) (map[stri
 func applyJSONOp(meta *dslmeta.Meta, obj map[string]any, op JSONOp) (bool, error) {
 	switch op.Op {
 	case jsonOpSet:
-		return jsonSet(obj, op.Path, evalJSONValueExpr(meta, op.ValueExpr))
+		value, err := evalJSONValueExpr(meta, op.ValueExpr)
+		if err != nil {
+			return false, err
+		}
+		return jsonSet(obj, op.Path, value)
 	case jsonOpReplace:
-		return jsonReplace(obj, op.Path, evalJSONValueExpr(meta, op.ValueExpr))
+		value, err := evalJSONValueExpr(meta, op.ValueExpr)
+		if err != nil {
+			return false, err
+		}
+		return jsonReplace(obj, op.Path, value)
 	case jsonOpSetIfAbsent:
 		exists, err := jsonPathExists(obj, op.Path)
 		if err != nil || exists {
 			return false, err
 		}
-		return jsonSet(obj, op.Path, evalJSONValueExpr(meta, op.ValueExpr))
+		value, err := evalJSONValueExpr(meta, op.ValueExpr)
+		if err != nil {
+			return false, err
+		}
+		return jsonSet(obj, op.Path, value)
 	case jsonOpDel:
 		return jsonDel(obj, op.Path)
 	case jsonOpDelIfMissing:
@@ -78,7 +90,11 @@ func applyJSONOp(meta *dslmeta.Meta, obj map[string]any, op JSONOp) (bool, error
 	case jsonOpDelWithCond:
 		return jsonDelWithCondition(obj, op.Path, op.FieldName, op.Patterns)
 	case jsonOpMapValue:
-		return jsonMapValue(obj, op.Path, op.MatchValue, evalJSONValueExpr(meta, op.ValueExpr))
+		value, err := evalJSONValueExpr(meta, op.ValueExpr)
+		if err != nil {
+			return false, err
+		}
+		return jsonMapValue(obj, op.Path, op.MatchValue, value)
 	case jsonOpClamp:
 		return jsonClamp(obj, op.Path, op.ClampRange)
 	default:
@@ -144,40 +160,44 @@ func jsonPathExists(root map[string]any, path string) (bool, error) {
 	return ok, nil
 }
 
-func evalJSONValueExpr(meta *dslmeta.Meta, expr string) any {
+func evalJSONValueExpr(meta *dslmeta.Meta, expr string) (any, error) {
 	raw := strings.TrimSpace(expr)
 	if raw == "" {
-		return ""
+		return "", nil
 	}
 	switch raw {
 	case "true":
-		return true
+		return true, nil
 	case "false":
-		return false
+		return false, nil
 	case "null":
-		return nil
+		return nil, nil
 	}
 	if strings.HasPrefix(raw, "\"") && strings.HasSuffix(raw, "\"") {
-		return unquoteString(raw)
+		return unquoteString(raw), nil
 	}
 	if i, err := strconv.Atoi(raw); err == nil {
-		return i
+		return i, nil
 	}
 	if f, ok := parseFloatLiteral(raw); ok {
-		return f
+		return f, nil
 	}
-	if value, ok := evalBuiltinJSONNumberVariable(meta, raw); ok {
-		return value
+	if isBuiltinJSONNumberVariable(raw) {
+		value, ok := evalBuiltinJSONNumberVariable(meta, raw)
+		if !ok {
+			return nil, fmt.Errorf("JSON number variable %q is unavailable; check the model channel max_price configuration", raw)
+		}
+		return value, nil
 	}
 	// fall back to string expression evaluation
-	return evalStringExpr(raw, meta)
+	return evalStringExpr(raw, meta), nil
 }
 
 func evalBuiltinJSONNumberVariable(meta *dslmeta.Meta, expr string) (float64, bool) {
 	if meta == nil || meta.ModelChannelMaxPrice == nil {
 		return 0, false
 	}
-	var value float64
+	var value *float64
 	switch strings.TrimSpace(expr) {
 	case exprModelChannelMaxPricePrompt:
 		value = meta.ModelChannelMaxPrice.Prompt
@@ -190,7 +210,10 @@ func evalBuiltinJSONNumberVariable(meta *dslmeta.Meta, expr string) (float64, bo
 	default:
 		return 0, false
 	}
-	return value, true
+	if value == nil {
+		return 0, false
+	}
+	return *value, true
 }
 
 // parseFloatLiteral parses a plain decimal float literal like "1.0" or "-0.5".

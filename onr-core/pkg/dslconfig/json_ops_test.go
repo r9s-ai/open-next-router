@@ -3,6 +3,7 @@ package dslconfig
 import (
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
@@ -11,7 +12,7 @@ import (
 func TestApplyJSONOps_ModelChannelMaxPriceIsJSONNumber(t *testing.T) {
 	price := 2.5
 	meta := &dslmeta.Meta{
-		ModelChannelMaxPrice: &dslmeta.ModelChannelMaxPrice{Prompt: price},
+		ModelChannelMaxPrice: &dslmeta.ModelChannelMaxPrice{Prompt: &price},
 	}
 	root, err := ApplyJSONOps(meta, map[string]any{}, []JSONOp{{
 		Op: "json_set", Path: "$.provider.max_price.prompt", ValueExpr: "$model_channel.max_price.prompt",
@@ -22,6 +23,53 @@ func TestApplyJSONOps_ModelChannelMaxPriceIsJSONNumber(t *testing.T) {
 	got := root["provider"].(map[string]any)["max_price"].(map[string]any)["prompt"]
 	if got != price {
 		t.Fatalf("prompt=%v (%T), want %v (float64)", got, got, price)
+	}
+}
+
+func TestApplyJSONOps_ModelChannelMaxPriceExplicitZeroIsJSONNumber(t *testing.T) {
+	price := 0.0
+	meta := &dslmeta.Meta{
+		ModelChannelMaxPrice: &dslmeta.ModelChannelMaxPrice{Prompt: &price},
+	}
+	root, err := ApplyJSONOps(meta, map[string]any{}, []JSONOp{{
+		Op: "json_set", Path: "$.provider.max_price.prompt", ValueExpr: "$model_channel.max_price.prompt",
+	}})
+	if err != nil {
+		t.Fatalf("ApplyJSONOps: %v", err)
+	}
+	got := root["provider"].(map[string]any)["max_price"].(map[string]any)["prompt"]
+	if got != price {
+		t.Fatalf("prompt=%v (%T), want explicit zero float64", got, got)
+	}
+}
+
+func TestApplyJSONOps_ModelChannelMaxPriceMissingReturnsError(t *testing.T) {
+	_, err := ApplyJSONOps(&dslmeta.Meta{
+		ModelChannelMaxPrice: &dslmeta.ModelChannelMaxPrice{},
+	}, map[string]any{}, []JSONOp{{
+		Op: "json_set", Path: "$.provider.max_price.prompt", ValueExpr: "$model_channel.max_price.prompt",
+	}})
+	if err == nil {
+		t.Fatal("expected missing model channel max price error")
+	}
+	if !strings.Contains(err.Error(), "$model_channel.max_price.prompt") {
+		t.Fatalf("error=%q, want variable name", err)
+	}
+}
+
+func TestApplyJSONOps_ModelChannelMaxPricePartiallyConfiguredReturnsError(t *testing.T) {
+	prompt := 1.5
+	_, err := ApplyJSONOps(&dslmeta.Meta{
+		ModelChannelMaxPrice: &dslmeta.ModelChannelMaxPrice{Prompt: &prompt},
+	}, map[string]any{}, []JSONOp{
+		{Op: "json_set", Path: "$.provider.max_price.prompt", ValueExpr: "$model_channel.max_price.prompt"},
+		{Op: "json_set", Path: "$.provider.max_price.completion", ValueExpr: "$model_channel.max_price.completion"},
+	})
+	if err == nil {
+		t.Fatal("expected missing completion max price error")
+	}
+	if !strings.Contains(err.Error(), "$model_channel.max_price.completion") {
+		t.Fatalf("error=%q, want missing completion variable", err)
 	}
 }
 

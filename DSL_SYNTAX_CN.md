@@ -427,7 +427,8 @@ request {
 
 - 用途：对”已生成的上游请求 JSON”做轻量变换（在旧 adaptor 的 `ConvertRequest` 之后执行）
 - JSONPath（v0.1）仅支持对象路径：`$.a.b.c`（不支持数组下标 `[]`）
-- `json_set` 的值表达式支持：`true/false/null`、整数、字符串字面量、变量、`concat(...)`、`template(...)`
+- `json_set` 的值表达式支持：`true/false/null`、整数、小数、字符串字面量、变量、`concat(...)`、`template(...)`
+- `$model_channel.max_price.*` 是 JSON number 变量，只能作为不带引号的 JSON 值表达式使用；对应价格未配置时，请求转换会报错
 - `json_set`：设置字段；不存在的对象路径会自动创建
 - `json_replace`：仅当目标路径已存在时替换字段；路径不存在时为 no-op，不会创建缺失对象或字段
 - `json_set_if_absent`：仅当路径不存在时写入；已存在值会保留
@@ -1467,6 +1468,14 @@ metrics {
 
 `$request.model_mapped`  
 映射后的模型名（字符串）。默认等于 `$request.model`，可通过 `request { model_map ...; model_map_default ...; }` 修改。
+
+`$model_channel.max_price.prompt`、`$model_channel.max_price.completion`、
+`$model_channel.max_price.request`、`$model_channel.max_price.image`
+
+当前选中 model-channel 的 OpenRouter `max_price`（JSON number）。这些变量仅支持作为
+`json_set`、`json_replace`、`json_set_if_absent`、`json_map_value` 的裸 JSON 值表达式，
+不支持字符串、`concat(...)`、`template(...)`、header 或 path 表达式。变量不能加引号；
+如果对应价格字段未配置，请求转换会报错。
 
 表达式形态（v0.1）：
 
@@ -2560,9 +2569,9 @@ Multiple: yes
 
 ## 8. 内置变量参考
 
-本节列出 v0.1 可在 `<expr>` 中使用的内置变量（均为字符串）。
+本节列出 v0.1 内置变量。除单独标明的 JSON number 变量外，其余变量均为字符串。
 
-> 说明：变量在运行期求值；当某变量在当前请求上下文中为空时，会展开为空字符串。
+> 说明：变量在运行期求值；字符串变量为空时会展开为空字符串。JSON number 变量未配置时会返回请求转换错误。
 
 ### 8.1 `$channel.*`
 
@@ -2601,7 +2610,28 @@ Provider location。对 Vertex AI 通常是 `global` 或 `us-central1` 这类区
 长任务查询路由中的上游任务/operation id。对 Gemini Veo 来说，它是 `predictLongRunning`
 返回的 operation name，例如 `models/veo-3.1-generate-preview/operations/abc`。
 
-### 8.5 使用示例
+### 8.5 `$model_channel.max_price.*`
+
+以下变量是 JSON number 变量：
+
+- `$model_channel.max_price.prompt`
+- `$model_channel.max_price.completion`
+- `$model_channel.max_price.request`
+- `$model_channel.max_price.image`
+
+值来自当前选中 model-channel 的 `PricingConfig.max_price`。它们只能作为 JSON 操作的裸值表达式使用，
+不能用于 `concat(...)`、`template(...)`、header 或 path。不要给变量加引号，否则会成为普通字符串。
+
+```conf
+request {
+  json_set "$.provider.max_price.prompt" $model_channel.max_price.prompt;
+  json_set "$.provider.max_price.completion" $model_channel.max_price.completion;
+}
+```
+
+如果 DSL 引用了某个变量，但当前 model-channel 没有配置对应价格字段，请求转换会返回错误。
+
+### 8.6 使用示例
 
 ```conf
 request {
