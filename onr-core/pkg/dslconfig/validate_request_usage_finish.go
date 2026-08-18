@@ -197,6 +197,9 @@ func validateJSONValueExpr(expr string) error {
 	if _, ok := parseFloatLiteral(raw); ok {
 		return nil
 	}
+	if isBuiltinJSONNumberVariable(raw) {
+		return nil
+	}
 	return ValidateStringExpr(raw)
 }
 

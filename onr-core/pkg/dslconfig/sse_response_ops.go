@@ -294,14 +294,20 @@ func applyJSONOpsToObject(meta *dslmeta.Meta, obj map[string]any, ops []JSONOp, 
 		changed := false
 		switch op.Op {
 		case jsonOpSet:
-			val := evalJSONValueExpr(meta, op.ValueExpr)
+			val, err := evalJSONValueExpr(meta, op.ValueExpr)
+			if err != nil {
+				return err
+			}
 			opChanged, err := jsonSet(obj, op.Path, val)
 			if err != nil {
 				return err
 			}
 			changed = opChanged
 		case jsonOpReplace:
-			val := evalJSONValueExpr(meta, op.ValueExpr)
+			val, err := evalJSONValueExpr(meta, op.ValueExpr)
+			if err != nil {
+				return err
+			}
 			opChanged, err := jsonReplace(obj, op.Path, val)
 			if err != nil {
 				return err
@@ -315,7 +321,10 @@ func applyJSONOpsToObject(meta *dslmeta.Meta, obj map[string]any, ops []JSONOp, 
 			if exists {
 				continue
 			}
-			val := evalJSONValueExpr(meta, op.ValueExpr)
+			val, err := evalJSONValueExpr(meta, op.ValueExpr)
+			if err != nil {
+				return err
+			}
 			opChanged, err := jsonSet(obj, op.Path, val)
 			if err != nil {
 				return err
