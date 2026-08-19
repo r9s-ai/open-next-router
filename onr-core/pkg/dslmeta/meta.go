@@ -14,6 +14,13 @@ type TaskMeta struct {
 	UpstreamID string
 }
 
+type ModelChannelMaxPrice struct {
+	Prompt     *float64
+	Completion *float64
+	Request    *float64
+	Image      *float64
+}
+
 // Meta is the minimal context required by the DSL engine.
 // It is intentionally small to keep open-next-router decoupled from other projects.
 type Meta struct {
@@ -46,6 +53,8 @@ type Meta struct {
 
 	// ChannelLocation is the provider location/region attached to the selected channel.
 	ChannelLocation string
+
+	ModelChannelMaxPrice *ModelChannelMaxPrice
 
 	// AWSAccessKeyID is the selected AWS access key id for SigV4 providers.
 	AWSAccessKeyID string

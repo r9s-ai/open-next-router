@@ -72,6 +72,7 @@ var baseAccessLogContextFieldSpecs = []AccessLogContextFieldSpec{
 	{CtxKey: "onr.model", LogKey: "model"},
 	{CtxKey: "onr.usage_stage", LogKey: "usage_stage"},
 	{CtxKey: "onr.upstream_status", LogKey: "upstream_status"},
+	{CtxKey: "onr.upstream_request_id", LogKey: "upstream_request_id"},
 	{CtxKey: "onr.finish_reason", LogKey: "finish_reason"},
 	{CtxKey: "onr.ttft_ms", LogKey: "ttft_ms"},
 	{CtxKey: "onr.tps", LogKey: "tps"},

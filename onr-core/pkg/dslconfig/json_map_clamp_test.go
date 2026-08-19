@@ -218,18 +218,18 @@ func TestApplyJSONOps_MapValueAndClamp(t *testing.T) {
 func TestEvalJSONValueExprFloatLiteral(t *testing.T) {
 	t.Parallel()
 	m := &dslmeta.Meta{}
-	if got := evalJSONValueExpr(m, "1.0"); got != 1.0 {
+	if got, err := evalJSONValueExpr(m, "1.0"); err != nil || got != 1.0 {
 		t.Fatalf("expected float 1.0, got %#v", got)
 	}
-	if got := evalJSONValueExpr(m, "-0.5"); got != -0.5 {
+	if got, err := evalJSONValueExpr(m, "-0.5"); err != nil || got != -0.5 {
 		t.Fatalf("expected float -0.5, got %#v", got)
 	}
 	// ints stay ints
-	if got := evalJSONValueExpr(m, "32000"); got != 32000 {
+	if got, err := evalJSONValueExpr(m, "32000"); err != nil || got != 32000 {
 		t.Fatalf("expected int 32000, got %#v", got)
 	}
 	// words never become floats
-	if got := evalJSONValueExpr(m, "infe"); got == float64(0) {
+	if got, err := evalJSONValueExpr(m, "infe"); err != nil || got == float64(0) {
 		t.Fatalf("expected non-float for word, got %#v", got)
 	}
 }

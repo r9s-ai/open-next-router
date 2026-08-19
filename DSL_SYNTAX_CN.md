@@ -111,6 +111,26 @@ provider "openai" {
 provider "<name>" { ... }
 ```
 
+### 3.3 observability
+
+`observability` 位于 provider 块内，对该 provider 的所有 `match` 生效：
+
+```conf
+provider "openai" {
+  observability {
+    upstream_request_id "x-request-id" "openai-request-id";
+  }
+}
+```
+
+- `upstream_request_id` 至少需要一个带引号的 HTTP 响应头名称，并且语句必须以 `;` 结束。
+- 按声明顺序检查 Header，使用第一个去除首尾空白后仍非空的值。
+- Header 名称遵循 HTTP 语义大小写不敏感；只检查 DSL 明确声明的 Header，不做隐式猜测。
+- 收到上游响应头后、读取响应体之前执行；流式和非流式响应行为一致。
+- 结果写入观测/访问日志字段 `upstream_request_id`，不会覆盖客户端 `request_id`。
+- Header 缺失或为空不会导致请求失败，也不会改变转发；默认不会复制到下游响应，需要透传时必须使用显式响应 Header 指令。
+- 记录值会裁剪首尾空白，并限制为 256 字节。
+
 ## 4. match 规则（选择逻辑）
 
 语法（支持的条件）：
@@ -407,7 +427,8 @@ request {
 
 - 用途：对”已生成的上游请求 JSON”做轻量变换（在旧 adaptor 的 `ConvertRequest` 之后执行）
 - JSONPath（v0.1）仅支持对象路径：`$.a.b.c`（不支持数组下标 `[]`）
-- `json_set` 的值表达式支持：`true/false/null`、整数、字符串字面量、变量、`concat(...)`、`template(...)`
+- `json_set` 的值表达式支持：`true/false/null`、整数、小数、字符串字面量、变量、`concat(...)`、`template(...)`
+- `$model_channel.max_price.*` 是 JSON number 变量，只能作为不带引号的 JSON 值表达式使用；对应价格未配置时，请求转换会报错
 - `json_set`：设置字段；不存在的对象路径会自动创建
 - `json_replace`：仅当目标路径已存在时替换字段；路径不存在时为 no-op，不会创建缺失对象或字段
 - `json_set_if_absent`：仅当路径不存在时写入；已存在值会保留
@@ -1467,6 +1488,14 @@ metrics {
 
 `$request.model_mapped`  
 映射后的模型名（字符串）。默认等于 `$request.model`，可通过 `request { model_map ...; model_map_default ...; }` 修改。
+
+`$model_channel.max_price.prompt`、`$model_channel.max_price.completion`、
+`$model_channel.max_price.request`、`$model_channel.max_price.image`
+
+当前选中 model-channel 的 OpenRouter `max_price`（JSON number）。这些变量仅支持作为
+`json_set`、`json_replace`、`json_set_if_absent`、`json_map_value` 的裸 JSON 值表达式，
+不支持字符串、`concat(...)`、`template(...)`、header 或 path 表达式。变量不能加引号；
+如果对应价格字段未配置，请求转换会报错。
 
 表达式形态（v0.1）：
 
@@ -2560,9 +2589,9 @@ Multiple: yes
 
 ## 8. 内置变量参考
 
-本节列出 v0.1 可在 `<expr>` 中使用的内置变量（均为字符串）。
+本节列出 v0.1 内置变量。除单独标明的 JSON number 变量外，其余变量均为字符串。
 
-> 说明：变量在运行期求值；当某变量在当前请求上下文中为空时，会展开为空字符串。
+> 说明：变量在运行期求值；字符串变量为空时会展开为空字符串。JSON number 变量未配置时会返回请求转换错误。
 
 ### 8.1 `$channel.*`
 
@@ -2601,7 +2630,28 @@ Provider location。对 Vertex AI 通常是 `global` 或 `us-central1` 这类区
 长任务查询路由中的上游任务/operation id。对 Gemini Veo 来说，它是 `predictLongRunning`
 返回的 operation name，例如 `models/veo-3.1-generate-preview/operations/abc`。
 
-### 8.5 使用示例
+### 8.5 `$model_channel.max_price.*`
+
+以下变量是 JSON number 变量：
+
+- `$model_channel.max_price.prompt`
+- `$model_channel.max_price.completion`
+- `$model_channel.max_price.request`
+- `$model_channel.max_price.image`
+
+值来自当前选中 model-channel 的 `PricingConfig.max_price`。它们只能作为 JSON 操作的裸值表达式使用，
+不能用于 `concat(...)`、`template(...)`、header 或 path。不要给变量加引号，否则会成为普通字符串。
+
+```conf
+request {
+  json_set "$.provider.max_price.prompt" $model_channel.max_price.prompt;
+  json_set "$.provider.max_price.completion" $model_channel.max_price.completion;
+}
+```
+
+如果 DSL 引用了某个变量，但当前 model-channel 没有配置对应价格字段，请求转换会返回错误。
+
+### 8.6 使用示例
 
 ```conf
 request {

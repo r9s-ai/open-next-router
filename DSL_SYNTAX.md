@@ -109,6 +109,26 @@ but it is recommended to keep it.
 provider "<name>" { ... }
 ```
 
+### 3.3 observability
+
+`observability` is provider-scoped and is shared by every `match` in that provider:
+
+```conf
+provider "openai" {
+  observability {
+    upstream_request_id "x-request-id" "openai-request-id";
+  }
+}
+```
+
+- `upstream_request_id` requires at least one quoted HTTP response-header name and must end with `;`.
+- Header names are checked in declaration order; the first non-empty, whitespace-trimmed value wins.
+- Header lookup is case-insensitive according to HTTP semantics. Only explicitly declared headers are examined.
+- The rule runs when upstream response headers arrive, before the response body is consumed, for both streaming and non-streaming responses.
+- The value is recorded as the `upstream_request_id` access-log field. It does not replace the client `request_id`.
+- Missing or empty headers do not fail or change forwarding. The value is not copied to the downstream response; use an explicit response header directive if forwarding is required.
+- Values are trimmed and limited to 256 bytes for logging.
+
 ## 4. match rules (selection)
 
 Supported forms:
@@ -390,7 +410,8 @@ request {
 
 - Applies lightweight transforms to the upstream request JSON.
 - JSONPath (v0.1) supports an object-path subset: `$.a.b.c` (no array indices for these request ops).
-- `json_set` value expressions support: `true/false/null`, integer, string literal, variable, `concat(...)`, and `template(...)`.
+- `json_set` value expressions support: `true/false/null`, integer, decimal, string literal, variable, `concat(...)`, and `template(...)`.
+- `$model_channel.max_price.*` variables are JSON numbers and are only valid as unquoted JSON value expressions. Request transformation fails when the corresponding price is not configured.
 - `json_set` sets a field and creates missing object-path parents.
 - `json_replace` only replaces an existing target path; missing paths are no-op and no parent object or leaf field is created.
 - `json_set_if_absent` only sets when the path does not exist; existing values are preserved.
@@ -1452,6 +1473,14 @@ The original request model (string).
 
 `$request.model_mapped`  
 The mapped model (string). Defaults to `$request.model` unless modified via `model_map` / `model_map_default`.
+
+`$model_channel.max_price.prompt`, `$model_channel.max_price.completion`,
+`$model_channel.max_price.request`, `$model_channel.max_price.image`
+
+OpenRouter `max_price` values for the selected model-channel (JSON numbers). These variables are supported only as
+bare JSON value expressions for `json_set`, `json_replace`, `json_set_if_absent`, and `json_map_value`. They are not
+string variables and cannot be used in `concat(...)`, `template(...)`, headers, or paths. Do not quote them. Request
+transformation fails if the corresponding price field is not configured.
 
 Expression forms (v0.1):
 
@@ -2558,9 +2587,10 @@ Multiple: yes
 
 ## 8. Built-in variables (reference)
 
-This section lists the built-in variables available in v0.1 `<expr>` positions (all are strings).
+This section lists the v0.1 built-in variables. All variables are strings unless explicitly documented as JSON numbers.
 
-> Variables are evaluated at runtime; if a variable is empty in the current request context, it expands to an empty string.
+> Variables are evaluated at runtime. Empty string variables expand to an empty string; an unconfigured JSON number
+> variable returns a request transformation error.
 
 ### 8.1 `$channel.*`
 
@@ -2599,7 +2629,30 @@ Mapped model name. Defaults to `$request.model`; can be modified by `model_map` 
 Upstream task/operation id for long-running operation routes. For Gemini Veo this is the operation
 name returned by `predictLongRunning`, for example `models/veo-3.1-generate-preview/operations/abc`.
 
-### 8.5 Examples
+### 8.5 `$model_channel.max_price.*`
+
+The following variables are JSON numbers:
+
+- `$model_channel.max_price.prompt`
+- `$model_channel.max_price.completion`
+- `$model_channel.max_price.request`
+- `$model_channel.max_price.image`
+
+Values come from `PricingConfig.max_price` for the selected model-channel. They are valid only as bare JSON operation
+value expressions, not in `concat(...)`, `template(...)`, headers, or paths. Quoting a variable makes it a literal
+string.
+
+```conf
+request {
+  json_set "$.provider.max_price.prompt" $model_channel.max_price.prompt;
+  json_set "$.provider.max_price.completion" $model_channel.max_price.completion;
+}
+```
+
+If the DSL references a variable whose corresponding model-channel price is not configured, request transformation
+returns an error.
+
+### 8.6 Examples
 
 ```conf
 request {

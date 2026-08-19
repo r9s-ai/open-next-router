@@ -1,15 +1,19 @@
 package dslconfig
 
 const (
-	exprChannelBaseURL   = "$channel.base_url"
-	exprChannelKey       = "$channel.key"
-	exprChannelLocation  = "$channel.location"
-	exprCredentialProjID = "$credential.project_id"
-	exprOAuthAccessToken = "$oauth.access_token"
-	exprRequestModel     = "$request.model"
-	exprRequestMapped    = "$request.model_mapped"
-	exprTaskID           = "$task.id"
-	exprTaskUpstreamID   = "$task.upstream_id"
+	exprChannelBaseURL                 = "$channel.base_url"
+	exprChannelKey                     = "$channel.key"
+	exprChannelLocation                = "$channel.location"
+	exprCredentialProjID               = "$credential.project_id"
+	exprOAuthAccessToken               = "$oauth.access_token"
+	exprRequestModel                   = "$request.model"
+	exprRequestMapped                  = "$request.model_mapped"
+	exprTaskID                         = "$task.id"
+	exprTaskUpstreamID                 = "$task.upstream_id"
+	exprModelChannelMaxPricePrompt     = "$model_channel.max_price.prompt"
+	exprModelChannelMaxPriceCompletion = "$model_channel.max_price.completion"
+	exprModelChannelMaxPriceRequest    = "$model_channel.max_price.request"
+	exprModelChannelMaxPriceImage      = "$model_channel.max_price.image"
 
 	jsonOpSet           = "json_set"
 	jsonOpReplace       = "json_replace"

@@ -21,7 +21,11 @@ import (
 // doUpstreamRequest requires a non-nil provider file and request meta from buildProxyCtx.
 func (c *Client) doUpstreamRequest(gc *gin.Context, provider string, pf *dslconfig.ProviderFile, m *dslmeta.Meta, reqBody []byte, reqContentType string) (*http.Response, context.CancelFunc, error) {
 	if strings.EqualFold(strings.TrimSpace(m.UpstreamTransport), "aws_sdk") {
-		return c.doBedrockRuntimeRequest(gc, provider, pf, m, reqBody)
+		resp, cancel, err := c.doBedrockRuntimeRequest(gc, provider, pf, m, reqBody)
+		if err == nil {
+			recordUpstreamRequestID(gc, *pf, resp)
+		}
+		return resp, cancel, err
 	}
 	baseURL := m.BaseURL
 	if baseURL == "" {
@@ -78,9 +82,28 @@ func (c *Client) doUpstreamRequest(gc *gin.Context, provider string, pf *dslconf
 			m.OAuthAccessToken = ""
 			continue
 		}
+		recordUpstreamRequestID(gc, *pf, resp)
 		return resp, cancel, nil
 	}
 	return lastResp, cancel, nil
+}
+
+// recordUpstreamRequestID extracts only explicitly configured response headers.
+// It runs after response headers arrive and before either response path consumes the body.
+func recordUpstreamRequestID(gc *gin.Context, pf dslconfig.ProviderFile, resp *http.Response) {
+	rule := pf.Observability.UpstreamRequestID
+	if rule == nil {
+		return
+	}
+	for _, name := range rule.Headers {
+		if value := strings.TrimSpace(resp.Header.Get(name)); value != "" {
+			if len(value) > 256 {
+				value = value[:256]
+			}
+			gc.Set("onr.upstream_request_id", value)
+			return
+		}
+	}
 }
 
 func isEffectiveStream(clientStream bool, resp *http.Response, respDir *dslconfig.ResponseDirective) bool {

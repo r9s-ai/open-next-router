@@ -59,20 +59,14 @@ func TestValidateProviderFile_ObservabilityRejectsInvalidRules(t *testing.T) {
 	}
 }
 
-func TestValidateProviderFile_ObservabilityAllowsEmptyRule(t *testing.T) {
-	pf, err := ValidateProviderFile(writeObservabilityProvider(t, `
+func TestValidateProviderFile_ObservabilityRejectsEmptyRule(t *testing.T) {
+	_, err := ValidateProviderFile(writeObservabilityProvider(t, `
 	observability {
 		upstream_request_id;
 	}
 `))
-	if err != nil {
-		t.Fatalf("ValidateProviderFile: %v", err)
-	}
-	if pf.Observability.UpstreamRequestID == nil {
-		t.Fatal("expected explicitly configured empty rule")
-	}
-	if len(pf.Observability.UpstreamRequestID.Headers) != 0 {
-		t.Fatalf("headers=%v want empty", pf.Observability.UpstreamRequestID.Headers)
+	if err == nil || !strings.Contains(err.Error(), "requires at least one header name") {
+		t.Fatalf("error=%v want missing-header validation error", err)
 	}
 }
 

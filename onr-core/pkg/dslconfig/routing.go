@@ -282,6 +282,15 @@ func isBuiltinStringVariable(expr string) bool {
 	}
 }
 
+func isBuiltinJSONNumberVariable(expr string) bool {
+	switch strings.TrimSpace(expr) {
+	case exprModelChannelMaxPricePrompt, exprModelChannelMaxPriceCompletion, exprModelChannelMaxPriceRequest, exprModelChannelMaxPriceImage:
+		return true
+	default:
+		return false
+	}
+}
+
 func isQuotedStringExpr(expr string) bool {
 	raw := strings.TrimSpace(expr)
 	if len(raw) < 2 {
