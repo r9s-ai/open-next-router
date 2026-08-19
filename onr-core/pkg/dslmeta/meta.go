@@ -2,6 +2,7 @@ package dslmeta
 
 import (
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -150,6 +151,33 @@ func (m *Meta) SetRequestRoot(root map[string]any) {
 
 func parseRequestRoot(body []byte, contentType string) map[string]any {
 	return requestcanon.ParseRoot(body, contentType)
+}
+
+// RequestHasUploadedFile reports whether the client's multipart request carried
+// a file under the given form field.
+//
+// Uploaded files are not part of the request root: canonicalization discards
+// them so that ordinary passthrough never buffers an upload. Routing still has
+// to know whether one was sent — upstreams split text-to-video and
+// image-to-video across different endpoints — and routing runs before
+// req_inline_file has had a chance to put the bytes in the root.
+func (m *Meta) RequestHasUploadedFile(field string) bool {
+	if m == nil || strings.TrimSpace(field) == "" {
+		return false
+	}
+	if !requestcanon.IsMultipartFormData(m.RequestContentType) {
+		return false
+	}
+	snapshot, err := requestcanon.Inspect(m.RequestBody, m.RequestContentType, requestcanon.InspectOptions{AllowNonJSON: true})
+	if err != nil || snapshot == nil {
+		return false
+	}
+	for _, name := range snapshot.FileFields {
+		if name == field {
+			return true
+		}
+	}
+	return false
 }
 
 func cloneHeader(in http.Header) http.Header {

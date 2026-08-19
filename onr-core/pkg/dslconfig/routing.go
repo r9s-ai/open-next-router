@@ -165,6 +165,9 @@ func evalStringExprValue(expr string, meta *dslmeta.Meta, requireNonEmptyVariabl
 		}
 		return evalTemplateString(unquoteString(strings.TrimSpace(args[0])), meta, requireNonEmptyVariables)
 	}
+	if isIfPresentExpr(raw) {
+		return evalIfPresentExpr(raw, meta, requireNonEmptyVariables)
+	}
 	// Minimal concat support used by auth_bearer implementation.
 	if strings.HasPrefix(raw, "concat(") && strings.HasSuffix(raw, ")") {
 		inner := strings.TrimSuffix(strings.TrimPrefix(raw, "concat("), ")")

@@ -139,6 +139,19 @@ func validateSetPathExpr(expr string) error {
 		}
 		return nil
 	}
+	if isIfPresentExpr(raw) {
+		if err := validateIfPresentExpr(raw); err != nil {
+			return err
+		}
+		// Both branches land in the URL, so each must be path-shaped on its own.
+		args := splitTopLevelArgs(strings.TrimSuffix(strings.TrimPrefix(raw, exprIfPresentPrefix), ")"))
+		for i, arg := range args[1:] {
+			if err := validateSetPathExpr(arg); err != nil {
+				return fmt.Errorf("if_present branch %d: %w", i+1, err)
+			}
+		}
+		return nil
+	}
 	if strings.HasPrefix(raw, "concat(") && strings.HasSuffix(raw, ")") {
 		args := splitTopLevelArgs(strings.TrimSuffix(strings.TrimPrefix(raw, "concat("), ")"))
 		if len(args) == 0 {
@@ -245,6 +258,9 @@ func ValidateStringExpr(expr string) error {
 	}
 	if isQuotedStringExpr(raw) || isBuiltinStringVariable(raw) {
 		return nil
+	}
+	if isIfPresentExpr(raw) {
+		return validateIfPresentBranches(raw)
 	}
 	if strings.HasPrefix(raw, "concat(") && strings.HasSuffix(raw, ")") {
 		args := splitTopLevelArgs(strings.TrimSuffix(strings.TrimPrefix(raw, "concat("), ")"))

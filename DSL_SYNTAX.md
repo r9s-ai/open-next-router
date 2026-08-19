@@ -422,6 +422,34 @@ request {
 - `json_clamp <jsonpath> min=<f> max=<f>;`: clamps the numeric value at path to `[min, max]` (below `min` becomes `min`, above `max` becomes `max`, values inside the range are unchanged). Missing/non-numeric fields are left unchanged. Both options are required and `max >= min`.
 - Numeric value expressions now support decimal float literals (e.g. `1.0`, `0.5`), emitted as JSON numbers.
 
+#### if_present (branch on the request body)
+
+```conf
+upstream {
+  set_path concat("/v3/async/", $request.model_mapped, "-",
+                  if_present("$.input_reference", "img2video", "text2video"));
+}
+```
+
+Selects between two expressions by whether the client's request carries a value
+at the given json path.
+
+- The routing block's variables are otherwise limited to channel, credential and
+  model metadata; this is the only way to pick an upstream path by request shape.
+  Upstreams sometimes expose one logical operation at several endpoints — PPIO
+  splits video generation into `-text2video` and `-img2video` by whether a
+  reference image was sent.
+- An explicit `null`, an empty string, an empty array and an empty object all
+  count as **absent**: the caller sent nothing either way.
+- **Multipart uploads count as present** even though they never reach the
+  request root. Routing runs before `req_inline_file`, so the file fields of the
+  multipart body are consulted directly (names only — nothing is buffered).
+- Both branches are ordinary expressions, so they compose with `concat`,
+  `template` and the builtin variables. In `set_path` each branch must be
+  path-shaped on its own, since either one can end up in the URL.
+- A malformed call fails the provider file at load time rather than silently
+  routing every request to one branch.
+
 #### req_inline_file (read uploads into the request root)
 
 ```conf
@@ -480,6 +508,7 @@ v0.1 includes:
 - `openai_chat_to_gemini_generate_content`: OpenAI `chat.completions` request JSON → Gemini `generateContent` request JSON
 - `openai_images_to_gemini_generate_content`: OpenAI `images.generations` request JSON → Gemini `generateContent` request JSON (Nano Banana). Maps prompt → `contents[].parts[].text`, `n` → `candidateCount`; for gemini-3 models also maps `size` → `imageConfig.aspectRatio`, `quality` → `imageConfig.imageSize`, and sets `responseModalities=[TEXT,IMAGE]`. Performs validation and errors on violation: `prompt` is required; `n` must be `<= 1`; `response_format=url` is rejected (compared case-insensitively, so `URL` is rejected too); gemini-3 accepts only known aspect ratios/pixel sizes and `standard`/`hd` quality; models below gemini-3 accept neither `size` nor `quality`. Rejections carry the relay Go adaptors' error codes (`request_prompt_missing`, `request_n_out_of_range`, `request_size_not_supported`, `request_invalid_parameter`) and the offending parameter name, so clients can branch on `error.code`/`error.param` instead of parsing the message.
 - `openai_images_edits_to_gemini_generate_content`: OpenAI `images.edits` request → Gemini `generateContent` request JSON. Gemini has no dedicated edit endpoint: an edit is a `generateContent` call whose `contents` carry the source images inline. Requires `req_inline_file` on the upload fields, because the uploaded bytes are otherwise not in the request root. Part order is source images, then the mask plus a fixed instruction sentence explaining it, then the prompt — a multimodal model reads its parts in order, so the order is part of the contract. Shares the validation of `openai_images_to_gemini_generate_content` and additionally requires at least one image (`request_missing_required_field`, param `image`), which is checked first. The response needs no counterpart: an edit response is an ordinary `generateContent` response, so `gemini_to_openai_images` handles it unchanged.
+- `openai_videos_to_ppio`: OpenAI `videos.generations` request → PPIO/Novita async video payload. Text-to-video carries an exact `size` in PPIO's star form (`1280x720` → `1280*720`); image-to-video swaps it for a coarse `resolution` and sends the reference image as a data URL, which requires `req_inline_file` on `input_reference`. `seconds` becomes an integer `duration`. Pair it with `if_present` on the same field in `set_path` so the endpoint and the payload shape agree.
 - `openai_images_to_minimax_image`: OpenAI `images.generations` request JSON → Minimax `/v1/image_generation` request JSON. Maps `size` → `aspect_ratio` (documented pixel sizes and bare ratios alike) or `width`/`height` (512–2048, multiple of 8), `response_format=b64_json` → `base64`, and defaults a missing `n` to 1 and a missing `response_format` to `url`; `seed` and `watermark` pass through. Generic bounds (prompt presence/length, `n` range, `response_format` membership) are left to the `req_required`/`req_len`/`req_range`/`req_enum` directives.
 - `openai_images_to_qwen_image`: OpenAI `images.generations` request JSON → DashScope `multimodal-generation` request JSON. Wraps the prompt in `input.messages[].content[].text`, moves the rest under `parameters`, respells `size` with a star (`1024x1024` → `1024*1024`, default `1328*1328`), defaults a missing `n` to 1, `prompt_extend` to true and `watermark` to false, and passes `negative_prompt`/`seed` through. Generic bounds are left to the `req_required`/`req_len`/`req_range` directives.
 - `openai_chat_to_anthropic_messages`: OpenAI `chat.completions` request JSON → Anthropic `/v1/messages` request JSON.
@@ -668,6 +697,8 @@ Available modes depend on the built-in implementation. v0.1 includes:
 - `gemini_to_openai_chat` (`resp_map`): Gemini `generateContent` JSON → OpenAI `chat.completions` JSON
 - `gemini_to_openai_images` (`resp_map`): Gemini `generateContent` JSON → OpenAI `images.generations` JSON. Extracts `candidates[].content.parts[].inlineData.data` → `data[].b64_json` (+ `revised_prompt` from the same part's text) and maps `usageMetadata` → `usage`. A response with no candidates or with no inline image data is an error (HTTP 500), not a success body with an empty `data` array. `usage` follows the relay Go adaptor's image accounting (`completion_tokens = totalTokenCount - promptTokenCount`) and carries the IMAGE modality entry of `candidatesTokensDetails` as `output_tokens_details.image_tokens`, which the `openai_images_generations` usage_mode preset reads — metrics are extracted after `resp_map`, so fields not mapped here are unavailable to `usage_fact`.
 - `minimax_image_to_openai_images` (`resp_map`): Minimax `/v1/image_generation` JSON → OpenAI `images.generations` JSON. Flattens `data.image_base64`/`data.image_urls` (base64 preferred) into `data[].b64_json`/`data[].url`. A business failure carried inside an HTTP 200 (`base_resp.status_code != 0`) becomes a 400 with Minimax's `status_msg`; a response with no image is a 500.
+- `ppio_video_create_to_openai_videos` (`resp_map`): PPIO async task creation → OpenAI video object (`queued`, progress 0). Only what the upstream determined is set; the host replaces `id` with a router-local task id and fills `prompt`/`seconds`/`size` from the client request, because PPIO never echoes them back.
+- `ppio_video_result_to_openai_videos` (`resp_map`): PPIO task result → OpenAI video object. Maps the status vocabulary, clamps progress to `[0, 100]`, and on completion carries `video_url` plus an absolute `expires_at` derived from the URL TTL. An unknown status and a completed task with no video are both errors rather than guesses — the first would leave a caller polling forever, the second would point them at a download that does not exist. Progress is not made monotonic here; only the host knows what the previous poll reported.
 - `qwen_image_to_openai_images` (`resp_map`): DashScope `multimodal-generation` JSON → OpenAI `images.generations` JSON. Flattens `output.choices[].message.content[].image` into `data[].url`. A business failure carried inside an HTTP 200 (a non-empty top-level `code`) becomes a 400 with DashScope's own message; a response with no image is a 500. DashScope never returns inline content, so pair this with `resp_inline_url` to serve `response_format=b64_json`.
 - `openai_to_gemini_chunks` (`sse_parse`): OpenAI-compatible `chat.completions` SSE → Gemini SSE
 - `gemini_to_openai_chat_chunks` (`sse_parse`): Gemini SSE → OpenAI `chat.completions` SSE chunks

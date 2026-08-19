@@ -24,6 +24,8 @@ func SupportsResponseMapMode(mode string) bool {
 		"gemini_to_openai_images",
 		"minimax_image_to_openai_images",
 		"qwen_image_to_openai_images",
+		"ppio_video_create_to_openai_videos",
+		"ppio_video_result_to_openai_videos",
 		"openai_to_anthropic_messages",
 		"openai_to_gemini_chat",
 		"openai_to_gemini_generate_content":
@@ -62,6 +64,10 @@ func MapResponseObjectByMode(mode string, root map[string]any) (map[string]any, 
 		return MapMinimaxImageToOpenAIImagesResponseObject(root)
 	case "qwen_image_to_openai_images":
 		return MapQwenImageToOpenAIImagesResponseObject(root)
+	case "ppio_video_create_to_openai_videos":
+		return MapPPIOVideoCreateToOpenAIVideoObject(root)
+	case "ppio_video_result_to_openai_videos":
+		return MapPPIOVideoResultToOpenAIVideoObject(root)
 	case "openai_to_anthropic_messages":
 		return MapOpenAIChatCompletionsToClaudeMessagesResponseObject(root)
 	case "openai_to_gemini_chat", "openai_to_gemini_generate_content":
