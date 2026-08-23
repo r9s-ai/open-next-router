@@ -1,0 +1,129 @@
+package meterry
+
+import (
+	"bufio"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+)
+
+type outbox struct {
+	mu   sync.Mutex
+	path string
+}
+
+func openOutbox(dir string) (*outbox, error) {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return nil, errors.New("meterry outbox directory is empty")
+	}
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return nil, fmt.Errorf("create meterry outbox directory: %w", err)
+	}
+	return &outbox{path: filepath.Join(dir, "events.jsonl")}, nil
+}
+
+func (o *outbox) append(event Event) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	f, err := os.OpenFile(o.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	b, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(append(b, '\n')); err != nil {
+		return err
+	}
+	return f.Sync()
+}
+
+func (o *outbox) first() (Event, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	f, err := os.Open(o.path)
+	if errors.Is(err, os.ErrNotExist) {
+		return Event{}, io.EOF
+	}
+	if err != nil {
+		return Event{}, err
+	}
+	defer f.Close()
+	s := bufio.NewScanner(f)
+	if !s.Scan() {
+		if err := s.Err(); err != nil {
+			return Event{}, err
+		}
+		return Event{}, io.EOF
+	}
+	var event Event
+	if err := json.Unmarshal(s.Bytes(), &event); err != nil {
+		return Event{}, fmt.Errorf("decode meterry outbox event: %w", err)
+	}
+	return event, nil
+}
+
+func (o *outbox) ack(idempotencyKey string) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	f, err := os.Open(o.path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	tmp, err := os.CreateTemp(filepath.Dir(o.path), ".events-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	keepFirst := true
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		line := s.Bytes()
+		var event Event
+		if err := json.Unmarshal(line, &event); err != nil {
+			_ = tmp.Close()
+			_ = os.Remove(tmpPath)
+			return fmt.Errorf("decode meterry outbox event while acking: %w", err)
+		}
+		if keepFirst && event.IdempotencyKey == idempotencyKey {
+			keepFirst = false
+			continue
+		}
+		if _, err := tmp.Write(append(line, '\n')); err != nil {
+			_ = tmp.Close()
+			_ = os.Remove(tmpPath)
+			return err
+		}
+	}
+	if err := s.Err(); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := os.Rename(tmpPath, o.path); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	return nil
+}

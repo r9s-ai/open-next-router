@@ -38,7 +38,10 @@ func Middleware(masterKey string, matchAccessKey AccessKeyMatcher, tokenOpts ...
 			return
 		}
 		if matchAccessKey != nil {
-			if _, ok := matchAccessKey(got); ok {
+			if name, ok := matchAccessKey(got); ok {
+				if strings.TrimSpace(name) != "" {
+					c.Set("onr.auth_subject_id", strings.TrimSpace(name))
+				}
 				c.Next()
 				return
 			}
@@ -62,6 +65,11 @@ func Middleware(masterKey string, matchAccessKey AccessKeyMatcher, tokenOpts ...
 					ok = true
 				}
 				if ok {
+					if strings.TrimSpace(accessKey) != "" && matchAccessKey != nil {
+						if name, matched := matchAccessKey(accessKey); matched && strings.TrimSpace(name) != "" {
+							c.Set("onr.auth_subject_id", strings.TrimSpace(name))
+						}
+					}
 					if claims.Provider != "" {
 						c.Set(ctxTokenProvider, claims.Provider)
 					}

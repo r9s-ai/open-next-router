@@ -12,6 +12,7 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/trafficdump"
 	"github.com/r9s-ai/open-next-router/onr/internal/auth"
 	"github.com/r9s-ai/open-next-router/onr/internal/logx"
+	"github.com/r9s-ai/open-next-router/onr/internal/meterry"
 	"github.com/r9s-ai/open-next-router/onr/internal/proxy"
 	"github.com/r9s-ai/open-next-router/pkg/config"
 )
@@ -26,7 +27,12 @@ func NewRouter(
 	accessLoggerColor bool,
 	requestIDHeaderKey string,
 	accessFormatter *logx.AccessLogFormatter,
+	billing ...*meterry.Client,
 ) *gin.Engine {
+	var billingClient *meterry.Client
+	if len(billing) > 0 {
+		billingClient = billing[0]
+	}
 	resolvedRequestIDHeaderKey := requestid.ResolveHeaderKey(requestIDHeaderKey)
 	r := gin.New()
 	r.Use(requestIDMiddleware(resolvedRequestIDHeaderKey))
@@ -75,16 +81,16 @@ func NewRouter(
 	})
 
 	v1 := secured.Group("/v1")
-	v1.POST("/completions", makeHandler(cfg, st, pclient, "completions", resolvedRequestIDHeaderKey))
-	v1.POST("/chat/completions", makeHandler(cfg, st, pclient, "chat.completions", resolvedRequestIDHeaderKey))
-	v1.POST("/responses", makeHandler(cfg, st, pclient, "responses", resolvedRequestIDHeaderKey))
-	v1.POST("/embeddings", makeHandler(cfg, st, pclient, "embeddings", resolvedRequestIDHeaderKey))
-	v1.POST("/images/generations", makeHandler(cfg, st, pclient, "images.generations", resolvedRequestIDHeaderKey))
-	v1.POST("/images/edits", makeHandler(cfg, st, pclient, "images.edits", resolvedRequestIDHeaderKey))
-	v1.POST("/audio/speech", makeHandler(cfg, st, pclient, "audio.speech", resolvedRequestIDHeaderKey))
-	v1.POST("/audio/transcriptions", makeHandler(cfg, st, pclient, "audio.transcriptions", resolvedRequestIDHeaderKey))
-	v1.POST("/audio/translations", makeHandler(cfg, st, pclient, "audio.translations", resolvedRequestIDHeaderKey))
-	v1.POST("/messages", makeHandler(cfg, st, pclient, "claude.messages", resolvedRequestIDHeaderKey))
+	v1.POST("/completions", makeHandler(cfg, st, pclient, "completions", resolvedRequestIDHeaderKey, billingClient))
+	v1.POST("/chat/completions", makeHandler(cfg, st, pclient, "chat.completions", resolvedRequestIDHeaderKey, billingClient))
+	v1.POST("/responses", makeHandler(cfg, st, pclient, "responses", resolvedRequestIDHeaderKey, billingClient))
+	v1.POST("/embeddings", makeHandler(cfg, st, pclient, "embeddings", resolvedRequestIDHeaderKey, billingClient))
+	v1.POST("/images/generations", makeHandler(cfg, st, pclient, "images.generations", resolvedRequestIDHeaderKey, billingClient))
+	v1.POST("/images/edits", makeHandler(cfg, st, pclient, "images.edits", resolvedRequestIDHeaderKey, billingClient))
+	v1.POST("/audio/speech", makeHandler(cfg, st, pclient, "audio.speech", resolvedRequestIDHeaderKey, billingClient))
+	v1.POST("/audio/transcriptions", makeHandler(cfg, st, pclient, "audio.transcriptions", resolvedRequestIDHeaderKey, billingClient))
+	v1.POST("/audio/translations", makeHandler(cfg, st, pclient, "audio.translations", resolvedRequestIDHeaderKey, billingClient))
+	v1.POST("/messages", makeHandler(cfg, st, pclient, "claude.messages", resolvedRequestIDHeaderKey, billingClient))
 	v1.GET("/models", func(c *gin.Context) {
 		c.JSON(http.StatusOK, st.ModelRouter().ToOpenAIListAt(st.StartedAtUnix()))
 	})
@@ -108,7 +114,7 @@ func NewRouter(
 	})
 	// Gemini native API paths: /v1beta/models/{model}:generateContent
 	// (Stage 1) Only generateContent / streamGenerateContent are supported.
-	v1beta.POST("/models/*path", makeGeminiHandler(cfg, st, pclient, resolvedRequestIDHeaderKey))
+	v1beta.POST("/models/*path", makeGeminiHandler(cfg, st, pclient, resolvedRequestIDHeaderKey, billingClient))
 
 	return r
 }
