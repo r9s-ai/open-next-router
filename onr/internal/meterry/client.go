@@ -99,7 +99,7 @@ func (c *Client) worker() {
 	}
 }
 
-func (c *Client) send(event Event) error {
+func (c *Client) send(event Event) (retErr error) {
 	body, err := json.Marshal(event)
 	if err != nil {
 		return err
@@ -115,7 +115,11 @@ func (c *Client) send(event Event) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); retErr == nil && closeErr != nil {
+			retErr = closeErr
+		}
+	}()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		limited, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
 		return fmt.Errorf("meterry ingest returned %s: %s", resp.Status, strings.TrimSpace(string(limited)))

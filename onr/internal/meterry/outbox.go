@@ -35,15 +35,20 @@ func (o *outbox) append(event Event) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 	b, err := json.Marshal(event)
 	if err != nil {
+		_ = f.Close()
 		return err
 	}
 	if _, err := f.Write(append(b, '\n')); err != nil {
+		_ = f.Close()
 		return err
 	}
-	return f.Sync()
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 func (o *outbox) first() (Event, error) {
@@ -56,22 +61,29 @@ func (o *outbox) first() (Event, error) {
 	if err != nil {
 		return Event{}, err
 	}
-	defer f.Close()
 	s := bufio.NewScanner(f)
 	if !s.Scan() {
 		if err := s.Err(); err != nil {
+			_ = f.Close()
+			return Event{}, err
+		}
+		if err := f.Close(); err != nil {
 			return Event{}, err
 		}
 		return Event{}, io.EOF
 	}
 	var event Event
 	if err := json.Unmarshal(s.Bytes(), &event); err != nil {
+		_ = f.Close()
 		return Event{}, fmt.Errorf("decode meterry outbox event: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return Event{}, err
 	}
 	return event, nil
 }
 
-func (o *outbox) ack(idempotencyKey string) error {
+func (o *outbox) ack(idempotencyKey string) (retErr error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	f, err := os.Open(o.path)
@@ -81,7 +93,11 @@ func (o *outbox) ack(idempotencyKey string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		if closeErr := f.Close(); retErr == nil && closeErr != nil {
+			retErr = closeErr
+		}
+	}()
 	tmp, err := os.CreateTemp(filepath.Dir(o.path), ".events-*.tmp")
 	if err != nil {
 		return err
