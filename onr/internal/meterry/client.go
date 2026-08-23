@@ -25,12 +25,13 @@ type Config struct {
 }
 
 type Client struct {
-	cfg    Config
-	outbox *outbox
-	http   *http.Client
-	stop   chan struct{}
-	done   chan struct{}
-	once   sync.Once
+	cfg       Config
+	ingestURL string
+	outbox    *outbox
+	http      *http.Client
+	stop      chan struct{}
+	done      chan struct{}
+	once      sync.Once
 }
 
 func New(cfg Config) (*Client, error) {
@@ -51,11 +52,12 @@ func New(cfg Config) (*Client, error) {
 		cfg.RetryInterval = time.Second
 	}
 	c := &Client{
-		cfg:    cfg,
-		outbox: box,
-		http:   &http.Client{Timeout: cfg.RequestTimeout},
-		stop:   make(chan struct{}),
-		done:   make(chan struct{}),
+		cfg:       cfg,
+		ingestURL: strings.TrimRight(cfg.BaseURL, "/") + "/v1/projects/" + cfg.ProjectID + "/extractor-rule-sets/" + cfg.ExtractorRuleSet + "/events/ingest",
+		outbox:    box,
+		http:      &http.Client{Timeout: cfg.RequestTimeout},
+		stop:      make(chan struct{}),
+		done:      make(chan struct{}),
 	}
 	go c.worker()
 	return c, nil
@@ -102,8 +104,7 @@ func (c *Client) send(event Event) error {
 	if err != nil {
 		return err
 	}
-	url := strings.TrimRight(c.cfg.BaseURL, "/") + "/v1/projects/" + c.cfg.ProjectID + "/extractor-rule-sets/" + c.cfg.ExtractorRuleSet + "/events/ingest"
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, c.ingestURL, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
