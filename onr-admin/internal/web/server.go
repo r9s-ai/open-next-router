@@ -839,7 +839,9 @@ func (s *Server) handleAdminMigrate(w http.ResponseWriter, r *http.Request) {
 		writeJSONAny(w, http.StatusBadRequest, adminAccessKeyResponse{Error: "keys_path is required"})
 		return
 	}
-	report, e := s.service.MigrateAccessKeys(r.Context(), in.KeysPath, dry)
+	// The request path is intentionally not passed to the filesystem layer.
+	// Web migration is restricted to the trusted keys.file from onr.yaml.
+	report, e := s.service.MigrateConfiguredAccessKeys(r.Context(), dry)
 	if e != nil {
 		writeJSONAny(w, http.StatusBadRequest, adminAccessKeyResponse{Error: e.Error(), Report: report})
 		return

@@ -230,3 +230,13 @@ func (s *Service) MigrateAccessKeys(ctx context.Context, path string, dry bool) 
 	}
 	return r, nil
 }
+
+// MigrateConfiguredAccessKeys reads only the keys file selected by the trusted
+// ONR configuration. Web callers must not be able to turn this into an
+// arbitrary filesystem read by supplying a path in an HTTP request.
+func (s *Service) MigrateConfiguredAccessKeys(ctx context.Context, dry bool) (MigrationReport, error) {
+	if s == nil || s.cfg == nil {
+		return MigrationReport{}, fmt.Errorf("admin service is not configured")
+	}
+	return s.MigrateAccessKeys(ctx, s.cfg.Keys.File, dry)
+}
