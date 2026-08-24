@@ -57,6 +57,9 @@ func makeGeminiHandler(cfg *config.Config, st *state, pclient *proxy.Client, req
 			writeOpenAIError(c, requestIDHeaderKey, "invalid_json", err.Error())
 			return
 		}
+		if !enforceBillingBalance(cfg, billing, c, requestIDHeaderKey) {
+			return
+		}
 
 		if rec := trafficdump.FromContext(c); rec != nil && rec.MaxBytes() > 0 {
 			ct := ""

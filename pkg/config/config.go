@@ -98,17 +98,28 @@ type LoggingConfig struct {
 }
 
 type MeterryConfig struct {
+	Enabled             bool                 `yaml:"enabled"`
+	BaseURL             string               `yaml:"base_url"`
+	ProjectID           string               `yaml:"project_id"`
+	APIKey              string               `yaml:"api_key"`
+	ExtractorRuleSet    string               `yaml:"extractor_rule_set_id"`
+	OutboxDir           string               `yaml:"outbox_dir"`
+	RequestTimeoutMs    int                  `yaml:"request_timeout_ms"`
+	RetryIntervalMs     int                  `yaml:"retry_interval_ms"`
+	OnlyBillableSuccess *bool                `yaml:"only_billable_success"`
+	SubjectType         string               `yaml:"subject_type"`
+	FallbackSubjectID   string               `yaml:"fallback_subject_id"`
+	BalanceEnforcement  MeterryBalanceConfig `yaml:"balance_enforcement"`
+}
+
+type MeterryBalanceConfig struct {
 	Enabled             bool   `yaml:"enabled"`
-	BaseURL             string `yaml:"base_url"`
-	ProjectID           string `yaml:"project_id"`
-	APIKey              string `yaml:"api_key"`
-	ExtractorRuleSet    string `yaml:"extractor_rule_set_id"`
-	OutboxDir           string `yaml:"outbox_dir"`
+	Currency            string `yaml:"currency"`
+	FailureMode         string `yaml:"failure_mode"`
 	RequestTimeoutMs    int    `yaml:"request_timeout_ms"`
-	RetryIntervalMs     int    `yaml:"retry_interval_ms"`
-	OnlyBillableSuccess *bool  `yaml:"only_billable_success"`
-	SubjectType         string `yaml:"subject_type"`
-	FallbackSubjectID   string `yaml:"fallback_subject_id"`
+	WebhookPath         string `yaml:"webhook_path"`
+	WebhookSecret       string `yaml:"webhook_secret"`
+	TimestampToleranceS int    `yaml:"timestamp_tolerance_s"`
 }
 
 type Config struct {
@@ -313,6 +324,21 @@ func applyDefaults(cfg *Config) {
 		v := true
 		cfg.Meterry.OnlyBillableSuccess = &v
 	}
+	if strings.TrimSpace(cfg.Meterry.BalanceEnforcement.Currency) == "" {
+		cfg.Meterry.BalanceEnforcement.Currency = "USD"
+	}
+	if strings.TrimSpace(cfg.Meterry.BalanceEnforcement.FailureMode) == "" {
+		cfg.Meterry.BalanceEnforcement.FailureMode = "closed"
+	}
+	if cfg.Meterry.BalanceEnforcement.RequestTimeoutMs <= 0 {
+		cfg.Meterry.BalanceEnforcement.RequestTimeoutMs = 1000
+	}
+	if strings.TrimSpace(cfg.Meterry.BalanceEnforcement.WebhookPath) == "" {
+		cfg.Meterry.BalanceEnforcement.WebhookPath = "/internal/meterry/webhook"
+	}
+	if cfg.Meterry.BalanceEnforcement.TimestampToleranceS <= 0 {
+		cfg.Meterry.BalanceEnforcement.TimestampToleranceS = 300
+	}
 	if strings.TrimSpace(cfg.TrafficDump.FilePath) == "" {
 		cfg.TrafficDump.FilePath = "{{.request_id}}.log"
 	}
@@ -372,6 +398,25 @@ func applyEnvMeterryOverrides(cfg *Config) {
 	}
 	if n, ok := envInt("ONR_METERRY_RETRY_INTERVAL_MS"); ok && n > 0 {
 		cfg.Meterry.RetryIntervalMs = n
+	}
+	cfg.Meterry.BalanceEnforcement.Enabled = envBool("ONR_METERRY_BALANCE_ENABLED", cfg.Meterry.BalanceEnforcement.Enabled)
+	if v := strings.TrimSpace(os.Getenv("ONR_METERRY_BALANCE_CURRENCY")); v != "" {
+		cfg.Meterry.BalanceEnforcement.Currency = v
+	}
+	if v := strings.TrimSpace(os.Getenv("ONR_METERRY_BALANCE_FAILURE_MODE")); v != "" {
+		cfg.Meterry.BalanceEnforcement.FailureMode = v
+	}
+	if n, ok := envInt("ONR_METERRY_BALANCE_REQUEST_TIMEOUT_MS"); ok && n > 0 {
+		cfg.Meterry.BalanceEnforcement.RequestTimeoutMs = n
+	}
+	if v := strings.TrimSpace(os.Getenv("ONR_METERRY_WEBHOOK_PATH")); v != "" {
+		cfg.Meterry.BalanceEnforcement.WebhookPath = v
+	}
+	if v := strings.TrimSpace(os.Getenv("ONR_METERRY_WEBHOOK_SECRET")); v != "" {
+		cfg.Meterry.BalanceEnforcement.WebhookSecret = v
+	}
+	if n, ok := envInt("ONR_METERRY_WEBHOOK_TIMESTAMP_TOLERANCE_S"); ok && n > 0 {
+		cfg.Meterry.BalanceEnforcement.TimestampToleranceS = n
 	}
 }
 
@@ -541,6 +586,32 @@ func validate(cfg *Config) error {
 			return errors.New("meterry request_timeout_ms and retry_interval_ms must be > 0")
 		}
 	}
+	if cfg.Meterry.BalanceEnforcement.Enabled {
+		if !cfg.Meterry.Enabled {
+			return errors.New("meterry.balance_enforcement.enabled requires meterry.enabled=true")
+		}
+		if strings.TrimSpace(cfg.Meterry.BalanceEnforcement.Currency) == "" {
+			return errors.New("meterry.balance_enforcement.currency is required")
+		}
+		switch strings.ToLower(strings.TrimSpace(cfg.Meterry.BalanceEnforcement.FailureMode)) {
+		case "open", "closed":
+			cfg.Meterry.BalanceEnforcement.FailureMode = strings.ToLower(strings.TrimSpace(cfg.Meterry.BalanceEnforcement.FailureMode))
+		default:
+			return errors.New("meterry.balance_enforcement.failure_mode must be open or closed")
+		}
+		if cfg.Meterry.BalanceEnforcement.RequestTimeoutMs <= 0 {
+			return errors.New("meterry.balance_enforcement.request_timeout_ms must be > 0")
+		}
+		if !strings.HasPrefix(strings.TrimSpace(cfg.Meterry.BalanceEnforcement.WebhookPath), "/") {
+			return errors.New("meterry.balance_enforcement.webhook_path must start with /")
+		}
+		if strings.TrimSpace(cfg.Meterry.BalanceEnforcement.WebhookSecret) == "" {
+			return errors.New("meterry.balance_enforcement.webhook_secret is required when balance enforcement is enabled")
+		}
+		if cfg.Meterry.BalanceEnforcement.TimestampToleranceS <= 0 {
+			return errors.New("meterry.balance_enforcement.timestamp_tolerance_s must be > 0")
+		}
+	}
 	return nil
 }
 
@@ -550,6 +621,10 @@ func (c MeterryConfig) RequestTimeout() time.Duration {
 
 func (c MeterryConfig) RetryInterval() time.Duration {
 	return time.Duration(c.RetryIntervalMs) * time.Millisecond
+}
+
+func (c MeterryConfig) BalanceRequestTimeout() time.Duration {
+	return time.Duration(c.BalanceEnforcement.RequestTimeoutMs) * time.Millisecond
 }
 
 func normalizeLogLevel(level string) (string, error) {

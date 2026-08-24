@@ -70,6 +70,58 @@ auth:
 	if cfg.Logging.AccessLogRotate.Compress {
 		t.Fatalf("logging.access_log_rotate.compress default should be false")
 	}
+	if cfg.Meterry.BalanceEnforcement.Currency != "USD" || cfg.Meterry.BalanceEnforcement.FailureMode != "closed" {
+		t.Fatalf("unexpected Meterry balance defaults: %+v", cfg.Meterry.BalanceEnforcement)
+	}
+}
+
+func TestLoad_MeterryBalanceEnforcement(t *testing.T) {
+	path := writeConfigFile(t, `
+auth:
+  api_key: "k"
+meterry:
+  enabled: true
+  base_url: "https://api.meterry.com"
+  project_id: "proj"
+  api_key: "secret"
+  extractor_rule_set_id: "ers"
+  balance_enforcement:
+    enabled: true
+    currency: "USD"
+    failure_mode: "open"
+    webhook_secret: "secret-2"
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Meterry.BalanceEnforcement.Enabled || cfg.Meterry.BalanceEnforcement.FailureMode != "open" {
+		t.Fatalf("unexpected balance config: %+v", cfg.Meterry.BalanceEnforcement)
+	}
+	if cfg.Meterry.BalanceEnforcement.RequestTimeoutMs != 1000 {
+		t.Fatalf("balance timeout=%d", cfg.Meterry.BalanceEnforcement.RequestTimeoutMs)
+	}
+}
+
+func TestValidate_MeterryBalanceRequiresWebhookSecret(t *testing.T) {
+	cfg := &Config{}
+	cfg.Logging.AccessLogRotate.MaxSizeMB = 100
+	cfg.Logging.AccessLogRotate.MaxBackups = 14
+	cfg.Logging.AccessLogRotate.MaxAgeDays = 14
+	cfg.Meterry.Enabled = true
+	cfg.Meterry.BaseURL = "https://api.meterry.com"
+	cfg.Meterry.ProjectID = "proj"
+	cfg.Meterry.APIKey = "secret"
+	cfg.Meterry.ExtractorRuleSet = "ers"
+	cfg.Meterry.BalanceEnforcement.Enabled = true
+	cfg.Meterry.BalanceEnforcement.Currency = "USD"
+	cfg.Meterry.BalanceEnforcement.FailureMode = "closed"
+	cfg.Meterry.BalanceEnforcement.RequestTimeoutMs = 1000
+	cfg.Meterry.BalanceEnforcement.WebhookPath = "/internal/meterry/webhook"
+	cfg.Meterry.BalanceEnforcement.TimestampToleranceS = 300
+	if err := validate(cfg); err == nil {
+		t.Fatal("expected missing webhook secret error")
+	}
 }
 
 func TestResolveProviderDSLSource_DefaultsToOnrConfWhenPresent(t *testing.T) {

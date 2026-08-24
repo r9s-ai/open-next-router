@@ -41,6 +41,9 @@ func makeHandler(cfg *config.Config, st *state, pclient *proxy.Client, api strin
 		if mo := auth.TokenModelOverride(c); mo != "" {
 			model = mo
 		}
+		if !enforceBillingBalance(cfg, billing, c, requestIDHeaderKey) {
+			return
+		}
 
 		if rec := trafficdump.FromContext(c); rec != nil && rec.MaxBytes() > 0 {
 			ct := ""

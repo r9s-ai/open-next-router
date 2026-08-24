@@ -62,6 +62,17 @@ meterry:
   subject_type: "api_key"
   # Used for master-key or BYOK requests without a matched access key.
   fallback_subject_id: ""
+  balance_enforcement:
+    # Check the mapped access-key subject balance before forwarding a request.
+    enabled: false
+    currency: "USD"
+    # open allows requests when Meterry balance lookup fails; closed rejects them.
+    failure_mode: "closed"
+    request_timeout_ms: 1000
+    webhook_path: "/internal/meterry/webhook"
+    # Set this through ONR_METERRY_WEBHOOK_SECRET in production.
+    webhook_secret: ""
+    timestamp_tolerance_s: 300
 
 upstream_proxies:
   # Configure outbound HTTP proxy per provider (optional).

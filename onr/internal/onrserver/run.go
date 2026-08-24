@@ -111,6 +111,9 @@ func Run(cfgPath string) error {
 		OutboxDir:        cfg.Meterry.OutboxDir,
 		RequestTimeout:   cfg.Meterry.RequestTimeout(),
 		RetryInterval:    cfg.Meterry.RetryInterval(),
+		BalanceEnabled:   cfg.Meterry.BalanceEnforcement.Enabled,
+		BalanceCurrency:  cfg.Meterry.BalanceEnforcement.Currency,
+		BalanceTimeout:   cfg.Meterry.BalanceRequestTimeout(),
 	})
 	if err != nil {
 		return fmt.Errorf("init meterry billing: %w", err)

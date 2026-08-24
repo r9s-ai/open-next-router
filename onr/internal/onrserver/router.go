@@ -54,6 +54,9 @@ func NewRouter(
 	r.GET("/healthz", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
+	if billingClient != nil && cfg.Meterry.BalanceEnforcement.Enabled {
+		r.POST(cfg.Meterry.BalanceEnforcement.WebhookPath, meterryWebhookHandler(cfg, billingClient))
+	}
 
 	secured := r.Group("/")
 	secured.Use(auth.Middleware(

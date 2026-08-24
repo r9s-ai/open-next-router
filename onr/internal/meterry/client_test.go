@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -46,5 +47,55 @@ func TestClientSendsQueuedEvent(t *testing.T) {
 	}
 	if err := c.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestClientCheckBalance(t *testing.T) {
+	requests := make(chan string, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"account_id":"acct_1","currency":"USD","balance":"0.01"}`))
+	}))
+	defer srv.Close()
+	c, err := New(Config{
+		Enabled:          true,
+		BaseURL:          srv.URL,
+		ProjectID:        "proj",
+		APIKey:           "secret",
+		ExtractorRuleSet: "ers",
+		OutboxDir:        t.TempDir(),
+		BalanceEnabled:   true,
+		BalanceCurrency:  "USD",
+		BalanceTimeout:   time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	allowed, err := c.CheckBalance(t.Context(), "api_key", "client-a")
+	if err != nil || !allowed {
+		t.Fatalf("CheckBalance=(%v,%v), want true,nil", allowed, err)
+	}
+	query := <-requests
+	if !strings.Contains(query, "subject_type=api_key") || !strings.Contains(query, "subject_id=client-a") || !strings.Contains(query, "currency=USD") {
+		t.Fatalf("unexpected query: %s", query)
+	}
+}
+
+func TestClientCheckBalanceZero(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"balance":"0"}`))
+	}))
+	defer srv.Close()
+	c, err := New(Config{Enabled: true, BaseURL: srv.URL, ProjectID: "proj", APIKey: "secret", ExtractorRuleSet: "ers", OutboxDir: t.TempDir(), BalanceEnabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	allowed, err := c.CheckBalance(t.Context(), "api_key", "client-a")
+	if err != nil || allowed {
+		t.Fatalf("CheckBalance=(%v,%v), want false,nil", allowed, err)
 	}
 }
