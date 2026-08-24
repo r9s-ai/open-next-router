@@ -1,18 +1,17 @@
 package meterry
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"math/big"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
+
+	sdk "github.com/meterry-com/meterry-go"
+	"github.com/meterry-com/meterry-go/pkg/types"
 )
 
 type Config struct {
@@ -31,12 +30,10 @@ type Config struct {
 
 type Client struct {
 	cfg            Config
-	ingestURL      string
-	balanceURL     string
+	sdk            *sdk.Client
 	state          *subjectStateStore
 	balanceTimeout time.Duration
 	outbox         *outbox
-	http           *http.Client
 	stop           chan struct{}
 	done           chan struct{}
 	once           sync.Once
@@ -69,16 +66,22 @@ func New(cfg Config) (*Client, error) {
 	if cfg.BalanceTimeout <= 0 {
 		cfg.BalanceTimeout = time.Second
 	}
-	base := strings.TrimRight(cfg.BaseURL, "/")
-	balanceURL := base + "/v1/projects/" + url.PathEscape(cfg.ProjectID) + "/wallets/realtime/amount"
+	sdkClient, err := sdk.NewClient(sdk.Config{
+		BaseURL: cfg.BaseURL,
+		APIKey:  cfg.APIKey,
+		HTTPClient: &http.Client{
+			Timeout: cfg.RequestTimeout,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("init meterry sdk: %w", err)
+	}
 	c := &Client{
 		cfg:            cfg,
-		ingestURL:      base + "/v1/projects/" + url.PathEscape(cfg.ProjectID) + "/extractor-rule-sets/" + url.PathEscape(cfg.ExtractorRuleSet) + "/events/ingest",
-		balanceURL:     balanceURL,
+		sdk:            sdkClient,
 		state:          state,
 		balanceTimeout: cfg.BalanceTimeout,
 		outbox:         box,
-		http:           &http.Client{Timeout: cfg.RequestTimeout},
 		stop:           make(chan struct{}),
 		done:           make(chan struct{}),
 	}
@@ -99,37 +102,17 @@ func (c *Client) CheckBalance(ctx context.Context, subjectType, subjectID string
 	if c.state != nil && c.state.isBlocked(subjectType, subjectID) {
 		return false, nil
 	}
-	q := url.Values{}
-	q.Set("subject_type", subjectType)
-	q.Set("subject_id", subjectID)
-	q.Set("currency", c.cfg.BalanceCurrency)
 	checkCtx, cancel := context.WithTimeout(ctx, c.balanceTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(checkCtx, http.MethodGet, c.balanceURL+"?"+q.Encode(), nil)
+	snapshot, err := c.sdk.Manager.ReadVirtualWalletAmountForProject(checkCtx, c.cfg.ProjectID, types.ReadVirtualWalletRequest{
+		SubjectType: subjectType,
+		SubjectID:   subjectID,
+		Currency:    c.cfg.BalanceCurrency,
+	})
 	if err != nil {
 		return false, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return false, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		limited, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
-		return false, fmt.Errorf("meterry balance lookup returned %s: %s", resp.Status, strings.TrimSpace(string(limited)))
-	}
-	var payload struct {
-		Balance string `json:"balance"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return false, err
-	}
-	balance := new(big.Rat)
-	if _, ok := balance.SetString(strings.TrimSpace(payload.Balance)); !ok {
-		return false, fmt.Errorf("meterry balance response has invalid balance %q", payload.Balance)
-	}
-	return balance.Sign() > 0, nil
+	return snapshot.Balance.Sign() > 0, nil
 }
 
 func (c *Client) ApplyWebhook(eventID, eventType, subjectType, subjectID string) error {
@@ -173,30 +156,56 @@ func (c *Client) worker() {
 	}
 }
 
-func (c *Client) send(event Event) (retErr error) {
-	body, err := json.Marshal(event)
+func (c *Client) send(event Event) error {
+	rawJSON, err := json.Marshal(event.RawJSON)
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, c.ingestURL, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Idempotency-Key", event.IdempotencyKey)
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if closeErr := resp.Body.Close(); retErr == nil && closeErr != nil {
-			retErr = closeErr
+	var billing *types.XBilling
+	if len(event.Billing) > 0 {
+		billingJSON, marshalErr := json.Marshal(event.Billing)
+		if marshalErr != nil {
+			return marshalErr
 		}
-	}()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		limited, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
-		return fmt.Errorf("meterry ingest returned %s: %s", resp.Status, strings.TrimSpace(string(limited)))
+		billing = &types.XBilling{}
+		if err := json.Unmarshal(billingJSON, billing); err != nil {
+			return err
+		}
 	}
-	return nil
+	_, err = c.sdk.Ingest.IngestRawEvent(context.Background(), c.cfg.ProjectID, c.cfg.ExtractorRuleSet, types.IngestEventRequest{
+		Source:          event.Source,
+		ExternalEventID: event.ExternalEventID,
+		IdempotencyKey:  event.IdempotencyKey,
+		SubjectType:     event.SubjectType,
+		SubjectID:       event.SubjectID,
+		OccurredAt:      event.OccurredAt,
+		RawJSON:         rawJSON,
+		XBilling:        billing,
+		Metadata:        stringMetadata(event.Metadata),
+	})
+	return err
+}
+
+func stringMetadata(in map[string]any) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for key, value := range in {
+		if key == "" || value == nil {
+			continue
+		}
+		if text, ok := value.(string); ok {
+			out[key] = text
+			continue
+		}
+		encoded, err := json.Marshal(value)
+		if err == nil {
+			out[key] = string(encoded)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

@@ -1,15 +1,14 @@
 package meterry
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
+
+	sdk "github.com/meterry-com/meterry-go"
 )
 
 func VerifyWebhookSignature(secret, timestamp, signature string, body []byte, now time.Time, tolerance time.Duration) error {
@@ -29,19 +28,8 @@ func VerifyWebhookSignature(secret, timestamp, signature string, body []byte, no
 	if delta := now.Sub(time.Unix(unix, 0)); delta > tolerance || delta < -tolerance {
 		return errors.New("expired Meterry webhook timestamp")
 	}
-	if !strings.HasPrefix(signature, "v1=") {
-		return errors.New("invalid Meterry webhook signature format")
-	}
-	received, err := hex.DecodeString(strings.TrimPrefix(signature, "v1="))
-	if err != nil {
-		return errors.New("invalid Meterry webhook signature encoding")
-	}
-	mac := hmac.New(sha256.New, []byte(secret))
-	_, _ = mac.Write([]byte(timestamp))
-	_, _ = mac.Write([]byte("."))
-	_, _ = mac.Write(body)
-	if !hmac.Equal(received, mac.Sum(nil)) {
-		return errors.New("invalid Meterry webhook signature")
+	if err := sdk.VerifyWebhookSignature(secret, signature, unix, body); err != nil {
+		return err
 	}
 	return nil
 }
