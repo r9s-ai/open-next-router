@@ -64,7 +64,7 @@ func ParseWebhookEvent(body []byte) (WebhookEvent, error) {
 		}
 	}
 	if event.Type == "" {
-		return WebhookEvent{}, errors.New("Meterry webhook requires event type")
+		return WebhookEvent{}, errors.New("meterry webhook requires event type")
 	}
 	return event, nil
 }

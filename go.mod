@@ -1,6 +1,6 @@
 module github.com/r9s-ai/open-next-router
 
-go 1.26.4
+go 1.26.6
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.43.6
