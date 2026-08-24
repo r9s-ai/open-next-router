@@ -69,6 +69,9 @@ meterry:
     # open allows requests when Meterry balance lookup fails; closed rejects them.
     failure_mode: "closed"
     request_timeout_ms: 1000
+    # Reuse a successful balance result briefly and coalesce concurrent lookups.
+    cache_ttl_ms: 3000
+    negative_cache_ttl_ms: 1000
     webhook_path: "/internal/meterry/webhook"
     # Set this through ONR_METERRY_WEBHOOK_SECRET in production.
     webhook_secret: ""

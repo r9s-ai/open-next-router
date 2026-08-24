@@ -15,28 +15,46 @@ import (
 )
 
 type Config struct {
-	Enabled          bool
-	BaseURL          string
-	ProjectID        string
-	APIKey           string
-	ExtractorRuleSet string
-	OutboxDir        string
-	RequestTimeout   time.Duration
-	RetryInterval    time.Duration
-	BalanceEnabled   bool
-	BalanceCurrency  string
-	BalanceTimeout   time.Duration
+	Enabled                 bool
+	BaseURL                 string
+	ProjectID               string
+	APIKey                  string
+	ExtractorRuleSet        string
+	OutboxDir               string
+	RequestTimeout          time.Duration
+	RetryInterval           time.Duration
+	BalanceEnabled          bool
+	BalanceCurrency         string
+	BalanceTimeout          time.Duration
+	BalanceCacheTTL         time.Duration
+	BalanceNegativeCacheTTL time.Duration
+}
+
+type balanceCacheEntry struct {
+	allowed   bool
+	expiresAt time.Time
+}
+
+type balanceCall struct {
+	done    chan struct{}
+	allowed bool
+	err     error
 }
 
 type Client struct {
-	cfg            Config
-	sdk            *sdk.Client
-	state          *subjectStateStore
-	balanceTimeout time.Duration
-	outbox         *outbox
-	stop           chan struct{}
-	done           chan struct{}
-	once           sync.Once
+	cfg                     Config
+	sdk                     *sdk.Client
+	state                   *subjectStateStore
+	balanceTimeout          time.Duration
+	balanceCacheTTL         time.Duration
+	balanceNegativeCacheTTL time.Duration
+	balanceMu               sync.Mutex
+	balanceCache            map[string]balanceCacheEntry
+	balanceCalls            map[string]*balanceCall
+	outbox                  *outbox
+	stop                    chan struct{}
+	done                    chan struct{}
+	once                    sync.Once
 }
 
 func New(cfg Config) (*Client, error) {
@@ -66,6 +84,12 @@ func New(cfg Config) (*Client, error) {
 	if cfg.BalanceTimeout <= 0 {
 		cfg.BalanceTimeout = time.Second
 	}
+	if cfg.BalanceCacheTTL <= 0 {
+		cfg.BalanceCacheTTL = 3 * time.Second
+	}
+	if cfg.BalanceNegativeCacheTTL <= 0 {
+		cfg.BalanceNegativeCacheTTL = time.Second
+	}
 	sdkClient, err := sdk.NewClient(sdk.Config{
 		BaseURL: cfg.BaseURL,
 		APIKey:  cfg.APIKey,
@@ -77,13 +101,17 @@ func New(cfg Config) (*Client, error) {
 		return nil, fmt.Errorf("init meterry sdk: %w", err)
 	}
 	c := &Client{
-		cfg:            cfg,
-		sdk:            sdkClient,
-		state:          state,
-		balanceTimeout: cfg.BalanceTimeout,
-		outbox:         box,
-		stop:           make(chan struct{}),
-		done:           make(chan struct{}),
+		cfg:                     cfg,
+		sdk:                     sdkClient,
+		state:                   state,
+		balanceTimeout:          cfg.BalanceTimeout,
+		balanceCacheTTL:         cfg.BalanceCacheTTL,
+		balanceNegativeCacheTTL: cfg.BalanceNegativeCacheTTL,
+		balanceCache:            make(map[string]balanceCacheEntry),
+		balanceCalls:            make(map[string]*balanceCall),
+		outbox:                  box,
+		stop:                    make(chan struct{}),
+		done:                    make(chan struct{}),
 	}
 	go c.worker()
 	return c, nil
@@ -102,7 +130,43 @@ func (c *Client) CheckBalance(ctx context.Context, subjectType, subjectID string
 	if c.state != nil && c.state.isBlocked(subjectType, subjectID) {
 		return false, nil
 	}
-	checkCtx, cancel := context.WithTimeout(ctx, c.balanceTimeout)
+	key := subjectKey(subjectType, subjectID) + "/" + strings.TrimSpace(c.cfg.BalanceCurrency)
+	now := time.Now()
+	c.balanceMu.Lock()
+	if entry, ok := c.balanceCache[key]; ok && now.Before(entry.expiresAt) {
+		c.balanceMu.Unlock()
+		return entry.allowed, nil
+	}
+	if call, ok := c.balanceCalls[key]; ok {
+		c.balanceMu.Unlock()
+		select {
+		case <-call.done:
+			return call.allowed, call.err
+		case <-ctx.Done():
+			return false, ctx.Err()
+		}
+	}
+	call := &balanceCall{done: make(chan struct{})}
+	c.balanceCalls[key] = call
+	c.balanceMu.Unlock()
+
+	call.allowed, call.err = c.fetchBalance(ctx, subjectType, subjectID)
+	c.balanceMu.Lock()
+	if call.err == nil {
+		ttl := c.balanceCacheTTL
+		if !call.allowed {
+			ttl = c.balanceNegativeCacheTTL
+		}
+		c.balanceCache[key] = balanceCacheEntry{allowed: call.allowed, expiresAt: time.Now().Add(ttl)}
+	}
+	delete(c.balanceCalls, key)
+	close(call.done)
+	c.balanceMu.Unlock()
+	return call.allowed, call.err
+}
+
+func (c *Client) fetchBalance(ctx context.Context, subjectType, subjectID string) (bool, error) {
+	checkCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), c.balanceTimeout)
 	defer cancel()
 	snapshot, err := c.sdk.Manager.ReadVirtualWalletAmountForProject(checkCtx, c.cfg.ProjectID, types.ReadVirtualWalletRequest{
 		SubjectType: subjectType,
@@ -119,7 +183,23 @@ func (c *Client) ApplyWebhook(eventID, eventType, subjectType, subjectID string)
 	if c == nil || !c.Enabled() {
 		return nil
 	}
-	return c.state.applyWebhook(strings.TrimSpace(eventID), strings.TrimSpace(eventType), subjectType, subjectID)
+	subjectType = strings.TrimSpace(subjectType)
+	subjectID = strings.TrimSpace(subjectID)
+	err := c.state.applyWebhook(strings.TrimSpace(eventID), strings.TrimSpace(eventType), subjectType, subjectID)
+	if err == nil {
+		c.invalidateBalance(subjectType, subjectID)
+	}
+	return err
+}
+
+func (c *Client) invalidateBalance(subjectType, subjectID string) {
+	key := subjectKey(subjectType, subjectID) + "/" + strings.TrimSpace(c.cfg.BalanceCurrency)
+	if key == "/"+strings.TrimSpace(c.cfg.BalanceCurrency) {
+		return
+	}
+	c.balanceMu.Lock()
+	delete(c.balanceCache, key)
+	c.balanceMu.Unlock()
 }
 
 func (c *Client) Enqueue(event Event) error {

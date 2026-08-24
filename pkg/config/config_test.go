@@ -73,6 +73,9 @@ auth:
 	if cfg.Meterry.BalanceEnforcement.Currency != "USD" || cfg.Meterry.BalanceEnforcement.FailureMode != "closed" {
 		t.Fatalf("unexpected Meterry balance defaults: %+v", cfg.Meterry.BalanceEnforcement)
 	}
+	if cfg.Meterry.BalanceEnforcement.CacheTTLMS != 3000 || cfg.Meterry.BalanceEnforcement.NegativeCacheTTLMS != 1000 {
+		t.Fatalf("unexpected Meterry balance cache defaults: %+v", cfg.Meterry.BalanceEnforcement)
+	}
 }
 
 func TestLoad_MeterryBalanceEnforcement(t *testing.T) {
@@ -100,6 +103,9 @@ meterry:
 	}
 	if cfg.Meterry.BalanceEnforcement.RequestTimeoutMs != 1000 {
 		t.Fatalf("balance timeout=%d", cfg.Meterry.BalanceEnforcement.RequestTimeoutMs)
+	}
+	if cfg.Meterry.BalanceEnforcement.CacheTTLMS != 3000 || cfg.Meterry.BalanceEnforcement.NegativeCacheTTLMS != 1000 {
+		t.Fatalf("balance cache defaults=%d/%d", cfg.Meterry.BalanceEnforcement.CacheTTLMS, cfg.Meterry.BalanceEnforcement.NegativeCacheTTLMS)
 	}
 }
 

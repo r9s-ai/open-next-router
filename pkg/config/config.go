@@ -117,6 +117,8 @@ type MeterryBalanceConfig struct {
 	Currency            string `yaml:"currency"`
 	FailureMode         string `yaml:"failure_mode"`
 	RequestTimeoutMs    int    `yaml:"request_timeout_ms"`
+	CacheTTLMS          int    `yaml:"cache_ttl_ms"`
+	NegativeCacheTTLMS  int    `yaml:"negative_cache_ttl_ms"`
 	WebhookPath         string `yaml:"webhook_path"`
 	WebhookSecret       string `yaml:"webhook_secret"`
 	TimestampToleranceS int    `yaml:"timestamp_tolerance_s"`
@@ -335,6 +337,12 @@ func applyMeterryDefaults(cfg *MeterryConfig) {
 	if cfg.BalanceEnforcement.RequestTimeoutMs <= 0 {
 		cfg.BalanceEnforcement.RequestTimeoutMs = 1000
 	}
+	if cfg.BalanceEnforcement.CacheTTLMS <= 0 {
+		cfg.BalanceEnforcement.CacheTTLMS = 3000
+	}
+	if cfg.BalanceEnforcement.NegativeCacheTTLMS <= 0 {
+		cfg.BalanceEnforcement.NegativeCacheTTLMS = 1000
+	}
 	if strings.TrimSpace(cfg.BalanceEnforcement.WebhookPath) == "" {
 		cfg.BalanceEnforcement.WebhookPath = "/internal/meterry/webhook"
 	}
@@ -419,6 +427,12 @@ func applyEnvMeterryOverrides(cfg *Config) {
 	}
 	if n, ok := envInt("ONR_METERRY_BALANCE_REQUEST_TIMEOUT_MS"); ok && n > 0 {
 		cfg.Meterry.BalanceEnforcement.RequestTimeoutMs = n
+	}
+	if n, ok := envInt("ONR_METERRY_BALANCE_CACHE_TTL_MS"); ok && n > 0 {
+		cfg.Meterry.BalanceEnforcement.CacheTTLMS = n
+	}
+	if n, ok := envInt("ONR_METERRY_BALANCE_NEGATIVE_CACHE_TTL_MS"); ok && n > 0 {
+		cfg.Meterry.BalanceEnforcement.NegativeCacheTTLMS = n
 	}
 	if v := strings.TrimSpace(os.Getenv("ONR_METERRY_WEBHOOK_PATH")); v != "" {
 		cfg.Meterry.BalanceEnforcement.WebhookPath = v
@@ -629,6 +643,12 @@ func validateMeterry(cfg *MeterryConfig) error {
 	if cfg.BalanceEnforcement.RequestTimeoutMs <= 0 {
 		return errors.New("meterry.balance_enforcement.request_timeout_ms must be > 0")
 	}
+	if cfg.BalanceEnforcement.CacheTTLMS <= 0 {
+		return errors.New("meterry.balance_enforcement.cache_ttl_ms must be > 0")
+	}
+	if cfg.BalanceEnforcement.NegativeCacheTTLMS <= 0 {
+		return errors.New("meterry.balance_enforcement.negative_cache_ttl_ms must be > 0")
+	}
 	if !strings.HasPrefix(strings.TrimSpace(cfg.BalanceEnforcement.WebhookPath), "/") {
 		return errors.New("meterry.balance_enforcement.webhook_path must start with /")
 	}
@@ -651,6 +671,14 @@ func (c MeterryConfig) RetryInterval() time.Duration {
 
 func (c MeterryConfig) BalanceRequestTimeout() time.Duration {
 	return time.Duration(c.BalanceEnforcement.RequestTimeoutMs) * time.Millisecond
+}
+
+func (c MeterryConfig) BalanceCacheTTL() time.Duration {
+	return time.Duration(c.BalanceEnforcement.CacheTTLMS) * time.Millisecond
+}
+
+func (c MeterryConfig) BalanceNegativeCacheTTL() time.Duration {
+	return time.Duration(c.BalanceEnforcement.NegativeCacheTTLMS) * time.Millisecond
 }
 
 func normalizeLogLevel(level string) (string, error) {

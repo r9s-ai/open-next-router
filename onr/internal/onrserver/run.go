@@ -103,17 +103,19 @@ func Run(cfgPath string) error {
 	pclient.SetPricingResolver(pricingResolver)
 	pclient.SetPricingEnabled(cfg.Pricing.Enabled)
 	meterryClient, err := meterry.New(meterry.Config{
-		Enabled:          cfg.Meterry.Enabled,
-		BaseURL:          cfg.Meterry.BaseURL,
-		ProjectID:        cfg.Meterry.ProjectID,
-		APIKey:           cfg.Meterry.APIKey,
-		ExtractorRuleSet: cfg.Meterry.ExtractorRuleSet,
-		OutboxDir:        cfg.Meterry.OutboxDir,
-		RequestTimeout:   cfg.Meterry.RequestTimeout(),
-		RetryInterval:    cfg.Meterry.RetryInterval(),
-		BalanceEnabled:   cfg.Meterry.BalanceEnforcement.Enabled,
-		BalanceCurrency:  cfg.Meterry.BalanceEnforcement.Currency,
-		BalanceTimeout:   cfg.Meterry.BalanceRequestTimeout(),
+		Enabled:                 cfg.Meterry.Enabled,
+		BaseURL:                 cfg.Meterry.BaseURL,
+		ProjectID:               cfg.Meterry.ProjectID,
+		APIKey:                  cfg.Meterry.APIKey,
+		ExtractorRuleSet:        cfg.Meterry.ExtractorRuleSet,
+		OutboxDir:               cfg.Meterry.OutboxDir,
+		RequestTimeout:          cfg.Meterry.RequestTimeout(),
+		RetryInterval:           cfg.Meterry.RetryInterval(),
+		BalanceEnabled:          cfg.Meterry.BalanceEnforcement.Enabled,
+		BalanceCurrency:         cfg.Meterry.BalanceEnforcement.Currency,
+		BalanceTimeout:          cfg.Meterry.BalanceRequestTimeout(),
+		BalanceCacheTTL:         cfg.Meterry.BalanceCacheTTL(),
+		BalanceNegativeCacheTTL: cfg.Meterry.BalanceNegativeCacheTTL(),
 	})
 	if err != nil {
 		return fmt.Errorf("init meterry billing: %w", err)
