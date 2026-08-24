@@ -12,7 +12,7 @@ import (
 
 	sdk "github.com/meterry-com/meterry-go"
 	"github.com/meterry-com/meterry-go/pkg/types"
-	"github.com/r9s-ai/open-next-router/onr-core/pkg/controlplane"
+	"github.com/r9s-ai/open-next-router/pkg/controlplane"
 )
 
 type Config struct {

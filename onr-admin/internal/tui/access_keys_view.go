@@ -13,7 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/r9s-ai/open-next-router/onr-core/pkg/controlplane"
+	"github.com/r9s-ai/open-next-router/pkg/controlplane"
 )
 
 type accessViewState int

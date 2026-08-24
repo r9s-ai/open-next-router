@@ -6,7 +6,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/r9s-ai/open-next-router/onr-core/pkg/controlplane"
+	"github.com/r9s-ai/open-next-router/pkg/controlplane"
 )
 
 type redisOutbox struct {

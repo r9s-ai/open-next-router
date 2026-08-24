@@ -22,10 +22,10 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-admin/internal/providersource"
 	adminservice "github.com/r9s-ai/open-next-router/onr-admin/internal/service"
 	"github.com/r9s-ai/open-next-router/onr-admin/internal/store"
-	"github.com/r9s-ai/open-next-router/onr-core/pkg/controlplane"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dsllang"
 	cfgpkg "github.com/r9s-ai/open-next-router/pkg/config"
+	"github.com/r9s-ai/open-next-router/pkg/controlplane"
 )
 
 const (

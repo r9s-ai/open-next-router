@@ -19,7 +19,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/r9s-ai/open-next-router/onr-core/pkg/controlplane"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/keystore"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/models"
@@ -28,6 +27,7 @@ import (
 	"github.com/r9s-ai/open-next-router/onr/internal/meterry"
 	"github.com/r9s-ai/open-next-router/onr/internal/proxy"
 	"github.com/r9s-ai/open-next-router/pkg/config"
+	"github.com/r9s-ai/open-next-router/pkg/controlplane"
 )
 
 type providersReloadResult struct {
