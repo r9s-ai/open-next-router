@@ -62,6 +62,37 @@ meterry:
   subject_type: "api_key"
   # Used for master-key or BYOK requests without a matched access key.
   fallback_subject_id: ""
+  balance_enforcement:
+    # Check the mapped access-key subject balance before forwarding a request.
+    enabled: false
+    currency: "USD"
+    # open allows requests when Meterry balance lookup fails; closed rejects them.
+    failure_mode: "closed"
+    request_timeout_ms: 1000
+    # Reuse a successful balance result briefly and coalesce concurrent lookups.
+    cache_ttl_ms: 3000
+    negative_cache_ttl_ms: 1000
+    webhook_path: "/internal/meterry/webhook"
+    # Set this through ONR_METERRY_WEBHOOK_SECRET in production.
+    webhook_secret: ""
+    timestamp_tolerance_s: 300
+
+redis:
+  enabled: false
+  addr: "redis://127.0.0.1:6379/0"
+  username: ""
+  password: ""
+  tls: false
+  key_prefix: "onr"
+  operation_timeout_ms: 500
+  # redis_preferred uses Redis first and falls back to keys.yaml when a key is absent.
+  access_key_mode: "redis_preferred"
+  billing_stream: "meterry:events"
+  billing_consumer_group: "onr-billing"
+  billing_consumer_name: ""
+  billing_max_attempts: 10
+  # Set through ONR_ACCESS_KEY_HASH_SECRET in production.
+  access_key_hash_secret: ""
 
 upstream_proxies:
   # Configure outbound HTTP proxy per provider (optional).

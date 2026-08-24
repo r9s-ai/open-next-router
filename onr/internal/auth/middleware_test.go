@@ -1,13 +1,31 @@
 package auth
 
 import (
+	"context"
 	"encoding/base64"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 )
+
+func TestMiddlewareWithResolverUnavailable(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(MiddlewareWithResolver("", func(context.Context, string) (string, bool, error) {
+		return "", false, errors.New("redis down")
+	}))
+	r.GET("/ok", func(c *gin.Context) { c.String(200, "ok") })
+	req := httptest.NewRequest(http.MethodGet, "/ok", nil)
+	req.Header.Set("Authorization", "Bearer client-secret")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("code=%d body=%s", w.Code, w.Body.String())
+	}
+}
 
 func TestMiddleware_TokenKey_AccessKey(t *testing.T) {
 	gin.SetMode(gin.TestMode)

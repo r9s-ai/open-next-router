@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/subtle"
 	"net/http"
 	"strings"
@@ -9,12 +10,24 @@ import (
 )
 
 type AccessKeyMatcher func(accessKey string) (name string, ok bool)
+type AccessKeyResolver func(ctx context.Context, accessKey string) (name string, ok bool, err error)
 
 type TokenKeyOptions struct {
 	AllowBYOKWithoutK bool
 }
 
 func Middleware(masterKey string, matchAccessKey AccessKeyMatcher, tokenOpts ...TokenKeyOptions) gin.HandlerFunc {
+	var resolver AccessKeyResolver
+	if matchAccessKey != nil {
+		resolver = func(_ context.Context, accessKey string) (string, bool, error) {
+			name, ok := matchAccessKey(accessKey)
+			return name, ok, nil
+		}
+	}
+	return MiddlewareWithResolver(masterKey, resolver, tokenOpts...)
+}
+
+func MiddlewareWithResolver(masterKey string, resolveAccessKey AccessKeyResolver, tokenOpts ...TokenKeyOptions) gin.HandlerFunc {
 	expected := strings.TrimSpace(masterKey)
 	allowBYOKWithoutK := false
 	if len(tokenOpts) > 0 {
@@ -37,8 +50,15 @@ func Middleware(masterKey string, matchAccessKey AccessKeyMatcher, tokenOpts ...
 			c.Next()
 			return
 		}
-		if matchAccessKey != nil {
-			if name, ok := matchAccessKey(got); ok {
+		if resolveAccessKey != nil {
+			if name, ok, err := resolveAccessKey(c.Request.Context(), got); err != nil {
+				c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{
+					"message": "authentication service is unavailable",
+					"type":    "auth_error",
+					"code":    "authentication_unavailable",
+				}})
+				return
+			} else if ok {
 				if strings.TrimSpace(name) != "" {
 					c.Set("onr.auth_subject_id", strings.TrimSpace(name))
 				}
@@ -47,43 +67,16 @@ func Middleware(masterKey string, matchAccessKey AccessKeyMatcher, tokenOpts ...
 			}
 		}
 
-		// Token key: onr:v1?... (no-sig, editable)
-		if IsTokenKey(got) {
-			claims, accessKey, err := ParseTokenKeyV1WithOptions(got, TokenParseOptions{
-				AllowBYOKWithoutK: allowBYOKWithoutK,
-			})
-			if err == nil && claims != nil {
-				ok := false
-				if strings.TrimSpace(accessKey) != "" {
-					if expected != "" && subtle.ConstantTimeCompare([]byte(accessKey), []byte(expected)) == 1 {
-						ok = true
-					}
-					if !ok && matchAccessKey != nil {
-						_, ok = matchAccessKey(accessKey)
-					}
-				} else if allowBYOKWithoutK && claims.Mode == TokenModeBYOK && strings.TrimSpace(claims.UpstreamKey) != "" {
-					ok = true
-				}
-				if ok {
-					if strings.TrimSpace(accessKey) != "" && matchAccessKey != nil {
-						if name, matched := matchAccessKey(accessKey); matched && strings.TrimSpace(name) != "" {
-							c.Set("onr.auth_subject_id", strings.TrimSpace(name))
-						}
-					}
-					if claims.Provider != "" {
-						c.Set(ctxTokenProvider, claims.Provider)
-					}
-					if claims.ModelOverride != "" {
-						c.Set(ctxTokenModelOverride, claims.ModelOverride)
-					}
-					if claims.UpstreamKey != "" {
-						c.Set(ctxTokenUpstreamKey, claims.UpstreamKey)
-					}
-					c.Set(ctxTokenMode, string(claims.Mode))
-					c.Next()
-					return
-				}
-			}
+		if ok, err := authenticateToken(c, got, expected, resolveAccessKey, allowBYOKWithoutK); err != nil {
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{
+				"message": "authentication service is unavailable",
+				"type":    "auth_error",
+				"code":    "authentication_unavailable",
+			}})
+			return
+		} else if ok {
+			c.Next()
+			return
 		}
 
 		{
@@ -97,6 +90,60 @@ func Middleware(masterKey string, matchAccessKey AccessKeyMatcher, tokenOpts ...
 			return
 		}
 	}
+}
+
+func authenticateToken(c *gin.Context, got, expected string, resolver AccessKeyResolver, allowBYOKWithoutK bool) (bool, error) {
+	if !IsTokenKey(got) {
+		return false, nil
+	}
+	claims, accessKey := parseToken(got, allowBYOKWithoutK)
+	if claims == nil {
+		return false, nil
+	}
+	var err error
+	ok := false
+	if strings.TrimSpace(accessKey) != "" {
+		ok = expected != "" && subtle.ConstantTimeCompare([]byte(accessKey), []byte(expected)) == 1
+		if !ok && resolver != nil {
+			_, ok, err = resolver(c.Request.Context(), accessKey)
+			if err != nil {
+				return false, err
+			}
+		}
+	} else if allowBYOKWithoutK && claims.Mode == TokenModeBYOK && strings.TrimSpace(claims.UpstreamKey) != "" {
+		ok = true
+	}
+	if !ok {
+		return false, nil
+	}
+	if strings.TrimSpace(accessKey) != "" && resolver != nil {
+		name, matched, err := resolver(c.Request.Context(), accessKey)
+		if err != nil {
+			return false, err
+		}
+		if matched && strings.TrimSpace(name) != "" {
+			c.Set("onr.auth_subject_id", strings.TrimSpace(name))
+		}
+	}
+	if claims.Provider != "" {
+		c.Set(ctxTokenProvider, claims.Provider)
+	}
+	if claims.ModelOverride != "" {
+		c.Set(ctxTokenModelOverride, claims.ModelOverride)
+	}
+	if claims.UpstreamKey != "" {
+		c.Set(ctxTokenUpstreamKey, claims.UpstreamKey)
+	}
+	c.Set(ctxTokenMode, string(claims.Mode))
+	return true, nil
+}
+
+func parseToken(got string, allowBYOKWithoutK bool) (*TokenClaims, string) {
+	claims, accessKey, err := ParseTokenKeyV1WithOptions(got, TokenParseOptions{AllowBYOKWithoutK: allowBYOKWithoutK})
+	if err != nil {
+		return nil, ""
+	}
+	return claims, accessKey
 }
 
 // TokenProvider requires a non-nil Gin context from the auth middleware path.

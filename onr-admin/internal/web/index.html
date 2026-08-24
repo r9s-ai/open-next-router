@@ -1,61 +1,20 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ONR Admin Web</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.css" />
-  <link rel="stylesheet" href="/app.css" />
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ONR Control Room</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.css" /><link rel="stylesheet" href="/app.css" />
 </head>
 <body>
-  <div class="wrap">
-    <div class="card">
-      <h2>ONR Provider Config Editor</h2>
-      <p class="muted">Submit validates against the whole providers directory. Save only happens after validation succeeds.</p>
-      <div class="row">
-        <select id="providerSelect"></select>
-        <input id="provider" placeholder="provider name (e.g. openai)" />
-        <button class="secondary" id="loadBtn">Load</button>
-        <button class="secondary" id="validateBtn">Validate</button>
-        <button class="secondary" id="formatBtn">Format</button>
-        <button id="saveBtn">Save</button>
-      </div>
-      <div class="editor-shell">
-        <textarea id="content" spellcheck="false" wrap="off"></textarea>
-      </div>
-      <div id="editorIssues"></div>
-      <h4>Result</h4>
-      <div id="status"></div>
-      <h4>Test cURL</h4>
-      <div class="row">
-        <input id="onrBaseUrl" placeholder="ONR base url (e.g. http://127.0.0.1:3300)" value="__ONR_ADMIN_WEB_CURL_API_BASE_URL__" />
-        <input id="onrK" placeholder="k (access key)" value="" />
-        <input id="onrUK" placeholder="uk (BYOK upstream key, optional)" value="" />
-      </div>
-      <div class="row">
-        <select id="testApi">
-          <option value="chat.completions">chat.completions</option>
-          <option value="responses">responses</option>
-          <option value="embeddings">embeddings</option>
-          <option value="claude.messages">claude.messages</option>
-        </select>
-        <input id="testModel" placeholder="model (e.g. gpt-4o-mini)" value="gpt-4o-mini" />
-        <button class="secondary" id="genCurlBtn">Generate cURL</button>
-        <button class="secondary" id="runRequestBtn">Run Request</button>
-        <button id="copyCurlBtn">Copy</button>
-      </div>
-      <textarea class="small" id="curlOutput" readonly spellcheck="false"></textarea>
-      <h4>Test Response</h4>
-      <div id="execOutput"></div>
-      <h4>Dump by Request ID</h4>
-      <div class="row">
-        <input id="requestIdInput" placeholder="request_id from response header" />
-        <button class="secondary" id="loadDumpBtn">Load Dump by request_id</button>
-      </div>
-      <div id="dumpOutput"></div>
-    </div>
-  </div>
-  <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.js"></script>
-  <script src="/app.js"></script>
-</body>
-</html>
+<div id="loginScreen" class="login-screen"><div class="login-card"><div class="eyebrow">OPEN NEXT ROUTER / CONTROL ROOM</div><h1>Operate the edge with intent.</h1><p>Enter the deployment admin token to open this control plane. It stays in memory and disappears when you refresh.</p><input id="adminToken" type="password" autocomplete="off" placeholder="ONR_ADMIN_WEB_TOKEN" /><button id="loginBtn">Unlock console</button><div id="loginError" class="error-text"></div></div></div>
+<div id="console" class="console hidden"><aside class="sidebar"><div class="brand"><span class="brand-mark">↗</span><div><strong>ONR</strong><small>control room</small></div></div><div class="nav-label">WORKSPACES</div><nav id="nav"><button data-page="overview" class="nav-item active"><span>01</span>Overview</button><button data-page="access" class="nav-item"><span>02</span>Access keys</button><button data-page="providers" class="nav-item"><span>03</span>Providers</button><button data-page="billing" class="nav-item"><span>04</span>Billing / Redis</button><button data-page="dumps" class="nav-item"><span>05</span>Dump logs</button><button data-page="test" class="nav-item"><span>06</span>Test console</button></nav><div class="sidebar-foot">Admin token is memory-only<br><span id="lastRefresh">Not refreshed</span></div></aside>
+<main class="workspace"><header class="topbar"><div><div class="eyebrow" id="pageKicker">OPERATIONS / OVERVIEW</div><h2 id="pageTitle">Overview</h2></div><div class="top-actions"><span id="notice" class="notice"></span><button class="ghost" id="refreshBtn">Refresh <kbd>R</kbd></button><button class="ghost" id="logoutBtn">Lock</button></div></header>
+<section id="page-overview" class="page active"><div id="overviewGrid" class="metric-grid"></div><div class="split-grid"><article class="panel"><div class="panel-head"><div><span class="eyebrow">SYSTEM SIGNAL</span><h3>Control plane health</h3></div><span class="live-dot">LIVE · 5s</span></div><div id="healthRows" class="health-rows"></div></article><article class="panel accent-panel"><span class="eyebrow">BALANCE POLICY</span><h3>Meterry owns the ledger.</h3><p>Redis is the shared control plane, cache and event stream. Wallet balance and rating remain authoritative in Meterry.</p><div id="balancePolicy" class="policy-line">—</div></article></div></section>
+<section id="page-access" class="page"><div class="section-head"><div><span class="eyebrow">CONTROL PLANE</span><h3>Access keys</h3></div><button id="newKeyBtn">+ Create key</button></div><div class="toolbar"><input id="keyFilter" placeholder="Filter by name, subject or status" /><button class="ghost" id="keyRefreshBtn">Refresh</button></div><div class="table-wrap"><table><thead><tr><th>Name</th><th>Status</th><th>Subject</th><th>Created</th><th>Expires</th><th>Version</th><th></th></tr></thead><tbody id="keysBody"></tbody></table></div><div id="keyEmpty" class="empty hidden">No access keys match this filter.</div></section>
+<section id="page-providers" class="page"><div class="section-head"><div><span class="eyebrow">DSL WORKSPACE</span><h3>Providers</h3></div><div class="button-row"><button class="ghost" id="loadBtn">Load</button><button class="ghost" id="validateBtn">Validate</button><button class="ghost" id="formatBtn">Format</button><button id="saveBtn">Save changes</button></div></div><div class="provider-toolbar"><select id="providerSelect"></select><input id="provider" placeholder="provider name" /></div><div class="editor-shell"><textarea id="content" spellcheck="false" wrap="off"></textarea></div><div id="editorIssues"></div><pre id="status" class="console-output">Ready.</pre></section>
+<section id="page-billing" class="page"><div class="section-head"><div><span class="eyebrow">RUNTIME STATE</span><h3>Billing / Redis</h3></div></div><div id="billingGrid" class="metric-grid"></div><article class="panel billing-note"><h3>Safe by design</h3><p>No wallet credits, event deletion or replay actions are exposed here. Use your billing backend for money movement.</p></article></section>
+<section id="page-dumps" class="page"><div class="section-head"><div><span class="eyebrow">REQUEST FORENSICS</span><h3>Dump logs</h3></div></div><div class="toolbar"><input id="requestIdInput" placeholder="request_id" /><button id="loadDumpBtn">Find dump</button></div><pre id="dumpOutput" class="console-output tall">Enter a request ID to inspect a bounded dump.</pre></section>
+<section id="page-test" class="page"><div class="section-head"><div><span class="eyebrow">SAFE PROBE</span><h3>Test console</h3></div></div><div class="test-grid"><label>ONR base URL<input id="onrBaseUrl" value="__ONR_ADMIN_WEB_CURL_API_BASE_URL__" /></label><label>Access key<input id="onrK" type="password" /></label><label>BYOK key <span class="muted">optional</span><input id="onrUK" type="password" /></label><label>API<select id="testApi"><option value="chat.completions">chat.completions</option><option value="responses">responses</option><option value="embeddings">embeddings</option></select></label><label>Model<input id="testModel" value="gpt-4o-mini" /></label></div><div class="button-row"><button id="genCurlBtn">Generate cURL</button><button class="ghost" id="runRequestBtn">Run request</button><button class="ghost" id="copyCurlBtn">Copy cURL</button></div><textarea id="curlOutput" class="small" readonly></textarea><pre id="execOutput" class="console-output">No request yet.</pre></section>
+</main></div><div id="modal" class="modal hidden"><div class="modal-card"><button id="modalClose" class="modal-close">×</button><div id="modalBody"></div></div></div>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.js"></script><script src="/app.js"></script>
+</body></html>

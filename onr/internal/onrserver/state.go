@@ -5,12 +5,14 @@ import (
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/keystore"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/models"
+	"github.com/r9s-ai/open-next-router/pkg/controlplane"
 )
 
 type state struct {
 	mu          sync.RWMutex
 	keys        *keystore.Store
 	modelRouter *models.Router
+	redis       *controlplane.Client
 	startedAt   int64
 }
 

@@ -1,6 +1,8 @@
 package onrserver
 
 import (
+	"context"
+	"log"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -51,6 +53,38 @@ func enqueueBillingEvent(cfg *config.Config, sink *meterry.Client, c *gin.Contex
 		// retryable delivery once the event is durably queued.
 		return
 	}
+}
+
+func enforceBillingBalance(cfg *config.Config, sink *meterry.Client, c *gin.Context, requestIDHeaderKey string) bool {
+	if cfg == nil || sink == nil || !cfg.Meterry.BalanceEnforcement.Enabled || !sink.BalanceEnabled() || c == nil {
+		return true
+	}
+	subjectID := strings.TrimSpace(c.GetString("onr.auth_subject_id"))
+	if subjectID == "" {
+		return true
+	}
+	subjectType := strings.TrimSpace(cfg.Meterry.SubjectType)
+	allowed, err := sink.CheckBalance(requestContext(c), subjectType, subjectID)
+	if err != nil {
+		if strings.EqualFold(strings.TrimSpace(cfg.Meterry.BalanceEnforcement.FailureMode), "open") {
+			log.Printf("[ONR] WARN | meterry | balance lookup failed, allowing request | subject=%s/%s error=%v", subjectType, subjectID, err)
+			return true
+		}
+		writeOpenAIErrorWithStatus(c, requestIDHeaderKey, 503, "billing_error", "billing_unavailable", "billing balance service is unavailable")
+		return false
+	}
+	if !allowed {
+		writeOpenAIErrorWithStatus(c, requestIDHeaderKey, 402, "billing_error", "insufficient_balance", "account balance is insufficient")
+		return false
+	}
+	return true
+}
+
+func requestContext(c *gin.Context) context.Context {
+	if c != nil && c.Request != nil {
+		return c.Request.Context()
+	}
+	return context.Background()
 }
 
 func pricingHints(cost map[string]any) map[string]any {

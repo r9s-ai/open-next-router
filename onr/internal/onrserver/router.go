@@ -1,6 +1,7 @@
 package onrserver
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"strings"
@@ -54,20 +55,61 @@ func NewRouter(
 	r.GET("/healthz", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
+	r.GET("/readyz", func(c *gin.Context) {
+		checks := gin.H{"redis": "disabled", "meterry": "disabled", "billing": "disabled"}
+		status := http.StatusOK
+		if st.redis != nil {
+			if err := st.redis.Ping(c.Request.Context()); err != nil {
+				checks["redis"] = "unavailable"
+				status = http.StatusServiceUnavailable
+			} else {
+				checks["redis"] = "ok"
+			}
+		}
+		if billingClient != nil && billingClient.Enabled() {
+			checks["meterry"] = "configured"
+		}
+		if st.redis != nil && billingClient != nil && billingClient.Enabled() {
+			checks["billing"] = "ok"
+			pending, deadLetter, err := st.redis.BillingStats(c.Request.Context())
+			if err != nil {
+				checks["billing"] = "unavailable"
+				status = http.StatusServiceUnavailable
+			} else {
+				checks["billing"] = gin.H{"pending": pending, "dead_letter": deadLetter}
+			}
+		}
+		c.JSON(status, gin.H{"ok": status == http.StatusOK, "checks": checks})
+	})
+	if billingClient != nil && cfg.Meterry.BalanceEnforcement.Enabled {
+		r.POST(cfg.Meterry.BalanceEnforcement.WebhookPath, meterryWebhookHandler(cfg, billingClient))
+	}
 
 	secured := r.Group("/")
-	secured.Use(auth.Middleware(
+	secured.Use(auth.MiddlewareWithResolver(
 		cfg.Auth.APIKey,
-		func(accessKey string) (string, bool) {
+		func(ctx context.Context, accessKey string) (string, bool, error) {
+			if st.redis != nil && cfg.Redis.AccessKeyMode != "file_only" {
+				record, err := st.redis.LookupAccessKey(ctx, accessKey)
+				if err != nil {
+					return "", false, err
+				}
+				if record != nil {
+					return strings.TrimSpace(record.Name), true, nil
+				}
+				if cfg.Redis.AccessKeyMode == "redis_only" {
+					return "", false, nil
+				}
+			}
 			ks := st.Keys()
 			if ks == nil {
-				return "", false
+				return "", false, nil
 			}
 			ak, ok := ks.MatchAccessKey(accessKey)
 			if !ok || ak == nil {
-				return "", false
+				return "", false, nil
 			}
-			return strings.TrimSpace(ak.Name), true
+			return strings.TrimSpace(ak.Name), true, nil
 		},
 		auth.TokenKeyOptions{
 			AllowBYOKWithoutK: cfg.Auth.TokenKey.AllowBYOKWithoutK,

@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -150,13 +149,6 @@ type dumpFileMsg struct {
 	path    string
 	content string
 	err     error
-}
-
-// newDumpViewerProgram returns a non-nil Bubble Tea program.
-func newDumpViewerProgram(dumpsDir string, in io.Reader, out io.Writer) *tea.Program {
-	m := newDumpViewerModel(dumpsDir)
-	p := tea.NewProgram(m, tea.WithInput(in), tea.WithOutput(out), tea.WithAltScreen())
-	return p
 }
 
 func newDumpViewerModel(dumpsDir string) dumpViewerModel {

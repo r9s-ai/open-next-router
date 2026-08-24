@@ -118,6 +118,46 @@ func TestSaveProviderRequiresValidationSuccess(t *testing.T) {
 	}
 }
 
+func TestAdminAPIAuthorization(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "openai.conf"), []byte(validOpenAIConf), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	srv, err := newServerWithOptions(dir, t.TempDir(), defaultAPIBaseURL, "", "secret-token", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = srv.Close() }()
+	h := httptest.NewServer(srv.Handler())
+	defer h.Close()
+	res, err := http.Get(h.URL + "/api/providers")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthorized status=%d", res.StatusCode)
+	}
+	_ = res.Body.Close()
+	req, _ := http.NewRequest(http.MethodGet, h.URL+"/api/providers", nil)
+	req.Header.Set("Authorization", "Bearer secret-token")
+	res, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("authorized status=%d", res.StatusCode)
+	}
+	_ = res.Body.Close()
+	res, err = http.Get(h.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("static status=%d", res.StatusCode)
+	}
+	_ = res.Body.Close()
+}
+
 func TestProviderEndpoints(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(dir, 0o750); err != nil {

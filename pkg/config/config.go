@@ -98,17 +98,46 @@ type LoggingConfig struct {
 }
 
 type MeterryConfig struct {
+	Enabled             bool                 `yaml:"enabled"`
+	BaseURL             string               `yaml:"base_url"`
+	ProjectID           string               `yaml:"project_id"`
+	APIKey              string               `yaml:"api_key"`
+	ExtractorRuleSet    string               `yaml:"extractor_rule_set_id"`
+	OutboxDir           string               `yaml:"outbox_dir"`
+	RequestTimeoutMs    int                  `yaml:"request_timeout_ms"`
+	RetryIntervalMs     int                  `yaml:"retry_interval_ms"`
+	OnlyBillableSuccess *bool                `yaml:"only_billable_success"`
+	SubjectType         string               `yaml:"subject_type"`
+	FallbackSubjectID   string               `yaml:"fallback_subject_id"`
+	BalanceEnforcement  MeterryBalanceConfig `yaml:"balance_enforcement"`
+}
+
+type MeterryBalanceConfig struct {
 	Enabled             bool   `yaml:"enabled"`
-	BaseURL             string `yaml:"base_url"`
-	ProjectID           string `yaml:"project_id"`
-	APIKey              string `yaml:"api_key"`
-	ExtractorRuleSet    string `yaml:"extractor_rule_set_id"`
-	OutboxDir           string `yaml:"outbox_dir"`
+	Currency            string `yaml:"currency"`
+	FailureMode         string `yaml:"failure_mode"`
 	RequestTimeoutMs    int    `yaml:"request_timeout_ms"`
-	RetryIntervalMs     int    `yaml:"retry_interval_ms"`
-	OnlyBillableSuccess *bool  `yaml:"only_billable_success"`
-	SubjectType         string `yaml:"subject_type"`
-	FallbackSubjectID   string `yaml:"fallback_subject_id"`
+	CacheTTLMS          int    `yaml:"cache_ttl_ms"`
+	NegativeCacheTTLMS  int    `yaml:"negative_cache_ttl_ms"`
+	WebhookPath         string `yaml:"webhook_path"`
+	WebhookSecret       string `yaml:"webhook_secret"`
+	TimestampToleranceS int    `yaml:"timestamp_tolerance_s"`
+}
+
+type RedisConfig struct {
+	Enabled              bool   `yaml:"enabled"`
+	Addr                 string `yaml:"addr"`
+	Username             string `yaml:"username"`
+	Password             string `yaml:"password"`
+	TLS                  bool   `yaml:"tls"`
+	KeyPrefix            string `yaml:"key_prefix"`
+	OperationTimeoutMs   int    `yaml:"operation_timeout_ms"`
+	AccessKeyMode        string `yaml:"access_key_mode"`
+	BillingStream        string `yaml:"billing_stream"`
+	BillingConsumerGroup string `yaml:"billing_consumer_group"`
+	BillingConsumerName  string `yaml:"billing_consumer_name"`
+	BillingMaxAttempts   int    `yaml:"billing_max_attempts"`
+	AccessKeyHashSecret  string `yaml:"access_key_hash_secret"`
 }
 
 type Config struct {
@@ -171,6 +200,7 @@ type Config struct {
 
 	UsageEstimation usageestimate.Config `yaml:"usage_estimation"`
 	Meterry         MeterryConfig        `yaml:"meterry"`
+	Redis           RedisConfig          `yaml:"redis"`
 
 	TrafficDump struct {
 		Enabled     bool     `yaml:"enabled"`
@@ -293,25 +323,79 @@ func applyDefaults(cfg *Config) {
 	cfg.UpstreamProxies.ByProvider = normalizeProviderStringMap(cfg.UpstreamProxies.ByProvider)
 
 	usageestimate.ApplyDefaults(&cfg.UsageEstimation)
+	applyMeterryDefaults(&cfg.Meterry)
+	applyRedisDefaults(&cfg.Redis)
+	applyTrafficDumpDefaults(cfg)
+	applyLoggingDefaults(&cfg.Logging)
+}
 
+func applyRedisDefaults(cfg *RedisConfig) {
+	if strings.TrimSpace(cfg.Addr) == "" {
+		cfg.Addr = "redis://127.0.0.1:6379/0"
+	}
+	if strings.TrimSpace(cfg.KeyPrefix) == "" {
+		cfg.KeyPrefix = "onr"
+	}
+	if cfg.OperationTimeoutMs <= 0 {
+		cfg.OperationTimeoutMs = 500
+	}
+	if strings.TrimSpace(cfg.AccessKeyMode) == "" {
+		cfg.AccessKeyMode = "redis_preferred"
+	}
+	if strings.TrimSpace(cfg.BillingStream) == "" {
+		cfg.BillingStream = "meterry:events"
+	}
+	if strings.TrimSpace(cfg.BillingConsumerGroup) == "" {
+		cfg.BillingConsumerGroup = "onr-billing"
+	}
+	if cfg.BillingMaxAttempts <= 0 {
+		cfg.BillingMaxAttempts = 10
+	}
+}
+
+func applyMeterryDefaults(cfg *MeterryConfig) {
+	if strings.TrimSpace(cfg.OutboxDir) == "" {
+		cfg.OutboxDir = "./run/meterry"
+	}
+	if cfg.RequestTimeoutMs <= 0 {
+		cfg.RequestTimeoutMs = 3000
+	}
+	if cfg.RetryIntervalMs <= 0 {
+		cfg.RetryIntervalMs = 1000
+	}
+	if strings.TrimSpace(cfg.SubjectType) == "" {
+		cfg.SubjectType = "api_key"
+	}
+	if cfg.OnlyBillableSuccess == nil {
+		v := true
+		cfg.OnlyBillableSuccess = &v
+	}
+	if strings.TrimSpace(cfg.BalanceEnforcement.Currency) == "" {
+		cfg.BalanceEnforcement.Currency = "USD"
+	}
+	if strings.TrimSpace(cfg.BalanceEnforcement.FailureMode) == "" {
+		cfg.BalanceEnforcement.FailureMode = "closed"
+	}
+	if cfg.BalanceEnforcement.RequestTimeoutMs <= 0 {
+		cfg.BalanceEnforcement.RequestTimeoutMs = 1000
+	}
+	if cfg.BalanceEnforcement.CacheTTLMS <= 0 {
+		cfg.BalanceEnforcement.CacheTTLMS = 3000
+	}
+	if cfg.BalanceEnforcement.NegativeCacheTTLMS <= 0 {
+		cfg.BalanceEnforcement.NegativeCacheTTLMS = 1000
+	}
+	if strings.TrimSpace(cfg.BalanceEnforcement.WebhookPath) == "" {
+		cfg.BalanceEnforcement.WebhookPath = "/internal/meterry/webhook"
+	}
+	if cfg.BalanceEnforcement.TimestampToleranceS <= 0 {
+		cfg.BalanceEnforcement.TimestampToleranceS = 300
+	}
+}
+
+func applyTrafficDumpDefaults(cfg *Config) {
 	if strings.TrimSpace(cfg.TrafficDump.Dir) == "" {
 		cfg.TrafficDump.Dir = "./dumps"
-	}
-	if strings.TrimSpace(cfg.Meterry.OutboxDir) == "" {
-		cfg.Meterry.OutboxDir = "./run/meterry"
-	}
-	if cfg.Meterry.RequestTimeoutMs <= 0 {
-		cfg.Meterry.RequestTimeoutMs = 3000
-	}
-	if cfg.Meterry.RetryIntervalMs <= 0 {
-		cfg.Meterry.RetryIntervalMs = 1000
-	}
-	if strings.TrimSpace(cfg.Meterry.SubjectType) == "" {
-		cfg.Meterry.SubjectType = "api_key"
-	}
-	if cfg.Meterry.OnlyBillableSuccess == nil {
-		v := true
-		cfg.Meterry.OnlyBillableSuccess = &v
 	}
 	if strings.TrimSpace(cfg.TrafficDump.FilePath) == "" {
 		cfg.TrafficDump.FilePath = "{{.request_id}}.log"
@@ -323,21 +407,24 @@ func applyDefaults(cfg *Config) {
 	if !cfg.TrafficDump.MaskSecrets {
 		cfg.TrafficDump.MaskSecrets = true
 	}
-	if strings.TrimSpace(cfg.Logging.Level) == "" {
-		cfg.Logging.Level = "info"
+}
+
+func applyLoggingDefaults(cfg *LoggingConfig) {
+	if strings.TrimSpace(cfg.Level) == "" {
+		cfg.Level = "info"
 	}
 	// default true for local debugging
-	if !cfg.Logging.AccessLog {
-		cfg.Logging.AccessLog = true
+	if !cfg.AccessLog {
+		cfg.AccessLog = true
 	}
-	if !cfg.Logging.AccessLogRotate.maxSizeMBSet {
-		cfg.Logging.AccessLogRotate.MaxSizeMB = defaultAccessLogRotateMaxSizeMB
+	if !cfg.AccessLogRotate.maxSizeMBSet {
+		cfg.AccessLogRotate.MaxSizeMB = defaultAccessLogRotateMaxSizeMB
 	}
-	if !cfg.Logging.AccessLogRotate.maxBackupsSet {
-		cfg.Logging.AccessLogRotate.MaxBackups = defaultAccessLogRotateMaxBackups
+	if !cfg.AccessLogRotate.maxBackupsSet {
+		cfg.AccessLogRotate.MaxBackups = defaultAccessLogRotateMaxBackups
 	}
-	if !cfg.Logging.AccessLogRotate.maxAgeDaysSet {
-		cfg.Logging.AccessLogRotate.MaxAgeDays = defaultAccessLogRotateMaxAgeDays
+	if !cfg.AccessLogRotate.maxAgeDaysSet {
+		cfg.AccessLogRotate.MaxAgeDays = defaultAccessLogRotateMaxAgeDays
 	}
 }
 
@@ -346,8 +433,47 @@ func applyEnvOverrides(cfg *Config) {
 	applyEnvProviderAndDataOverrides(cfg)
 	applyProviderProxyEnvOverrides(cfg)
 	applyEnvMeterryOverrides(cfg)
+	applyEnvRedisOverrides(cfg)
 	applyEnvTrafficDumpOverrides(cfg)
 	applyEnvLoggingOverrides(cfg)
+}
+
+func applyEnvRedisOverrides(cfg *Config) {
+	cfg.Redis.Enabled = envBool("ONR_REDIS_ENABLED", cfg.Redis.Enabled)
+	if v := strings.TrimSpace(os.Getenv("ONR_REDIS_ADDR")); v != "" {
+		cfg.Redis.Addr = v
+	}
+	if v := strings.TrimSpace(os.Getenv("ONR_REDIS_USERNAME")); v != "" {
+		cfg.Redis.Username = v
+	}
+	if v := strings.TrimSpace(os.Getenv("ONR_REDIS_PASSWORD")); v != "" {
+		cfg.Redis.Password = v
+	}
+	cfg.Redis.TLS = envBool("ONR_REDIS_TLS", cfg.Redis.TLS)
+	if v := strings.TrimSpace(os.Getenv("ONR_REDIS_KEY_PREFIX")); v != "" {
+		cfg.Redis.KeyPrefix = v
+	}
+	if n, ok := envInt("ONR_REDIS_OPERATION_TIMEOUT_MS"); ok && n > 0 {
+		cfg.Redis.OperationTimeoutMs = n
+	}
+	if v := strings.TrimSpace(os.Getenv("ONR_REDIS_ACCESS_KEY_MODE")); v != "" {
+		cfg.Redis.AccessKeyMode = v
+	}
+	if v := strings.TrimSpace(os.Getenv("ONR_REDIS_BILLING_STREAM")); v != "" {
+		cfg.Redis.BillingStream = v
+	}
+	if v := strings.TrimSpace(os.Getenv("ONR_REDIS_BILLING_CONSUMER_GROUP")); v != "" {
+		cfg.Redis.BillingConsumerGroup = v
+	}
+	if v := strings.TrimSpace(os.Getenv("ONR_REDIS_BILLING_CONSUMER_NAME")); v != "" {
+		cfg.Redis.BillingConsumerName = v
+	}
+	if n, ok := envInt("ONR_REDIS_BILLING_MAX_ATTEMPTS"); ok && n > 0 {
+		cfg.Redis.BillingMaxAttempts = n
+	}
+	if v := strings.TrimSpace(os.Getenv("ONR_ACCESS_KEY_HASH_SECRET")); v != "" {
+		cfg.Redis.AccessKeyHashSecret = v
+	}
 }
 
 func applyEnvMeterryOverrides(cfg *Config) {
@@ -372,6 +498,31 @@ func applyEnvMeterryOverrides(cfg *Config) {
 	}
 	if n, ok := envInt("ONR_METERRY_RETRY_INTERVAL_MS"); ok && n > 0 {
 		cfg.Meterry.RetryIntervalMs = n
+	}
+	cfg.Meterry.BalanceEnforcement.Enabled = envBool("ONR_METERRY_BALANCE_ENABLED", cfg.Meterry.BalanceEnforcement.Enabled)
+	if v := strings.TrimSpace(os.Getenv("ONR_METERRY_BALANCE_CURRENCY")); v != "" {
+		cfg.Meterry.BalanceEnforcement.Currency = v
+	}
+	if v := strings.TrimSpace(os.Getenv("ONR_METERRY_BALANCE_FAILURE_MODE")); v != "" {
+		cfg.Meterry.BalanceEnforcement.FailureMode = v
+	}
+	if n, ok := envInt("ONR_METERRY_BALANCE_REQUEST_TIMEOUT_MS"); ok && n > 0 {
+		cfg.Meterry.BalanceEnforcement.RequestTimeoutMs = n
+	}
+	if n, ok := envInt("ONR_METERRY_BALANCE_CACHE_TTL_MS"); ok && n > 0 {
+		cfg.Meterry.BalanceEnforcement.CacheTTLMS = n
+	}
+	if n, ok := envInt("ONR_METERRY_BALANCE_NEGATIVE_CACHE_TTL_MS"); ok && n > 0 {
+		cfg.Meterry.BalanceEnforcement.NegativeCacheTTLMS = n
+	}
+	if v := strings.TrimSpace(os.Getenv("ONR_METERRY_WEBHOOK_PATH")); v != "" {
+		cfg.Meterry.BalanceEnforcement.WebhookPath = v
+	}
+	if v := strings.TrimSpace(os.Getenv("ONR_METERRY_WEBHOOK_SECRET")); v != "" {
+		cfg.Meterry.BalanceEnforcement.WebhookSecret = v
+	}
+	if n, ok := envInt("ONR_METERRY_WEBHOOK_TIMESTAMP_TOLERANCE_S"); ok && n > 0 {
+		cfg.Meterry.BalanceEnforcement.TimestampToleranceS = n
 	}
 }
 
@@ -505,6 +656,50 @@ func validate(cfg *Config) error {
 	if cfg.Providers.AutoReload.Enabled && cfg.Providers.AutoReload.DebounceMs <= 0 {
 		return errors.New("providers.auto_reload.debounce_ms must be > 0 when providers.auto_reload.enabled=true")
 	}
+	if err := validateRuntime(cfg); err != nil {
+		return err
+	}
+	if err := validateMeterry(&cfg.Meterry); err != nil {
+		return err
+	}
+	if err := validateRedis(&cfg.Redis); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateRedis(cfg *RedisConfig) error {
+	if !cfg.Enabled {
+		return nil
+	}
+	if strings.TrimSpace(cfg.Addr) == "" {
+		return errors.New("redis.addr is required when redis.enabled=true")
+	}
+	if cfg.OperationTimeoutMs <= 0 {
+		return errors.New("redis.operation_timeout_ms must be > 0")
+	}
+	if strings.TrimSpace(cfg.KeyPrefix) == "" {
+		return errors.New("redis.key_prefix is required")
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.AccessKeyMode)) {
+	case "redis_preferred", "file_only", "redis_only":
+		cfg.AccessKeyMode = strings.ToLower(strings.TrimSpace(cfg.AccessKeyMode))
+	default:
+		return errors.New("redis.access_key_mode must be redis_preferred, redis_only, or file_only")
+	}
+	if cfg.AccessKeyMode != "file_only" && strings.TrimSpace(cfg.AccessKeyHashSecret) == "" {
+		return errors.New("redis.access_key_hash_secret is required when Redis access keys are enabled")
+	}
+	if strings.TrimSpace(cfg.BillingStream) == "" || strings.TrimSpace(cfg.BillingConsumerGroup) == "" {
+		return errors.New("redis billing stream and consumer group are required")
+	}
+	if cfg.BillingMaxAttempts <= 0 {
+		return errors.New("redis.billing_max_attempts must be > 0")
+	}
+	return nil
+}
+
+func validateRuntime(cfg *Config) error {
 	if cfg.TrafficDump.MaxBytes < 0 {
 		return errors.New("traffic_dump.max_bytes must be non-negative")
 	}
@@ -533,13 +728,50 @@ func validate(cfg *Config) error {
 	if cfg.Logging.AccessLogRotate.MaxAgeDays < 0 {
 		return errors.New("logging.access_log_rotate.max_age_days must be >= 0")
 	}
-	if cfg.Meterry.Enabled {
-		if strings.TrimSpace(cfg.Meterry.BaseURL) == "" || strings.TrimSpace(cfg.Meterry.ProjectID) == "" || strings.TrimSpace(cfg.Meterry.APIKey) == "" || strings.TrimSpace(cfg.Meterry.ExtractorRuleSet) == "" {
+	return nil
+}
+
+func validateMeterry(cfg *MeterryConfig) error {
+	if cfg.Enabled {
+		if strings.TrimSpace(cfg.BaseURL) == "" || strings.TrimSpace(cfg.ProjectID) == "" || strings.TrimSpace(cfg.APIKey) == "" || strings.TrimSpace(cfg.ExtractorRuleSet) == "" {
 			return errors.New("meterry requires base_url, project_id, api_key, and extractor_rule_set_id when enabled")
 		}
-		if cfg.Meterry.RequestTimeoutMs <= 0 || cfg.Meterry.RetryIntervalMs <= 0 {
+		if cfg.RequestTimeoutMs <= 0 || cfg.RetryIntervalMs <= 0 {
 			return errors.New("meterry request_timeout_ms and retry_interval_ms must be > 0")
 		}
+	}
+	if !cfg.BalanceEnforcement.Enabled {
+		return nil
+	}
+	if !cfg.Enabled {
+		return errors.New("meterry.balance_enforcement.enabled requires meterry.enabled=true")
+	}
+	if strings.TrimSpace(cfg.BalanceEnforcement.Currency) == "" {
+		return errors.New("meterry.balance_enforcement.currency is required")
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.BalanceEnforcement.FailureMode)) {
+	case "open", "closed":
+		cfg.BalanceEnforcement.FailureMode = strings.ToLower(strings.TrimSpace(cfg.BalanceEnforcement.FailureMode))
+	default:
+		return errors.New("meterry.balance_enforcement.failure_mode must be open or closed")
+	}
+	if cfg.BalanceEnforcement.RequestTimeoutMs <= 0 {
+		return errors.New("meterry.balance_enforcement.request_timeout_ms must be > 0")
+	}
+	if cfg.BalanceEnforcement.CacheTTLMS <= 0 {
+		return errors.New("meterry.balance_enforcement.cache_ttl_ms must be > 0")
+	}
+	if cfg.BalanceEnforcement.NegativeCacheTTLMS <= 0 {
+		return errors.New("meterry.balance_enforcement.negative_cache_ttl_ms must be > 0")
+	}
+	if !strings.HasPrefix(strings.TrimSpace(cfg.BalanceEnforcement.WebhookPath), "/") {
+		return errors.New("meterry.balance_enforcement.webhook_path must start with /")
+	}
+	if strings.TrimSpace(cfg.BalanceEnforcement.WebhookSecret) == "" {
+		return errors.New("meterry.balance_enforcement.webhook_secret is required when balance enforcement is enabled")
+	}
+	if cfg.BalanceEnforcement.TimestampToleranceS <= 0 {
+		return errors.New("meterry.balance_enforcement.timestamp_tolerance_s must be > 0")
 	}
 	return nil
 }
@@ -550,6 +782,18 @@ func (c MeterryConfig) RequestTimeout() time.Duration {
 
 func (c MeterryConfig) RetryInterval() time.Duration {
 	return time.Duration(c.RetryIntervalMs) * time.Millisecond
+}
+
+func (c MeterryConfig) BalanceRequestTimeout() time.Duration {
+	return time.Duration(c.BalanceEnforcement.RequestTimeoutMs) * time.Millisecond
+}
+
+func (c MeterryConfig) BalanceCacheTTL() time.Duration {
+	return time.Duration(c.BalanceEnforcement.CacheTTLMS) * time.Millisecond
+}
+
+func (c MeterryConfig) BalanceNegativeCacheTTL() time.Duration {
+	return time.Duration(c.BalanceEnforcement.NegativeCacheTTLMS) * time.Millisecond
 }
 
 func normalizeLogLevel(level string) (string, error) {
