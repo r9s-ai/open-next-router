@@ -17,6 +17,13 @@ type outbox struct {
 	path string
 }
 
+type eventOutbox interface {
+	append(event Event) error
+	first() (Event, string, error)
+	ack(token string) error
+	fail(token string, event Event) error
+}
+
 func openOutbox(dir string) (*outbox, error) {
 	dir = strings.TrimSpace(dir)
 	if dir == "" {
@@ -51,36 +58,36 @@ func (o *outbox) append(event Event) error {
 	return f.Close()
 }
 
-func (o *outbox) first() (Event, error) {
+func (o *outbox) first() (Event, string, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	f, err := os.Open(o.path)
 	if errors.Is(err, os.ErrNotExist) {
-		return Event{}, io.EOF
+		return Event{}, "", io.EOF
 	}
 	if err != nil {
-		return Event{}, err
+		return Event{}, "", err
 	}
 	s := bufio.NewScanner(f)
 	if !s.Scan() {
 		if err := s.Err(); err != nil {
 			_ = f.Close()
-			return Event{}, err
+			return Event{}, "", err
 		}
 		if err := f.Close(); err != nil {
-			return Event{}, err
+			return Event{}, "", err
 		}
-		return Event{}, io.EOF
+		return Event{}, "", io.EOF
 	}
 	var event Event
 	if err := json.Unmarshal(s.Bytes(), &event); err != nil {
 		_ = f.Close()
-		return Event{}, fmt.Errorf("decode meterry outbox event: %w", err)
+		return Event{}, "", fmt.Errorf("decode meterry outbox event: %w", err)
 	}
 	if err := f.Close(); err != nil {
-		return Event{}, err
+		return Event{}, "", err
 	}
-	return event, nil
+	return event, event.IdempotencyKey, nil
 }
 
 func (o *outbox) ack(idempotencyKey string) (retErr error) {
@@ -143,3 +150,5 @@ func (o *outbox) ack(idempotencyKey string) (retErr error) {
 	}
 	return nil
 }
+
+func (o *outbox) fail(token string, event Event) error { return nil }

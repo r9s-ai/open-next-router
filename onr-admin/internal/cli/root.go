@@ -27,6 +27,7 @@ func newRootCmd() *cobra.Command {
 		SilenceErrors: true,
 	}
 	cmd.AddCommand(
+		newAccessKeyCmd(),
 		newTokenCmd(),
 		newOAuthCmd(),
 		newCryptoCmd(),

@@ -1,6 +1,7 @@
 package onrserver
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/controlplane"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/keystore"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/models"
@@ -77,6 +79,30 @@ func Run(cfgPath string) error {
 	if err != nil {
 		return fmt.Errorf("load models file %q: %w", cfg.Models.File, err)
 	}
+	var redisClient *controlplane.Client
+	if cfg.Redis.Enabled {
+		redisClient, err = controlplane.New(controlplane.Config{
+			Addr:                 cfg.Redis.Addr,
+			Username:             cfg.Redis.Username,
+			Password:             cfg.Redis.Password,
+			TLS:                  cfg.Redis.TLS,
+			KeyPrefix:            cfg.Redis.KeyPrefix,
+			OperationTimeout:     time.Duration(cfg.Redis.OperationTimeoutMs) * time.Millisecond,
+			AccessKeyHashSecret:  cfg.Redis.AccessKeyHashSecret,
+			BillingStream:        cfg.Redis.BillingStream,
+			BillingConsumerGroup: cfg.Redis.BillingConsumerGroup,
+			BillingConsumerName:  cfg.Redis.BillingConsumerName,
+			BillingMaxAttempts:   cfg.Redis.BillingMaxAttempts,
+		})
+		if err != nil {
+			return fmt.Errorf("init Redis control plane: %w", err)
+		}
+		if err := redisClient.Ping(context.Background()); err != nil {
+			_ = redisClient.Close()
+			return fmt.Errorf("connect Redis control plane: %w", err)
+		}
+		defer func() { _ = redisClient.Close() }()
+	}
 
 	readTimeout := time.Duration(cfg.Server.ReadTimeoutMs) * time.Millisecond
 	writeTimeout := time.Duration(cfg.Server.WriteTimeoutMs) * time.Millisecond
@@ -116,6 +142,7 @@ func Run(cfgPath string) error {
 		BalanceTimeout:          cfg.Meterry.BalanceRequestTimeout(),
 		BalanceCacheTTL:         cfg.Meterry.BalanceCacheTTL(),
 		BalanceNegativeCacheTTL: cfg.Meterry.BalanceNegativeCacheTTL(),
+		ControlPlane:            redisClient,
 	})
 	if err != nil {
 		return fmt.Errorf("init meterry billing: %w", err)
@@ -127,6 +154,7 @@ func Run(cfgPath string) error {
 	st := &state{
 		keys:        keys,
 		modelRouter: mr,
+		redis:       redisClient,
 	}
 	st.SetStartedAtUnix(startedAt)
 

@@ -76,6 +76,9 @@ auth:
 	if cfg.Meterry.BalanceEnforcement.CacheTTLMS != 3000 || cfg.Meterry.BalanceEnforcement.NegativeCacheTTLMS != 1000 {
 		t.Fatalf("unexpected Meterry balance cache defaults: %+v", cfg.Meterry.BalanceEnforcement)
 	}
+	if cfg.Redis.KeyPrefix != "onr" || cfg.Redis.OperationTimeoutMs != 500 || cfg.Redis.AccessKeyMode != "redis_preferred" || cfg.Redis.BillingMaxAttempts != 10 {
+		t.Fatalf("unexpected Redis defaults: %+v", cfg.Redis)
+	}
 }
 
 func TestLoad_MeterryBalanceEnforcement(t *testing.T) {
@@ -127,6 +130,21 @@ func TestValidate_MeterryBalanceRequiresWebhookSecret(t *testing.T) {
 	cfg.Meterry.BalanceEnforcement.TimestampToleranceS = 300
 	if err := validate(cfg); err == nil {
 		t.Fatal("expected missing webhook secret error")
+	}
+}
+
+func TestValidate_RedisRequiresHashSecret(t *testing.T) {
+	cfg := &Config{}
+	cfg.Redis.Enabled = true
+	cfg.Redis.Addr = "redis://127.0.0.1:6379/0"
+	cfg.Redis.KeyPrefix = "onr"
+	cfg.Redis.OperationTimeoutMs = 500
+	cfg.Redis.AccessKeyMode = "redis_preferred"
+	cfg.Redis.BillingStream = "meterry:events"
+	cfg.Redis.BillingConsumerGroup = "onr-billing"
+	cfg.Redis.BillingMaxAttempts = 10
+	if err := validateRedis(&cfg.Redis); err == nil {
+		t.Fatal("expected Redis hash secret validation error")
 	}
 }
 

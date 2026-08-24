@@ -19,21 +19,21 @@ func TestOutboxAppendFirstAck(t *testing.T) {
 	if err := o.append(two); err != nil {
 		t.Fatal(err)
 	}
-	got, err := o.first()
+	got, token, err := o.first()
 	if err != nil || got.IdempotencyKey != one.IdempotencyKey {
-		t.Fatalf("first = %#v, err=%v", got, err)
+		t.Fatalf("first = %#v token=%q, err=%v", got, token, err)
 	}
-	if err := o.ack(one.IdempotencyKey); err != nil {
+	if err := o.ack(token); err != nil {
 		t.Fatal(err)
 	}
-	got, err = o.first()
+	got, token, err = o.first()
 	if err != nil || got.IdempotencyKey != two.IdempotencyKey {
 		t.Fatalf("after ack first = %#v, err=%v", got, err)
 	}
-	if err := o.ack(two.IdempotencyKey); err != nil {
+	if err := o.ack(token); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := o.first(); err != io.EOF {
+	if _, _, err := o.first(); err != io.EOF {
 		t.Fatalf("empty outbox err=%v, want EOF", err)
 	}
 }

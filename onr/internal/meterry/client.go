@@ -12,6 +12,7 @@ import (
 
 	sdk "github.com/meterry-com/meterry-go"
 	"github.com/meterry-com/meterry-go/pkg/types"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/controlplane"
 )
 
 type Config struct {
@@ -28,6 +29,7 @@ type Config struct {
 	BalanceTimeout          time.Duration
 	BalanceCacheTTL         time.Duration
 	BalanceNegativeCacheTTL time.Duration
+	ControlPlane            *controlplane.Client
 }
 
 type balanceCacheEntry struct {
@@ -51,7 +53,7 @@ type Client struct {
 	balanceMu               sync.Mutex
 	balanceCache            map[string]balanceCacheEntry
 	balanceCalls            map[string]*balanceCall
-	outbox                  *outbox
+	outbox                  eventOutbox
 	stop                    chan struct{}
 	done                    chan struct{}
 	once                    sync.Once
@@ -64,9 +66,13 @@ func New(cfg Config) (*Client, error) {
 	if strings.TrimSpace(cfg.BaseURL) == "" || strings.TrimSpace(cfg.ProjectID) == "" || strings.TrimSpace(cfg.APIKey) == "" || strings.TrimSpace(cfg.ExtractorRuleSet) == "" {
 		return nil, errors.New("meterry enabled requires base_url, project_id, api_key, and extractor_rule_set_id")
 	}
-	box, err := openOutbox(cfg.OutboxDir)
-	if err != nil {
-		return nil, err
+	var box eventOutbox
+	var err error
+	if cfg.ControlPlane == nil {
+		box, err = openOutbox(cfg.OutboxDir)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if cfg.RequestTimeout <= 0 {
 		cfg.RequestTimeout = 3 * time.Second
@@ -74,9 +80,14 @@ func New(cfg Config) (*Client, error) {
 	if cfg.RetryInterval <= 0 {
 		cfg.RetryInterval = time.Second
 	}
-	state, err := openSubjectState(cfg.OutboxDir)
-	if err != nil {
-		return nil, err
+	var state *subjectStateStore
+	// Redis is the shared source of truth for subject and webhook state. Keep
+	// the file-backed store only for the standalone/local-outbox mode.
+	if cfg.ControlPlane == nil {
+		state, err = openSubjectState(cfg.OutboxDir)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if cfg.BalanceCurrency == "" {
 		cfg.BalanceCurrency = "USD"
@@ -113,6 +124,13 @@ func New(cfg Config) (*Client, error) {
 		stop:                    make(chan struct{}),
 		done:                    make(chan struct{}),
 	}
+	if cfg.ControlPlane != nil {
+		if err := cfg.ControlPlane.EnsureBillingGroup(context.Background()); err != nil {
+			return nil, fmt.Errorf("init Redis billing stream: %w", err)
+		}
+		box = &redisOutbox{controlPlane: cfg.ControlPlane}
+		c.outbox = box
+	}
 	go c.worker()
 	return c, nil
 }
@@ -129,6 +147,18 @@ func (c *Client) CheckBalance(ctx context.Context, subjectType, subjectID string
 	}
 	if c.state != nil && c.state.isBlocked(subjectType, subjectID) {
 		return false, nil
+	}
+	if c.cfg.ControlPlane != nil {
+		state, err := c.cfg.ControlPlane.GetSubjectState(ctx, subjectType, subjectID)
+		if err != nil {
+			return false, err
+		}
+		if state.Blocked {
+			return false, nil
+		}
+		if cached, ok, err := c.cfg.ControlPlane.GetBalanceCache(ctx, subjectType, subjectID, c.cfg.BalanceCurrency); err == nil && ok && time.Now().Before(cached.ExpiresAt) {
+			return cached.Allowed, nil
+		}
 	}
 	key := subjectKey(subjectType, subjectID) + "/" + strings.TrimSpace(c.cfg.BalanceCurrency)
 	now := time.Now()
@@ -150,7 +180,7 @@ func (c *Client) CheckBalance(ctx context.Context, subjectType, subjectID string
 	c.balanceCalls[key] = call
 	c.balanceMu.Unlock()
 
-	call.allowed, call.err = c.fetchBalance(ctx, subjectType, subjectID)
+	call.allowed, call.err = c.readBalanceWithSharedCache(ctx, subjectType, subjectID)
 	c.balanceMu.Lock()
 	if call.err == nil {
 		ttl := c.balanceCacheTTL
@@ -163,6 +193,66 @@ func (c *Client) CheckBalance(ctx context.Context, subjectType, subjectID string
 	close(call.done)
 	c.balanceMu.Unlock()
 	return call.allowed, call.err
+}
+
+func (c *Client) readBalanceWithSharedCache(ctx context.Context, subjectType, subjectID string) (bool, error) {
+	if c.cfg.ControlPlane == nil {
+		return c.fetchBalance(ctx, subjectType, subjectID)
+	}
+	if cached, ok, err := c.cfg.ControlPlane.GetBalanceCache(ctx, subjectType, subjectID, c.cfg.BalanceCurrency); err == nil && ok && time.Now().Before(cached.ExpiresAt) {
+		return cached.Allowed, nil
+	}
+	token := fmt.Sprintf("%d", time.Now().UnixNano())
+	acquired, err := c.cfg.ControlPlane.AcquireBalanceRefreshLock(ctx, subjectType, subjectID, c.cfg.BalanceCurrency, token, c.balanceTimeout)
+	if err != nil {
+		return c.fetchBalance(ctx, subjectType, subjectID)
+	}
+	if acquired {
+		defer func() {
+			_ = c.cfg.ControlPlane.ReleaseBalanceRefreshLock(context.Background(), subjectType, subjectID, c.cfg.BalanceCurrency, token)
+		}()
+		return c.fetchAndCacheBalance(ctx, subjectType, subjectID)
+	}
+	if allowed, ok := c.waitForSharedBalance(ctx, subjectType, subjectID); ok {
+		return allowed, nil
+	}
+	return c.fetchAndCacheBalance(ctx, subjectType, subjectID)
+}
+
+func (c *Client) waitForSharedBalance(ctx context.Context, subjectType, subjectID string) (bool, bool) {
+	deadline := time.NewTimer(c.balanceTimeout)
+	poll := time.NewTicker(10 * time.Millisecond)
+	defer deadline.Stop()
+	defer poll.Stop()
+	for {
+		select {
+		case <-deadline.C:
+			return false, false
+		case <-poll.C:
+			cached, ok, err := c.cfg.ControlPlane.GetBalanceCache(ctx, subjectType, subjectID, c.cfg.BalanceCurrency)
+			if err == nil && ok && time.Now().Before(cached.ExpiresAt) {
+				return cached.Allowed, true
+			}
+		}
+	}
+}
+
+func (c *Client) fetchAndCacheBalance(ctx context.Context, subjectType, subjectID string) (bool, error) {
+	allowed, err := c.fetchBalance(ctx, subjectType, subjectID)
+	if err != nil {
+		return false, err
+	}
+	ttl := c.balanceCacheTTL
+	if !allowed {
+		ttl = c.balanceNegativeCacheTTL
+	}
+	if cacheErr := c.cfg.ControlPlane.SetBalanceCache(ctx, subjectType, subjectID, c.cfg.BalanceCurrency, controlplane.BalanceCacheValue{
+		Allowed:   allowed,
+		ExpiresAt: time.Now().Add(ttl),
+	}, ttl); cacheErr != nil {
+		return allowed, nil
+	}
+	return allowed, nil
 }
 
 func (c *Client) fetchBalance(ctx context.Context, subjectType, subjectID string) (bool, error) {
@@ -188,6 +278,30 @@ func (c *Client) ApplyWebhook(eventID, eventType, subjectType, subjectID string)
 	err := c.state.applyWebhook(strings.TrimSpace(eventID), strings.TrimSpace(eventType), subjectType, subjectID)
 	if err == nil {
 		c.invalidateBalance(subjectType, subjectID)
+		if c.cfg.ControlPlane != nil {
+			state := controlplane.SubjectState{}
+			stateChanged := false
+			switch strings.ToLower(strings.TrimSpace(eventType)) {
+			case "wallet.insufficient_balance", "usage_limit.exhausted":
+				state.Blocked = true
+				state.BlockedReason = strings.ToLower(strings.TrimSpace(eventType))
+				stateChanged = true
+			case "wallet.balance_changed":
+				state.Blocked = false
+				stateChanged = true
+			}
+			if stateChanged {
+				if err := c.cfg.ControlPlane.SetSubjectState(context.Background(), subjectType, subjectID, state); err != nil {
+					return err
+				}
+			}
+			if err := c.cfg.ControlPlane.InvalidateBalanceCache(context.Background(), subjectType, subjectID, c.cfg.BalanceCurrency); err != nil {
+				return err
+			}
+			if _, err := c.cfg.ControlPlane.MarkWebhook(context.Background(), strings.TrimSpace(eventID), 7*24*time.Hour); err != nil {
+				return err
+			}
+		}
 	}
 	return err
 }
@@ -221,11 +335,13 @@ func (c *Client) Close() error {
 func (c *Client) worker() {
 	defer close(c.done)
 	for {
-		event, err := c.outbox.first()
+		event, token, err := c.outbox.first()
 		if err == nil {
 			if err := c.send(event); err == nil {
-				_ = c.outbox.ack(event.IdempotencyKey)
+				_ = c.outbox.ack(token)
 				continue
+			} else {
+				_ = c.outbox.fail(token, event)
 			}
 		}
 		select {

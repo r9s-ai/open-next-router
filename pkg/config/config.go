@@ -124,6 +124,22 @@ type MeterryBalanceConfig struct {
 	TimestampToleranceS int    `yaml:"timestamp_tolerance_s"`
 }
 
+type RedisConfig struct {
+	Enabled              bool   `yaml:"enabled"`
+	Addr                 string `yaml:"addr"`
+	Username             string `yaml:"username"`
+	Password             string `yaml:"password"`
+	TLS                  bool   `yaml:"tls"`
+	KeyPrefix            string `yaml:"key_prefix"`
+	OperationTimeoutMs   int    `yaml:"operation_timeout_ms"`
+	AccessKeyMode        string `yaml:"access_key_mode"`
+	BillingStream        string `yaml:"billing_stream"`
+	BillingConsumerGroup string `yaml:"billing_consumer_group"`
+	BillingConsumerName  string `yaml:"billing_consumer_name"`
+	BillingMaxAttempts   int    `yaml:"billing_max_attempts"`
+	AccessKeyHashSecret  string `yaml:"access_key_hash_secret"`
+}
+
 type Config struct {
 	Server struct {
 		Listen         string `yaml:"listen"`
@@ -184,6 +200,7 @@ type Config struct {
 
 	UsageEstimation usageestimate.Config `yaml:"usage_estimation"`
 	Meterry         MeterryConfig        `yaml:"meterry"`
+	Redis           RedisConfig          `yaml:"redis"`
 
 	TrafficDump struct {
 		Enabled     bool     `yaml:"enabled"`
@@ -307,8 +324,33 @@ func applyDefaults(cfg *Config) {
 
 	usageestimate.ApplyDefaults(&cfg.UsageEstimation)
 	applyMeterryDefaults(&cfg.Meterry)
+	applyRedisDefaults(&cfg.Redis)
 	applyTrafficDumpDefaults(cfg)
 	applyLoggingDefaults(&cfg.Logging)
+}
+
+func applyRedisDefaults(cfg *RedisConfig) {
+	if strings.TrimSpace(cfg.Addr) == "" {
+		cfg.Addr = "redis://127.0.0.1:6379/0"
+	}
+	if strings.TrimSpace(cfg.KeyPrefix) == "" {
+		cfg.KeyPrefix = "onr"
+	}
+	if cfg.OperationTimeoutMs <= 0 {
+		cfg.OperationTimeoutMs = 500
+	}
+	if strings.TrimSpace(cfg.AccessKeyMode) == "" {
+		cfg.AccessKeyMode = "redis_preferred"
+	}
+	if strings.TrimSpace(cfg.BillingStream) == "" {
+		cfg.BillingStream = "meterry:events"
+	}
+	if strings.TrimSpace(cfg.BillingConsumerGroup) == "" {
+		cfg.BillingConsumerGroup = "onr-billing"
+	}
+	if cfg.BillingMaxAttempts <= 0 {
+		cfg.BillingMaxAttempts = 10
+	}
 }
 
 func applyMeterryDefaults(cfg *MeterryConfig) {
@@ -391,8 +433,47 @@ func applyEnvOverrides(cfg *Config) {
 	applyEnvProviderAndDataOverrides(cfg)
 	applyProviderProxyEnvOverrides(cfg)
 	applyEnvMeterryOverrides(cfg)
+	applyEnvRedisOverrides(cfg)
 	applyEnvTrafficDumpOverrides(cfg)
 	applyEnvLoggingOverrides(cfg)
+}
+
+func applyEnvRedisOverrides(cfg *Config) {
+	cfg.Redis.Enabled = envBool("ONR_REDIS_ENABLED", cfg.Redis.Enabled)
+	if v := strings.TrimSpace(os.Getenv("ONR_REDIS_ADDR")); v != "" {
+		cfg.Redis.Addr = v
+	}
+	if v := strings.TrimSpace(os.Getenv("ONR_REDIS_USERNAME")); v != "" {
+		cfg.Redis.Username = v
+	}
+	if v := strings.TrimSpace(os.Getenv("ONR_REDIS_PASSWORD")); v != "" {
+		cfg.Redis.Password = v
+	}
+	cfg.Redis.TLS = envBool("ONR_REDIS_TLS", cfg.Redis.TLS)
+	if v := strings.TrimSpace(os.Getenv("ONR_REDIS_KEY_PREFIX")); v != "" {
+		cfg.Redis.KeyPrefix = v
+	}
+	if n, ok := envInt("ONR_REDIS_OPERATION_TIMEOUT_MS"); ok && n > 0 {
+		cfg.Redis.OperationTimeoutMs = n
+	}
+	if v := strings.TrimSpace(os.Getenv("ONR_REDIS_ACCESS_KEY_MODE")); v != "" {
+		cfg.Redis.AccessKeyMode = v
+	}
+	if v := strings.TrimSpace(os.Getenv("ONR_REDIS_BILLING_STREAM")); v != "" {
+		cfg.Redis.BillingStream = v
+	}
+	if v := strings.TrimSpace(os.Getenv("ONR_REDIS_BILLING_CONSUMER_GROUP")); v != "" {
+		cfg.Redis.BillingConsumerGroup = v
+	}
+	if v := strings.TrimSpace(os.Getenv("ONR_REDIS_BILLING_CONSUMER_NAME")); v != "" {
+		cfg.Redis.BillingConsumerName = v
+	}
+	if n, ok := envInt("ONR_REDIS_BILLING_MAX_ATTEMPTS"); ok && n > 0 {
+		cfg.Redis.BillingMaxAttempts = n
+	}
+	if v := strings.TrimSpace(os.Getenv("ONR_ACCESS_KEY_HASH_SECRET")); v != "" {
+		cfg.Redis.AccessKeyHashSecret = v
+	}
 }
 
 func applyEnvMeterryOverrides(cfg *Config) {
@@ -580,6 +661,40 @@ func validate(cfg *Config) error {
 	}
 	if err := validateMeterry(&cfg.Meterry); err != nil {
 		return err
+	}
+	if err := validateRedis(&cfg.Redis); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateRedis(cfg *RedisConfig) error {
+	if !cfg.Enabled {
+		return nil
+	}
+	if strings.TrimSpace(cfg.Addr) == "" {
+		return errors.New("redis.addr is required when redis.enabled=true")
+	}
+	if cfg.OperationTimeoutMs <= 0 {
+		return errors.New("redis.operation_timeout_ms must be > 0")
+	}
+	if strings.TrimSpace(cfg.KeyPrefix) == "" {
+		return errors.New("redis.key_prefix is required")
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.AccessKeyMode)) {
+	case "redis_preferred", "file_only", "redis_only":
+		cfg.AccessKeyMode = strings.ToLower(strings.TrimSpace(cfg.AccessKeyMode))
+	default:
+		return errors.New("redis.access_key_mode must be redis_preferred, redis_only, or file_only")
+	}
+	if cfg.AccessKeyMode != "file_only" && strings.TrimSpace(cfg.AccessKeyHashSecret) == "" {
+		return errors.New("redis.access_key_hash_secret is required when Redis access keys are enabled")
+	}
+	if strings.TrimSpace(cfg.BillingStream) == "" || strings.TrimSpace(cfg.BillingConsumerGroup) == "" {
+		return errors.New("redis billing stream and consumer group are required")
+	}
+	if cfg.BillingMaxAttempts <= 0 {
+		return errors.New("redis.billing_max_attempts must be > 0")
 	}
 	return nil
 }
