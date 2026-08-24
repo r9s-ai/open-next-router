@@ -8,7 +8,7 @@ import (
 	"github.com/alicebob/miniredis/v2"
 )
 
-func newTestClient(t *testing.T) (*miniredis.Miniredis, *Client) {
+func newTestClient(t *testing.T) *Client {
 	t.Helper()
 	mr := miniredis.RunT(t)
 	c, err := New(Config{
@@ -24,11 +24,11 @@ func newTestClient(t *testing.T) (*miniredis.Miniredis, *Client) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = c.Close() })
-	return mr, c
+	return c
 }
 
 func TestAccessKeyRoundTripAndRevoke(t *testing.T) {
-	_, c := newTestClient(t)
+	c := newTestClient(t)
 	secret, err := NewAccessKeySecret()
 	if err != nil {
 		t.Fatal(err)
@@ -61,8 +61,32 @@ func TestAccessKeyRoundTripAndRevoke(t *testing.T) {
 	}
 }
 
+func TestListAccessKeyRecordsIncludesRevokedAndExpired(t *testing.T) {
+	c := newTestClient(t)
+	ctx := context.Background()
+	secretA, _ := NewAccessKeySecret()
+	secretB, _ := NewAccessKeySecret()
+	expired := time.Now().Add(-time.Minute)
+	if err := c.CreateAccessKey(ctx, AccessKeyRecord{Name: "active", SecretHash: c.HashAccessKey(secretA), Status: "active", SubjectType: "api_key", SubjectID: "active"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.CreateAccessKey(ctx, AccessKeyRecord{Name: "expired", SecretHash: c.HashAccessKey(secretB), Status: "active", SubjectType: "api_key", SubjectID: "expired", ExpiresAt: &expired}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.RevokeAccessKey(ctx, "active"); err != nil {
+		t.Fatal(err)
+	}
+	records, err := c.ListAccessKeyRecords(ctx)
+	if err != nil || len(records) != 2 {
+		t.Fatalf("records=(%+v,%v), want two administrative records", records, err)
+	}
+	if record, err := c.GetAccessKey(ctx, "active"); err != nil || record != nil {
+		t.Fatalf("active lookup after revoke=(%+v,%v), want nil,nil", record, err)
+	}
+}
+
 func TestSubjectAndBalanceState(t *testing.T) {
-	_, c := newTestClient(t)
+	c := newTestClient(t)
 	ctx := context.Background()
 	if err := c.SetSubjectState(ctx, "api_key", "client-a", SubjectState{Blocked: true, BlockedReason: "insufficient_balance"}); err != nil {
 		t.Fatal(err)
@@ -88,7 +112,7 @@ func TestSubjectAndBalanceState(t *testing.T) {
 }
 
 func TestBillingStreamRoundTrip(t *testing.T) {
-	_, c := newTestClient(t)
+	c := newTestClient(t)
 	ctx := context.Background()
 	if err := c.EnsureBillingGroup(ctx); err != nil {
 		t.Fatal(err)
@@ -106,7 +130,7 @@ func TestBillingStreamRoundTrip(t *testing.T) {
 }
 
 func TestBalanceRefreshLockIsOwned(t *testing.T) {
-	_, c := newTestClient(t)
+	c := newTestClient(t)
 	ctx := context.Background()
 	got, err := c.AcquireBalanceRefreshLock(ctx, "api_key", "client-a", "USD", "token-a", time.Minute)
 	if err != nil || !got {

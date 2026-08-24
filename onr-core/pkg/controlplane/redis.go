@@ -180,6 +180,19 @@ func (c *Client) LookupAccessKey(ctx context.Context, secret string) (*AccessKey
 }
 
 func (c *Client) GetAccessKey(ctx context.Context, name string) (*AccessKeyRecord, error) {
+	record, err := c.GetAccessKeyRecord(ctx, name)
+	if err != nil || record == nil {
+		return nil, err
+	}
+	if record.Status != "active" || (record.ExpiresAt != nil && time.Now().After(*record.ExpiresAt)) {
+		return nil, nil
+	}
+	return record, nil
+}
+
+// GetAccessKeyRecord returns the complete record for administrative views,
+// including revoked and expired keys.
+func (c *Client) GetAccessKeyRecord(ctx context.Context, name string) (*AccessKeyRecord, error) {
 	var raw string
 	err := c.withTimeout(ctx, func(ctx context.Context) error {
 		var err error
@@ -195,9 +208,6 @@ func (c *Client) GetAccessKey(ctx context.Context, name string) (*AccessKeyRecor
 	var record AccessKeyRecord
 	if err := json.Unmarshal([]byte(raw), &record); err != nil {
 		return nil, fmt.Errorf("decode Redis access key: %w", err)
-	}
-	if record.Status != "active" || (record.ExpiresAt != nil && time.Now().After(*record.ExpiresAt)) {
-		return nil, nil
 	}
 	return &record, nil
 }
@@ -270,13 +280,37 @@ return 1`
 }
 
 func (c *Client) RevokeAccessKey(ctx context.Context, name string) error {
-	record, err := c.GetAccessKey(ctx, name)
+	record, err := c.GetAccessKeyRecord(ctx, name)
 	if err != nil || record == nil {
 		return err
 	}
 	record.Status = "revoked"
 	record.Version++
 	return c.PutAccessKey(ctx, *record)
+}
+
+// ListAccessKeyRecords returns all records for administrative views.
+func (c *Client) ListAccessKeyRecords(ctx context.Context) ([]AccessKeyRecord, error) {
+	var names map[string]string
+	err := c.withTimeout(ctx, func(ctx context.Context) error {
+		var err error
+		names, err = c.rdb.HGetAll(ctx, c.accessKeyIndexKey()).Result()
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]AccessKeyRecord, 0, len(names))
+	for _, name := range names {
+		record, err := c.GetAccessKeyRecord(ctx, name)
+		if err != nil {
+			return nil, err
+		}
+		if record != nil {
+			out = append(out, *record)
+		}
+	}
+	return out, nil
 }
 
 func (c *Client) ListAccessKeys(ctx context.Context) ([]AccessKeyRecord, error) {
@@ -303,7 +337,7 @@ func (c *Client) ListAccessKeys(ctx context.Context) ([]AccessKeyRecord, error) 
 }
 
 func (c *Client) RotateAccessKey(ctx context.Context, name string) (string, error) {
-	record, err := c.GetAccessKey(ctx, name)
+	record, err := c.GetAccessKeyRecord(ctx, name)
 	if err != nil {
 		return "", err
 	}
@@ -475,6 +509,14 @@ func (c *Client) BillingMaxAttempts() int {
 		return 10
 	}
 	return c.billingMaxAttempts
+}
+
+// BillingConsumerName returns the effective consumer name used by this client.
+func (c *Client) BillingConsumerName() string {
+	if c == nil {
+		return ""
+	}
+	return c.billingConsumer
 }
 
 func (c *Client) BillingStats(ctx context.Context) (pending, deadLetter int64, err error) {
