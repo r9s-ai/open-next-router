@@ -48,6 +48,21 @@ pricing:
   # This can also supplement models/cost fields missing from the synced price.yaml.
   overrides_file: "./price_overrides.yaml"
 
+meterry:
+  # Optional asynchronous usage billing through Meterry.
+  enabled: false
+  base_url: "https://billing.edgefn.dev"
+  project_id: ""
+  api_key: ""
+  extractor_rule_set_id: "ers_onr_gateway"
+  outbox_dir: "./run/meterry"
+  request_timeout_ms: 3000
+  retry_interval_ms: 1000
+  only_billable_success: true
+  subject_type: "api_key"
+  # Used for master-key or BYOK requests without a matched access key.
+  fallback_subject_id: ""
+
 upstream_proxies:
   # Configure outbound HTTP proxy per provider (optional).
   # Example:

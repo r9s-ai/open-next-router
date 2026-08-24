@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/usageestimate"
 	"gopkg.in/yaml.v3"
@@ -96,6 +97,20 @@ type LoggingConfig struct {
 	AppNameInfer          AppNameInferConfig    `yaml:"appname_infer"`
 }
 
+type MeterryConfig struct {
+	Enabled             bool   `yaml:"enabled"`
+	BaseURL             string `yaml:"base_url"`
+	ProjectID           string `yaml:"project_id"`
+	APIKey              string `yaml:"api_key"`
+	ExtractorRuleSet    string `yaml:"extractor_rule_set_id"`
+	OutboxDir           string `yaml:"outbox_dir"`
+	RequestTimeoutMs    int    `yaml:"request_timeout_ms"`
+	RetryIntervalMs     int    `yaml:"retry_interval_ms"`
+	OnlyBillableSuccess *bool  `yaml:"only_billable_success"`
+	SubjectType         string `yaml:"subject_type"`
+	FallbackSubjectID   string `yaml:"fallback_subject_id"`
+}
+
 type Config struct {
 	Server struct {
 		Listen         string `yaml:"listen"`
@@ -155,6 +170,7 @@ type Config struct {
 	} `yaml:"upstream_proxies"`
 
 	UsageEstimation usageestimate.Config `yaml:"usage_estimation"`
+	Meterry         MeterryConfig        `yaml:"meterry"`
 
 	TrafficDump struct {
 		Enabled     bool     `yaml:"enabled"`
@@ -281,6 +297,22 @@ func applyDefaults(cfg *Config) {
 	if strings.TrimSpace(cfg.TrafficDump.Dir) == "" {
 		cfg.TrafficDump.Dir = "./dumps"
 	}
+	if strings.TrimSpace(cfg.Meterry.OutboxDir) == "" {
+		cfg.Meterry.OutboxDir = "./run/meterry"
+	}
+	if cfg.Meterry.RequestTimeoutMs <= 0 {
+		cfg.Meterry.RequestTimeoutMs = 3000
+	}
+	if cfg.Meterry.RetryIntervalMs <= 0 {
+		cfg.Meterry.RetryIntervalMs = 1000
+	}
+	if strings.TrimSpace(cfg.Meterry.SubjectType) == "" {
+		cfg.Meterry.SubjectType = "api_key"
+	}
+	if cfg.Meterry.OnlyBillableSuccess == nil {
+		v := true
+		cfg.Meterry.OnlyBillableSuccess = &v
+	}
 	if strings.TrimSpace(cfg.TrafficDump.FilePath) == "" {
 		cfg.TrafficDump.FilePath = "{{.request_id}}.log"
 	}
@@ -313,8 +345,34 @@ func applyEnvOverrides(cfg *Config) {
 	applyEnvServerAuthOverrides(cfg)
 	applyEnvProviderAndDataOverrides(cfg)
 	applyProviderProxyEnvOverrides(cfg)
+	applyEnvMeterryOverrides(cfg)
 	applyEnvTrafficDumpOverrides(cfg)
 	applyEnvLoggingOverrides(cfg)
+}
+
+func applyEnvMeterryOverrides(cfg *Config) {
+	cfg.Meterry.Enabled = envBool("ONR_METERRY_ENABLED", cfg.Meterry.Enabled)
+	if v := strings.TrimSpace(os.Getenv("ONR_METERRY_BASE_URL")); v != "" {
+		cfg.Meterry.BaseURL = v
+	}
+	if v := strings.TrimSpace(os.Getenv("ONR_METERRY_PROJECT_ID")); v != "" {
+		cfg.Meterry.ProjectID = v
+	}
+	if v := strings.TrimSpace(os.Getenv("ONR_METERRY_API_KEY")); v != "" {
+		cfg.Meterry.APIKey = v
+	}
+	if v := strings.TrimSpace(os.Getenv("ONR_METERRY_EXTRACTOR_RULE_SET_ID")); v != "" {
+		cfg.Meterry.ExtractorRuleSet = v
+	}
+	if v := strings.TrimSpace(os.Getenv("ONR_METERRY_OUTBOX_DIR")); v != "" {
+		cfg.Meterry.OutboxDir = v
+	}
+	if n, ok := envInt("ONR_METERRY_REQUEST_TIMEOUT_MS"); ok && n > 0 {
+		cfg.Meterry.RequestTimeoutMs = n
+	}
+	if n, ok := envInt("ONR_METERRY_RETRY_INTERVAL_MS"); ok && n > 0 {
+		cfg.Meterry.RetryIntervalMs = n
+	}
 }
 
 func applyEnvServerAuthOverrides(cfg *Config) {
@@ -475,7 +533,23 @@ func validate(cfg *Config) error {
 	if cfg.Logging.AccessLogRotate.MaxAgeDays < 0 {
 		return errors.New("logging.access_log_rotate.max_age_days must be >= 0")
 	}
+	if cfg.Meterry.Enabled {
+		if strings.TrimSpace(cfg.Meterry.BaseURL) == "" || strings.TrimSpace(cfg.Meterry.ProjectID) == "" || strings.TrimSpace(cfg.Meterry.APIKey) == "" || strings.TrimSpace(cfg.Meterry.ExtractorRuleSet) == "" {
+			return errors.New("meterry requires base_url, project_id, api_key, and extractor_rule_set_id when enabled")
+		}
+		if cfg.Meterry.RequestTimeoutMs <= 0 || cfg.Meterry.RetryIntervalMs <= 0 {
+			return errors.New("meterry request_timeout_ms and retry_interval_ms must be > 0")
+		}
+	}
 	return nil
+}
+
+func (c MeterryConfig) RequestTimeout() time.Duration {
+	return time.Duration(c.RequestTimeoutMs) * time.Millisecond
+}
+
+func (c MeterryConfig) RetryInterval() time.Duration {
+	return time.Duration(c.RetryIntervalMs) * time.Millisecond
 }
 
 func normalizeLogLevel(level string) (string, error) {

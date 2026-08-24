@@ -20,7 +20,13 @@ func TestMiddleware_TokenKey_AccessKey(t *testing.T) {
 	}
 	r := gin.New()
 	r.Use(Middleware("master", match))
-	r.GET("/ok", func(c *gin.Context) { c.String(200, "ok") })
+	r.GET("/ok", func(c *gin.Context) {
+		if got := c.GetString("onr.auth_subject_id"); got != "client1" {
+			c.String(http.StatusInternalServerError, "subject=%s", got)
+			return
+		}
+		c.String(200, "ok")
+	})
 
 	k64 := base64.RawURLEncoding.EncodeToString([]byte("ak-1"))
 	req := httptest.NewRequest(http.MethodGet, "/ok", nil)

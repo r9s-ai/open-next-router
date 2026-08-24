@@ -10,11 +10,12 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/requestid"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/trafficdump"
 	"github.com/r9s-ai/open-next-router/onr/internal/auth"
+	"github.com/r9s-ai/open-next-router/onr/internal/meterry"
 	"github.com/r9s-ai/open-next-router/onr/internal/proxy"
 	"github.com/r9s-ai/open-next-router/pkg/config"
 )
 
-func makeGeminiHandler(cfg *config.Config, st *state, pclient *proxy.Client, requestIDHeaderKey string) gin.HandlerFunc {
+func makeGeminiHandler(cfg *config.Config, st *state, pclient *proxy.Client, requestIDHeaderKey string, billing *meterry.Client) gin.HandlerFunc {
 	requestIDHeaderKey = requestid.ResolveHeaderKey(requestIDHeaderKey)
 	return func(c *gin.Context) {
 		model, action, err := parseGeminiModelAction(c.Param("path"))
@@ -129,6 +130,7 @@ func makeGeminiHandler(cfg *config.Config, st *state, pclient *proxy.Client, req
 			return
 		}
 		setProxyResultContext(c, res)
+		enqueueBillingEvent(cfg, billing, c, res)
 
 		_ = cfg
 	}
