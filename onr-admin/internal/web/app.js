@@ -91,6 +91,9 @@ function queueEditorAnalysis() {
 }
 
 async function runEditorAnalysis() {
+  if (!adminToken) {
+    return;
+  }
   const provider = currentProvider();
   const content = editorValue();
   if (!provider) {
@@ -632,6 +635,9 @@ async function copyCurl() {
 }
 
 async function refreshProviders() {
+  if (!adminToken) {
+    return;
+  }
   const res = await fetch("/api/providers");
   const data = await res.json();
   if (!res.ok || !data.ok) {
@@ -728,9 +734,9 @@ document.getElementById("runRequestBtn").addEventListener("click", runRequest);
 document.getElementById("copyCurlBtn").addEventListener("click", copyCurl);
 document.getElementById("loadDumpBtn").addEventListener("click", loadDumpByRequestID);
 
-refreshProviders()
-  .then(() => runEditorAnalysis())
-  .catch((err) => setStatus(String(err)));
+// Provider data is loaded after the admin token is accepted. Avoid issuing
+// unauthenticated requests during the login screen and leaving stale errors
+// in the editor status panel.
 
 // Unified console shell. The token intentionally lives only in memory.
 const pageTitles={overview:"Overview",access:"Access keys",providers:"Providers",billing:"Billing / Redis",dumps:"Dump logs",test:"Test console"};
