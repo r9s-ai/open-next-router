@@ -22,7 +22,7 @@ func newWebCmd() *cobra.Command {
 		Use:   "web",
 		Short: "Start web UI for provider config validate/save",
 		Long: strings.TrimSpace(`
-Start web UI for provider config validate/save.
+Start the ONR control room web console.
 
 Environment variables:
   ONR_ADMIN_WEB_LISTEN
@@ -31,6 +31,9 @@ Environment variables:
   ONR_ADMIN_WEB_CURL_API_BASE_URL
     Default API base URL prefilled in the web UI curl/test request area.
     Default: http://127.0.0.1:3300
+
+  ONR_ADMIN_WEB_TOKEN
+    Required Bearer token for all management APIs. The browser keeps it in memory only.
 `),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runWebWithOptions(opts)

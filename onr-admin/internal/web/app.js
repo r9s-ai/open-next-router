@@ -1,3 +1,6 @@
+let adminToken = "";
+const nativeFetch = window.fetch.bind(window);
+window.fetch = (input, init = {}) => { const headers = new Headers(init.headers || {}); if (adminToken) headers.set("Authorization", "Bearer " + adminToken); init.headers = headers; return nativeFetch(input, init); };
 const providerInput = document.getElementById("provider");
 const providerSelect = document.getElementById("providerSelect");
 const contentEl = document.getElementById("content");
@@ -678,6 +681,24 @@ async function validateProvider() {
 
 async function saveProvider() {
   const body = { provider: currentProvider(), content: editorValue() };
+  const check = await fetch("/api/providers/validate", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  const checkData = await check.json();
+  if (!check.ok || !checkData.ok) {
+    setStatus(checkData);
+    return;
+  }
+  const diff = await fetch("/api/providers/diff", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  const diffData = await diff.json();
+  if (!diff.ok || !diffData.ok) { setStatus(diffData); return; }
+  if (!diffData.changed || !confirm(`Save validated changes to ${body.provider}?`)) { setStatus(diffData.changed ? "Save cancelled." : "No changes to save."); return; }
   const res = await fetch("/api/providers/save", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -710,3 +731,24 @@ document.getElementById("loadDumpBtn").addEventListener("click", loadDumpByReque
 refreshProviders()
   .then(() => runEditorAnalysis())
   .catch((err) => setStatus(String(err)));
+
+// Unified console shell. The token intentionally lives only in memory.
+const pageTitles={overview:"Overview",access:"Access keys",providers:"Providers",billing:"Billing / Redis",dumps:"Dump logs",test:"Test console"};
+const pageKickers={overview:"OPERATIONS / OVERVIEW",access:"CONTROL PLANE / ACCESS",providers:"DSL WORKSPACE / PROVIDERS",billing:"RUNTIME STATE / BILLING",dumps:"REQUEST FORENSICS / DUMPS",test:"SAFE PROBE / TEST"};
+let overviewTimer=0;
+function escapeText(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));}
+function notify(message,error=false){const e=document.getElementById("notice");e.textContent=message||"";e.style.color=error?"var(--danger)":"var(--cyan)";clearTimeout(notify.timer);notify.timer=setTimeout(()=>e.textContent="",4500)}
+async function api(path,options={}){const res=await fetch(path,options);let data={};try{data=await res.json()}catch(_){data={error:res.statusText}}if(!res.ok)throw new Error(data.error||`request failed (${res.status})`);return data}
+function showPage(page){document.querySelectorAll(".page").forEach(e=>e.classList.toggle("active",e.id==="page-"+page));document.querySelectorAll(".nav-item").forEach(e=>e.classList.toggle("active",e.dataset.page===page));document.getElementById("pageTitle").textContent=pageTitles[page];document.getElementById("pageKicker").textContent=pageKickers[page];if(page==="overview"||page==="billing")refreshOverview();if(page==="access")refreshKeys();if(page==="providers")refreshProviders().then(runEditorAnalysis).catch(e=>notify(e.message,true))}
+function renderMetric(label,value,detail=""){return `<div class="metric"><div class="label">${escapeText(label)}</div><div class="value">${escapeText(value)}</div><div class="label">${escapeText(detail)}</div></div>`}
+async function refreshOverview(){if(!adminToken)return;try{const d=await api("/api/admin/overview"),r=d.redis||{},m=d.meterry||{},b=d.billing||{},bal=d.balance||{};document.getElementById("overviewGrid").innerHTML=[renderMetric("Redis",r.reachable?"Reachable":(r.enabled?"Unavailable":"Disabled"),r.key_prefix||"—"),renderMetric("Meterry",m.reachable?"Reachable":(m.configured?"Unavailable":"Not configured"),m.project_id||"—"),renderMetric("Pending events",b.pending||0,"billing stream"),renderMetric("Dead letter",b.dead_letter||0,"requires attention")].join("");document.getElementById("healthRows").innerHTML=[["Redis",r.enabled,r.reachable,r.error],["Meterry",m.enabled,m.reachable,m.error],["Billing stream",r.enabled,!b.error,b.error]].map(x=>`<div class="health-row"><span>${x[0]}</span><span class="${x[2]?"state-ok":"state-bad"}">${x[1]?(x[2]?"Healthy":(x[3]||"Unavailable")):"Disabled"}</span></div>`).join("");document.getElementById("balancePolicy").textContent=`failure mode: ${bal.failure_mode||"—"} · cache ${bal.cache_ttl_ms||0}ms / negative ${bal.negative_cache_ttl_ms||0}ms`;document.getElementById("billingGrid").innerHTML=[renderMetric("Redis",r.reachable?"Reachable":"Unavailable",r.access_key_mode||"—"),renderMetric("Consumer group",b.consumer_group||"—",b.consumer_name||"—"),renderMetric("Pending",b.pending||0,"entries"),renderMetric("Dead letter",b.dead_letter||0,"max attempts "+(b.max_attempts||"—"))].join("");document.getElementById("lastRefresh").textContent="Refreshed "+new Date().toLocaleTimeString()}catch(e){notify(e.message,true)}}
+function keyMatches(k,q){q=q.toLowerCase();return !q||[k.name,k.status,k.subject_type,k.subject_id].some(v=>String(v||"").toLowerCase().includes(q))}
+async function refreshKeys(){if(!adminToken)return;try{const d=await api("/api/admin/access-keys"),q=document.getElementById("keyFilter").value,rows=(d.records||[]).filter(k=>keyMatches(k,q));document.getElementById("keysBody").innerHTML=rows.map(k=>`<tr><td><strong>${escapeText(k.name)}</strong></td><td><span class="badge ${escapeText(k.status)}">${escapeText(k.status)}</span></td><td>${escapeText(k.subject_type)}/${escapeText(k.subject_id)}</td><td>${k.created_at?new Date(k.created_at).toLocaleDateString():"—"}</td><td>${k.expires_at?new Date(k.expires_at).toLocaleDateString():"Never"}</td><td>${k.version||0}</td><td><button class="ghost key-action" data-name="${escapeText(k.name)}">Manage</button></td></tr>`).join("");document.getElementById("keyEmpty").classList.toggle("hidden",rows.length!==0);document.querySelectorAll(".key-action").forEach(b=>b.onclick=()=>manageKey(b.dataset.name))}catch(e){notify(e.message,true)}}
+function openModal(html){document.getElementById("modalBody").innerHTML=html;document.getElementById("modal").classList.remove("hidden")}
+function closeModal(){document.getElementById("modal").classList.add("hidden");document.getElementById("modalBody").textContent=""}
+async function manageKey(name){try{const d=await api("/api/admin/access-keys/"+encodeURIComponent(name)),k=d.record;openModal(`<div class="eyebrow">ACCESS KEY</div><h3>${escapeText(k.name)}</h3><p>${escapeText(k.subject_type)}/${escapeText(k.subject_id)} · ${escapeText(k.status)}</p><p class="muted">Version ${k.version||0} · created ${k.created_at?new Date(k.created_at).toLocaleString():"—"}</p><div class="button-row"><button id="rotateKeyBtn">Rotate secret</button><button class="ghost" id="revokeKeyBtn">Revoke key</button></div>`);document.getElementById("rotateKeyBtn").onclick=()=>rotateKey(name);document.getElementById("revokeKeyBtn").onclick=()=>revokeKey(name)}catch(e){notify(e.message,true)}}
+async function rotateKey(name){if(!confirm(`Rotate ${name}? The old secret stops working immediately.`))return;try{const d=await api("/api/admin/access-keys/"+encodeURIComponent(name),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"rotate"})});openModal(`<div class="eyebrow">ONE-TIME SECRET</div><h3>Save this secret now.</h3><div class="secret">${escapeText(d.secret)}</div><button id="copySecretBtn">Copy secret</button>`);document.getElementById("copySecretBtn").onclick=()=>navigator.clipboard?.writeText(d.secret).then(()=>notify("Secret copied."));refreshKeys()}catch(e){notify(e.message,true)}}
+async function revokeKey(name){if(!confirm(`Revoke ${name}? This cannot be undone.`))return;try{await api("/api/admin/access-keys/"+encodeURIComponent(name),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"revoke"})});closeModal();notify("Access key revoked.");refreshKeys()}catch(e){notify(e.message,true)}}
+function newKey(){openModal(`<div class="eyebrow">NEW CREDENTIAL</div><h3>Create access key</h3><div class="form-grid"><label>Name<input id="newName" autocomplete="off"></label><label>Subject type<input id="newType" value="api_key"></label><label>Subject ID<input id="newSubject" autocomplete="off"></label><label>Expires at <span class="muted">optional · RFC3339 UTC</span><input id="newExpiry" placeholder="2030-01-01T00:00:00Z"></label></div><div class="modal-actions"><button id="createKeySubmit">Create key</button></div>`);document.getElementById("createKeySubmit").onclick=async()=>{try{const d=await api("/api/admin/access-keys",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:document.getElementById("newName").value.trim(),subject_type:document.getElementById("newType").value.trim(),subject_id:document.getElementById("newSubject").value.trim(),expires_at:document.getElementById("newExpiry").value.trim()})});openModal(`<div class="eyebrow">ONE-TIME SECRET</div><h3>Save this secret now.</h3><div class="secret">${escapeText(d.secret)}</div><button id="copySecretBtn">Copy secret</button>`);document.getElementById("copySecretBtn").onclick=()=>navigator.clipboard?.writeText(d.secret).then(()=>notify("Secret copied."));refreshKeys()}catch(e){notify(e.message,true)}}}
+document.getElementById("loginBtn").onclick=async()=>{const value=document.getElementById("adminToken").value.trim();if(!value){document.getElementById("loginError").textContent="Token is required.";return}adminToken=value;try{await api("/api/admin/overview");document.getElementById("loginScreen").classList.add("hidden");document.getElementById("console").classList.remove("hidden");showPage("overview");overviewTimer=setInterval(refreshOverview,5000)}catch(e){adminToken="";document.getElementById("loginError").textContent=e.message}};
+document.getElementById("logoutBtn").onclick=()=>{adminToken="";clearInterval(overviewTimer);document.getElementById("console").classList.add("hidden");document.getElementById("loginScreen").classList.remove("hidden");document.getElementById("adminToken").value=""};document.getElementById("modalClose").onclick=closeModal;document.getElementById("newKeyBtn").onclick=newKey;document.getElementById("keyRefreshBtn").onclick=refreshKeys;document.getElementById("keyFilter").oninput=refreshKeys;document.getElementById("refreshBtn").onclick=refreshOverview;document.querySelectorAll(".nav-item").forEach(b=>b.onclick=()=>showPage(b.dataset.page));document.addEventListener("keydown",e=>{if(e.key.toLowerCase()==="r"&&!e.target.matches("input,textarea,select"))refreshOverview()});

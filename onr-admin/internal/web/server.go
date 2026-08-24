@@ -1,6 +1,7 @@
 package web
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,7 +20,9 @@ import (
 	"time"
 
 	"github.com/r9s-ai/open-next-router/onr-admin/internal/providersource"
+	adminservice "github.com/r9s-ai/open-next-router/onr-admin/internal/service"
 	"github.com/r9s-ai/open-next-router/onr-admin/internal/store"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/controlplane"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dsllang"
 	cfgpkg "github.com/r9s-ai/open-next-router/pkg/config"
@@ -40,6 +43,7 @@ type Options struct {
 	ConfigPath   string
 	ProvidersDir string
 	Listen       string
+	AdminToken   string
 }
 
 type Server struct {
@@ -47,6 +51,9 @@ type Server struct {
 	dumpsDir       string
 	indexHTML      string
 	mu             sync.Mutex
+	adminToken     string
+	requireAuth    bool
+	service        *adminservice.Service
 }
 
 type providerRequest struct {
@@ -139,14 +146,35 @@ type editorFormatResponse struct {
 	Error      string `json:"error,omitempty"`
 }
 
+type adminAccessKeyInput struct {
+	Name        string            `json:"name"`
+	SubjectType string            `json:"subject_type"`
+	SubjectID   string            `json:"subject_id"`
+	ExpiresAt   string            `json:"expires_at"`
+	Metadata    map[string]string `json:"metadata"`
+}
+type adminAccessKeyResponse struct {
+	OK      bool   `json:"ok"`
+	Record  any    `json:"record,omitempty"`
+	Records any    `json:"records,omitempty"`
+	Secret  string `json:"secret,omitempty"`
+	Report  any    `json:"report,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
 func Run(opts Options) error {
 	providersPath := resolveProviderSourcePath(opts.ConfigPath, opts.ProvidersDir)
 	dumpsDir := resolveDumpsDir(opts.ConfigPath)
 	defaultBaseURL := resolveDefaultAPIBaseURL()
-	srv, err := newServer(providersPath, dumpsDir, defaultBaseURL)
+	token := strings.TrimSpace(opts.AdminToken)
+	if token == "" {
+		token = strings.TrimSpace(os.Getenv("ONR_ADMIN_WEB_TOKEN"))
+	}
+	srv, err := newServerWithOptions(providersPath, dumpsDir, defaultBaseURL, strings.TrimSpace(opts.ConfigPath), token, true)
 	if err != nil {
 		return err
 	}
+	defer func() { _ = srv.Close() }()
 	listen := resolveListenAddress(opts.Listen)
 	log.Printf(
 		"onr-admin web listening: url=%q providers_source=%q providers_edit_path=%q dumps_dir=%q default_curl_api_base_url=%q",
@@ -163,7 +191,12 @@ func NewServer(providersDir string) (*Server, error) {
 	return newServer(providersDir, defaultDumpsDir, defaultAPIBaseURL)
 }
 
+//nolint:unparam // Tests use this constructor with the embedded defaults.
 func newServer(providersDir string, dumpsDir string, defaultBaseURL string) (*Server, error) {
+	return newServerWithOptions(providersDir, dumpsDir, defaultBaseURL, "", "", false)
+}
+
+func newServerWithOptions(providersDir, dumpsDir, defaultBaseURL, cfgPath, token string, requireAuth bool) (*Server, error) {
 	sourcePath := strings.TrimSpace(providersDir)
 	if sourcePath == "" {
 		return nil, errors.New("providers source is empty")
@@ -176,11 +209,21 @@ func newServer(providersDir string, dumpsDir string, defaultBaseURL string) (*Se
 	if dumpDir == "" {
 		dumpDir = defaultDumpsDir
 	}
-	return &Server{
+	s := &Server{
 		providerSource: sourceInfo,
 		dumpsDir:       dumpDir,
 		indexHTML:      renderIndexHTML(defaultBaseURL),
-	}, nil
+		adminToken:     token,
+		requireAuth:    requireAuth,
+	}
+	if strings.TrimSpace(cfgPath) != "" {
+		admin, err := adminservice.New(cfgPath)
+		if err != nil {
+			return nil, err
+		}
+		s.service = admin
+	}
+	return s, nil
 }
 
 func (s *Server) Handler() http.Handler {
@@ -188,17 +231,53 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/app.css", s.handleAppCSS)
 	mux.HandleFunc("/app.js", s.handleAppJS)
-	mux.HandleFunc("/api/providers", s.handleProviders)
-	mux.HandleFunc("/api/provider", s.handleProvider)
-	mux.HandleFunc("/api/providers/validate", s.handleValidate)
-	mux.HandleFunc("/api/providers/save", s.handleSave)
-	mux.HandleFunc("/api/editor/diagnostics", s.handleEditorDiagnostics)
-	mux.HandleFunc("/api/editor/semantic-tokens", s.handleEditorSemanticTokens)
-	mux.HandleFunc("/api/editor/hover", s.handleEditorHover)
-	mux.HandleFunc("/api/editor/format", s.handleEditorFormat)
-	mux.HandleFunc("/api/test/request", s.handleTestRequest)
-	mux.HandleFunc("/api/dumps/by-request-id", s.handleDumpByRequestID)
+	api := http.NewServeMux()
+	api.HandleFunc("/api/providers", s.handleProviders)
+	api.HandleFunc("/api/provider", s.handleProvider)
+	api.HandleFunc("/api/providers/validate", s.handleValidate)
+	api.HandleFunc("/api/providers/save", s.handleSave)
+	api.HandleFunc("/api/providers/diff", s.handleDiff)
+	api.HandleFunc("/api/editor/diagnostics", s.handleEditorDiagnostics)
+	api.HandleFunc("/api/editor/semantic-tokens", s.handleEditorSemanticTokens)
+	api.HandleFunc("/api/editor/hover", s.handleEditorHover)
+	api.HandleFunc("/api/editor/format", s.handleEditorFormat)
+	api.HandleFunc("/api/test/request", s.handleTestRequest)
+	api.HandleFunc("/api/dumps/by-request-id", s.handleDumpByRequestID)
+	api.HandleFunc("/api/admin/overview", s.handleAdminOverview)
+	api.HandleFunc("/api/admin/access-keys", s.handleAdminAccessKeys)
+	api.HandleFunc("/api/admin/access-keys/migrate/dry-run", s.handleAdminMigrate)
+	api.HandleFunc("/api/admin/access-keys/migrate", s.handleAdminMigrate)
+	api.HandleFunc("/api/admin/access-keys/", s.handleAdminAccessKey)
+	mux.Handle("/api/", s.authMiddleware(api))
 	return mux
+}
+
+func (s *Server) Close() error {
+	if s == nil || s.service == nil {
+		return nil
+	}
+	return s.service.Close()
+}
+
+func (s *Server) authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.requireAuth {
+			next.ServeHTTP(w, r)
+			return
+		}
+		token := strings.TrimSpace(s.adminToken)
+		if token == "" {
+			writeJSONAny(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "ONR_ADMIN_WEB_TOKEN is not configured"})
+			return
+		}
+		got := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+		if got == "" || len(got) != len(token) || subtle.ConstantTimeCompare([]byte(got), []byte(token)) != 1 {
+			w.Header().Set("WWW-Authenticate", "Bearer")
+			writeJSONAny(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": "admin authentication required"})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -318,6 +397,24 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		LoadedProviders: res.LoadedProviders,
 		Warnings:        formatWarnings(res.Warnings),
 	})
+}
+
+func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, http.MethodPost)
+		return
+	}
+	in, err := decodeProviderRequest(r)
+	if err != nil {
+		writeJSONAny(w, http.StatusBadRequest, providerResponse{OK: false, Error: err.Error()})
+		return
+	}
+	target, old, err := readProviderContent(s.providerSource, in.Provider)
+	if err != nil && !os.IsNotExist(err) {
+		writeJSONAny(w, http.StatusInternalServerError, providerResponse{OK: false, Error: err.Error()})
+		return
+	}
+	writeJSONAny(w, http.StatusOK, map[string]any{"ok": true, "provider": in.Provider, "target_file": target, "changed": string(old) != in.Content, "before": string(old), "after": in.Content})
 }
 
 func (s *Server) handleEditorDiagnostics(w http.ResponseWriter, r *http.Request) {
@@ -557,6 +654,197 @@ func (s *Server) handleDumpByRequestID(w http.ResponseWriter, r *http.Request) {
 		Content:   content,
 		Truncated: truncated,
 	})
+}
+
+func (s *Server) handleAdminOverview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if s.service == nil {
+		writeJSONAny(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "admin service is not configured; start with --config"})
+		return
+	}
+	o := s.service.Overview(r.Context())
+	writeJSONAny(w, http.StatusOK, map[string]any{"ok": true, "redis": map[string]any{"enabled": o.RedisEnabled, "reachable": o.RedisReachable, "error": o.RedisError, "key_prefix": o.KeyPrefix, "access_key_mode": o.AccessKeyMode}, "meterry": map[string]any{"enabled": o.MeterryEnabled, "configured": o.MeterryConfigured, "reachable": o.MeterryReachable, "error": o.MeterryError, "project_id": o.ProjectID, "extractor_rule_set": o.ExtractorRuleSet}, "billing": map[string]any{"pending": o.Pending, "dead_letter": o.DeadLetter, "error": o.BillingError, "consumer_group": o.ConsumerGroup, "consumer_name": o.ConsumerName, "max_attempts": o.MaxAttempts}, "balance": map[string]any{"failure_mode": o.FailureMode, "cache_ttl_ms": o.BalanceCacheTTL.Milliseconds(), "negative_cache_ttl_ms": o.NegativeCacheTTL.Milliseconds()}, "refreshed_at": o.RefreshedAt})
+}
+
+func (s *Server) handleAdminAccessKeys(w http.ResponseWriter, r *http.Request) {
+	if s.service == nil {
+		writeJSONAny(w, http.StatusServiceUnavailable, adminAccessKeyResponse{Error: "admin service is not configured"})
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		records, e := s.service.ListAccessKeys(r.Context())
+		if e != nil {
+			writeJSONAny(w, http.StatusServiceUnavailable, adminAccessKeyResponse{Error: e.Error()})
+			return
+		}
+		safe := make([]any, 0, len(records))
+		for _, v := range records {
+			safe = append(safe, safeAccessKey(v))
+		}
+		writeJSONAny(w, http.StatusOK, adminAccessKeyResponse{OK: true, Records: safe})
+	case http.MethodPost:
+		var in adminAccessKeyInput
+		if e := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); e != nil {
+			writeJSONAny(w, http.StatusBadRequest, adminAccessKeyResponse{Error: "invalid JSON"})
+			return
+		}
+		if strings.TrimSpace(in.Name) == "" || strings.TrimSpace(in.SubjectType) == "" || strings.TrimSpace(in.SubjectID) == "" {
+			writeJSONAny(w, http.StatusBadRequest, adminAccessKeyResponse{Error: "name, subject_type and subject_id are required"})
+			return
+		}
+		var exp *time.Time
+		if strings.TrimSpace(in.ExpiresAt) != "" {
+			t, e := time.Parse(time.RFC3339, in.ExpiresAt)
+			if e != nil || !t.After(time.Now().UTC()) {
+				writeJSONAny(w, http.StatusBadRequest, adminAccessKeyResponse{Error: "expires_at must be a future RFC3339 timestamp"})
+				return
+			}
+			exp = &t
+		}
+		secret, e := s.service.CreateAccessKey(r.Context(), adminservice.CreateAccessKeyInput{Name: strings.TrimSpace(in.Name), SubjectType: strings.TrimSpace(in.SubjectType), SubjectID: strings.TrimSpace(in.SubjectID), ExpiresAt: exp, Metadata: in.Metadata})
+		if e != nil {
+			writeJSONAny(w, http.StatusServiceUnavailable, adminAccessKeyResponse{Error: e.Error()})
+			return
+		}
+		writeJSONAny(w, http.StatusOK, adminAccessKeyResponse{OK: true, Secret: secret})
+	default:
+		writeMethodNotAllowed(w, http.MethodGet)
+	}
+}
+
+func safeAccessKey(v controlplane.AccessKeyRecord) map[string]any {
+	return map[string]any{"name": v.Name, "status": v.Status, "subject_type": v.SubjectType, "subject_id": v.SubjectID, "created_at": v.CreatedAt, "expires_at": v.ExpiresAt, "version": v.Version, "metadata": v.Metadata}
+}
+
+func (s *Server) handleAdminAccessKey(w http.ResponseWriter, r *http.Request) {
+	if s.service == nil {
+		writeJSONAny(w, http.StatusServiceUnavailable, adminAccessKeyResponse{Error: "admin service is not configured"})
+		return
+	}
+	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/admin/access-keys/"), "/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
+		http.NotFound(w, r)
+		return
+	}
+	name := parts[0]
+	if len(parts) == 2 && parts[1] == "subject-state" {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowed(w, http.MethodGet)
+			return
+		}
+		rec, e := s.service.GetAccessKey(r.Context(), name)
+		if e != nil || rec == nil {
+			writeJSONAny(w, http.StatusNotFound, adminAccessKeyResponse{Error: "access key not found"})
+			return
+		}
+		st, e := s.service.SubjectState(r.Context(), rec.SubjectType, rec.SubjectID)
+		if e != nil {
+			writeJSONAny(w, http.StatusServiceUnavailable, adminAccessKeyResponse{Error: e.Error()})
+			return
+		}
+		writeJSONAny(w, http.StatusOK, map[string]any{"ok": true, "state": st})
+		return
+	}
+	if len(parts) == 2 && (parts[1] == "rotate" || parts[1] == "revoke") {
+		if r.Method != http.MethodPost {
+			writeMethodNotAllowed(w, http.MethodPost)
+			return
+		}
+		if parts[1] == "revoke" {
+			if err := s.service.RevokeAccessKey(r.Context(), name); err != nil {
+				writeJSONAny(w, http.StatusBadRequest, adminAccessKeyResponse{Error: err.Error()})
+				return
+			}
+			writeJSONAny(w, http.StatusOK, adminAccessKeyResponse{OK: true})
+			return
+		}
+		secret, err := s.service.RotateAccessKey(r.Context(), name)
+		if err != nil {
+			writeJSONAny(w, http.StatusBadRequest, adminAccessKeyResponse{Error: err.Error()})
+			return
+		}
+		writeJSONAny(w, http.StatusOK, adminAccessKeyResponse{OK: true, Secret: secret})
+		return
+	}
+	if len(parts) != 1 {
+		http.NotFound(w, r)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		rec, e := s.service.GetAccessKey(r.Context(), name)
+		if e != nil {
+			writeJSONAny(w, http.StatusServiceUnavailable, adminAccessKeyResponse{Error: e.Error()})
+			return
+		}
+		if rec == nil {
+			writeJSONAny(w, http.StatusNotFound, adminAccessKeyResponse{Error: "access key not found"})
+			return
+		}
+		writeJSONAny(w, http.StatusOK, adminAccessKeyResponse{OK: true, Record: safeAccessKey(*rec)})
+	case http.MethodPost:
+		var action struct {
+			Action string `json:"action"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&action)
+		switch action.Action {
+		case "revoke":
+			e := s.service.RevokeAccessKey(r.Context(), name)
+			if e != nil {
+				writeJSONAny(w, http.StatusBadRequest, adminAccessKeyResponse{Error: e.Error()})
+				return
+			}
+			writeJSONAny(w, http.StatusOK, adminAccessKeyResponse{OK: true})
+		case "rotate":
+			secret, e := s.service.RotateAccessKey(r.Context(), name)
+			if e != nil {
+				writeJSONAny(w, http.StatusBadRequest, adminAccessKeyResponse{Error: e.Error()})
+				return
+			}
+			writeJSONAny(w, http.StatusOK, adminAccessKeyResponse{OK: true, Secret: secret})
+		default:
+			writeJSONAny(w, http.StatusBadRequest, adminAccessKeyResponse{Error: "action must be revoke or rotate"})
+		}
+	default:
+		writeMethodNotAllowed(w, http.MethodGet)
+	}
+}
+
+func (s *Server) handleAdminMigrate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, http.MethodPost)
+		return
+	}
+	if s.service == nil {
+		writeJSONAny(w, http.StatusServiceUnavailable, adminAccessKeyResponse{Error: "admin service is not configured"})
+		return
+	}
+	var in struct {
+		KeysPath string `json:"keys_path"`
+		DryRun   *bool  `json:"dry_run"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
+		writeJSONAny(w, http.StatusBadRequest, adminAccessKeyResponse{Error: "invalid JSON"})
+		return
+	}
+	dry := strings.HasSuffix(r.URL.Path, "/dry-run")
+	if in.DryRun != nil {
+		dry = *in.DryRun
+	}
+	if strings.TrimSpace(in.KeysPath) == "" {
+		writeJSONAny(w, http.StatusBadRequest, adminAccessKeyResponse{Error: "keys_path is required"})
+		return
+	}
+	report, e := s.service.MigrateAccessKeys(r.Context(), in.KeysPath, dry)
+	if e != nil {
+		writeJSONAny(w, http.StatusBadRequest, adminAccessKeyResponse{Error: e.Error(), Report: report})
+		return
+	}
+	writeJSONAny(w, http.StatusOK, adminAccessKeyResponse{OK: true, Report: report})
 }
 
 func (s *Server) validateCandidate(provider string, content string) (dslconfig.LoadResult, string, error) {
