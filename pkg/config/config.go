@@ -304,40 +304,48 @@ func applyDefaults(cfg *Config) {
 	cfg.UpstreamProxies.ByProvider = normalizeProviderStringMap(cfg.UpstreamProxies.ByProvider)
 
 	usageestimate.ApplyDefaults(&cfg.UsageEstimation)
+	applyMeterryDefaults(&cfg.Meterry)
+	applyTrafficDumpDefaults(cfg)
+	applyLoggingDefaults(&cfg.Logging)
+}
 
+func applyMeterryDefaults(cfg *MeterryConfig) {
+	if strings.TrimSpace(cfg.OutboxDir) == "" {
+		cfg.OutboxDir = "./run/meterry"
+	}
+	if cfg.RequestTimeoutMs <= 0 {
+		cfg.RequestTimeoutMs = 3000
+	}
+	if cfg.RetryIntervalMs <= 0 {
+		cfg.RetryIntervalMs = 1000
+	}
+	if strings.TrimSpace(cfg.SubjectType) == "" {
+		cfg.SubjectType = "api_key"
+	}
+	if cfg.OnlyBillableSuccess == nil {
+		v := true
+		cfg.OnlyBillableSuccess = &v
+	}
+	if strings.TrimSpace(cfg.BalanceEnforcement.Currency) == "" {
+		cfg.BalanceEnforcement.Currency = "USD"
+	}
+	if strings.TrimSpace(cfg.BalanceEnforcement.FailureMode) == "" {
+		cfg.BalanceEnforcement.FailureMode = "closed"
+	}
+	if cfg.BalanceEnforcement.RequestTimeoutMs <= 0 {
+		cfg.BalanceEnforcement.RequestTimeoutMs = 1000
+	}
+	if strings.TrimSpace(cfg.BalanceEnforcement.WebhookPath) == "" {
+		cfg.BalanceEnforcement.WebhookPath = "/internal/meterry/webhook"
+	}
+	if cfg.BalanceEnforcement.TimestampToleranceS <= 0 {
+		cfg.BalanceEnforcement.TimestampToleranceS = 300
+	}
+}
+
+func applyTrafficDumpDefaults(cfg *Config) {
 	if strings.TrimSpace(cfg.TrafficDump.Dir) == "" {
 		cfg.TrafficDump.Dir = "./dumps"
-	}
-	if strings.TrimSpace(cfg.Meterry.OutboxDir) == "" {
-		cfg.Meterry.OutboxDir = "./run/meterry"
-	}
-	if cfg.Meterry.RequestTimeoutMs <= 0 {
-		cfg.Meterry.RequestTimeoutMs = 3000
-	}
-	if cfg.Meterry.RetryIntervalMs <= 0 {
-		cfg.Meterry.RetryIntervalMs = 1000
-	}
-	if strings.TrimSpace(cfg.Meterry.SubjectType) == "" {
-		cfg.Meterry.SubjectType = "api_key"
-	}
-	if cfg.Meterry.OnlyBillableSuccess == nil {
-		v := true
-		cfg.Meterry.OnlyBillableSuccess = &v
-	}
-	if strings.TrimSpace(cfg.Meterry.BalanceEnforcement.Currency) == "" {
-		cfg.Meterry.BalanceEnforcement.Currency = "USD"
-	}
-	if strings.TrimSpace(cfg.Meterry.BalanceEnforcement.FailureMode) == "" {
-		cfg.Meterry.BalanceEnforcement.FailureMode = "closed"
-	}
-	if cfg.Meterry.BalanceEnforcement.RequestTimeoutMs <= 0 {
-		cfg.Meterry.BalanceEnforcement.RequestTimeoutMs = 1000
-	}
-	if strings.TrimSpace(cfg.Meterry.BalanceEnforcement.WebhookPath) == "" {
-		cfg.Meterry.BalanceEnforcement.WebhookPath = "/internal/meterry/webhook"
-	}
-	if cfg.Meterry.BalanceEnforcement.TimestampToleranceS <= 0 {
-		cfg.Meterry.BalanceEnforcement.TimestampToleranceS = 300
 	}
 	if strings.TrimSpace(cfg.TrafficDump.FilePath) == "" {
 		cfg.TrafficDump.FilePath = "{{.request_id}}.log"
@@ -349,21 +357,24 @@ func applyDefaults(cfg *Config) {
 	if !cfg.TrafficDump.MaskSecrets {
 		cfg.TrafficDump.MaskSecrets = true
 	}
-	if strings.TrimSpace(cfg.Logging.Level) == "" {
-		cfg.Logging.Level = "info"
+}
+
+func applyLoggingDefaults(cfg *LoggingConfig) {
+	if strings.TrimSpace(cfg.Level) == "" {
+		cfg.Level = "info"
 	}
 	// default true for local debugging
-	if !cfg.Logging.AccessLog {
-		cfg.Logging.AccessLog = true
+	if !cfg.AccessLog {
+		cfg.AccessLog = true
 	}
-	if !cfg.Logging.AccessLogRotate.maxSizeMBSet {
-		cfg.Logging.AccessLogRotate.MaxSizeMB = defaultAccessLogRotateMaxSizeMB
+	if !cfg.AccessLogRotate.maxSizeMBSet {
+		cfg.AccessLogRotate.MaxSizeMB = defaultAccessLogRotateMaxSizeMB
 	}
-	if !cfg.Logging.AccessLogRotate.maxBackupsSet {
-		cfg.Logging.AccessLogRotate.MaxBackups = defaultAccessLogRotateMaxBackups
+	if !cfg.AccessLogRotate.maxBackupsSet {
+		cfg.AccessLogRotate.MaxBackups = defaultAccessLogRotateMaxBackups
 	}
-	if !cfg.Logging.AccessLogRotate.maxAgeDaysSet {
-		cfg.Logging.AccessLogRotate.MaxAgeDays = defaultAccessLogRotateMaxAgeDays
+	if !cfg.AccessLogRotate.maxAgeDaysSet {
+		cfg.AccessLogRotate.MaxAgeDays = defaultAccessLogRotateMaxAgeDays
 	}
 }
 
@@ -550,6 +561,16 @@ func validate(cfg *Config) error {
 	if cfg.Providers.AutoReload.Enabled && cfg.Providers.AutoReload.DebounceMs <= 0 {
 		return errors.New("providers.auto_reload.debounce_ms must be > 0 when providers.auto_reload.enabled=true")
 	}
+	if err := validateRuntime(cfg); err != nil {
+		return err
+	}
+	if err := validateMeterry(&cfg.Meterry); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateRuntime(cfg *Config) error {
 	if cfg.TrafficDump.MaxBytes < 0 {
 		return errors.New("traffic_dump.max_bytes must be non-negative")
 	}
@@ -578,39 +599,44 @@ func validate(cfg *Config) error {
 	if cfg.Logging.AccessLogRotate.MaxAgeDays < 0 {
 		return errors.New("logging.access_log_rotate.max_age_days must be >= 0")
 	}
-	if cfg.Meterry.Enabled {
-		if strings.TrimSpace(cfg.Meterry.BaseURL) == "" || strings.TrimSpace(cfg.Meterry.ProjectID) == "" || strings.TrimSpace(cfg.Meterry.APIKey) == "" || strings.TrimSpace(cfg.Meterry.ExtractorRuleSet) == "" {
+	return nil
+}
+
+func validateMeterry(cfg *MeterryConfig) error {
+	if cfg.Enabled {
+		if strings.TrimSpace(cfg.BaseURL) == "" || strings.TrimSpace(cfg.ProjectID) == "" || strings.TrimSpace(cfg.APIKey) == "" || strings.TrimSpace(cfg.ExtractorRuleSet) == "" {
 			return errors.New("meterry requires base_url, project_id, api_key, and extractor_rule_set_id when enabled")
 		}
-		if cfg.Meterry.RequestTimeoutMs <= 0 || cfg.Meterry.RetryIntervalMs <= 0 {
+		if cfg.RequestTimeoutMs <= 0 || cfg.RetryIntervalMs <= 0 {
 			return errors.New("meterry request_timeout_ms and retry_interval_ms must be > 0")
 		}
 	}
-	if cfg.Meterry.BalanceEnforcement.Enabled {
-		if !cfg.Meterry.Enabled {
-			return errors.New("meterry.balance_enforcement.enabled requires meterry.enabled=true")
-		}
-		if strings.TrimSpace(cfg.Meterry.BalanceEnforcement.Currency) == "" {
-			return errors.New("meterry.balance_enforcement.currency is required")
-		}
-		switch strings.ToLower(strings.TrimSpace(cfg.Meterry.BalanceEnforcement.FailureMode)) {
-		case "open", "closed":
-			cfg.Meterry.BalanceEnforcement.FailureMode = strings.ToLower(strings.TrimSpace(cfg.Meterry.BalanceEnforcement.FailureMode))
-		default:
-			return errors.New("meterry.balance_enforcement.failure_mode must be open or closed")
-		}
-		if cfg.Meterry.BalanceEnforcement.RequestTimeoutMs <= 0 {
-			return errors.New("meterry.balance_enforcement.request_timeout_ms must be > 0")
-		}
-		if !strings.HasPrefix(strings.TrimSpace(cfg.Meterry.BalanceEnforcement.WebhookPath), "/") {
-			return errors.New("meterry.balance_enforcement.webhook_path must start with /")
-		}
-		if strings.TrimSpace(cfg.Meterry.BalanceEnforcement.WebhookSecret) == "" {
-			return errors.New("meterry.balance_enforcement.webhook_secret is required when balance enforcement is enabled")
-		}
-		if cfg.Meterry.BalanceEnforcement.TimestampToleranceS <= 0 {
-			return errors.New("meterry.balance_enforcement.timestamp_tolerance_s must be > 0")
-		}
+	if !cfg.BalanceEnforcement.Enabled {
+		return nil
+	}
+	if !cfg.Enabled {
+		return errors.New("meterry.balance_enforcement.enabled requires meterry.enabled=true")
+	}
+	if strings.TrimSpace(cfg.BalanceEnforcement.Currency) == "" {
+		return errors.New("meterry.balance_enforcement.currency is required")
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.BalanceEnforcement.FailureMode)) {
+	case "open", "closed":
+		cfg.BalanceEnforcement.FailureMode = strings.ToLower(strings.TrimSpace(cfg.BalanceEnforcement.FailureMode))
+	default:
+		return errors.New("meterry.balance_enforcement.failure_mode must be open or closed")
+	}
+	if cfg.BalanceEnforcement.RequestTimeoutMs <= 0 {
+		return errors.New("meterry.balance_enforcement.request_timeout_ms must be > 0")
+	}
+	if !strings.HasPrefix(strings.TrimSpace(cfg.BalanceEnforcement.WebhookPath), "/") {
+		return errors.New("meterry.balance_enforcement.webhook_path must start with /")
+	}
+	if strings.TrimSpace(cfg.BalanceEnforcement.WebhookSecret) == "" {
+		return errors.New("meterry.balance_enforcement.webhook_secret is required when balance enforcement is enabled")
+	}
+	if cfg.BalanceEnforcement.TimestampToleranceS <= 0 {
+		return errors.New("meterry.balance_enforcement.timestamp_tolerance_s must be > 0")
 	}
 	return nil
 }
