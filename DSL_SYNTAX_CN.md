@@ -466,6 +466,23 @@ request {
 - `json_clamp <jsonpath> min=<f> max=<f>;`：把路径上的数值钳制到 `[min, max]`（小于 `min` 取 `min`，大于 `max` 取 `max`，区间内原值不变）；路径缺失或非数值时为 no-op。`min`/`max` 均必填且要求 `max >= min`。
 - 值表达式的数字字面量支持小数（如 `1.0`、`0.5`），`json_set` / `json_set_if_absent` 等写入时会以 JSON number 输出。
 
+#### if_present（按请求体分支）
+
+```conf
+upstream {
+  set_path concat("/v3/async/", $request.model_mapped, "-",
+                  if_present("$.input_reference", "img2video", "text2video"));
+}
+```
+
+按“客户端请求在该 json 路径上是否带有值”在两个表达式之间二选一。
+
+- 路由块的变量本来只有渠道、凭据和模型元信息，这是唯一能按请求形状挑上游路径的手段。有些上游把同一个逻辑操作拆到多个端点上——PPIO 就按有没有参考图把视频生成拆成 `-text2video` 和 `-img2video`
+- 显式 `null`、空字符串、空数组、空对象**一律算不存在**：这几种情况调用方都等于什么都没发
+- **multipart 上传算存在**，尽管它从来不进请求 root。路由在 `req_inline_file` 之前执行，因此直接查 multipart 的文件字段（只看字段名，不缓冲任何内容）
+- 两个分支都是普通表达式，可与 `concat`、`template` 和内置变量组合。在 `set_path` 里每个分支必须**各自都是合法路径**，因为两者都可能出现在最终 URL 里
+- 调用写错会在配置加载期直接拒绝，而不是让所有请求静默走同一个分支
+
 #### req_inline_file（把上传文件读进请求 root）
 
 ```conf
@@ -510,6 +527,7 @@ v0.1 内置：
 - `openai_chat_to_gemini_generate_content`：OpenAI `chat.completions` 请求 JSON → Gemini `generateContent` 请求 JSON
 - `openai_images_to_gemini_generate_content`：OpenAI `images.generations` 请求 JSON → Gemini `generateContent`（Nano Banana）。prompt → `contents[].parts[].text`、`n` → `candidateCount`；gemini-3 另将 `size` → `imageConfig.aspectRatio`、`quality` → `imageConfig.imageSize`,并设 `responseModalities=[TEXT,IMAGE]`。内置校验并报错:`prompt` 必填;`n` 必须 `<= 1`;`response_format=url` 拒绝(大小写不敏感,`URL` 同样拒绝);gemini-3 仅接受已知比例/像素尺寸与 `standard`/`hd` quality;gemini-3 以下不接受 `size`/`quality`。被拒时会带上与 relay Go 侧一致的 code(`request_prompt_missing`、`request_n_out_of_range`、`request_size_not_supported`、`request_invalid_parameter`)与出错参数名,客户端可直接按 `error.code`/`error.param` 分支,无需解析文案。
 - `openai_images_edits_to_gemini_generate_content`：OpenAI `images.edits` 请求 → Gemini `generateContent` 请求 JSON。Gemini 没有独立的编辑端点:编辑就是一次 `generateContent`,把原图内联放进 `contents`。必须搭配 `req_inline_file` 读取上传字段,否则请求 root 里根本没有图片字节。parts 顺序为 原图 → mask 及一句固定的 mask 说明 → prompt —— 多模态模型按顺序读取 parts,顺序本身是契约的一部分。校验与 `openai_images_to_gemini_generate_content` 共用,并额外要求至少一张原图(`request_missing_required_field`,参数 `image`),且该检查最先执行。响应侧不需要对应 builtin:编辑的响应就是普通 `generateContent` 响应,直接由 `gemini_to_openai_images` 处理。
+- `openai_videos_to_ppio`：OpenAI `videos.generations` 请求 → PPIO/Novita 异步视频载荷。文生视频带精确的 `size`(PPIO 星号形式,`1280x720` → `1280*720`);图生视频换成粗粒度 `resolution`,参考图以 data URL 传入,需搭配 `input_reference` 上的 `req_inline_file`。`seconds` 转成整数 `duration`。请与 `set_path` 里针对同一字段的 `if_present` 配对使用,保证端点与载荷形状一致。
 - `openai_images_to_minimax_image`：OpenAI `images.generations` 请求 JSON → Minimax `/v1/image_generation` 请求 JSON。`size` → `aspect_ratio`(文档像素尺寸与裸比例均可)或 `width`/`height`(512–2048 且为 8 的倍数);`response_format=b64_json` → `base64`;缺省 `n` 补 1、缺省 `response_format` 补 `url`;`seed`/`watermark` 透传。prompt 是否存在与长度、`n` 范围、`response_format` 取值等通用边界交由 `req_required`/`req_len`/`req_range`/`req_enum` 指令表达。
 - `openai_images_to_qwen_image`：OpenAI `images.generations` 请求 JSON → DashScope `multimodal-generation` 请求 JSON。prompt 包进 `input.messages[].content[].text`,其余参数放 `parameters`;`size` 改用星号分隔(`1024x1024` → `1024*1024`,缺省 `1328*1328`);缺省 `n` 补 1、`prompt_extend` 补 true、`watermark` 补 false;`negative_prompt`/`seed` 透传。通用边界交由 `req_required`/`req_len`/`req_range` 指令表达。
 - `openai_chat_to_anthropic_messages`：OpenAI `chat.completions` 请求 JSON → Anthropic `/v1/messages` 请求 JSON。
@@ -703,6 +721,8 @@ response { sse_collect <mode>; }
 - `gemini_to_openai_chat`（`resp_map`）：Gemini `generateContent` JSON → OpenAI `chat.completions` JSON
 - `gemini_to_openai_images`（`resp_map`）：Gemini `generateContent` JSON → OpenAI `images.generations` JSON。`candidates[].content.parts[].inlineData.data` → `data[].b64_json`（同 part 的 text 作 `revised_prompt`）,`usageMetadata` → `usage`。无 candidates 或无内联图像数据时报错（HTTP 500）,而不是回一个 `data` 为空数组的成功响应。`usage` 采用 relay Go 适配器的图像口径（`completion_tokens = totalTokenCount - promptTokenCount`）,并把 `candidatesTokensDetails` 的 IMAGE 项带成 `output_tokens_details.image_tokens` 供 `openai_images_generations` usage_mode 预设读取 —— metrics 在 `resp_map` 之后提取,此处没映射的字段 `usage_fact` 就读不到。
 - `minimax_image_to_openai_images`（`resp_map`）：Minimax `/v1/image_generation` JSON → OpenAI `images.generations` JSON。把 `data.image_base64`/`data.image_urls`(优先 base64)摊平成 `data[].b64_json`/`data[].url`。藏在 HTTP 200 里的业务错误(`base_resp.status_code != 0`)转成 400 并带出 minimax 的 `status_msg`;一张图都没有则为 500。
+- `ppio_video_create_to_openai_videos`（`resp_map`）：PPIO 异步任务创建响应 → OpenAI video 对象(`queued`、进度 0)。只填上游能决定的字段;`id` 会被宿主换成路由本地任务 ID,`prompt`/`seconds`/`size` 由宿主从客户端请求回填 —— PPIO 从不回显这些。
+- `ppio_video_result_to_openai_videos`（`resp_map`）：PPIO 任务结果 → OpenAI video 对象。映射状态词汇表、把进度裁剪到 `[0, 100]`,完成时带出 `video_url` 与按 URL TTL 换算的绝对 `expires_at`。未知状态、以及"已完成但没有视频"都按错误处理而不是猜测——前者会让调用方永远轮询下去,后者会把人指向一个不存在的下载。进度的单调性不在这里保证,只有宿主知道上一次轮询报到哪。
 - `qwen_image_to_openai_images`（`resp_map`）：DashScope `multimodal-generation` JSON → OpenAI `images.generations` JSON。把 `output.choices[].message.content[].image` 摊平成 `data[].url`。藏在 HTTP 200 里的业务错误(顶层 `code` 非空)转成 400 并带出 DashScope 自己的文案;一张图都没有则为 500。DashScope 从不返回内联内容,要支持 `response_format=b64_json` 需搭配 `resp_inline_url`。
 - `openai_to_gemini_chunks`（`sse_parse`）：OpenAI-compatible `chat.completions` SSE → Gemini SSE
 - `gemini_to_openai_chat_chunks`（`sse_parse`）：Gemini SSE → OpenAI `chat.completions` SSE chunks

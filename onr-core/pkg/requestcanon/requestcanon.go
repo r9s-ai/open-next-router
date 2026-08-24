@@ -23,6 +23,10 @@ type Snapshot struct {
 	Model       string
 	Stream      bool
 	ContentType string
+	// FileFields lists the multipart form fields that carried a file. Only the
+	// names are kept: the content is deliberately discarded here, but whether an
+	// upload was present is routing-relevant before req_inline_file has run.
+	FileFields []string
 }
 
 func AllowNonJSONRequestBodyAPI(api string) bool {
@@ -44,13 +48,14 @@ func Inspect(body []byte, contentType string, opts InspectOptions) (*Snapshot, e
 	}
 
 	if IsMultipartFormData(snapshot.ContentType) {
-		root, model, stream, err := inspectMultipartBody(body, snapshot.ContentType)
+		root, model, stream, fileFields, err := inspectMultipartBody(body, snapshot.ContentType)
 		if err != nil {
 			return snapshot, err
 		}
 		snapshot.Root = root
 		snapshot.Model = model
 		snapshot.Stream = stream
+		snapshot.FileFields = fileFields
 		return snapshot, nil
 	}
 
@@ -125,14 +130,14 @@ func DeclaresJSON(contentType string) bool {
 	return strings.Contains(strings.ToLower(strings.TrimSpace(contentType)), "json")
 }
 
-func inspectMultipartBody(body []byte, contentType string) (root map[string]any, model string, stream bool, err error) {
+func inspectMultipartBody(body []byte, contentType string) (root map[string]any, model string, stream bool, fileFields []string, err error) {
 	_, params, err := mime.ParseMediaType(strings.TrimSpace(contentType))
 	if err != nil {
-		return nil, "", false, fmt.Errorf("parse multipart content-type: %w", err)
+		return nil, "", false, nil, fmt.Errorf("parse multipart content-type: %w", err)
 	}
 	boundary := strings.TrimSpace(params["boundary"])
 	if boundary == "" {
-		return nil, "", false, fmt.Errorf("multipart boundary is empty")
+		return nil, "", false, nil, fmt.Errorf("multipart boundary is empty")
 	}
 
 	reader := multipart.NewReader(bytes.NewReader(body), boundary)
@@ -141,15 +146,18 @@ func inspectMultipartBody(body []byte, contentType string) (root map[string]any,
 		part, err := reader.NextPart()
 		if err == io.EOF {
 			root = multipartValuesRoot(values)
-			return root, strings.TrimSpace(model), stream, nil
+			return root, strings.TrimSpace(model), stream, fileFields, nil
 		}
 		if err != nil {
-			return nil, "", false, fmt.Errorf("read multipart form: %w", err)
+			return nil, "", false, nil, fmt.Errorf("read multipart form: %w", err)
 		}
 
 		name := strings.TrimSpace(part.FormName())
 		isFile := strings.TrimSpace(part.FileName()) != ""
 		if isFile || name == "" {
+			if isFile && name != "" {
+				fileFields = append(fileFields, name)
+			}
 			_, _ = io.Copy(io.Discard, part)
 			_ = part.Close()
 			continue
@@ -158,10 +166,10 @@ func inspectMultipartBody(body []byte, contentType string) (root map[string]any,
 		valueBytes, rerr := io.ReadAll(io.LimitReader(part, multipartFieldValueLimit+1))
 		_ = part.Close()
 		if rerr != nil {
-			return nil, "", false, fmt.Errorf("read multipart field %q: %w", name, rerr)
+			return nil, "", false, nil, fmt.Errorf("read multipart field %q: %w", name, rerr)
 		}
 		if len(valueBytes) > multipartFieldValueLimit {
-			return nil, "", false, fmt.Errorf("multipart field %q too large", name)
+			return nil, "", false, nil, fmt.Errorf("multipart field %q too large", name)
 		}
 		value := strings.TrimSpace(string(valueBytes))
 		values[name] = append(values[name], value)
@@ -175,7 +183,7 @@ func inspectMultipartBody(body []byte, contentType string) (root map[string]any,
 			}
 			b, perr := strconv.ParseBool(value)
 			if perr != nil {
-				return nil, "", false, fmt.Errorf("parse multipart stream field: %w", perr)
+				return nil, "", false, nil, fmt.Errorf("parse multipart stream field: %w", perr)
 			}
 			stream = b
 		}
