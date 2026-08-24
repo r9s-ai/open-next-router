@@ -35,7 +35,7 @@ func newAccessKeyCreateCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		defer client.Close()
+		defer func() { _ = client.Close() }()
 		secret, err := controlplane.NewAccessKeySecret()
 		if err != nil {
 			return err
@@ -61,7 +61,7 @@ func newAccessKeyListCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		defer client.Close()
+		defer func() { _ = client.Close() }()
 		records, err := client.ListAccessKeys(context.Background())
 		if err != nil {
 			return err
@@ -83,7 +83,7 @@ func newAccessKeyRevokeCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		defer client.Close()
+		defer func() { _ = client.Close() }()
 		if strings.TrimSpace(opts.name) == "" {
 			return errors.New("--name is required")
 		}
@@ -100,7 +100,7 @@ func newAccessKeyRotateCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		defer client.Close()
+		defer func() { _ = client.Close() }()
 		if strings.TrimSpace(opts.name) == "" {
 			return errors.New("--name is required")
 		}
@@ -129,7 +129,7 @@ func newAccessKeyMigrateCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		defer client.Close()
+		defer func() { _ = client.Close() }()
 		for _, key := range keys.AccessKeys() {
 			record := controlplane.AccessKeyRecord{Name: key.Name, SecretHash: client.HashAccessKey(key.Value), Status: "active", SubjectType: "api_key", SubjectID: key.Name, Metadata: map[string]string{"comment": key.Comment}}
 			existing, err := client.GetAccessKey(context.Background(), record.Name)

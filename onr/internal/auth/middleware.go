@@ -96,10 +96,11 @@ func authenticateToken(c *gin.Context, got, expected string, resolver AccessKeyR
 	if !IsTokenKey(got) {
 		return false, nil
 	}
-	claims, accessKey, err := ParseTokenKeyV1WithOptions(got, TokenParseOptions{AllowBYOKWithoutK: allowBYOKWithoutK})
-	if err != nil || claims == nil {
+	claims, accessKey := parseToken(got, allowBYOKWithoutK)
+	if claims == nil {
 		return false, nil
 	}
+	var err error
 	ok := false
 	if strings.TrimSpace(accessKey) != "" {
 		ok = expected != "" && subtle.ConstantTimeCompare([]byte(accessKey), []byte(expected)) == 1
@@ -135,6 +136,14 @@ func authenticateToken(c *gin.Context, got, expected string, resolver AccessKeyR
 	}
 	c.Set(ctxTokenMode, string(claims.Mode))
 	return true, nil
+}
+
+func parseToken(got string, allowBYOKWithoutK bool) (*TokenClaims, string) {
+	claims, accessKey, err := ParseTokenKeyV1WithOptions(got, TokenParseOptions{AllowBYOKWithoutK: allowBYOKWithoutK})
+	if err != nil {
+		return nil, ""
+	}
+	return claims, accessKey
 }
 
 // TokenProvider requires a non-nil Gin context from the auth middleware path.

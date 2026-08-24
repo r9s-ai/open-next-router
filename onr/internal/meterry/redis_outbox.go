@@ -1,6 +1,7 @@
 package meterry
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"time"
@@ -17,17 +18,17 @@ func (o *redisOutbox) append(event Event) error {
 	if err != nil {
 		return err
 	}
-	_, err = o.controlPlane.EnqueueBillingEvent(nil, raw)
+	_, err = o.controlPlane.EnqueueBillingEvent(context.Background(), raw)
 	return err
 }
 
 func (o *redisOutbox) first() (Event, string, error) {
-	messages, err := o.controlPlane.AutoClaimBilling(nil, time.Second, 1)
+	messages, err := o.controlPlane.AutoClaimBilling(context.Background(), time.Second, 1)
 	if err == nil && len(messages) == 0 {
-		messages, err = o.controlPlane.ReadPendingBilling(nil, 1)
+		messages, err = o.controlPlane.ReadPendingBilling(context.Background(), 1)
 	}
 	if err == nil && len(messages) == 0 {
-		messages, err = o.controlPlane.ReadBilling(nil, 1, time.Second)
+		messages, err = o.controlPlane.ReadBilling(context.Background(), 1, time.Second)
 	}
 	if err != nil {
 		return Event{}, "", err
@@ -43,11 +44,11 @@ func (o *redisOutbox) first() (Event, string, error) {
 }
 
 func (o *redisOutbox) ack(token string) error {
-	return o.controlPlane.AckBilling(nil, token)
+	return o.controlPlane.AckBilling(context.Background(), token)
 }
 
 func (o *redisOutbox) fail(token string, event Event) error {
-	attempts, err := o.controlPlane.IncrementBillingAttempt(nil, token)
+	attempts, err := o.controlPlane.IncrementBillingAttempt(context.Background(), token)
 	if err != nil {
 		return err
 	}
@@ -58,5 +59,5 @@ func (o *redisOutbox) fail(token string, event Event) error {
 	if err != nil {
 		return err
 	}
-	return o.controlPlane.DeadLetterBilling(nil, token, raw)
+	return o.controlPlane.DeadLetterBilling(context.Background(), token, raw)
 }

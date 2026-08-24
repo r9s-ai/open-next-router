@@ -246,12 +246,10 @@ func (c *Client) fetchAndCacheBalance(ctx context.Context, subjectType, subjectI
 	if !allowed {
 		ttl = c.balanceNegativeCacheTTL
 	}
-	if cacheErr := c.cfg.ControlPlane.SetBalanceCache(ctx, subjectType, subjectID, c.cfg.BalanceCurrency, controlplane.BalanceCacheValue{
+	_ = c.cfg.ControlPlane.SetBalanceCache(ctx, subjectType, subjectID, c.cfg.BalanceCurrency, controlplane.BalanceCacheValue{
 		Allowed:   allowed,
 		ExpiresAt: time.Now().Add(ttl),
-	}, ttl); cacheErr != nil {
-		return allowed, nil
-	}
+	}, ttl)
 	return allowed, nil
 }
 
