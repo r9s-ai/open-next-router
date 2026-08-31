@@ -3,7 +3,7 @@ module github.com/r9s-ai/open-next-router/onr-core
 go 1.26.6
 
 require (
-	github.com/aws/aws-sdk-go-v2 v1.43.7
+	github.com/aws/aws-sdk-go-v2 v1.45.1
 	github.com/gin-gonic/gin v1.12.0
 	github.com/hajimehoshi/go-mp3 v0.3.4
 	github.com/pkoukk/tiktoken-go v0.1.8
@@ -12,7 +12,7 @@ require (
 )
 
 require (
-	github.com/aws/smithy-go v1.27.8 // indirect
+	github.com/aws/smithy-go v1.28.1 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic v1.15.0 // indirect
 	github.com/bytedance/sonic/loader v0.5.0 // indirect
