@@ -251,7 +251,8 @@ func MapClaudeMessagesResponseToOpenAIChatCompletionsObject(root apitypes.JSONOb
 		}
 	}
 	isRefusal := src.StopReason == claudeStopReasonRefusal
-	if len(contentParts) == 0 && len(toolCalls) == 0 && !isRefusal {
+	isMaxTokens := src.StopReason == claudeStopReasonMax
+	if len(contentParts) == 0 && len(toolCalls) == 0 && !isRefusal && !isMaxTokens {
 		return nil, fmt.Errorf("content is required")
 	}
 	message := apitypes.JSONObject{
@@ -259,6 +260,8 @@ func MapClaudeMessagesResponseToOpenAIChatCompletionsObject(root apitypes.JSONOb
 	}
 	if len(contentParts) > 0 {
 		message["content"] = strings.Join(contentParts, "")
+	} else if isMaxTokens {
+		message["content"] = ""
 	}
 	if len(toolCalls) > 0 {
 		message["tool_calls"] = toolCalls
