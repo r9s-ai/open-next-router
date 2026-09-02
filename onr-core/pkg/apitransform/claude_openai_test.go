@@ -273,6 +273,59 @@ func TestMapClaudeMessagesResponseToOpenAIChatCompletions_FinishReasonMaxTokensT
 	}
 }
 
+func TestMapClaudeMessagesResponseToOpenAIChatCompletions_MaxTokensEmptyContent(t *testing.T) {
+	in := []byte(`{
+  "id":"msg_123",
+  "type":"message",
+  "role":"assistant",
+  "model":"claude-fable-5",
+  "content":[],
+  "stop_reason":"max_tokens",
+  "usage":{"input_tokens":1218,"output_tokens":1024,"output_tokens_details":{"thinking_tokens":1024}}
+}`)
+	var root map[string]any
+	if err := json.Unmarshal(in, &root); err != nil {
+		t.Fatalf("unexpected unmarshal error: %v", err)
+	}
+	outObj, err := MapClaudeMessagesResponseToOpenAIChatCompletionsObject(root)
+	if err != nil {
+		t.Fatalf("unexpected error for max_tokens response with empty content: %v", err)
+	}
+	choices, ok := outObj["choices"].([]any)
+	if !ok || len(choices) != 1 {
+		t.Fatalf("choices must contain a single item, got %#v", outObj["choices"])
+	}
+	choice, ok := choices[0].(map[string]any)
+	if !ok {
+		t.Fatalf("choice must be object, got %#v", choices[0])
+	}
+	if choice["finish_reason"] != "length" {
+		t.Fatalf("expected finish_reason=length, got %#v", choice["finish_reason"])
+	}
+	message, ok := choice["message"].(map[string]any)
+	if !ok {
+		t.Fatalf("choice.message must be object, got %#v", choice["message"])
+	}
+	if content, exists := message["content"]; !exists || content != "" {
+		t.Fatalf("expected empty message content, got %#v", message)
+	}
+}
+
+func TestMapClaudeMessagesResponseToOpenAIChatCompletions_OtherEmptyContentStillFails(t *testing.T) {
+	root := map[string]any{
+		"id":          "msg_123",
+		"type":        "message",
+		"role":        "assistant",
+		"model":       "claude-fable-5",
+		"content":     []any{},
+		"stop_reason": "end_turn",
+	}
+	_, err := MapClaudeMessagesResponseToOpenAIChatCompletionsObject(root)
+	if err == nil || err.Error() != "content is required" {
+		t.Fatalf("expected content is required, got %v", err)
+	}
+}
+
 func TestMapClaudeMessagesResponseToOpenAIChatCompletions_RefusalEmptyContent(t *testing.T) {
 	in := []byte(`{
   "content":[],
