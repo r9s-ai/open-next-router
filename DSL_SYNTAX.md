@@ -152,6 +152,7 @@ Currently supported `api` values (aligned with OpenAI-style endpoints):
 - `chat.completions`
 - `responses`
 - `claude.messages`
+- `claude.messages.count_tokens`
 - `embeddings`
 - `images.generations`
 - `images.edits`
