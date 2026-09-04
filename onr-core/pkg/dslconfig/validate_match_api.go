@@ -10,6 +10,7 @@ var supportedMatchAPIs = map[string]struct{}{
 	"chat.completions":             {},
 	"responses":                    {},
 	"claude.messages":              {},
+	"claude.messages.count_tokens": {},
 	"embeddings":                   {},
 	"images.generations":           {},
 	"images.edits":                 {},

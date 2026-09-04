@@ -74,3 +74,34 @@ provider "demo" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestValidateProviderFile_AcceptsClaudeCountTokensAPI(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.conf")
+	// #nosec G306 -- test data file.
+	if err := os.WriteFile(path, []byte(`
+syntax "next-router/0.1";
+
+provider "demo" {
+  defaults {
+    upstream_config {
+      base_url = "https://api.example.com";
+    }
+  }
+
+  match api = "claude.messages.count_tokens" stream = false {
+    upstream {
+      set_path "/v1/messages/count_tokens";
+    }
+  }
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if _, err := ValidateProviderFile(path); err != nil {
+		t.Fatalf("ValidateProviderFile: %v", err)
+	}
+}
