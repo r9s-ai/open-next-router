@@ -134,6 +134,8 @@ github.com/quic-go/quic-go v0.59.1 h1:0Gmua0HW1Tv7ANR7hUYwRyD0MG5OJfgvYSZasGZzBi
 github.com/quic-go/quic-go v0.59.1/go.mod h1:upnsH4Ju1YkqpLXC305eW3yDZ4NfnNbmQRCMWS58IKU=
 github.com/r9s-ai/open-next-router/onr-core v1.16.17 h1:AKexAgcedFCR/CzyA6UEOSF/oDWGjNUgA+0WiTKwCnA=
 github.com/r9s-ai/open-next-router/onr-core v1.16.17/go.mod h1:LCZjzy6r7x8E3N3JZGhPx58FPGOqiRi3QMuA2lE1LSw=
+github.com/r9s-ai/open-next-router/onr-core v1.16.20 h1:3BGNJvjmYEtk3JByRE9rHif2wmiirAGdhkxcv6d6G74=
+github.com/r9s-ai/open-next-router/onr-core v1.16.20/go.mod h1:zUPROfRu8L/qNy/A+VVBO6f9FPUQclU/8r5wLgED5Ws=
 github.com/redis/go-redis/v9 v9.22.0 h1:laDvpYXTJtZLloinw1fA5Kqd6HAEH2XKxOkG/PDq2F0=
 github.com/redis/go-redis/v9 v9.22.0/go.mod h1:y2g0Wj8rQvuK0ELM+oxSudcLtC09JScs98I/X9gRWY4=
 github.com/rivo/uniseg v0.4.7 h1:WUdvkW8uEhrYfLC4ZzdpI2ztxP1I582+49Oc5Mq64VQ=
