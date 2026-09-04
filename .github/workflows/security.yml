@@ -31,16 +31,16 @@ jobs:
           cache: false
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4.37.8
+        uses: github/codeql-action/init@v4.37.9
         with:
           languages: go
           queries: security-extended
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v4.37.8
+        uses: github/codeql-action/autobuild@v4.37.9
 
       - name: Analyze code
-        uses: github/codeql-action/analyze@v4.37.8
+        uses: github/codeql-action/analyze@v4.37.9
 
   go-vulnerabilities:
     name: Go vulnerabilities (${{ matrix.module.name }})
