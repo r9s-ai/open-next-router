@@ -26,6 +26,8 @@ DUMPS_DIR="${CONFIG_DIR}/dumps"
 
 CONFIG_FILE="${CONFIG_DIR}/onr.yaml"
 ENV_FILE="${CONFIG_DIR}/onr.env"
+DSL_CONFIG_FILE="${CONFIG_DIR}/onr.conf"
+MODES_DIR="${CONFIG_DIR}/modes"
 PROVIDERS_DIR="${CONFIG_DIR}/providers"
 KEYS_FILE="${CONFIG_DIR}/keys.yaml"
 MODELS_FILE="${CONFIG_DIR}/models.yaml"
@@ -80,7 +82,7 @@ Examples:
 Notes:
   - Config bundle is downloaded from GitHub Release asset:
     open-next-router_config_vX.Y.Z.tar.gz
-  - Provider DSL, keys.example.yaml and models.example.yaml are seeded from that bundle
+  - The DSL entry file, global modes, providers, keys.example.yaml and models.example.yaml are seeded from that bundle
 EOF
 }
 
@@ -218,7 +220,7 @@ extract_listen_port() {
 }
 
 ensure_runtime_dirs() {
-  run_cmd install -d -m 0750 "${CONFIG_DIR}" "${PROVIDERS_DIR}" "${DUMPS_DIR}" "${STATE_DIR}" "${STATE_DIR}/oauth"
+  run_cmd install -d -m 0750 "${CONFIG_DIR}" "${MODES_DIR}" "${PROVIDERS_DIR}" "${DUMPS_DIR}" "${STATE_DIR}" "${STATE_DIR}/oauth"
 }
 
 copy_seed_file() {
@@ -241,6 +243,8 @@ install_config_files_from_release() {
   if (( DRY_RUN == 1 )); then
     log "[dry-run] download ${asset_url}"
     log "[dry-run] download ${checksums_url}"
+    log "[dry-run] extract config/onr.conf to ${DSL_CONFIG_FILE}"
+    log "[dry-run] extract config/modes/*.conf to ${MODES_DIR}"
     log "[dry-run] extract config/providers/*.conf to ${PROVIDERS_DIR}"
     log "[dry-run] seed ${KEYS_FILE} and ${MODELS_FILE} from config/*.example.yaml"
     return 0
@@ -272,19 +276,36 @@ install_config_files_from_release() {
   tar -xzf "${tarball}" -C "${extract_dir}"
 
   local config_src="${extract_dir}/config"
+  local dsl_config_src="${config_src}/onr.conf"
+  local modes_src="${config_src}/modes"
   local providers_src="${config_src}/providers"
   local keys_src="${config_src}/keys.example.yaml"
   local models_src="${config_src}/models.example.yaml"
+  [[ -f "${dsl_config_src}" ]] || die "onr.conf not found in archive: ${asset}"
+  [[ -d "${modes_src}" ]] || die "modes directory not found in archive: ${asset}"
   [[ -d "${providers_src}" ]] || die "providers directory not found in archive: ${asset}"
   [[ -f "${keys_src}" ]] || die "keys.example.yaml not found in archive: ${asset}"
   [[ -f "${models_src}" ]] || die "models.example.yaml not found in archive: ${asset}"
 
+  copy_seed_file "${dsl_config_src}" "${DSL_CONFIG_FILE}"
+
   local src
-  local copied=0
+  local dst
+  local copied_modes=0
+  local copied_providers=0
   shopt -s nullglob
+  for src in "${modes_src}"/*.conf; do
+    copied_modes=1
+    dst="${MODES_DIR}/$(basename "${src}")"
+    if [[ -f "${dst}" && ${FORCE} -eq 0 ]]; then
+      continue
+    fi
+    backup_if_exists "${dst}"
+    cp "${src}" "${dst}"
+  done
   for src in "${providers_src}"/*.conf; do
-    copied=1
-    local dst="${PROVIDERS_DIR}/$(basename "${src}")"
+    copied_providers=1
+    dst="${PROVIDERS_DIR}/$(basename "${src}")"
     if [[ -f "${dst}" && ${FORCE} -eq 0 ]]; then
       continue
     fi
@@ -295,7 +316,8 @@ install_config_files_from_release() {
   copy_seed_file "${keys_src}" "${KEYS_FILE}"
   copy_seed_file "${models_src}" "${MODELS_FILE}"
   rm -rf "${tmpdir}"
-  (( copied == 1 )) || die "no providers conf files found in archive: ${asset}"
+  (( copied_modes == 1 )) || die "no modes conf files found in archive: ${asset}"
+  (( copied_providers == 1 )) || die "no providers conf files found in archive: ${asset}"
 }
 
 write_onr_config() {
@@ -326,7 +348,7 @@ server:
   pid_file: "${pid_file}"
 
 providers:
-  dir: "${PROVIDERS_DIR}"
+  dir: "${DSL_CONFIG_FILE}"
 
 keys:
   file: "${KEYS_FILE}"
@@ -459,17 +481,21 @@ EOF
 
 set_permissions_service() {
   run_cmd chown -R root:"${SERVICE_GROUP}" "${CONFIG_DIR}"
-  run_cmd chmod 0750 "${CONFIG_DIR}" "${PROVIDERS_DIR}" "${DUMPS_DIR}"
+  run_cmd chmod 0750 "${CONFIG_DIR}" "${MODES_DIR}" "${PROVIDERS_DIR}" "${DUMPS_DIR}"
   run_cmd chmod 0750 "${STATE_DIR}" "${STATE_DIR}/oauth"
   run_cmd chown "${SERVICE_USER}:${SERVICE_GROUP}" "${DUMPS_DIR}"
 
   [[ -f "${CONFIG_FILE}" ]] && run_cmd chmod 0640 "${CONFIG_FILE}"
+  [[ -f "${DSL_CONFIG_FILE}" ]] && run_cmd chmod 0640 "${DSL_CONFIG_FILE}"
   [[ -f "${ENV_FILE}" ]] && run_cmd chmod 0640 "${ENV_FILE}"
   [[ -f "${KEYS_FILE}" ]] && run_cmd chmod 0640 "${KEYS_FILE}"
   [[ -f "${MODELS_FILE}" ]] && run_cmd chmod 0640 "${MODELS_FILE}"
 
   local conf
   shopt -s nullglob
+  for conf in "${MODES_DIR}"/*.conf; do
+    run_cmd chmod 0640 "${conf}"
+  done
   for conf in "${PROVIDERS_DIR}"/*.conf; do
     run_cmd chmod 0640 "${conf}"
   done
@@ -480,15 +506,19 @@ set_permissions_service() {
 
 set_permissions_docker() {
   run_cmd chown -R 10001:10001 "${CONFIG_DIR}" "${STATE_DIR}"
-  run_cmd chmod 0750 "${CONFIG_DIR}" "${PROVIDERS_DIR}" "${DUMPS_DIR}" "${STATE_DIR}" "${STATE_DIR}/oauth"
+  run_cmd chmod 0750 "${CONFIG_DIR}" "${MODES_DIR}" "${PROVIDERS_DIR}" "${DUMPS_DIR}" "${STATE_DIR}" "${STATE_DIR}/oauth"
 
   [[ -f "${CONFIG_FILE}" ]] && run_cmd chmod 0640 "${CONFIG_FILE}"
+  [[ -f "${DSL_CONFIG_FILE}" ]] && run_cmd chmod 0640 "${DSL_CONFIG_FILE}"
   [[ -f "${ENV_FILE}" ]] && run_cmd chmod 0640 "${ENV_FILE}"
   [[ -f "${KEYS_FILE}" ]] && run_cmd chmod 0640 "${KEYS_FILE}"
   [[ -f "${MODELS_FILE}" ]] && run_cmd chmod 0640 "${MODELS_FILE}"
 
   local conf
   shopt -s nullglob
+  for conf in "${MODES_DIR}"/*.conf; do
+    run_cmd chmod 0640 "${conf}"
+  done
   for conf in "${PROVIDERS_DIR}"/*.conf; do
     run_cmd chmod 0640 "${conf}"
   done
@@ -588,6 +618,7 @@ User=${SERVICE_USER}
 Group=${SERVICE_GROUP}
 WorkingDirectory=${STATE_DIR}
 Environment=GIN_MODE=release
+Environment=ONR_PROVIDERS_DIR=${DSL_CONFIG_FILE}
 EnvironmentFile=-${ENV_FILE}
 ExecStart=${BIN_DIR}/onr --config ${CONFIG_FILE}
 ExecReload=/bin/kill -HUP \$MAINPID
@@ -639,7 +670,7 @@ test_config_docker() {
   fi
   docker run --rm \
     --env-file "${ENV_FILE}" \
-    -e ONR_PROVIDERS_DIR="/etc/onr/providers" \
+    -e ONR_PROVIDERS_DIR="/etc/onr/onr.conf" \
     -e ONR_KEYS_FILE="/etc/onr/keys.yaml" \
     -e ONR_MODELS_FILE="/etc/onr/models.yaml" \
     -e ONR_PID_FILE="/tmp/${SERVICE_NAME}.pid" \
@@ -716,7 +747,7 @@ services:
     env_file:
       - ${ENV_FILE}
     environment:
-      ONR_PROVIDERS_DIR: /etc/onr/providers
+      ONR_PROVIDERS_DIR: /etc/onr/onr.conf
       ONR_KEYS_FILE: /etc/onr/keys.yaml
       ONR_MODELS_FILE: /etc/onr/models.yaml
       ONR_PID_FILE: /tmp/${SERVICE_NAME}.pid
@@ -752,7 +783,7 @@ install_docker_mode() {
     --restart unless-stopped \
     -p "${HOST_PORT}:${listen_port}" \
     --env-file "${ENV_FILE}" \
-    -e ONR_PROVIDERS_DIR="/etc/onr/providers" \
+    -e ONR_PROVIDERS_DIR="/etc/onr/onr.conf" \
     -e ONR_KEYS_FILE="/etc/onr/keys.yaml" \
     -e ONR_MODELS_FILE="/etc/onr/models.yaml" \
     -e ONR_PID_FILE="/tmp/${SERVICE_NAME}.pid" \
