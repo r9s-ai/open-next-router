@@ -109,8 +109,8 @@ github.com/mattn/go-localereader v0.0.1 h1:ygSAOl7ZXTx4RdPYinUpg6W99U8jWvWi9Ye2J
 github.com/mattn/go-localereader v0.0.1/go.mod h1:8fBrzywKY7BI3czFoHkuzRoWE9C+EiG4R1k4Cjx5p88=
 github.com/mattn/go-runewidth v0.0.19 h1:v++JhqYnZuu5jSKrk9RbgF5v4CGUjqRfBm05byFGLdw=
 github.com/mattn/go-runewidth v0.0.19/go.mod h1:XBkDxAl56ILZc9knddidhrOlY5R/pDhgLpndooCuJAs=
-github.com/meterry-com/meterry-go v0.0.1-alpha.1 h1:/ZqPLOZ3zs9OQ0X8ppLXiq8NSMrOeiXvhLmnnEKvvFQ=
-github.com/meterry-com/meterry-go v0.0.1-alpha.1/go.mod h1:rTBpYcikQiQH04+TnD9sRFpN3vI0JmJGmHcvFQ0IsRw=
+github.com/meterry-com/meterry-go v0.0.1-alpha.2 h1:FfS84IqaF3HLI8+ndYwnACCAe12MTQhpUCgj3NOD1jI=
+github.com/meterry-com/meterry-go v0.0.1-alpha.2/go.mod h1:jpsD+QRbr8XIyqxoeOoEyl23Ph7sBhSSBBOcOuJnxlw=
 github.com/modern-go/concurrent v0.0.0-20180228061459-e0a39a4cb421/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
 github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd h1:TRLaZ9cD/w8PVh93nsPXa1VrQ6jlwL5oN8l14QlcNfg=
 github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
