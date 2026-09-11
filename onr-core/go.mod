@@ -3,7 +3,7 @@ module github.com/r9s-ai/open-next-router/onr-core
 go 1.26.6
 
 require (
-	github.com/aws/aws-sdk-go-v2 v1.45.1
+	github.com/aws/aws-sdk-go-v2 v1.46.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/hajimehoshi/go-mp3 v0.3.4
 	github.com/pkoukk/tiktoken-go v0.1.8
