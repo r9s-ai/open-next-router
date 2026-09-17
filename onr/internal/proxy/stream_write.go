@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/apitransform"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/jsext"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/trafficdump"
 )
 
@@ -67,14 +67,20 @@ func streamToDownstream(
 	if proxyDump != nil {
 		dst = io.MultiWriter(dst, proxyDump)
 	}
-	cw := &countingWriter{w: dst}
+	outputCounter := &countingWriter{w: dst}
+	cw := outputCounter
+	var jsWriter *jsext.SSEWriter
+	if requiresSSEJS(gc) {
+		jsWriter = jsext.NewSSEWriter(gc.Request.Context(), jsSession(gc), jsFlushWriter{Writer: outputCounter, flush: gc.Writer.Flush}, jsext.TerminalForAPI(meta.API))
+		cw = &countingWriter{w: jsWriter}
+	}
 
 	var err error
 	if useStrategyTransform {
 		err = streamStrategyTransform(gc, resp, meta, rawMode, respDir, needSSEOps,
 			upstreamDump, usageTail, metricsTap, tapRawSSEForMetrics, cw)
 	} else {
-		src, serr := buildPassthroughSource(gc, resp, needSSEOps)
+		src, serr := buildPassthroughSource(gc, resp, needSSEOps || jsWriter != nil)
 		if serr != nil {
 			return 0, time.Time{}, serr
 		}
@@ -99,6 +105,9 @@ func streamToDownstream(
 		}
 	}
 
+	if jsWriter != nil && err == nil {
+		err = jsWriter.Finish()
+	}
 	if dump != nil && upstreamDump != nil && proxyDump != nil {
 		dump.SetUpstream(upstreamDump.Bytes(), upstreamDump.Truncated())
 		dump.SetProxy(proxyDump.Bytes(), proxyDump.Truncated())
@@ -107,7 +116,7 @@ func streamToDownstream(
 		metricsTap.Finish()
 	}
 
-	return cw.n, cw.firstWriteAt, err
+	return outputCounter.n, outputCounter.firstWriteAt, err
 }
 
 // streamStrategyTransform runs the sse_parse strategy transform synchronously, writing
@@ -168,13 +177,13 @@ func streamStrategyTransform(
 	if !tapRawSSEForMetrics {
 		// Tap metrics from transform output (post-strategy, pre-JSON-ops).
 		var taps []io.Writer
-		taps = append(taps, transformDst)
 		if usageTail != nil {
 			taps = append(taps, usageTail)
 		}
 		if metricsTap != nil {
 			taps = append(taps, metricsTap)
 		}
+		taps = append(taps, transformDst)
 		if len(taps) > 1 {
 			transformDst = io.MultiWriter(taps...)
 		}

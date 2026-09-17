@@ -24,6 +24,14 @@ providers:
     # Merge rapid editor events into one reload.
     debounce_ms: 300
 
+# Optional synchronous JavaScript phase extensions; no handlers are enabled by default.
+js:
+  root: "./js"
+  reload: "off" # off / watch / poll; root and reload changes require restart
+  # Provider-scoped HTTP grants. Empty means scripts cannot access the network.
+  http: {}
+
+
 keys:
   # Upstream keys file (grouped by provider)
   file: "./keys.yaml"

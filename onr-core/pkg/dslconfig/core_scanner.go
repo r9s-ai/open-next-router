@@ -1,9 +1,13 @@
 package dslconfig
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"unicode"
+
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/jslex"
 )
 
 type tokenKind int
@@ -18,19 +22,24 @@ const (
 	tokRBrace
 	tokSemicolon
 	tokOther
+	tokJSBlock
+	tokJSError
 )
 
 type token struct {
-	kind tokenKind
-	text string
-	pos  int
+	kind   tokenKind
+	text   string
+	pos    int
+	origin *jsOrigin
 }
 
 type scanner struct {
-	path    string
-	input   string
-	i       int
-	lastPos int
+	path      string
+	input     string
+	i         int
+	lastPos   int
+	jsPending bool
+	jsOrigin  *jsOrigin
 }
 
 // newScanner returns a non-nil scanner.
@@ -59,6 +68,25 @@ func (s *scanner) next() token {
 	if tok, ok := s.scanComment(); ok {
 		return tok
 	}
+	if s.jsPending {
+		s.jsPending = false
+		if s.input[s.i] == '{' {
+			start := s.i
+			n, err := jslex.BodyEnd(s.input[start:])
+			if err != nil {
+				s.i = len(s.input)
+				var syntax *jslex.SyntaxError
+				if errors.As(err, &syntax) {
+					return token{kind: tokJSError, text: syntax.Message, pos: start + syntax.Offset}
+				}
+				return token{kind: tokJSError, text: err.Error(), pos: start}
+			}
+			s.i += n
+			origin := s.jsOrigin
+			s.jsOrigin = nil
+			return token{kind: tokJSBlock, text: s.input[start:s.i], pos: start, origin: origin}
+		}
+	}
 	if tok, ok := s.scanString(); ok {
 		return tok
 	}
@@ -66,6 +94,7 @@ func (s *scanner) next() token {
 		return tok
 	}
 	if tok, ok := s.scanIdent(); ok {
+		s.jsPending = strings.HasSuffix(tok.text, "_by_js_block")
 		return tok
 	}
 	return s.scanOther()
@@ -89,7 +118,14 @@ func (s *scanner) scanComment() (token, bool) {
 		for s.i < len(s.input) && s.input[s.i] != '\n' {
 			s.i++
 		}
-		return token{kind: tokComment, text: s.input[start:s.i], pos: start}, true
+		text := s.input[start:s.i]
+		if strings.HasPrefix(text, jsOriginPrefix) {
+			var origin jsOrigin
+			if json.Unmarshal([]byte(strings.TrimPrefix(text, jsOriginPrefix)), &origin) == nil {
+				s.jsOrigin = &origin
+			}
+		}
+		return token{kind: tokComment, text: text, pos: start}, true
 	case s.hasPrefix("//"):
 		start := s.i
 		s.i += 2
@@ -234,4 +270,12 @@ func findProviderName(path string, content string) (string, error) {
 		}
 		return name, nil
 	}
+}
+
+const jsOriginPrefix = "# onr-js-origin: "
+
+type jsOrigin struct {
+	File   string `json:"file"`
+	Line   int    `json:"line"`
+	Column int    `json:"column"`
 }

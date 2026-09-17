@@ -112,6 +112,9 @@ provider "anthropic" {
 
 More examples: `config/providers/` • Full reference: [DSL_SYNTAX.md](https://github.com/r9s-ai/open-next-router/blob/main/DSL_SYNTAX.md)
 
+Optional nginx-style JavaScript hooks: [phase extension guide](docs/JS_EXTENSIONS.md), with shared onr-core execution and atomic script reloads.
+
+
 ## Source Checkout
 
 Clone with the SDK, documentation, and language-server submodules:

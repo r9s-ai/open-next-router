@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/jsext"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/usageestimate"
 	"gopkg.in/yaml.v3"
 )
@@ -141,7 +142,9 @@ type RedisConfig struct {
 }
 
 type Config struct {
-	Server struct {
+	SourcePath string              `yaml:"-"`
+	JS         jsext.RuntimeConfig `yaml:"js"`
+	Server     struct {
 		Listen         string `yaml:"listen"`
 		ReadTimeoutMs  int    `yaml:"read_timeout_ms"`
 		WriteTimeoutMs int    `yaml:"write_timeout_ms"`
@@ -224,6 +227,7 @@ func Load(path string) (*Config, error) {
 	if err := yaml.Unmarshal(b, &cfg); err != nil {
 		return nil, err
 	}
+	cfg.SourcePath = path
 	applyDefaults(&cfg)
 	applyEnvOverrides(&cfg)
 	if err := validate(&cfg); err != nil {
@@ -649,6 +653,9 @@ func validate(cfg *Config) error {
 		if !strings.Contains(v, "://") {
 			return errors.New("upstream_proxies.by_provider must be a URL (e.g. http://127.0.0.1:7890)")
 		}
+	}
+	if err := cfg.JS.Validate(); err != nil {
+		return err
 	}
 	if err := usageestimate.Validate(&cfg.UsageEstimation); err != nil {
 		return err

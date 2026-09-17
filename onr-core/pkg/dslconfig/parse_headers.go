@@ -249,6 +249,10 @@ func parseRequestJSONOpsOnlyBlock(s *scanner, t *RequestTransform, blockName str
 			return nil
 		case tokIdent:
 			switch tok.text {
+			case "request_by_js_block", "request_by_js_file", "request_by_js":
+				if err := skipStmtOrBlock(s); err != nil {
+					return err
+				}
 			case "json_set":
 				if err := parseJSONSetStmt(s, t, jsonOpSet); err != nil {
 					return err

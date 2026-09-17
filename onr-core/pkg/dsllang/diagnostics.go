@@ -1,10 +1,12 @@
 package dsllang
 
 import (
+	"errors"
 	"sort"
 	"strings"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslspec"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/jslex"
 )
 
 type tokenKind int
@@ -34,6 +36,17 @@ type parser struct {
 
 func analyze(text string) []Diagnostic {
 	p := &parser{tokens: lex(text)}
+	if _, err := jslex.Islands(text); err != nil {
+		var syntax *jslex.SyntaxError
+		if errors.As(err, &syntax) {
+			prefix := text[:min(syntax.Offset, len(text))]
+			line := strings.Count(prefix, "\n")
+			col := len(prefix) - strings.LastIndex(prefix, "\n") - 1
+			p.add(token{line: line, col: col}, syntax.Message)
+		} else {
+			p.add(token{}, err.Error())
+		}
+	}
 	p.parseFile()
 	return p.diags
 }
@@ -386,6 +399,7 @@ func blockDirectiveNeedsHeader(parent, name string) bool {
 }
 
 func lex(input string) []token {
+	input, _ = jslex.Mask(input)
 	var out []token
 	line, col := 0, 0
 

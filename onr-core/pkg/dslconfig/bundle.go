@@ -139,6 +139,9 @@ func preprocessIncludesWithoutTopLevelProvidersInner(path string, content string
 	cursor := 0
 	for {
 		tok := s.nextNonTrivia()
+		if tok.kind == tokJSError {
+			return "", s.errAt(tok, tok.text)
+		}
 		if tok.kind == tokEOF {
 			break
 		}

@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/apitransform"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/jsext"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/requestcanon"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/requestid"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/requestvalidate"
@@ -103,6 +103,7 @@ func makeHandler(cfg *config.Config, st *state, pclient *proxy.Client, api strin
 			kawsRegion = k.AWSRegion
 		}
 
+		c.Set("onr.js.request_id", c.GetString(requestIDHeaderKey))
 		res, perr := pclient.ProxyJSON(c, provider, proxy.ProviderKey{
 			Name:               kname,
 			Value:              kval,
@@ -114,12 +115,14 @@ func makeHandler(cfg *config.Config, st *state, pclient *proxy.Client, api strin
 			AWSSessionToken:    kawsSession,
 			AWSRegion:          kawsRegion,
 		}, api, stream)
+		if res != nil {
+			setProxyResultContext(c, res)
+			enqueueBillingEvent(cfg, billing, c, res)
+		}
 		if perr != nil {
 			writeProxyError(c, requestIDHeaderKey, perr)
 			return
 		}
-		setProxyResultContext(c, res)
-		enqueueBillingEvent(cfg, billing, c, res)
 
 		_ = cfg
 	}
@@ -218,6 +221,26 @@ func writeOpenAIErrorWithStatus(c *gin.Context, requestIDHeaderKey string, statu
 // fault is not reported to the client as an invalid request; all other proxy
 // errors fall back to a 400 with the generic proxy_error code.
 func writeProxyError(c *gin.Context, requestIDHeaderKey string, err error) {
+	if c.Writer.Written() {
+		c.Abort()
+		return
+	}
+	// Upstream headers may already be staged, but no body has been committed.
+	// Error renderers must not retain an upstream SSE type or compressed framing.
+	c.Header("Content-Type", "application/json")
+	c.Writer.Header().Del("Content-Encoding")
+	c.Writer.Header().Del("Content-Length")
+	var rejection *jsext.Rejection
+	if errors.As(err, &rejection) {
+		c.Data(rejection.Status, "application/json", rejection.Body)
+		c.Abort()
+		return
+	}
+	var scriptErr *jsext.Error
+	if errors.As(err, &scriptErr) {
+		writeOpenAIErrorWithStatus(c, requestIDHeaderKey, http.StatusInternalServerError, "server_error", "script_error", "JavaScript hook failed")
+		return
+	}
 	var verr *requestvalidate.RequestValidationError
 	if errors.As(err, &verr) {
 		writeOpenAIErrorWithParam(c, requestIDHeaderKey, "request_validation_failed", err.Error(), verr.PathOrName)

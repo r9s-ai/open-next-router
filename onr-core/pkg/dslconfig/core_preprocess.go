@@ -1,11 +1,14 @@
 package dslconfig
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/jsext"
 )
 
 const (
@@ -32,8 +35,26 @@ func preprocessIncludesInner(path string, content string, visited map[string]boo
 	cursor := 0
 	for {
 		tok := s.nextNonTrivia()
+		if tok.kind == tokJSError {
+			return "", s.errAt(tok, tok.text)
+		}
 		if tok.kind == tokEOF {
 			break
+		}
+		if tok.kind == tokJSBlock && tok.origin == nil {
+			line, column := s.lineCol(tok.pos + 1)
+			origin := jsOrigin{File: path, Line: line, Column: column}
+			if _, err := jsext.CompileAt(path, tok.text[1:len(tok.text)-1], line, column); err != nil {
+				return "", err
+			}
+			marker, _ := json.Marshal(origin)
+			out.WriteString(content[cursor:tok.pos])
+			out.WriteString(jsOriginPrefix)
+			out.Write(marker)
+			out.WriteByte('\n')
+			out.WriteString(tok.text)
+			cursor = tok.pos + len(tok.text)
+			continue
 		}
 		if tok.kind == tokIdent && tok.text == "include" {
 			// flush content before include stmt
