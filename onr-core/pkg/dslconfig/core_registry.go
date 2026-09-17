@@ -8,9 +8,12 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/jsext"
 )
 
 type ProviderFile struct {
+	JS            jsext.Provider
 	Name          string
 	Path          string
 	Content       string
@@ -28,8 +31,11 @@ type ProviderFile struct {
 }
 
 type Registry struct {
+	reloadMu  sync.Mutex
 	mu        sync.RWMutex
 	providers map[string]ProviderFile
+	jsConfig  jsext.RuntimeConfig
+	strictJS  bool
 }
 
 // NewRegistry returns a non-nil registry.
@@ -93,6 +99,8 @@ func validateProviderName(name string) error {
 }
 
 func (r *Registry) ReloadFromDir(providersDir string) (LoadResult, error) {
+	r.reloadMu.Lock()
+	defer r.reloadMu.Unlock()
 	dir := strings.TrimSpace(providersDir)
 	if dir == "" {
 		return LoadResult{}, fmt.Errorf("providers dir is empty")
@@ -123,6 +131,12 @@ func (r *Registry) ReloadFromDir(providersDir string) (LoadResult, error) {
 	sort.Strings(loaded)
 	sort.Strings(skipped)
 
+	if r.strictJS && len(skipped) > 0 {
+		return LoadResult{}, fmt.Errorf("atomic provider reload rejected skipped files: %v", skippedReasons)
+	}
+	if err := r.prepareJS(next, skipped); err != nil {
+		return LoadResult{}, err
+	}
 	r.mu.Lock()
 	r.providers = next
 	r.mu.Unlock()

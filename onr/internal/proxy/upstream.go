@@ -11,11 +11,10 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	xproxy "golang.org/x/net/proxy"
-
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/trafficdump"
+	xproxy "golang.org/x/net/proxy"
 )
 
 // doUpstreamRequest requires a non-nil provider file and request meta from buildProxyCtx.
@@ -63,7 +62,8 @@ func (c *Client) doUpstreamRequest(gc *gin.Context, provider string, pf *dslconf
 			cancel()
 			return nil, func() {}, oauthErr
 		}
-		pf.Headers.Apply(m, gc.Request.Header, req.Header)
+		pf.Headers.Apply(m, jsRequestHeaders(gc, m), req.Header)
+		applyJSHeaders(gc, req.Header)
 
 		if rec := trafficdump.FromContext(gc); rec != nil && rec.MaxBytes() > 0 {
 			limited, truncated := trafficdump.LimitBytes(reqBody, rec.MaxBytes())
@@ -76,7 +76,7 @@ func (c *Client) doUpstreamRequest(gc *gin.Context, provider string, pf *dslconf
 			return nil, func() {}, doErr
 		}
 		lastResp = resp
-		if attempt == 0 && resp.StatusCode == http.StatusUnauthorized && strings.TrimSpace(m.OAuthCacheKey) != "" {
+		if jsSession(gc) == nil && attempt == 0 && resp.StatusCode == http.StatusUnauthorized && strings.TrimSpace(m.OAuthCacheKey) != "" {
 			_ = resp.Body.Close()
 			c.invalidateOAuthCache(m.OAuthCacheKey)
 			m.OAuthAccessToken = ""

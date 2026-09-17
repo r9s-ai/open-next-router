@@ -2677,3 +2677,38 @@ upstream {
   set_path concat("/v1beta/", $task.upstream_id);
 }
 ```
+
+## 9. JavaScript 阶段扩展
+
+六个执行槽位复用五组指令前缀，每组支持 `_by_js_block { ... }`、`_by_js_file relative/path.js;` 和 `_by_js off;`。
+
+| 所属 block | 指令前缀 | 时机 |
+| --- | --- | --- |
+| `request` | `request_by_js` | 请求转换前 |
+| `request.after_req_map` | `request_by_js` | 完整请求转换及所有 after_req_map JSON 操作后、签名前 |
+| `response` | `response_headers_by_js` | 下游响应头提交前 |
+| `response` | `response_by_js` | 非流式 JSON 的 metrics、转换及 JSON 操作后 |
+| `response` | `sse_event_by_js` | 已完成 framing 的下游 SSE 事件输出前 |
+| `defaults` / `match` | `log_by_js` | 每次尝试结束，恰好一次 |
+
+```nginx
+request {
+    request_by_js_block {
+        ctx.state.checked = true;
+    }
+    after_req_map {
+        json_set "$.metadata.source" "onr";
+        request_by_js_block {
+            ctx.request.headers["x-checked"] = [String(ctx.state.checked)];
+        }
+    }
+}
+```
+
+不增加 `request_after_map_by_js` 指令。两个请求阶段按父 block 分槽、独立继承；match 覆盖对应槽位，off 只关闭该槽位。重复 block、include 或 block/file/off 混用造成同槽重复声明时，加载失败。后置 JS 始终在 after_req_map 全部 JSON 操作后执行，未配置 req_map 时也执行。
+
+四个限额位于 defaults/match 直接子级，逐字段继承。默认值：`js_timeout 200ms;`、`js_stream_timeout 10ms;`、`js_body_limit 8m;`、`js_event_limit 1m;`，必须为正数。
+
+正文阶段要求 JSON；headers 为小写名称到字符串数组。路由身份、认证和传输字段受到保护。普通 hook 返回 undefined；SSE 必须显式返回事件、最多 64 个事件或 null。文件与内联脚本都写严格函数体，不需要导出入口；不支持 async、Promise、generator、import、require 或动态代码生成。
+
+文件由宿主 js.root 授权，配置与脚本及 HTTP 授权共同准备、原子发布；失败保留旧版本。详见 [JS 扩展说明](docs/JS_EXTENSIONS_CN.md)。

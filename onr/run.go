@@ -84,6 +84,13 @@ func runConfigTest(cfgPath string) error {
 	if err != nil {
 		return fmt.Errorf("providers: %w", err)
 	}
+	registry := dslconfig.NewRegistry()
+	if err := registry.ConfigureJS(cfg.JS); err != nil {
+		return fmt.Errorf("JavaScript configuration: %w", err)
+	}
+	if _, err := registry.ReloadFromPath(providersPath); err != nil {
+		return fmt.Errorf("JavaScript prepare: %w", err)
+	}
 	fmt.Fprintf(os.Stdout, "ok: providers loaded=%d\n", len(res.LoadedProviders))
 	for _, w := range res.Warnings {
 		fmt.Fprintf(os.Stdout, "warn: %s\n", w.String())

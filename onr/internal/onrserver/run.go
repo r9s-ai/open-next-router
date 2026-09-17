@@ -64,6 +64,9 @@ func Run(cfgPath string) error {
 	}
 
 	reg := dslconfig.NewRegistry()
+	if err := reg.ConfigureJS(cfg.JS); err != nil {
+		return err
+	}
 	providersPath, providersFromFile := config.ResolveProviderDSLSource(cfg)
 	loadRes, err := reg.ReloadFromPath(providersPath)
 	if err != nil {
@@ -283,7 +286,18 @@ func installReloadSignalHandler(cfg *config.Config, st *state, reg *dslconfig.Re
 func reloadProvidersRuntime(cfg *config.Config, reg *dslconfig.Registry, logger *logx.SystemLogger) (providersReloadResult, error) {
 	before := snapshotProviderFingerprints(reg)
 	providersPath, _ := config.ResolveProviderDSLSource(cfg)
-	loadRes, err := reg.ReloadFromPath(providersPath)
+	jsConfig := cfg.JS
+	if cfg.SourcePath != "" {
+		nextConfig, err := config.Load(cfg.SourcePath)
+		if err != nil {
+			return providersReloadResult{}, err
+		}
+		if nextConfig.JS.Root != cfg.JS.Root || nextConfig.JS.Reload != cfg.JS.Reload {
+			return providersReloadResult{}, fmt.Errorf("changing js.root or js.reload requires a restart")
+		}
+		jsConfig = nextConfig.JS
+	}
+	loadRes, err := reg.ReloadFromPathWithJS(providersPath, jsConfig)
 	if err != nil {
 		return providersReloadResult{}, fmt.Errorf("reload providers %q: %w", providersPath, err)
 	}
@@ -452,6 +466,7 @@ func snapshotProviderFingerprints(reg *dslconfig.Registry) map[string]string {
 
 func providerFingerprint(pf dslconfig.ProviderFile) string {
 	type providerFingerprintSnapshot struct {
+		JS       any
 		Path     string                               `json:"path,omitempty"`
 		Content  string                               `json:"content,omitempty"`
 		Routing  dslconfig.ProviderRouting            `json:"routing,omitempty"`
@@ -465,6 +480,7 @@ func providerFingerprint(pf dslconfig.ProviderFile) string {
 		Models   dslconfig.ProviderModels             `json:"models,omitempty"`
 	}
 	snapshot := providerFingerprintSnapshot{
+		JS:       pf.JS,
 		Path:     strings.TrimSpace(pf.Path),
 		Content:  pf.Content,
 		Routing:  pf.Routing,

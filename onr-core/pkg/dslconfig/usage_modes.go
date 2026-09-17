@@ -307,7 +307,12 @@ func validateAndBuildProviderFile(path string, content string, usageModes usageM
 	if err != nil {
 		return ProviderFile{}, false, err
 	}
+	js, err := parseProviderJS(path, content, providerName)
+	if err != nil {
+		return ProviderFile{}, false, err
+	}
 	return ProviderFile{
+		JS:            js,
 		Name:          providerName,
 		Path:          path,
 		Content:       content,

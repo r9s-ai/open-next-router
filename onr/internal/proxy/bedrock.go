@@ -20,7 +20,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream/eventstreamapi"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/gin-gonic/gin"
-
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/trafficdump"
@@ -69,7 +68,8 @@ func (c *Client) doBedrockHTTPPassthrough(gc *gin.Context, provider string, pf *
 		req.Header.Set("Accept", accept)
 	}
 	if pf != nil {
-		pf.Headers.Apply(m, gc.Request.Header, req.Header)
+		pf.Headers.Apply(m, jsRequestHeaders(gc, m), req.Header)
+		applyJSHeaders(gc, req.Header)
 	}
 	if err := signBedrockHTTPRequest(reqCtx, req, m, reqBody); err != nil {
 		cancel()
@@ -89,7 +89,7 @@ func (c *Client) doBedrockHTTPPassthrough(gc *gin.Context, provider string, pf *
 
 func (c *Client) doBedrockInvokeModel(gc *gin.Context, provider string, m *dslmeta.Meta, reqBody []byte) (*http.Response, context.CancelFunc, error) {
 	reqCtx, cancel := context.WithTimeout(gc.Request.Context(), c.WriteTimeout)
-	req, err := c.newBedrockRuntimeHTTPRequest(reqCtx, m, reqBody)
+	req, err := c.newBedrockRuntimeHTTPRequest(reqCtx, m, reqBody, finalRequestJSHeaders(gc))
 	if err != nil {
 		cancel()
 		return nil, func() {}, err
@@ -115,7 +115,7 @@ func (c *Client) doBedrockInvokeModel(gc *gin.Context, provider string, m *dslme
 
 func (c *Client) doBedrockInvokeModelStream(gc *gin.Context, provider string, m *dslmeta.Meta, reqBody []byte) (*http.Response, context.CancelFunc, error) {
 	reqCtx, cancel := context.WithTimeout(gc.Request.Context(), c.WriteTimeout)
-	req, err := c.newBedrockRuntimeHTTPRequest(reqCtx, m, reqBody)
+	req, err := c.newBedrockRuntimeHTTPRequest(reqCtx, m, reqBody, finalRequestJSHeaders(gc))
 	if err != nil {
 		cancel()
 		return nil, func() {}, err
@@ -160,7 +160,7 @@ func (c *Client) doBedrockInvokeModelStream(gc *gin.Context, provider string, m 
 	return resp, cancel, nil
 }
 
-func (c *Client) newBedrockRuntimeHTTPRequest(ctx context.Context, m *dslmeta.Meta, body []byte) (*http.Request, error) {
+func (c *Client) newBedrockRuntimeHTTPRequest(ctx context.Context, m *dslmeta.Meta, body []byte, headers http.Header) (*http.Request, error) {
 	baseURL, err := bedrockRuntimeBaseURL(m)
 	if err != nil {
 		return nil, err
@@ -168,6 +168,11 @@ func (c *Client) newBedrockRuntimeHTTPRequest(ctx context.Context, m *dslmeta.Me
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+m.RequestURLPath, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
+	}
+	req.Header.Set("Accept", contentTypeJSON)
+	req.Header.Set("Content-Type", contentTypeJSON)
+	for key, values := range headers {
+		req.Header[key] = append([]string(nil), values...)
 	}
 	if err := signBedrockHTTPRequest(ctx, req, m, body); err != nil {
 		return nil, err

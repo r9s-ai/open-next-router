@@ -1,14 +1,15 @@
 package proxy
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
-
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/jsext"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/jsonutil"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/usageestimate"
 )
@@ -28,6 +29,19 @@ func (c *Client) handleStreamResponse(
 ) (*Result, error) {
 	// copy headers
 	copyHeadersToClient(gc, resp.Header, false)
+	if requiresSSEJS(gc) {
+		if !strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream") {
+			return nil, &jsext.Error{Stage: jsext.SSEEvent, Cause: fmt.Errorf("SSE hook requires text/event-stream")}
+		}
+		gc.Writer.Header().Del("Content-Encoding")
+		gc.Writer.Header().Del("Content-Length")
+	}
+	if err := responseHeadersJS(gc, resp.StatusCode); err != nil {
+		return nil, err
+	}
+	if err := jsSession(gc).SealMessages(); err != nil {
+		return nil, err
+	}
 
 	// Always keep a tail buffer for best-effort usage extraction from SSE.
 	tailLimit := 256 << 10 // 256KB
@@ -52,9 +66,10 @@ func (c *Client) handleStreamResponse(
 	n, firstWriteAt, err := streamToDownstream(gc, m, respDir, resp, usageTail, metricsTap, tapRawSSEForMetrics, dump)
 	ignoredDisconnect := isClientDisconnectErr(err)
 	dump.SetStreamResult(n, err, ignoredDisconnect)
-	if err != nil && !ignoredDisconnect {
-		return nil, err
+	if ignoredDisconnect {
+		err = nil
 	}
+
 	if f, ok := gc.Writer.(http.Flusher); ok {
 		f.Flush()
 	}
@@ -108,7 +123,7 @@ func (c *Client) handleStreamResponse(
 		Cost:           cost,
 		TTFTMs:         ttftMs,
 		TPS:            tps,
-	}, nil
+	}, err
 }
 
 func shouldTapRawSSEForMetrics(usageCfg *dslconfig.UsageExtractConfig, finishCfg *dslconfig.FinishReasonExtractConfig) bool {

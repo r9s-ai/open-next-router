@@ -108,7 +108,10 @@ func parseModeArgStmt(s *scanner, directive string) (string, error) {
 
 func skipStmtOrBlock(s *scanner) error {
 	tok := s.nextNonTrivia()
-	if tok.kind == tokSemicolon {
+	if tok.kind == tokJSError {
+		return s.errAt(tok, tok.text)
+	}
+	if tok.kind == tokJSBlock || tok.kind == tokSemicolon {
 		return nil
 	}
 	if tok.kind == tokLBrace {
@@ -140,6 +143,8 @@ func skipBalancedBraces(s *scanner) error {
 			return s.errAt(tok, "unexpected EOF while skipping block")
 		}
 		switch tok.kind {
+		case tokJSError:
+			return s.errAt(tok, tok.text)
 		case tokLBrace:
 			depth++
 		case tokRBrace:

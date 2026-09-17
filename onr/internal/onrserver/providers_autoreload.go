@@ -1,6 +1,8 @@
 package onrserver
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -17,7 +19,7 @@ import (
 
 // installProvidersAutoReload requires non-nil config, registry, and mutex from Run.
 func installProvidersAutoReload(cfg *config.Config, reg *dslconfig.Registry, mu *sync.Mutex, logger *logx.SystemLogger) (io.Closer, error) {
-	if !cfg.Providers.AutoReload.Enabled {
+	if !needsSourceAutoReload(cfg) {
 		return nil, nil
 	}
 
@@ -36,12 +38,27 @@ func installProvidersAutoReload(cfg *config.Config, reg *dslconfig.Registry, mu 
 		return nil, err
 	}
 
+	if err := addJSWatch(watcher, cfg); err != nil {
+		_ = watcher.Close()
+		return nil, err
+	}
+
 	stopCh := make(chan struct{})
 	doneCh := make(chan struct{})
 	triggerCh := make(chan struct{}, 1)
 
+	initialJSSignature := jsTreeSignature(cfg.JS.Root)
 	go func() {
 		defer close(doneCh)
+		var poll *time.Ticker
+		var pollC <-chan time.Time
+		signature := ""
+		if cfg.JS.Reload == "poll" {
+			poll = time.NewTicker(time.Second)
+			pollC = poll.C
+			defer poll.Stop()
+			signature = initialJSSignature
+		}
 		var (
 			timer  *time.Timer
 			timerC <-chan time.Time
@@ -79,6 +96,12 @@ func installProvidersAutoReload(cfg *config.Config, reg *dslconfig.Registry, mu 
 					timer.Stop()
 				}
 				return
+			case <-pollC:
+				current := jsTreeSignature(cfg.JS.Root)
+				if current != signature {
+					signature = current
+					runReload()
+				}
 			case <-timerC:
 				timerC = nil
 				runReload()
@@ -105,7 +128,7 @@ func installProvidersAutoReload(cfg *config.Config, reg *dslconfig.Registry, mu 
 						}
 					}
 				}
-				if shouldTriggerProviderReload(evt) {
+				if shouldTriggerProviderReload(evt) && shouldWatchSource(cfg, evt.Name) {
 					select {
 					case triggerCh <- struct{}{}:
 					default:
@@ -151,4 +174,58 @@ func addWatchRecursive(watcher *fsnotify.Watcher, root string) error {
 		}
 		return watcher.Add(path)
 	})
+}
+
+func isWithinJSRoot(root, path string) bool {
+	if root == "" {
+		return false
+	}
+	a, err := filepath.Abs(root)
+	if err != nil {
+		return false
+	}
+	b, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(a, b)
+	return err == nil && (rel == "." || filepath.IsLocal(rel))
+}
+func jsTreeSignature(root string) string {
+	if root == "" {
+		return ""
+	}
+	hash := sha256.New()
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(hash, "%s:%d:%d\n", path, info.Size(), info.ModTime().UnixNano())
+		return nil
+	})
+	if err != nil {
+		return err.Error()
+	}
+	return fmt.Sprintf("%x", hash.Sum(nil))
+}
+
+func needsSourceAutoReload(cfg *config.Config) bool {
+	return cfg.Providers.AutoReload.Enabled || cfg.JS.Reload == "watch" || cfg.JS.Reload == "poll"
+}
+func addJSWatch(watcher *fsnotify.Watcher, cfg *config.Config) error {
+	if cfg.JS.Reload == "watch" && cfg.JS.Root != "" {
+		return addWatchRecursive(watcher, cfg.JS.Root)
+	}
+	return nil
+}
+func shouldWatchSource(cfg *config.Config, path string) bool {
+	within := isWithinJSRoot(cfg.JS.Root, path)
+	return cfg.JS.Reload == "watch" && within || cfg.Providers.AutoReload.Enabled && (!within || filepath.Ext(path) == ".conf")
 }

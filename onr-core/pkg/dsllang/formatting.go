@@ -1,8 +1,38 @@
 package dsllang
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/jslex"
+)
 
 func formatDocument(text string, opts formattingOptions) string {
+	islands, err := jslex.Islands(text)
+	if err != nil {
+		return text
+	}
+	if len(islands) > 0 {
+		masked := text
+		markers := make([]string, len(islands))
+		for i := len(islands) - 1; i >= 0; i-- {
+			island := islands[i]
+			marker := fmt.Sprintf("__ONR_JS_ISLAND_%d__", i)
+			for strings.Contains(text, marker) {
+				marker += "_"
+			}
+			markers[i] = "\"" + marker + "\";"
+			masked = masked[:island.Start] + markers[i] + masked[island.End:]
+		}
+		result := formatDSLDocument(masked, opts)
+		for i, island := range islands {
+			result = strings.ReplaceAll(result, markers[i], text[island.Start:island.End])
+		}
+		return result
+	}
+	return formatDSLDocument(text, opts)
+}
+func formatDSLDocument(text string, opts formattingOptions) string {
 	if text == "" {
 		return ""
 	}

@@ -16,6 +16,8 @@ import (
 //   - upstream_config.base_url is required and must be a string literal absolute URL
 //   - usage_extract / finish_reason_extract configs are validated
 func (r *Registry) ReloadFromFile(path string) (LoadResult, error) {
+	r.reloadMu.Lock()
+	defer r.reloadMu.Unlock()
 	p := strings.TrimSpace(path)
 	if p == "" {
 		return LoadResult{}, fmt.Errorf("providers file path is empty")
@@ -38,6 +40,9 @@ func (r *Registry) ReloadFromFile(path string) (LoadResult, error) {
 		return LoadResult{}, err
 	}
 
+	if err := r.prepareJS(next, nil); err != nil {
+		return LoadResult{}, err
+	}
 	r.mu.Lock()
 	r.providers = next
 	r.mu.Unlock()
@@ -142,6 +147,10 @@ func parseProvidersFromMergedFile(path string, content string, inherited modeReg
 				return nil, nil, err
 			}
 			pf, err := buildMergedProviderFile(path, providerName, metadata, routing, headers, req, response, perr, usage, finish, balance, models, observability, resolved)
+			if err != nil {
+				return nil, nil, err
+			}
+			pf.JS, err = parseProviderJS(path, content, providerName)
 			if err != nil {
 				return nil, nil, err
 			}

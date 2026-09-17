@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -87,30 +86,7 @@ func normalizeCheckNames(checks checkList) ([]string, error) {
 }
 
 func loadProviderFiles(sourcePath string) ([]dslconfig.ProviderFile, error) {
-	info, err := os.Stat(sourcePath)
-	if err != nil {
-		return nil, err
-	}
-	reg := dslconfig.NewRegistry()
-	if info.IsDir() {
-		if _, err := reg.ReloadFromDir(sourcePath); err != nil {
-			return nil, err
-		}
-	} else {
-		if _, err := reg.ReloadFromFile(sourcePath); err != nil {
-			return nil, err
-		}
-	}
-	names := reg.ListProviderNames()
-	providers := make([]dslconfig.ProviderFile, 0, len(names))
-	for _, name := range names {
-		p, ok := reg.GetProvider(name)
-		if !ok {
-			continue
-		}
-		providers = append(providers, p)
-	}
-	return providers, nil
+	return dslconfig.InspectProvidersPath(sourcePath)
 }
 
 func checkRequiredUsageConfig(providers []dslconfig.ProviderFile) []string {

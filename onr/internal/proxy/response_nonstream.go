@@ -5,16 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
-
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/apitransform"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslconfig"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
+	"github.com/r9s-ai/open-next-router/onr-core/pkg/jsext"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/respinline"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/ssecollect"
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/trafficdump"
@@ -34,8 +33,15 @@ func (c *Client) handleNonStreamResponse(
 	reqBody []byte,
 	respDir *dslconfig.ResponseDirective,
 	resp *http.Response,
-) (*Result, error) {
-	respBody, err := io.ReadAll(resp.Body)
+) (result *Result, retErr error) {
+	var facts *Result
+	defer func() {
+		if retErr != nil && facts != nil {
+			result = facts
+		}
+	}()
+	session := jsSession(gc)
+	respBody, err := readJSResponseBody(session, resp)
 	if err != nil {
 		return nil, err
 	}
@@ -81,6 +87,7 @@ func (c *Client) handleNonStreamResponse(
 		cost = c.computeCost(m, provider, key.Name, usage)
 	}
 	c.logUsageFactsDebug(gc, provider, api, stream, model, usageStage, upstreamUsage)
+	facts = &Result{Provider: provider, ProviderKey: key.Name, ProviderSource: "dsl", API: api, Stream: stream, Model: model, Status: resp.StatusCode, LatencyMs: time.Since(start).Milliseconds(), Usage: usage, UsageStage: usageStage, FinishReason: finishReason, Cost: cost}
 
 	// Inlining runs after the metrics snapshot and before the body is serialized
 	// for the client. Metrics count entries, not bytes, so they gain nothing
@@ -111,6 +118,20 @@ func (c *Client) handleNonStreamResponse(
 		gc.Writer.Header().Set("Content-Type", outCT)
 	}
 
+	if err := responseHeadersJS(gc, resp.StatusCode); err != nil {
+		return nil, err
+	}
+	if session != nil {
+		message := jsext.Message{Body: string(respOutBody), Headers: gc.Writer.Header(), ContentType: outCT, Status: resp.StatusCode}
+		if err := session.Run(gc.Request.Context(), jsext.Response, &message); err != nil {
+			return nil, err
+		}
+		if session.Has(jsext.Response) {
+			respOutBody = []byte(message.Body)
+			gc.Writer.Header().Del("Content-Encoding")
+			gc.Writer.Header().Del("Content-Length")
+		}
+	}
 	gc.Status(resp.StatusCode)
 	if _, err := gc.Writer.Write(respOutBody); err != nil {
 		return nil, err

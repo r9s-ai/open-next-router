@@ -7,6 +7,8 @@ You can still force directory mode via `providers.dir` (config) or `ONR_PROVIDER
 
 ## Table of Contents
 
+- [9. JavaScript phase extensions](#9-javascript-phase-extensions)
+
 - [1. Conventions](#1-conventions)
 - [2. include (reusable fragments)](#2-include-reusable-fragments)
 - [3. Top-level structure](#3-top-level-structure)
@@ -2679,3 +2681,38 @@ upstream {
   set_path concat("/v1beta/", $task.upstream_id);
 }
 ```
+
+## 9. JavaScript phase extensions
+
+JavaScript handlers are opt-in strict function bodies. There are six execution slots and five directive prefixes:
+
+| Owning block | Block / file / off prefix | Execution point |
+| --- | --- | --- |
+| `request` | `request_by_js` | Before request transforms |
+| `request.after_req_map` | `request_by_js` | After all mapping and after_req_map JSON operations, before signing |
+| `response` | `response_headers_by_js` | Before downstream headers are committed |
+| `response` | `response_by_js` | Final JSON body, after metrics and JSON operations |
+| `response` | `sse_event_by_js` | Complete downstream SSE events, after existing metrics taps |
+| `defaults` / `match` | `log_by_js` | Exactly once per attempt |
+
+```nginx
+request {
+    request_by_js_block {
+        ctx.state.checked = true;
+    }
+    after_req_map {
+        json_set "$.metadata.source" "onr";
+        request_by_js_block {
+            ctx.request.headers["x-checked"] = [String(ctx.state.checked)];
+        }
+    }
+}
+```
+
+For every prefix, use `<prefix>_block { ... }`, `<prefix>_file relative/path.js;`, or `<prefix> off;`. Both inline and file handlers contain the function body only. Request slots are distinguished by block path; there is no separate `request_after_map_by_js` directive. JSON operations inside `after_req_map` always finish before its JS hook, even if the hook appears first, and it runs without `req_map`.
+
+Slots inherit independently from defaults; match declarations replace a slot, and `off` disables only that slot. Duplicate block/file/off declarations for a slot are errors, including in repeated blocks or included fragments. Limits are direct children of defaults/match and inherit per field: `js_timeout 200ms;`, `js_stream_timeout 10ms;`, `js_body_limit 8m;`, `js_event_limit 1m;` are defaults. Values must be positive.
+
+Body hooks require JSON, headers use lowercase names with string-array values, and route/credential/framing fields are protected. Normal hooks return `undefined`; SSE hooks must return an event, up to 64 events, or `null`. Async, Promise, generators, imports and dynamic code generation are not supported. Files resolve below host `js.root`, never relative to downloaded DSL. Config reload is atomic and failed preparations retain the previous policy.
+
+See [JavaScript extensions](docs/JS_EXTENSIONS.md) for host YAML, HTTP authorization, context contracts, limits, reuse APIs, the sequence diagram and executable examples.
