@@ -756,7 +756,7 @@ func TestApplyReqMap_OpenAIVideosToSeedance_BasicPrompt(t *testing.T) {
 	if got, want := root["duration"], float64(5); got != want {
 		t.Fatalf("duration=%v want=%v", got, want)
 	}
-	if got, want := root["resolution"], "1280x720"; got != want {
+	if got, want := root["resolution"], "720p"; got != want {
 		t.Fatalf("resolution=%v want=%v", got, want)
 	}
 }
@@ -784,5 +784,38 @@ func TestApplyReqMap_OpenAIVideosToSeedance_PromptOnlyNoOptionalFields(t *testin
 	}
 	if _, ok := root["resolution"]; ok {
 		t.Fatalf("resolution should be absent when size not provided, got %v", root["resolution"])
+	}
+}
+
+func TestApply_OpenAIVideosToSeedance_ModelCarriedThrough(t *testing.T) {
+	t.Parallel()
+
+	// Simulate the full Apply pipeline: DSLModelMapped rewrites model in the
+	// root before req_map runs; the mapper must carry it into the output body.
+	meta := &dslmeta.Meta{DSLModelMapped: "doubao-seedance-01-pro"}
+	body := []byte(`{"model":"doubao-seedance-01-lite","prompt":"a cat jumping","seconds":"5","size":"1280x720"}`)
+	value := map[string]any{
+		"model":   "doubao-seedance-01-lite",
+		"prompt":  "a cat jumping",
+		"seconds": "5",
+		"size":    "1280x720",
+	}
+
+	result, err := Apply(meta, "application/json", body, value, &dslconfig.RequestTransform{
+		ReqMapMode: "openai_videos_to_seedance",
+	}, ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	var root map[string]any
+	if err := json.Unmarshal(result.Body, &root); err != nil {
+		t.Fatalf("unmarshal result body: %v", err)
+	}
+	if got, want := root["model"], "doubao-seedance-01-pro"; got != want {
+		t.Errorf("model = %v, want %v (DSLModelMapped must survive req_map)", got, want)
+	}
+	content, ok := root["content"].([]any)
+	if !ok || len(content) == 0 {
+		t.Fatalf("content = %v, want non-empty array", root["content"])
 	}
 }

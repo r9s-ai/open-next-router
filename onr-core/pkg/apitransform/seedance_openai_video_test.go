@@ -28,8 +28,21 @@ func TestMapOpenAIVideosToSeedanceRequest_TextToVideo(t *testing.T) {
 	if out["duration"] != 5 {
 		t.Errorf("duration = %v, want 5", out["duration"])
 	}
-	if out["resolution"] != "1280x720" {
-		t.Errorf("resolution = %v, want 1280x720", out["resolution"])
+	if out["resolution"] != "720p" {
+		t.Errorf("resolution = %v, want 720p", out["resolution"])
+	}
+}
+
+func TestMapOpenAIVideosToSeedanceRequest_PreservesModel(t *testing.T) {
+	out, err := MapOpenAIVideosToSeedanceRequest(apitypes.JSONObject{
+		"prompt": "a cat jumping",
+		"model":  "doubao-seedance-01-pro",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out["model"] != "doubao-seedance-01-pro" {
+		t.Errorf("model = %v, want doubao-seedance-01-pro", out["model"])
 	}
 }
 
@@ -69,6 +82,50 @@ func TestMapOpenAIVideosToSeedanceRequest_NonNumericSecondsOmitsDuration(t *test
 	}
 	if _, ok := out["duration"]; ok {
 		t.Error("duration should be absent when seconds is non-numeric")
+	}
+}
+
+func TestOpenAISizeToSeedanceResolution(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		// WxH → short-edge label
+		{"1280x720", "720p"},
+		{"720x1280", "720p"}, // portrait
+		{"1920x1080", "1080p"},
+		{"1080x1920", "1080p"},
+		{"3840x2160", "4k"},
+		{"640x480", "480p"},
+		{"480x640", "480p"},
+		{"320x240", "480p"}, // sub-480 rounds up to minimum
+		// Already-normalized labels pass through
+		{"720p", "720p"},
+		{"1080p", "1080p"},
+		{"480p", "480p"},
+		{"4k", "4k"},
+		// Unrecognized → omit
+		{"", ""},
+		{"axb", ""},
+		{"0x720", ""},
+	}
+	for _, tc := range cases {
+		if got := openAISizeToSeedanceResolution(tc.input); got != tc.want {
+			t.Errorf("openAISizeToSeedanceResolution(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestMapOpenAIVideosToSeedanceRequest_UnrecognizedSizeOmitsResolution(t *testing.T) {
+	out, err := MapOpenAIVideosToSeedanceRequest(apitypes.JSONObject{
+		"prompt": "a cat",
+		"size":   "axb",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := out["resolution"]; ok {
+		t.Error("resolution should be absent for unrecognized size")
 	}
 }
 

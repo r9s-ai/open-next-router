@@ -53,13 +53,58 @@ func seedanceTaskStatus(raw string) (string, error) {
 	}
 }
 
+// openAISizeToSeedanceResolution converts an OpenAI size value to the
+// resolution label Ark Seedance accepts. OpenAI uses "WxH" (e.g. "1280x720");
+// Seedance accepts "480p", "720p", "1080p", "4k". Already-normalized labels
+// are passed through so callers that supply the Seedance format directly work
+// without a second conversion.
+//
+// Returns "" when the input is unrecognized so the caller can omit the field
+// and let Ark apply its per-model default.
+func openAISizeToSeedanceResolution(size string) string {
+	lower := strings.ToLower(strings.TrimSpace(size))
+	if lower == "" {
+		return ""
+	}
+	// Pass through already-normalized Seedance labels.
+	switch lower {
+	case "480p", "720p", "1080p", "4k":
+		return lower
+	}
+	// Convert "WxH" using the short edge.
+	parts := strings.SplitN(lower, "x", 2)
+	if len(parts) != 2 {
+		return ""
+	}
+	w, werr := strconv.Atoi(strings.TrimSpace(parts[0]))
+	h, herr := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if werr != nil || herr != nil || w <= 0 || h <= 0 {
+		return ""
+	}
+	short := h
+	if w < h {
+		short = w
+	}
+	switch {
+	case short >= 2160:
+		return "4k"
+	case short >= 1080:
+		return "1080p"
+	case short >= 720:
+		return "720p"
+	default:
+		return "480p"
+	}
+}
+
 // MapOpenAIVideosToSeedanceRequest builds a Seedance async video request from an
 // OpenAI videos.generations request root.
 //
 // Seedance wraps the prompt inside a content array rather than accepting it as
-// a flat field, and uses the same "WxH" size format as OpenAI but calls it
-// resolution. seconds is converted to an integer duration the same way PPIO
-// does it.
+// a flat field. The OpenAI "size" field ("WxH") is converted to the
+// Seedance resolution label ("480p" / "720p" / "1080p" / "4k") via
+// openAISizeToSeedanceResolution. seconds is converted to an integer duration
+// the same way PPIO does it.
 func MapOpenAIVideosToSeedanceRequest(root apitypes.JSONObject) (apitypes.JSONObject, error) {
 	prompt := strings.TrimSpace(jsonutil.CoerceString(root["prompt"]))
 	if prompt == "" {
@@ -74,7 +119,14 @@ func MapOpenAIVideosToSeedanceRequest(root apitypes.JSONObject) (apitypes.JSONOb
 		}
 	}
 	if size := strings.TrimSpace(jsonutil.CoerceString(root["size"])); size != "" {
-		out["resolution"] = size
+		if res := openAISizeToSeedanceResolution(size); res != "" {
+			out["resolution"] = res
+		}
+	}
+	// The req_map pass receives the post-model-rewrite root: carry model through
+	// so the upstream sees the correct model name in the outbound body.
+	if model := strings.TrimSpace(jsonutil.CoerceString(root["model"])); model != "" {
+		out["model"] = model
 	}
 	return out, nil
 }
