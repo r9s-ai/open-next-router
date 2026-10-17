@@ -124,9 +124,9 @@ func TestOpenAISizeToSeedanceResolution(t *testing.T) {
 
 func TestMapOpenAIVideosToSeedanceRequest_UnsupportedSizeReturnsError(t *testing.T) {
 	for _, size := range []string{
-		"axb",    // unparseable
+		"axb",     // unparseable
 		"320x240", // sub-minimum (< 480p)
-		"0x720",  // zero dimension
+		"0x720",   // zero dimension
 	} {
 		_, err := MapOpenAIVideosToSeedanceRequest(apitypes.JSONObject{
 			"prompt": "a cat",
