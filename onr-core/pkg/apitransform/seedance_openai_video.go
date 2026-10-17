@@ -92,8 +92,10 @@ func openAISizeToSeedanceResolution(size string) string {
 		return "1080p"
 	case short >= 720:
 		return "720p"
-	default:
+	case short >= 480:
 		return "480p"
+	default:
+		return "" // below minimum supported tier
 	}
 }
 
@@ -119,9 +121,12 @@ func MapOpenAIVideosToSeedanceRequest(root apitypes.JSONObject) (apitypes.JSONOb
 		}
 	}
 	if size := strings.TrimSpace(jsonutil.CoerceString(root["size"])); size != "" {
-		if res := openAISizeToSeedanceResolution(size); res != "" {
-			out["resolution"] = res
+		res := openAISizeToSeedanceResolution(size)
+		if res == "" {
+			return nil, newRequestMappingError(CodeRequestSizeNotSupported, "size",
+				"unsupported resolution %q; accepted: 480p, 720p, 1080p, 4k", size)
 		}
+		out["resolution"] = res
 	}
 	// The req_map pass receives the post-model-rewrite root: carry model through
 	// so the upstream sees the correct model name in the outbound body.

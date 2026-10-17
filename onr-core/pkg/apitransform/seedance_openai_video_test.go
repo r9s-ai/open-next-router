@@ -98,13 +98,19 @@ func TestOpenAISizeToSeedanceResolution(t *testing.T) {
 		{"3840x2160", "4k"},
 		{"640x480", "480p"},
 		{"480x640", "480p"},
-		{"320x240", "480p"}, // sub-480 rounds up to minimum
 		// Already-normalized labels pass through
 		{"720p", "720p"},
 		{"1080p", "1080p"},
 		{"480p", "480p"},
 		{"4k", "4k"},
-		// Unrecognized → omit
+		// WxH where short edge exactly hits a boundary
+		{"640x480", "480p"},
+		{"480x640", "480p"},
+		// 4K
+		{"3840x2160", "4k"},
+		{"2160x3840", "4k"},
+		// Sub-minimum (< 480p) and unparseable → empty
+		{"320x240", ""},
 		{"", ""},
 		{"axb", ""},
 		{"0x720", ""},
@@ -116,16 +122,24 @@ func TestOpenAISizeToSeedanceResolution(t *testing.T) {
 	}
 }
 
-func TestMapOpenAIVideosToSeedanceRequest_UnrecognizedSizeOmitsResolution(t *testing.T) {
-	out, err := MapOpenAIVideosToSeedanceRequest(apitypes.JSONObject{
-		"prompt": "a cat",
-		"size":   "axb",
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if _, ok := out["resolution"]; ok {
-		t.Error("resolution should be absent for unrecognized size")
+func TestMapOpenAIVideosToSeedanceRequest_UnsupportedSizeReturnsError(t *testing.T) {
+	for _, size := range []string{
+		"axb",    // unparseable
+		"320x240", // sub-minimum (< 480p)
+		"0x720",  // zero dimension
+	} {
+		_, err := MapOpenAIVideosToSeedanceRequest(apitypes.JSONObject{
+			"prompt": "a cat",
+			"size":   size,
+		})
+		var reqErr *RequestMappingError
+		if !errors.As(err, &reqErr) {
+			t.Errorf("size=%q: err=%v, want *RequestMappingError", size, err)
+			continue
+		}
+		if reqErr.Code != CodeRequestSizeNotSupported {
+			t.Errorf("size=%q: Code=%q, want %q", size, reqErr.Code, CodeRequestSizeNotSupported)
+		}
 	}
 }
 
