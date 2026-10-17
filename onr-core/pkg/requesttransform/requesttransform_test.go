@@ -728,3 +728,61 @@ func TestApplyReqMap_OpenAIChatToAnthropicMessages_FallbackCreditTokenAbsentWhen
 		t.Fatalf("fallback_credit_token should be absent when not set, got %v", root["fallback_credit_token"])
 	}
 }
+
+func TestApplyReqMap_OpenAIVideosToSeedance_BasicPrompt(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"prompt":"a cat jumping","seconds":"5","size":"1280x720"}`)
+	mappedBody, _, err := ApplyReqMap("openai_videos_to_seedance", body, nil, ApplyOptions{})
+	if err != nil {
+		t.Fatalf("ApplyReqMap() error = %v", err)
+	}
+	// Re-unmarshal through JSON to get canonical []any types for assertions.
+	var root map[string]any
+	if err := json.Unmarshal(mappedBody, &root); err != nil {
+		t.Fatalf("unmarshal mapped body: %v", err)
+	}
+	content, ok := root["content"].([]any)
+	if !ok || len(content) == 0 {
+		t.Fatalf("expected content array, got %v (%T)", root["content"], root["content"])
+	}
+	first, ok := content[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected first content element to be object, got %T", content[0])
+	}
+	if got, want := first["text"], "a cat jumping"; got != want {
+		t.Fatalf("content[0].text=%v want=%v", got, want)
+	}
+	if got, want := root["duration"], float64(5); got != want {
+		t.Fatalf("duration=%v want=%v", got, want)
+	}
+	if got, want := root["resolution"], "1280x720"; got != want {
+		t.Fatalf("resolution=%v want=%v", got, want)
+	}
+}
+
+func TestApplyReqMap_OpenAIVideosToSeedance_MissingPromptError(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"seconds":"5"}`)
+	_, _, err := ApplyReqMap("openai_videos_to_seedance", body, nil, ApplyOptions{})
+	if err == nil {
+		t.Fatalf("expected error for missing prompt")
+	}
+}
+
+func TestApplyReqMap_OpenAIVideosToSeedance_PromptOnlyNoOptionalFields(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"prompt":"sunset over ocean"}`)
+	_, root, err := ApplyReqMap("openai_videos_to_seedance", body, nil, ApplyOptions{})
+	if err != nil {
+		t.Fatalf("ApplyReqMap() error = %v", err)
+	}
+	if _, ok := root["duration"]; ok {
+		t.Fatalf("duration should be absent when seconds not provided, got %v", root["duration"])
+	}
+	if _, ok := root["resolution"]; ok {
+		t.Fatalf("resolution should be absent when size not provided, got %v", root["resolution"])
+	}
+}
