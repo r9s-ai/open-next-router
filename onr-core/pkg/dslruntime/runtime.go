@@ -42,6 +42,8 @@ type RoutePathContext struct {
 	BaseURL             string
 	APIKey              string
 	OAuthAccessToken    string
+	TaskID              string
+	TaskUpstreamID      string
 }
 
 func BuildAuthHeaders(ctx context.Context, in AuthHeaderInput) (http.Header, error) {
@@ -182,6 +184,8 @@ func replaceRoutePlaceholders(path string, ctx RoutePathContext) string {
 		"{request.model_mapped}":  model,
 		"{credential.project_id}": strings.TrimSpace(ctx.CredentialProjectID),
 		"{channel.location}":      strings.TrimSpace(ctx.ChannelLocation),
+		"{task.id}":               strings.TrimSpace(ctx.TaskID),
+		"{task.upstream_id}":      strings.TrimSpace(ctx.TaskUpstreamID),
 	}
 	for k, v := range replacements {
 		path = strings.ReplaceAll(path, k, v)
