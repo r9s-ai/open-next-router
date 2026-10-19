@@ -671,6 +671,12 @@ func parseUsageRootStmt(s *scanner, cfg *UsageExtractConfig) error {
 					return err
 				}
 				root.ExcludeFields = parseUsageRootExcludeFields(val)
+			case "source":
+				val, err := parseUsageFactStringValue(s, valTok, "source")
+				if err != nil {
+					return err
+				}
+				root.Source = val
 			default:
 				return s.errAt(tok, "unsupported usage_root option "+key)
 			}

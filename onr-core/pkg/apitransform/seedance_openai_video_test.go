@@ -61,6 +61,36 @@ func TestMapOpenAIVideosToSeedanceRequest_OmitsOptionalFields(t *testing.T) {
 	}
 }
 
+func TestMapOpenAIVideosToSeedanceRequest_WithInputReference(t *testing.T) {
+	out, err := MapOpenAIVideosToSeedanceRequest(apitypes.JSONObject{
+		"prompt":  "a river in autumn",
+		"seconds": "8",
+		"size":    "1280x720",
+		"input_reference": []any{map[string]any{
+			"filename":     "ref.jpg",
+			"content_type": "image/jpeg",
+			"b64":          "aGVsbG8=",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	content, ok := out["content"].([]apitypes.JSONObject)
+	if !ok || len(content) != 2 {
+		t.Fatalf("content = %v, want 2-element array", out["content"])
+	}
+	if content[0]["type"] != "image_url" {
+		t.Fatalf("content[0] type = %v, want image_url", content[0]["type"])
+	}
+	imgURL, _ := content[0]["image_url"].(apitypes.JSONObject)
+	if imgURL["url"] != "data:image/jpeg;base64,aGVsbG8=" {
+		t.Fatalf("image_url.url = %v", imgURL["url"])
+	}
+	if content[1]["type"] != "text" || content[1]["text"] != "a river in autumn" {
+		t.Fatalf("content[1] = %v, want text item", content[1])
+	}
+}
+
 func TestMapOpenAIVideosToSeedanceRequest_MissingPromptIsError(t *testing.T) {
 	_, err := MapOpenAIVideosToSeedanceRequest(apitypes.JSONObject{"seconds": "5"})
 	var reqErr *RequestMappingError

@@ -391,7 +391,14 @@ func lookupCompiledPath(path string) (*compiledPath, bool) {
 
 func compilePath(path string) (*compiledPath, bool) {
 	p := strings.TrimSpace(path)
-	if p == "" || !strings.HasPrefix(p, "$.") {
+	if p == "" {
+		return nil, false
+	}
+	// "$" alone selects the root document; zero parts means visitPathValues visits the root.
+	if p == "$" {
+		return &compiledPath{parts: []compiledPathPart{}}, true
+	}
+	if !strings.HasPrefix(p, "$.") {
 		return nil, false
 	}
 	rawParts, ok := splitPathParts(strings.TrimPrefix(p, "$."))

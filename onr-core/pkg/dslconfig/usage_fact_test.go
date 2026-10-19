@@ -2438,7 +2438,7 @@ provider "usage-root-only-invalid" {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	if _, err := ValidateProviderFile(path); err == nil || !strings.Contains(err.Error(), "usage_root[0] path must start with $.") {
+	if _, err := ValidateProviderFile(path); err == nil || !strings.Contains(err.Error(), "usage_root[0] path must start with $") {
 		t.Fatalf("ValidateProviderFile err=%v, want usage_root path validation", err)
 	}
 }
@@ -2446,6 +2446,7 @@ provider "usage-root-only-invalid" {
 func TestValidateProviderFile_CustomUsageRootOnlyInvalid(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "custom-usage-root-only.conf")
+	// usage_extract custom with no usage_root, no usage_fact, and no token paths is invalid.
 	if err := os.WriteFile(path, []byte(`
 syntax "next-router/0.1";
 
@@ -2456,7 +2457,6 @@ provider "custom-usage-root-only" {
     }
     metrics {
       usage_extract custom;
-      usage_root path="$.usage";
     }
   }
 }

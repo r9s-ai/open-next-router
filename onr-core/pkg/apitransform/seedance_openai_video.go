@@ -112,9 +112,20 @@ func MapOpenAIVideosToSeedanceRequest(root apitypes.JSONObject) (apitypes.JSONOb
 	if prompt == "" {
 		return nil, newRequestMappingError(CodeRequestPromptMissing, "prompt", "prompt is required")
 	}
-	out := apitypes.JSONObject{
-		"content": []apitypes.JSONObject{{"type": "text", "text": prompt}},
+
+	// Reference image (if uploaded) comes first in the content array; the text
+	// prompt follows. Seedance reads parts in order, so the reference frame
+	// should precede the creative instruction.
+	content := make([]apitypes.JSONObject, 0, 2)
+	for _, entry := range inlineFilesAt(root, "input_reference") {
+		content = append(content, apitypes.JSONObject{
+			"type":      "image_url",
+			"image_url": apitypes.JSONObject{"url": "data:" + entry.ContentType + ";base64," + entry.Data},
+		})
 	}
+	content = append(content, apitypes.JSONObject{"type": "text", "text": prompt})
+
+	out := apitypes.JSONObject{"content": content}
 	if seconds := strings.TrimSpace(jsonutil.CoerceString(root["seconds"])); seconds != "" {
 		if v, err := strconv.Atoi(seconds); err == nil && v > 0 {
 			out["duration"] = v

@@ -507,7 +507,7 @@ func projectUsageFromFacts(facts []usageFactEval, usageRootConfigured bool) (*Us
 
 func extractCustomUsageWithEvent(event string, reqRoot, respRoot, derivedRoot map[string]any, cfg UsageExtractConfig) (*Usage, int) {
 	evals := make([]usageFactEval, 0, len(cfg.facts))
-	usageRoot := extractUsageRootWithEvent(event, respRoot, cfg.usageRoots)
+	usageRoot := extractUsageRootWithEvent(event, reqRoot, respRoot, cfg.usageRoots)
 	evals = append(evals, evaluateUsageFactConfigGroupsWithEvent(event, reqRoot, respRoot, usageRoot, derivedRoot, len(cfg.usageRoots) > 0, cfg.factGroups, len(cfg.facts))...)
 	evals = mergeUsageFactEvals(evals)
 

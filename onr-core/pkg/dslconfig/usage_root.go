@@ -11,13 +11,20 @@ type usageRootConfig struct {
 	Event         string
 	EventOptional bool
 	ExcludeFields []string
+	// Source controls which request body the path is evaluated against.
+	// "request" reads from the upstream-sent request root; empty or "response"
+	// reads from the upstream response root (the default).
+	Source string
 }
 
 // UsageRootRule describes one usage_root extraction rule in DSL/runtime.
 type UsageRootRule = usageRootConfig
 
-func extractUsageRootWithEvent(event string, respRoot map[string]any, roots []usageRootConfig) map[string]any {
-	if len(roots) == 0 || len(respRoot) == 0 {
+// extractUsageRootWithEvent builds the merged usage root object from matching
+// usage_root rules. reqRoot is the upstream request body (used when
+// source=request); respRoot is the upstream response body (default source).
+func extractUsageRootWithEvent(event string, reqRoot, respRoot map[string]any, roots []usageRootConfig) map[string]any {
+	if len(roots) == 0 {
 		return nil
 	}
 	merged := map[string]any{}
@@ -25,13 +32,25 @@ func extractUsageRootWithEvent(event string, respRoot map[string]any, roots []us
 		if !matchesUsageEvent(event, rootCfg.Event, rootCfg.EventOptional) {
 			continue
 		}
-		values, ok := jsonutil.GetValuesByPath(respRoot, rootCfg.Path)
+		src := respRoot
+		if strings.EqualFold(strings.TrimSpace(rootCfg.Source), "request") {
+			src = reqRoot
+		}
+		if len(src) == 0 {
+			continue
+		}
+		values, ok := jsonutil.GetValuesByPath(src, rootCfg.Path)
 		if !ok {
 			continue
 		}
 		for _, value := range values {
 			obj, ok := value.(map[string]any)
 			if !ok {
+				// Scalar path (e.g. path="$.duration"): contribute {last_segment: value}
+				// so individual root fields can be captured without pulling the whole root.
+				if key := lastScalarPathKey(rootCfg.Path); key != "" {
+					mergeUsageRootPreferNonZero(merged, map[string]any{key: value})
+				}
 				continue
 			}
 			obj = cloneUsageRootValueWithExcludedFields(obj, rootCfg.ExcludeFields)
@@ -42,6 +61,24 @@ func extractUsageRootWithEvent(event string, respRoot map[string]any, roots []us
 		return nil
 	}
 	return merged
+}
+
+// lastScalarPathKey returns the bare field name from the last segment of a
+// $.a.b.c style path, for use when the resolved value is a scalar rather than
+// an object.  Returns "" for the root path "$" or for paths with brackets.
+func lastScalarPathKey(path string) string {
+	trimmed := strings.TrimSpace(path)
+	if !strings.HasPrefix(trimmed, "$.") {
+		return ""
+	}
+	after := trimmed[2:]
+	if idx := strings.LastIndex(after, "."); idx >= 0 {
+		after = after[idx+1:]
+	}
+	if idx := strings.IndexByte(after, '['); idx >= 0 {
+		after = after[:idx]
+	}
+	return strings.TrimSpace(after)
 }
 
 func cloneUsageRootValueWithExcludedFields(obj map[string]any, fields []string) map[string]any {
