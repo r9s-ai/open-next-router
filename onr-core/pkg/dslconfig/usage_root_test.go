@@ -13,12 +13,12 @@ func TestLastScalarPathKey(t *testing.T) {
 		"$.parameters.numberOfVideos":  "numberOfVideos",
 		"$.parameters.resolution":      "resolution",
 		"$.a.b.c":                      "c",
-		"$.foo[0]":                     "foo",   // bracket stripped, segment before it
-		"$.foo[0].bar":                 "bar",   // last dotted segment
-		"$":                            "",      // root path has no key
-		"duration":                     "",      // missing $. prefix
-		"":                             "",      // empty
-		"  $.padded.key  ":             "key",   // trimmed
+		"$.foo[0]":                     "foo", // bracket stripped, segment before it
+		"$.foo[0].bar":                 "bar", // last dotted segment
+		"$":                            "",    // root path has no key
+		"duration":                     "",    // missing $. prefix
+		"":                             "",    // empty
+		"  $.padded.key  ":             "key", // trimmed
 	} {
 		if got := lastScalarPathKey(path); got != want {
 			t.Errorf("lastScalarPathKey(%q) = %q, want %q", path, got, want)
