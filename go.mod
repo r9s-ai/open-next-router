@@ -4,7 +4,7 @@ go 1.26.6
 
 require (
 	github.com/atotto/clipboard v0.1.4
-	github.com/aws/aws-sdk-go-v2 v1.47.0
+	github.com/aws/aws-sdk-go-v2 v1.47.1
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.20
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
@@ -13,7 +13,7 @@ require (
 	github.com/gin-gonic/gin v1.12.0
 	github.com/mattn/go-isatty v0.0.24
 	github.com/meterry-com/meterry-go v0.0.1-alpha.2
-	github.com/r9s-ai/open-next-router/onr-core v1.16.20
+	github.com/r9s-ai/open-next-router/onr-core v1.16.21
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/net v0.60.0
 	gopkg.in/yaml.v3 v3.0.1
