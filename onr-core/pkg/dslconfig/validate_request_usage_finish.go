@@ -65,6 +65,8 @@ func validateRequestTransform(path, providerName, scope string, t RequestTransfo
 		return t, nil
 	case "openai_videos_to_ppio":
 		return t, nil
+	case "openai_videos_to_seedance":
+		return t, nil
 	case "anthropic_to_openai_chat":
 		return t, nil
 	case "gemini_to_openai_chat":
@@ -335,8 +337,8 @@ func validateResolvedUsageExtractConfig(path, providerName, scope string, cfg Us
 		)
 	}
 	if mode == usageModeCustom {
-		if !hasAnyUsageExtractionRule(cfg) {
-			return fmt.Errorf("provider %q in %q: %s custom usage_extract requires at least one usage_fact or *_tokens_path/*_expr rule", providerName, path, scope)
+		if !hasAnyUsageExtractionRule(cfg) && len(cfg.usageRoots) == 0 {
+			return fmt.Errorf("provider %q in %q: %s custom usage_extract requires at least one usage_fact, usage_root, or *_tokens_path/*_expr rule", providerName, path, scope)
 		}
 	}
 
@@ -455,11 +457,15 @@ func validateUsageFactConfig(path, providerName, scope string, idx int, fact usa
 }
 
 func validateUsageRootConfig(path, providerName, scope string, idx int, root usageRootConfig) error {
-	if strings.TrimSpace(root.Path) == "" {
+	p := strings.TrimSpace(root.Path)
+	if p == "" {
 		return fmt.Errorf("provider %q in %q: %s usage_root[%d] requires path", providerName, path, scope, idx)
 	}
-	if !strings.HasPrefix(strings.TrimSpace(root.Path), "$.") {
-		return fmt.Errorf("provider %q in %q: %s usage_root[%d] path must start with $. ", providerName, path, scope, idx)
+	if p != "$" && !strings.HasPrefix(p, "$.") {
+		return fmt.Errorf("provider %q in %q: %s usage_root[%d] path must start with $", providerName, path, scope, idx)
+	}
+	if src := strings.ToLower(strings.TrimSpace(root.Source)); src != "" && src != "request" && src != "response" {
+		return fmt.Errorf("provider %q in %q: %s usage_root[%d] unsupported source %q; accepted: request, response", providerName, path, scope, idx, root.Source)
 	}
 	for _, field := range root.ExcludeFields {
 		if err := validateUsageRootExcludeField(field); err != nil {

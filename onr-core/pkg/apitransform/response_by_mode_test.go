@@ -200,3 +200,75 @@ func TestMapResponseBodyByMode_GeminiToOpenAIChat(t *testing.T) {
 		t.Fatalf("unexpected output: %s", s)
 	}
 }
+
+func TestSupportsResponseMapMode_SeedanceVideoModes(t *testing.T) {
+	for _, mode := range []string{
+		"seedance_video_create_to_openai_videos",
+		"seedance_video_result_to_openai_videos",
+	} {
+		if !SupportsResponseMapMode(mode) {
+			t.Errorf("expected %q to be supported", mode)
+		}
+	}
+}
+
+func TestMapResponseBodyByMode_SeedanceVideoCreate(t *testing.T) {
+	in := []byte(`{"id":"task-abc","status":"queued"}`)
+	out, outCT, err := MapResponseBodyByMode("seedance_video_create_to_openai_videos", in)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if outCT != contentTypeJSON {
+		t.Fatalf("unexpected content type: %s", outCT)
+	}
+	encoded, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("unexpected marshal error: %v", err)
+	}
+	s := string(encoded)
+	if !containsAll(s, `"object":"video"`, `"id":"task-abc"`, `"status":"queued"`) {
+		t.Fatalf("unexpected output: %s", s)
+	}
+}
+
+func TestMapResponseBodyByMode_SeedanceVideoResult_Completed(t *testing.T) {
+	in := []byte(`{
+  "id":"task-xyz",
+  "status":"succeeded",
+  "content":{"video_url":"https://cdn.example.com/video.mp4"}
+}`)
+	out, outCT, err := MapResponseBodyByMode("seedance_video_result_to_openai_videos", in)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if outCT != contentTypeJSON {
+		t.Fatalf("unexpected content type: %s", outCT)
+	}
+	encoded, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("unexpected marshal error: %v", err)
+	}
+	s := string(encoded)
+	if !containsAll(s, `"object":"video"`, `"status":"completed"`, `"video_url":"https://cdn.example.com/video.mp4"`, `"progress":100`) {
+		t.Fatalf("unexpected output: %s", s)
+	}
+}
+
+func TestMapResponseBodyByMode_SeedanceVideoResult_InProgress(t *testing.T) {
+	in := []byte(`{"id":"task-xyz","status":"running"}`)
+	out, outCT, err := MapResponseBodyByMode("seedance_video_result_to_openai_videos", in)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if outCT != contentTypeJSON {
+		t.Fatalf("unexpected content type: %s", outCT)
+	}
+	encoded, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("unexpected marshal error: %v", err)
+	}
+	s := string(encoded)
+	if !containsAll(s, `"object":"video"`, `"status":"in_progress"`) {
+		t.Fatalf("unexpected output: %s", s)
+	}
+}

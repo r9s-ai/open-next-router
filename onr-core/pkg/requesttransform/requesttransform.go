@@ -208,38 +208,13 @@ func applyReqMapObject(mode string, root apitypes.JSONObject) ([]byte, map[strin
 		dst := mapOpenAIChatCompletionsToGeminiGenerateContentRequest(&src)
 		return marshalReqMapResult(dst)
 	case "openai_videos_to_ppio":
-		dst, err := apitransform.MapOpenAIVideosToPPIORequest(root)
-		if err != nil {
-			return nil, nil, err
-		}
-		body, err := json.Marshal(dst)
-		if err != nil {
-			return nil, nil, err
-		}
-		return body, dst, nil
+		return marshalJSONObjectResult(apitransform.MapOpenAIVideosToPPIORequest, root)
+	case "openai_videos_to_seedance":
+		return marshalJSONObjectResult(apitransform.MapOpenAIVideosToSeedanceRequest, root)
 	case "openai_images_to_qwen_image":
-		dst, err := apitransform.MapOpenAIImagesToQwenImageRequest(root)
-		if err != nil {
-			return nil, nil, err
-		}
-		body, err := json.Marshal(dst)
-		if err != nil {
-			return nil, nil, err
-		}
-		return body, dst, nil
+		return marshalJSONObjectResult(apitransform.MapOpenAIImagesToQwenImageRequest, root)
 	case "openai_images_to_minimax_image":
-		// The Minimax request has no typed counterpart in apitypes, so the
-		// builtin returns a plain object root and it is marshalled directly
-		// rather than routed through marshalReqMapResult's ToMapper.
-		dst, err := apitransform.MapOpenAIImagesToMinimaxImageRequest(root)
-		if err != nil {
-			return nil, nil, err
-		}
-		body, err := json.Marshal(dst)
-		if err != nil {
-			return nil, nil, err
-		}
-		return body, dst, nil
+		return marshalJSONObjectResult(apitransform.MapOpenAIImagesToMinimaxImageRequest, root)
 	case "openai_images_to_gemini_generate_content":
 		dst, err := apitransform.MapOpenAIImagesToGeminiGenerateContentRequest(root)
 		if err != nil {
@@ -275,6 +250,18 @@ func applyReqMapObject(mode string, root apitypes.JSONObject) ([]byte, map[strin
 	default:
 		return nil, nil, fmt.Errorf("unsupported req_map mode %q", mode)
 	}
+}
+
+func marshalJSONObjectResult(mapFn func(apitypes.JSONObject) (apitypes.JSONObject, error), root apitypes.JSONObject) ([]byte, map[string]any, error) {
+	dst, err := mapFn(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	body, err := json.Marshal(dst)
+	if err != nil {
+		return nil, nil, err
+	}
+	return body, dst, nil
 }
 
 func marshalReqMapResult(value apitypes.ToMapper) ([]byte, map[string]any, error) {
@@ -1107,6 +1094,7 @@ func parseReqMapInputObject(mode string, raw []byte) (apitypes.JSONObject, error
 	case "openai_images_to_gemini_generate_content", "openai_images_to_minimax_image", "openai_images_to_qwen_image":
 	case "openai_images_edits_to_gemini_generate_content":
 	case "openai_videos_to_ppio":
+	case "openai_videos_to_seedance":
 	case "anthropic_to_openai_chat":
 	case "gemini_to_openai_chat":
 	default:

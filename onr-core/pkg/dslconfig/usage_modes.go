@@ -160,7 +160,7 @@ func resolveUsageModeRegistry(pathByMode map[string]string, raw usageModeRegistr
 		paths[name] = path
 	}
 	for name, cfg := range merged {
-		if strings.TrimSpace(cfg.Mode) == "" && hasAnyUsageExtractionRule(cfg) {
+		if strings.TrimSpace(cfg.Mode) == "" && (hasAnyUsageExtractionRule(cfg) || len(cfg.usageRoots) > 0) {
 			cfg.Mode = usageModeCustom
 			merged[name] = cfg
 		}

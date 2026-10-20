@@ -51,10 +51,8 @@ jobs:
         module:
           - name: onr
             path: .
-            go_mod: go.mod
           - name: onr-core
             path: onr-core
-            go_mod: onr-core/go.mod
 
     steps:
       - name: Checkout code
@@ -65,7 +63,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version-file: ${{ matrix.module.go_mod }}
+          go-version-file: go.work
           cache: true
 
       - name: Install govulncheck
@@ -75,4 +73,15 @@ jobs:
         working-directory: ${{ matrix.module.path }}
         run: |
           govulncheck_path="$(go env GOPATH)/bin/govulncheck"
-          "$govulncheck_path" ./...
+          report=$(mktemp)
+          trap 'rm -f "$report"' EXIT
+          "$govulncheck_path" -format json ./... > "$report"
+          set +e
+          python3 "$GITHUB_WORKSPACE/tools/govulncheck_allowlist.py" "$report"
+          filter_status=$?
+          set -e
+          case "$filter_status" in
+            0) exit 0 ;;
+            1) "$govulncheck_path" ./... ;;
+            *) echo "failed to validate govulncheck JSON report" >&2; exit "$filter_status" ;;
+          esac

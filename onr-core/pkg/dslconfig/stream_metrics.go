@@ -157,10 +157,11 @@ func (a *StreamMetricsAggregator) Result() (usage *Usage, cachedTokens int, fini
 }
 
 func (a *StreamMetricsAggregator) mergeUsageRootForEvent(event string, respRoot map[string]any) {
-	if a.usageCfg == nil || len(a.usageCfg.usageRoots) == 0 || len(respRoot) == 0 {
+	if a.usageCfg == nil || len(a.usageCfg.usageRoots) == 0 {
 		return
 	}
-	usageRoot := extractUsageRootWithEvent(event, respRoot, a.usageCfg.usageRoots)
+	reqRoot := requestRootFromMeta(a.meta)
+	usageRoot := extractUsageRootWithEvent(event, reqRoot, respRoot, a.usageCfg.usageRoots)
 	if len(usageRoot) == 0 {
 		return
 	}

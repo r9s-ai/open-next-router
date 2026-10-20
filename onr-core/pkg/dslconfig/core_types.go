@@ -51,6 +51,7 @@ type UsageRoot struct {
 	Event         string   `json:"event,omitempty"`
 	EventOptional bool     `json:"event_optional,omitempty"`
 	ExcludeFields []string `json:"exclude_fields,omitempty"`
+	Source        string   `json:"source,omitempty"`
 }
 
 // UsageExecutionPlan is the normalized internal plan used after usage_extract

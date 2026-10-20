@@ -28,6 +28,9 @@ var supportedMatchAPIs = map[string]struct{}{
 	"gemini.predictLongRunning":    {},
 	"gemini.getOperation":          {},
 	"gemini.videoContent":          {},
+	"seedance.videos.generations":  {},
+	"seedance.videos.get":          {},
+	"seedance.videos.delete":       {},
 }
 
 func validateProviderMatchAPIs(path, providerName string, routing ProviderRouting) error {
