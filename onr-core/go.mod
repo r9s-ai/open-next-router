@@ -1,6 +1,6 @@
 module github.com/r9s-ai/open-next-router/onr-core
 
-go 1.26.6
+go 1.26.10
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.47.1
