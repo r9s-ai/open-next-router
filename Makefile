@@ -1,4 +1,4 @@
-.PHONY: run build build-all test fuzz version release-dry release-snapshot clean help bench-dsl bench-dslconfig bench-dsl-pprof prek prek-install sync-onr-core-version
+.PHONY: run build build-all test test-race fuzz version release-dry release-snapshot clean help ci bench-dsl bench-dslconfig bench-dsl-pprof prek prek-install sync-onr-core-version
 
 # Get version from root release tags only (ignore submodule tags like onr-core/v*)
 VERSION ?= $(shell git describe --tags --match 'v*' --always --dirty 2>/dev/null || echo "dev")
@@ -59,6 +59,12 @@ build-all: ## Build for all platforms using GoReleaser
 test: ## Run tests
 	go test -v ./...
 	cd onr-core && go test -v ./...
+
+test-race: ## Run tests with race detector
+	go test -race ./...
+	cd onr-core && go test -race ./...
+
+ci: test test-race build ## Run CI checks
 
 fuzz: ## Run bounded fuzz tests for DSL and SSE parsing
 	go test -fuzz=FuzzDSLParser -fuzztime=$(FUZZTIME) ./onr-core/pkg/dslconfig
