@@ -4,8 +4,8 @@ go 1.26.10
 
 require (
 	github.com/atotto/clipboard v0.1.4
-	github.com/aws/aws-sdk-go-v2 v1.47.1
-	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.20
+	github.com/aws/aws-sdk-go-v2 v1.47.4
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.24
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
@@ -15,19 +15,19 @@ require (
 	github.com/meterry-com/meterry-go v0.0.1-alpha.2
 	github.com/r9s-ai/open-next-router/onr-core v1.16.22
 	github.com/spf13/cobra v1.10.2
-	golang.org/x/net v0.60.0
+	golang.org/x/net v0.61.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/yuin/gopher-lua v1.1.1 // indirect
-	go.uber.org/atomic v1.11.0 // indirect
+	go.uber.org/atomic v1.12.0 // indirect
 )
 
 require (
-	github.com/alicebob/miniredis/v2 v2.39.0
-	github.com/aws/smithy-go v1.28.1 // indirect
+	github.com/alicebob/miniredis/v2 v2.40.0
+	github.com/aws/smithy-go v1.28.6 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic v1.15.0 // indirect
@@ -53,7 +53,7 @@ require (
 	github.com/hajimehoshi/go-mp3 v0.3.4 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
+	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
@@ -67,7 +67,7 @@ require (
 	github.com/pkoukk/tiktoken-go v0.1.8 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.59.1 // indirect
-	github.com/redis/go-redis/v9 v9.22.0
+	github.com/redis/go-redis/v9 v9.23.0
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sahilm/fuzzy v0.1.1 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
@@ -77,8 +77,8 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	go.mongodb.org/mongo-driver/v2 v2.5.0 // indirect
 	golang.org/x/arch v0.22.0 // indirect
-	golang.org/x/crypto v0.57.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
-	golang.org/x/text v0.42.0 // indirect
+	golang.org/x/crypto v0.58.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
