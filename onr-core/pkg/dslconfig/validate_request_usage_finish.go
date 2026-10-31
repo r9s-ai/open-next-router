@@ -6,6 +6,21 @@ import (
 	"strings"
 )
 
+var supportedReqMapModes = map[string]struct{}{
+	"openai_chat_to_openai_responses":                {},
+	"openai_chat_to_anthropic_messages":              {},
+	"openai_chat_to_gemini_generate_content":         {},
+	"openai_images_to_gemini_generate_content":       {},
+	"openai_images_edits_to_gemini_generate_content": {},
+	"openai_images_to_minimax_image":                 {},
+	"openai_images_to_qwen_image":                    {},
+	"openai_videos_to_ppio":                          {},
+	"openai_videos_to_seedance":                      {},
+	"openai_videos_to_minimax_video":                 {},
+	"anthropic_to_openai_chat":                       {},
+	"gemini_to_openai_chat":                          {},
+}
+
 func validateProviderRequestTransform(path, providerName string, req ProviderRequestTransform) (ProviderRequestTransform, error) {
 	resolvedDefaults, err := validateRequestTransform(path, providerName, "defaults.request", req.Defaults)
 	if err != nil {
@@ -48,36 +63,14 @@ func validateRequestTransform(path, providerName, scope string, t RequestTransfo
 	if mode == "" {
 		return t, nil
 	}
-	switch mode {
-	case "openai_chat_to_openai_responses":
-		return t, nil
-	case "openai_chat_to_anthropic_messages":
-		return t, nil
-	case "openai_chat_to_gemini_generate_content":
-		return t, nil
-	case "openai_images_to_gemini_generate_content":
-		return t, nil
-	case "openai_images_edits_to_gemini_generate_content":
-		return t, nil
-	case "openai_images_to_minimax_image":
-		return t, nil
-	case "openai_images_to_qwen_image":
-		return t, nil
-	case "openai_videos_to_ppio":
-		return t, nil
-	case "openai_videos_to_seedance":
-		return t, nil
-	case "anthropic_to_openai_chat":
-		return t, nil
-	case "gemini_to_openai_chat":
-		return t, nil
-	default:
+	if _, ok := supportedReqMapModes[mode]; !ok {
 		return RequestTransform{}, validationIssue(
 			fmt.Errorf("provider %q in %q: %s unsupported req_map mode %q", providerName, path, scope, t.ReqMapMode),
 			scope,
 			"req_map",
 		)
 	}
+	return t, nil
 }
 
 func validateModelMapConfig(path, providerName, scope string, cfg ModelMapConfig) error {

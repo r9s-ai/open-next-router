@@ -14,27 +14,36 @@ func NormalizeResponseMapMode(mode string) string {
 	return strings.ToLower(strings.TrimSpace(mode))
 }
 
+type responseMapFn func(map[string]any) (map[string]any, error)
+
+var responseMapModes map[string]responseMapFn
+
+func init() {
+	geminiChat := MapOpenAIChatCompletionsToGeminiGenerateContentResponseObject
+	responseMapModes = map[string]responseMapFn{
+		"openai_responses_to_openai_chat":        MapOpenAIResponsesToChatCompletionsObject,
+		"anthropic_to_openai_chat":               MapClaudeMessagesResponseToOpenAIChatCompletionsObject,
+		"gemini_to_openai_chat":                  MapGeminiGenerateContentToOpenAIChatCompletionsResponseObject,
+		"gemini_to_openai_images":                MapGeminiGenerateContentToOpenAIImagesResponseObject,
+		"minimax_image_to_openai_images":         MapMinimaxImageToOpenAIImagesResponseObject,
+		"qwen_image_to_openai_images":            MapQwenImageToOpenAIImagesResponseObject,
+		"ppio_video_create_to_openai_videos":     MapPPIOVideoCreateToOpenAIVideoObject,
+		"ppio_video_result_to_openai_videos":     MapPPIOVideoResultToOpenAIVideoObject,
+		"seedance_video_create_to_openai_videos": MapSeedanceVideoCreateToOpenAIVideoObject,
+		"seedance_video_result_to_openai_videos": MapSeedanceVideoResultToOpenAIVideoObject,
+		"minimax_video_create_to_openai_videos":  MapMinimaxVideoCreateToOpenAIVideoObject,
+		"minimax_video_result_to_openai_videos":  MapMinimaxVideoResultToOpenAIVideoObject,
+		"openai_to_anthropic_messages":           MapOpenAIChatCompletionsToClaudeMessagesResponseObject,
+		"openai_to_gemini_chat":                  geminiChat,
+		"openai_to_gemini_generate_content":      geminiChat,
+	}
+}
+
 // SupportsResponseMapMode reports whether onr-core has a shared non-stream
 // resp_map transform for the given mode.
 func SupportsResponseMapMode(mode string) bool {
-	switch NormalizeResponseMapMode(mode) {
-	case "openai_responses_to_openai_chat",
-		"anthropic_to_openai_chat",
-		"gemini_to_openai_chat",
-		"gemini_to_openai_images",
-		"minimax_image_to_openai_images",
-		"qwen_image_to_openai_images",
-		"ppio_video_create_to_openai_videos",
-		"ppio_video_result_to_openai_videos",
-		"seedance_video_create_to_openai_videos",
-		"seedance_video_result_to_openai_videos",
-		"openai_to_anthropic_messages",
-		"openai_to_gemini_chat",
-		"openai_to_gemini_generate_content":
-		return true
-	default:
-		return false
-	}
+	_, ok := responseMapModes[NormalizeResponseMapMode(mode)]
+	return ok
 }
 
 // MapResponseBodyByMode runs the shared non-stream resp_map transform selected
@@ -53,34 +62,11 @@ func MapResponseBodyByMode(mode string, body []byte) (map[string]any, string, er
 }
 
 func MapResponseObjectByMode(mode string, root map[string]any) (map[string]any, error) {
-	switch NormalizeResponseMapMode(mode) {
-	case "openai_responses_to_openai_chat":
-		return MapOpenAIResponsesToChatCompletionsObject(root)
-	case "anthropic_to_openai_chat":
-		return MapClaudeMessagesResponseToOpenAIChatCompletionsObject(root)
-	case "gemini_to_openai_chat":
-		return MapGeminiGenerateContentToOpenAIChatCompletionsResponseObject(root)
-	case "gemini_to_openai_images":
-		return MapGeminiGenerateContentToOpenAIImagesResponseObject(root)
-	case "minimax_image_to_openai_images":
-		return MapMinimaxImageToOpenAIImagesResponseObject(root)
-	case "qwen_image_to_openai_images":
-		return MapQwenImageToOpenAIImagesResponseObject(root)
-	case "ppio_video_create_to_openai_videos":
-		return MapPPIOVideoCreateToOpenAIVideoObject(root)
-	case "ppio_video_result_to_openai_videos":
-		return MapPPIOVideoResultToOpenAIVideoObject(root)
-	case "seedance_video_create_to_openai_videos":
-		return MapSeedanceVideoCreateToOpenAIVideoObject(root)
-	case "seedance_video_result_to_openai_videos":
-		return MapSeedanceVideoResultToOpenAIVideoObject(root)
-	case "openai_to_anthropic_messages":
-		return MapOpenAIChatCompletionsToClaudeMessagesResponseObject(root)
-	case "openai_to_gemini_chat", "openai_to_gemini_generate_content":
-		return MapOpenAIChatCompletionsToGeminiGenerateContentResponseObject(root)
-	default:
+	fn, ok := responseMapModes[NormalizeResponseMapMode(mode)]
+	if !ok {
 		return nil, unsupportedModeError("resp_map", mode)
 	}
+	return fn(root)
 }
 
 func unmarshalResponseBodyObject(body []byte) (map[string]any, error) {

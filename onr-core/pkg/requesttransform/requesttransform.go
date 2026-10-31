@@ -211,6 +211,8 @@ func applyReqMapObject(mode string, root apitypes.JSONObject) ([]byte, map[strin
 		return marshalJSONObjectResult(apitransform.MapOpenAIVideosToPPIORequest, root)
 	case "openai_videos_to_seedance":
 		return marshalJSONObjectResult(apitransform.MapOpenAIVideosToSeedanceRequest, root)
+	case "openai_videos_to_minimax_video":
+		return marshalJSONObjectResult(apitransform.MapOpenAIVideosToMinimaxVideoRequest, root)
 	case "openai_images_to_qwen_image":
 		return marshalJSONObjectResult(apitransform.MapOpenAIImagesToQwenImageRequest, root)
 	case "openai_images_to_minimax_image":
@@ -1095,6 +1097,7 @@ func parseReqMapInputObject(mode string, raw []byte) (apitypes.JSONObject, error
 	case "openai_images_edits_to_gemini_generate_content":
 	case "openai_videos_to_ppio":
 	case "openai_videos_to_seedance":
+	case "openai_videos_to_minimax_video":
 	case "anthropic_to_openai_chat":
 	case "gemini_to_openai_chat":
 	default:
