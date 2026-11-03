@@ -31,6 +31,11 @@ var supportedMatchAPIs = map[string]struct{}{
 	"seedance.videos.generations":  {},
 	"seedance.videos.get":          {},
 	"seedance.videos.delete":       {},
+	"minimax.videos.generations":   {},
+	"minimax.videos.get":           {},
+	"minimax.videos.delete":        {},
+	"minimax.h3_context_ir":        {},
+	"minimax.videos.regeneration":  {},
 }
 
 func validateProviderMatchAPIs(path, providerName string, routing ProviderRouting) error {

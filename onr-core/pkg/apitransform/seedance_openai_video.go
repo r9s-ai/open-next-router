@@ -28,29 +28,54 @@ const (
 	seedanceStatusCancelled  = "cancelled"
 )
 
+var seedanceNativeToOpenAIStatus = map[string]string{
+	"queued":    seedanceStatusQueued,
+	"running":   seedanceStatusInProgress,
+	"succeeded": seedanceStatusCompleted,
+	"failed":    seedanceStatusFailed,
+	"cancelled": seedanceStatusCancelled,
+}
+
 // seedanceTaskStatus maps Seedance's status strings to the OpenAI video status
 // vocabulary. An unrecognized status is an error: guessing "queued" would keep
 // a caller polling a task that will never advance.
 func seedanceTaskStatus(raw string) (string, error) {
-	switch strings.TrimSpace(raw) {
-	case "queued":
-		return seedanceStatusQueued, nil
-	case "running":
-		return seedanceStatusInProgress, nil
-	case "succeeded":
-		return seedanceStatusCompleted, nil
-	case "failed":
-		return seedanceStatusFailed, nil
-	case "cancelled":
-		return seedanceStatusCancelled, nil
-	default:
-		return "", &UpstreamResponseError{
-			StatusCode: http.StatusBadGateway,
-			Type:       "server_error",
-			Code:       "upstream_unknown_task_status",
-			Message:    "Seedance returned an unknown task status: " + strings.TrimSpace(raw),
-		}
+	trimmed := strings.TrimSpace(raw)
+	if s, ok := seedanceNativeToOpenAIStatus[trimmed]; ok {
+		return s, nil
 	}
+	return "", &UpstreamResponseError{
+		StatusCode: http.StatusBadGateway,
+		Type:       "server_error",
+		Code:       "upstream_unknown_task_status",
+		Message:    "Seedance returned an unknown task status: " + trimmed,
+	}
+}
+
+// seedanceSizeToResolution maps known size strings (lowercase) to the
+// Seedance resolution label. Covers pass-through labels and common OpenAI WxH
+// values; unrecognized inputs return "" so the caller can omit the field and
+// let Ark apply its per-model default.
+var seedanceSizeToResolution = map[string]string{
+	// Seedance resolution labels (pass-through)
+	"480p":  "480p",
+	"720p":  "720p",
+	"1080p": "1080p",
+	"4k":    "4k",
+	// Common OpenAI landscape WxH → Seedance tier
+	"640x480":   "480p",
+	"854x480":   "480p",
+	"1280x720":  "720p",
+	"1920x1080": "1080p",
+	"2560x1440": "4k",
+	"3840x2160": "4k",
+	// Common OpenAI portrait WxH → Seedance tier
+	"480x640":   "480p",
+	"480x854":   "480p",
+	"720x1280":  "720p",
+	"1080x1920": "1080p",
+	"1440x2560": "4k",
+	"2160x3840": "4k",
 }
 
 // openAISizeToSeedanceResolution converts an OpenAI size value to the
@@ -62,41 +87,7 @@ func seedanceTaskStatus(raw string) (string, error) {
 // Returns "" when the input is unrecognized so the caller can omit the field
 // and let Ark apply its per-model default.
 func openAISizeToSeedanceResolution(size string) string {
-	lower := strings.ToLower(strings.TrimSpace(size))
-	if lower == "" {
-		return ""
-	}
-	// Pass through already-normalized Seedance labels.
-	switch lower {
-	case "480p", "720p", "1080p", "4k":
-		return lower
-	}
-	// Convert "WxH" using the short edge.
-	parts := strings.SplitN(lower, "x", 2)
-	if len(parts) != 2 {
-		return ""
-	}
-	w, werr := strconv.Atoi(strings.TrimSpace(parts[0]))
-	h, herr := strconv.Atoi(strings.TrimSpace(parts[1]))
-	if werr != nil || herr != nil || w <= 0 || h <= 0 {
-		return ""
-	}
-	short := h
-	if w < h {
-		short = w
-	}
-	switch {
-	case short >= 2160:
-		return "4k"
-	case short >= 1080:
-		return "1080p"
-	case short >= 720:
-		return "720p"
-	case short >= 480:
-		return "480p"
-	default:
-		return "" // below minimum supported tier
-	}
+	return seedanceSizeToResolution[strings.ToLower(strings.TrimSpace(size))]
 }
 
 // MapOpenAIVideosToSeedanceRequest builds a Seedance async video request from an
