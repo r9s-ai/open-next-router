@@ -1,6 +1,6 @@
 module github.com/r9s-ai/open-next-router
 
-go 1.26.10
+go 1.26.11
 
 require (
 	github.com/atotto/clipboard v0.1.4
