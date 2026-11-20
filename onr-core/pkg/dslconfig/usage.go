@@ -8,6 +8,9 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
 )
 
+// UsageExtractConfig is read-only after provider validation or selection.
+// Exported fields remain visible for inspection, but changing them after
+// compilation leaves the selected execution plan unchanged.
 type UsageExtractConfig struct {
 	Mode string
 	// SourceMode is the named usage_mode this config was resolved from (e.g. "anthropic_messages").
@@ -52,7 +55,8 @@ type MatchUsage struct {
 
 // Select requires a non-nil meta and a valid ProviderUsage receiver.
 // It returns a request-scoped copy assembled from defaults and the matched override.
-// Callers must treat the shared provider config as read-only across requests.
+// The copy shares a compiled, read-only plan with the provider. Callers must not
+// modify the provider or returned config after validation or selection.
 func (p *ProviderUsage) Select(meta *dslmeta.Meta) (*UsageExtractConfig, bool) {
 	api := strings.TrimSpace(meta.API)
 	if api == "" {
