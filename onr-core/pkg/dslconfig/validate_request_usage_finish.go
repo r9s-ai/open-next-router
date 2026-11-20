@@ -207,6 +207,7 @@ func validateProviderUsage(path, providerName string, usage ProviderUsage, regis
 	}
 	resolved := ProviderUsage{Defaults: resolvedDefaults}
 	if len(usage.Matches) == 0 {
+		resolved.prepareSelectedUsage()
 		return resolved, nil
 	}
 	resolved.Matches = make([]MatchUsage, 0, len(usage.Matches))
@@ -219,6 +220,7 @@ func validateProviderUsage(path, providerName string, usage ProviderUsage, regis
 		m.Extract = extract
 		resolved.Matches = append(resolved.Matches, m)
 	}
+	resolved.prepareSelectedUsage()
 	return resolved, nil
 }
 
