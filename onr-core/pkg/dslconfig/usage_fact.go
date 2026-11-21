@@ -267,6 +267,8 @@ func filterUsageFactConfigForStream(cfg UsageExtractConfig, keep func(usageFactC
 	cfg.facts = filtered
 	cfg.factGroups = nil
 	cfg.explicitFactKeys = nil
+	cfg.compiled = nil
+	cfg.derivedPaths = nil
 	return prepareUsageExtractConfig(cfg)
 }
 

@@ -8,6 +8,9 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
 )
 
+// UsageExtractConfig is read-only after provider validation or selection.
+// Exported fields remain visible for inspection, but changing them after
+// compilation leaves the selected execution plan unchanged.
 type UsageExtractConfig struct {
 	Mode string
 	// SourceMode is the named usage_mode this config was resolved from (e.g. "anthropic_messages").
@@ -29,6 +32,8 @@ type UsageExtractConfig struct {
 	facts            []usageFactConfig
 	factGroups       map[usageFactKey][]usageFactConfig
 	explicitFactKeys map[usageFactKey]struct{}
+	compiled         *UsageExtractConfig
+	derivedPaths     map[string]struct{}
 }
 
 const (
@@ -38,6 +43,7 @@ const (
 type ProviderUsage struct {
 	Defaults UsageExtractConfig
 	Matches  []MatchUsage
+	selected []UsageExtractConfig
 }
 
 type MatchUsage struct {
@@ -49,15 +55,23 @@ type MatchUsage struct {
 
 // Select requires a non-nil meta and a valid ProviderUsage receiver.
 // It returns a request-scoped copy assembled from defaults and the matched override.
-// Callers must treat the shared provider config as read-only across requests.
+// The copy shares a compiled, read-only plan with the provider. Callers must not
+// modify the provider or returned config after validation or selection.
 func (p *ProviderUsage) Select(meta *dslmeta.Meta) (*UsageExtractConfig, bool) {
 	api := strings.TrimSpace(meta.API)
 	if api == "" {
 		return nil, false
 	}
-	cfg := p.Defaults
-	if m, ok := p.selectMatch(api, meta.IsStream); ok {
-		cfg = mergeUsageConfig(cfg, m.Extract)
+	index := p.selectMatchIndex(api, meta.IsStream)
+	var cfg UsageExtractConfig
+	if len(p.selected) == len(p.Matches)+1 {
+		cfg = p.selected[index+1]
+	} else {
+		cfg = p.Defaults
+		if index >= 0 {
+			cfg = mergeUsageConfig(cfg, p.Matches[index].Extract)
+		}
+		cfg = withCompiledUsage(cfg)
 	}
 	if cfg.Mode == "" {
 		return nil, false
@@ -65,17 +79,42 @@ func (p *ProviderUsage) Select(meta *dslmeta.Meta) (*UsageExtractConfig, bool) {
 	return &cfg, true
 }
 
-func (p *ProviderUsage) selectMatch(api string, stream bool) (MatchUsage, bool) {
-	for _, m := range p.Matches {
+func (p *ProviderUsage) selectMatchIndex(api string, stream bool) int {
+	for i, m := range p.Matches {
 		if m.API != "" && m.API != api {
 			continue
 		}
 		if m.Stream != nil && *m.Stream != stream {
 			continue
 		}
-		return m, true
+		return i
 	}
-	return MatchUsage{}, false
+	return -1
+}
+
+// prepareSelectedUsage runs after mode resolution and validation, before the
+// provider is published. Selected configs and their compiled rules are read-only.
+func (p *ProviderUsage) prepareSelectedUsage() {
+	p.selected = make([]UsageExtractConfig, len(p.Matches)+1)
+	p.selected[0] = withCompiledUsage(p.Defaults)
+	for i, match := range p.Matches {
+		p.selected[i+1] = withCompiledUsage(mergeUsageConfig(p.Defaults, match.Extract))
+	}
+}
+
+func withCompiledUsage(cfg UsageExtractConfig) UsageExtractConfig {
+	compiled := compileUsageExtractConfig(nil, cfg)
+	for _, fact := range compiled.facts {
+		if !strings.EqualFold(fact.Source, "derived") {
+			continue
+		}
+		if compiled.derivedPaths == nil {
+			compiled.derivedPaths = make(map[string]struct{})
+		}
+		compiled.derivedPaths[fact.Path] = struct{}{}
+	}
+	cfg.compiled = &compiled
+	return cfg
 }
 
 // ExtractUsage requires a selected UsageExtractConfig and non-nil meta; cfg is never nil in the current call paths.
@@ -177,6 +216,9 @@ func prepareUsageExtractConfig(cfg UsageExtractConfig) UsageExtractConfig {
 
 func compileUsageExtractConfig(meta *dslmeta.Meta, cfg UsageExtractConfig) UsageExtractConfig {
 	_ = meta
+	if cfg.compiled != nil {
+		return *cfg.compiled
+	}
 	cfg = prepareUsageExtractConfig(cfg)
 	mode := normalizeUsageMode(cfg.Mode)
 	switch mode {
@@ -206,6 +248,8 @@ func derivedRootFromMeta(meta *dslmeta.Meta) map[string]any {
 
 func mergeUsageConfig(base UsageExtractConfig, override UsageExtractConfig) UsageExtractConfig {
 	out := base
+	out.compiled = nil
+	out.derivedPaths = nil
 	out.factGroups = nil
 	out.explicitFactKeys = nil
 	if strings.TrimSpace(override.Mode) != "" {
@@ -260,16 +304,17 @@ func mergeUsageConfig(base UsageExtractConfig, override UsageExtractConfig) Usag
 // derived-source usage_fact at the given JSON path.
 // UsesDerivedUsagePath requires a selected UsageExtractConfig.
 func UsesDerivedUsagePath(meta *dslmeta.Meta, cfg *UsageExtractConfig, path string) bool {
-	compiledCfg := compileUsageExtractConfig(meta, *cfg)
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return false
 	}
+	compiledCfg := compileUsageExtractConfig(meta, *cfg)
+	if cfg.compiled != nil {
+		_, ok := compiledCfg.derivedPaths[path]
+		return ok
+	}
 	for _, fact := range compiledCfg.facts {
-		if !strings.EqualFold(fact.Source, "derived") {
-			continue
-		}
-		if fact.Path == path {
+		if strings.EqualFold(fact.Source, "derived") && fact.Path == path {
 			return true
 		}
 	}

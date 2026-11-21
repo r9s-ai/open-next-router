@@ -42,6 +42,12 @@ These packages are intended to be shared by ONR itself and by downstream integra
 | `providerusage/audio` | Audio-specific derived usage helpers, such as duration-based signals. |
 | `providerusage/openai` | OpenAI-family usage extraction helpers shared across runtimes. |
 
+## Usage configuration lifecycle
+
+`dslconfig` resolves and validates a provider's usage defaults and match rules before publishing the provider. It then compiles the selected usage rules once. `ProviderUsage.Select` chooses the matching plan for each request and returns a copy that shares that plan.
+
+Treat the published provider's `Usage.Defaults` and `Usage.Matches`, and every `UsageExtractConfig` returned by `Select`, as read-only. Their exported fields are available for inspection, but changing them in place does not rebuild the compiled plan and can make the visible fields disagree with extraction behavior. To change usage rules, build and validate a new provider configuration and reload it. Request-specific derived usage belongs in the request meta (`DerivedUsage`), not in the shared config.
+
 ## Rules of thumb
 
 - If the logic is provider-agnostic and reusable by both ONR and `relay`, it likely belongs under `pkg/`.
