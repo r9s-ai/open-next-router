@@ -88,7 +88,7 @@ func (b *sseEventBuf) flush(w io.Writer, meta *dslmeta.Meta, rules []SSEJSONDelI
 		return nil
 	}
 	event := b.eventName()
-	// Keep multi-line data normalization for clients that read one JSON line at a time.
+	// Keep multi-line data on the existing path to preserve its output format.
 	// Skip JSON decoding only when no rule can inspect or change this event.
 	if len(rules) == 0 && len(ops) > 0 && len(b.dataParts) == 1 {
 		allSkipped := true
