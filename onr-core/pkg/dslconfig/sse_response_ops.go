@@ -87,6 +87,21 @@ func (b *sseEventBuf) flush(w io.Writer, meta *dslmeta.Meta, rules []SSEJSONDelI
 	if b.isEmpty() {
 		return nil
 	}
+	event := b.eventName()
+	// Keep multi-line data normalization for clients that read one JSON line at a time.
+	// Skip JSON decoding only when no rule can inspect or change this event.
+	if len(rules) == 0 && len(ops) > 0 && len(b.dataParts) == 1 {
+		allSkipped := true
+		for i, op := range ops {
+			if !shouldSkipJSONOp(event, op, counts, i) {
+				allSkipped = false
+				break
+			}
+		}
+		if allSkipped {
+			return b.writeRaw(w)
+		}
+	}
 	payload := b.payload()
 	if len(payload) == 0 || bytes.Equal(payload, []byte("[DONE]")) {
 		return b.writeRaw(w)
@@ -98,7 +113,7 @@ func (b *sseEventBuf) flush(w io.Writer, meta *dslmeta.Meta, rules []SSEJSONDelI
 	}
 
 	applySSEJSONDelIf(obj, rules)
-	if err := applyJSONOpsToObject(meta, obj, ops, b.eventName(), counts); err != nil {
+	if err := applyJSONOpsToObject(meta, obj, ops, event, counts); err != nil {
 		return err
 	}
 	outJSON, err := json.Marshal(obj)
@@ -199,6 +214,7 @@ func (w *SSEEventDataJSONWriter) Finish() error {
 //
 // For each event:
 //   - If joined data payload is "[DONE]" or empty: event is passed through unchanged.
+//   - If no rule can apply to a single-data-line event: pass it through without decoding JSON.
 //   - If payload is a JSON object: apply SSEJSONDelIf (in order), then JSONOps (in order),
 //     and emit a normalized event (all original non-data lines preserved, data re-emitted as a single JSON line).
 //   - Otherwise: event is passed through unchanged.
