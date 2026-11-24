@@ -734,6 +734,47 @@ func TestSSEEventDataJSONWriter_TerminatesAfterFinishError(t *testing.T) {
 	require.ErrorIs(t, writeErr, finishErr)
 }
 
+// TestSSEEventDataJSONWriter_TerminatesAfterFinishProcessLineError verifies that
+// when Finish itself encounters a processLine error (not an ev.flush error), the
+// error is recorded as the terminal state. It also asserts via downstream call count
+// that no Write reaches dst after the error.
+func TestSSEEventDataJSONWriter_TerminatesAfterFinishProcessLineError(t *testing.T) {
+	orig := maxSSELinesPerEvent
+	maxSSELinesPerEvent = 1
+	defer func() { maxSSELinesPerEvent = orig }()
+
+	var cw countingWriter
+	w := NewSSEEventDataJSONWriter(&cw, &dslmeta.Meta{}, nil, nil)
+
+	// Write a complete data line; addLine accepts it (first line, at limit).
+	// No flush fires here because there is no blank-line event boundary.
+	_, err := w.Write([]byte("data: hello\n"))
+	require.NoError(t, err)
+
+	// Write a partial line (no \n) so it stays in w.partial.
+	_, err = w.Write([]byte("data: world"))
+	require.NoError(t, err)
+
+	// No write to dst should have happened yet.
+	require.Equal(t, 0, cw.calls)
+
+	// Finish calls processLine for the buffered partial → addLine → ErrSSETooManyLines.
+	firstFinishErr := w.Finish()
+	require.ErrorIs(t, firstFinishErr, ErrSSETooManyLines)
+
+	// The error occurred in processLine before any flush: dst must still be untouched.
+	require.Equal(t, 0, cw.calls)
+
+	// Subsequent Finish must return the recorded error without retrying.
+	require.ErrorIs(t, w.Finish(), ErrSSETooManyLines)
+	require.Equal(t, 0, cw.calls)
+
+	// Write after a failed Finish must also return the recorded error without writing.
+	_, writeErr := w.Write([]byte("data: more\n"))
+	require.ErrorIs(t, writeErr, ErrSSETooManyLines)
+	require.Equal(t, 0, cw.calls)
+}
+
 // TestSSEEventDataJSONWriter_TerminatesAfterAddLineError verifies that after
 // processLine returns ErrSSETooManyLines (via addLine), all subsequent Write and
 // Finish calls return the same error without processing any input.
