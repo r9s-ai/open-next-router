@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
@@ -531,6 +532,44 @@ func TestSSEEventDataJSONWriter_SingleWritePerEvent(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, w.Finish())
 	require.Equal(t, 3, cw.calls, "must produce exactly one Write per SSE event")
+}
+
+// TestTransformSSEEventDataJSON_LargeRawEvent verifies that a non-JSON data
+// line larger than a typical SSE delta (64 KB) is passed through byte-for-byte
+// via writeRaw and produces exactly one Write to the destination.
+func TestTransformSSEEventDataJSON_LargeRawEvent(t *testing.T) {
+	largeData := strings.Repeat("a", 64*1024)
+	in := "data: " + largeData + "\n\ndata: [DONE]\n\n"
+
+	ops := []JSONOp{{Op: "json_del", Path: "$.x"}}
+	var cw countingWriter
+	err := TransformSSEEventDataJSON(bytes.NewBufferString(in), &cw, &dslmeta.Meta{}, nil, ops)
+	require.NoError(t, err)
+	// non-JSON event + [DONE] = 2 Write calls
+	require.Equal(t, 2, cw.calls, "must produce exactly one Write per SSE event")
+	require.Contains(t, cw.buf.String(), largeData)
+}
+
+// TestTransformSSEEventDataJSON_LargeJSONEvent verifies that a large JSON
+// payload (64 KB content field) is transformed correctly via writeNormalizedJSON
+// and produces exactly one Write to the destination.
+func TestTransformSSEEventDataJSON_LargeJSONEvent(t *testing.T) {
+	largeValue := strings.Repeat("x", 64*1024)
+	objJSON, err := json.Marshal(map[string]any{"content": largeValue, "drop": true})
+	require.NoError(t, err)
+	in := "data: " + string(objJSON) + "\n\ndata: [DONE]\n\n"
+
+	ops := []JSONOp{{Op: "json_del", Path: "$.drop"}}
+	var cw countingWriter
+	require.NoError(t, TransformSSEEventDataJSON(bytes.NewBufferString(in), &cw, &dslmeta.Meta{}, nil, ops))
+	// transformed JSON event + [DONE] = 2 Write calls
+	require.Equal(t, 2, cw.calls, "must produce exactly one Write per SSE event")
+
+	payloads := responseJSONPayloads(t, cw.buf.Bytes())
+	require.Len(t, payloads, 1)
+	require.Equal(t, largeValue, payloads[0]["content"])
+	_, hasDrop := payloads[0]["drop"]
+	require.False(t, hasDrop)
 }
 
 func responseJSONPayloads(t *testing.T, raw []byte) []map[string]any {

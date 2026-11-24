@@ -51,6 +51,17 @@ func (b *sseEventBuf) eventName() string {
 	return ""
 }
 
+// writeRaw emits the buffered event unchanged as a single w.Write call.
+// All lines are assembled into one bytes.Buffer first because w is typically
+// a flush-on-write wrapper (e.g. flushWriter in the relay); a single Write
+// means a single Flush per event, which is the invariant this package
+// establishes.
+//
+// Two alternatives that do not work here:
+//   - sync.Pool for buf: a large event causes the pool to retain a large
+//     buffer until the next GC cycle, amplifying peak RSS under concurrency.
+//   - Chunked writes (flush buf to w mid-event): still multiple w.Write calls,
+//     so still multiple Flush calls per event — the problem we are solving.
 func (b *sseEventBuf) writeRaw(w io.Writer) error {
 	var buf bytes.Buffer
 	for _, l := range b.rawLines {
@@ -62,6 +73,11 @@ func (b *sseEventBuf) writeRaw(w io.Writer) error {
 	return err
 }
 
+// writeNormalizedJSON emits the transformed event as a single w.Write call.
+// metaLines (event:, id:, etc.) are prepended to the already-marshalled
+// jsonBytes and written together so that w sees exactly one Write per event.
+// See writeRaw for the rationale on why pooling and chunked writes are not
+// viable here.
 func (b *sseEventBuf) writeNormalizedJSON(w io.Writer, jsonBytes []byte) error {
 	var buf bytes.Buffer
 	for _, l := range b.metaLines {
