@@ -9,6 +9,32 @@ import (
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
 )
 
+// sseEventBuf accumulates the lines of one SSE event between field lines and
+// the blank-line terminator. rawLines holds every non-empty line verbatim;
+// dataParts holds the trimmed payload of each "data:" line; metaLines holds
+// all non-data field lines (event:, id:, retry:, comments).
+//
+// Memory model: addLine copies each line into the struct so the caller's read
+// buffer can be reused immediately (primary copy, lives until reset()).
+// writeRaw and writeNormalizedJSON assemble a bytes.Buffer from these copies
+// to do a single w.Write call (secondary copy, transient — freed after Write
+// returns). The JSON transform path additionally allocates for json.Unmarshal
+// (parsed object) and json.Marshal (output bytes). Peak memory per in-flight
+// event is roughly 2× raw event size for passthrough events, and up to ~5×
+// for large JSON transform events.
+//
+// Large-event risk: if an upstream sends a single data: line carrying megabytes
+// of JSON (e.g. a provider that returns a full document as one SSE event), every
+// concurrent stream hitting such an event will each allocate proportionally,
+// raising GC pressure or causing OOM at high concurrency. There is currently no
+// size limit on accumulated lines.
+//
+// Resolution decision: mainstream AI API upstreams (OpenAI, Anthropic) emit
+// token-delta events of at most a few KB each, so the unbounded accumulation is
+// not a practical risk for the current workload. If a deployment targets custom
+// upstreams with documented large-event patterns, a byte cap should be added in
+// addLine — it must return an error when exceeded so flush and its callers
+// (TransformSSEEventDataJSON, SSEEventDataJSONWriter) can surface it cleanly.
 type sseEventBuf struct {
 	rawLines  [][]byte
 	dataParts [][]byte
@@ -55,7 +81,8 @@ func (b *sseEventBuf) eventName() string {
 // All lines are assembled into one bytes.Buffer first because w is typically
 // a flush-on-write wrapper (e.g. flushWriter in the relay); a single Write
 // means a single Flush per event, which is the invariant this package
-// establishes.
+// establishes. The bytes.Buffer is the secondary copy described in sseEventBuf
+// and is freed immediately after Write returns.
 //
 // Two alternatives that do not work here:
 //   - sync.Pool for buf: a large event causes the pool to retain a large
@@ -76,8 +103,9 @@ func (b *sseEventBuf) writeRaw(w io.Writer) error {
 // writeNormalizedJSON emits the transformed event as a single w.Write call.
 // metaLines (event:, id:, etc.) are prepended to the already-marshalled
 // jsonBytes and written together so that w sees exactly one Write per event.
-// See writeRaw for the rationale on why pooling and chunked writes are not
-// viable here.
+// The bytes.Buffer is the secondary copy described in sseEventBuf and is freed
+// immediately after Write returns. See writeRaw for the rationale on why
+// pooling and chunked writes are not viable here.
 func (b *sseEventBuf) writeNormalizedJSON(w io.Writer, jsonBytes []byte) error {
 	var buf bytes.Buffer
 	for _, l := range b.metaLines {
