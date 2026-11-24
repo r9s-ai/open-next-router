@@ -20,6 +20,11 @@ var ErrSSELineTooLong = errors.New("sse: line exceeds maximum byte length")
 // accumulated in one SSE event by sseEventBuf.addLine exceeds maxSSEEventBytes.
 var ErrSSEEventTooLarge = errors.New("sse: event exceeds maximum byte length")
 
+// ErrSSETooManyLines is returned when the number of non-empty lines in one SSE
+// event exceeds maxSSELinesPerEvent. It bounds per-line slice-header overhead
+// that the byte counter in addLine does not capture.
+var ErrSSETooManyLines = errors.New("sse: event exceeds maximum line count")
+
 // maxSSELineBytes is the maximum byte length of a single SSE line (without \n).
 // Declared as var so tests can override it without allocating large buffers.
 var maxSSELineBytes = 1 * 1024 * 1024 // 1 MiB
@@ -28,6 +33,14 @@ var maxSSELineBytes = 1 * 1024 * 1024 // 1 MiB
 // event as tracked by sseEventBuf.addLine.
 // Declared as var so tests can override it without allocating large buffers.
 var maxSSEEventBytes = 4 * 1024 * 1024 // 4 MiB
+
+// maxSSELinesPerEvent is the maximum number of non-empty lines in one SSE event.
+// It caps per-line slice-header overhead (24 bytes each) independently of the
+// byte counter: at the 4 MiB byte limit with 1-byte lines, without this cap,
+// addLine would allow ~4 million lines before firing, producing ~96 MiB of
+// slice-header overhead alone.
+// Declared as var so tests can override it without constructing large events.
+var maxSSELinesPerEvent = 1000
 
 // sseEventBuf accumulates the lines of one SSE event between field lines and
 // the blank-line terminator. rawLines holds every non-empty line verbatim;
@@ -47,12 +60,18 @@ var maxSSEEventBytes = 4 * 1024 * 1024 // 4 MiB
 //
 //  1. Partial-line path: SSEEventDataJSONWriter.Write checks w.partial.Len()+
 //     pending bytes against maxSSELineBytes before accumulating; TransformSSEEventDataJSON
-//     checks len(line) against maxSSELineBytes after ReadBytes trims the newline.
+//     uses readBoundedLine which calls ReadLine in a loop and checks cumulative
+//     fragment length against maxSSELineBytes before each append, so the check
+//     fires during accumulation rather than after the full line is in memory.
 //     Either path returns ErrSSELineTooLong when exceeded.
 //
 //  2. Event-level path: addLine tracks totalBytes across all lines in the current
 //     event and returns ErrSSEEventTooLarge when the cumulative length would exceed
-//     maxSSEEventBytes, bounding per-event and per-stream allocation.
+//     maxSSEEventBytes. The byte counter is an approximate memory budget: each line
+//     also allocates a 24-byte slice header, so a pathological many-short-line event
+//     can produce slice-header overhead well beyond the byte count. addLine therefore
+//     also checks len(rawLines) against maxSSELinesPerEvent and returns
+//     ErrSSETooManyLines when exceeded, independently bounding that overhead.
 type sseEventBuf struct {
 	rawLines   [][]byte
 	dataParts  [][]byte
@@ -61,9 +80,13 @@ type sseEventBuf struct {
 }
 
 func (b *sseEventBuf) reset() {
-	b.rawLines = b.rawLines[:0]
-	b.dataParts = b.dataParts[:0]
-	b.metaLines = b.metaLines[:0]
+	// Set to nil rather than [:0] so the GC can reclaim both the backing arrays
+	// and the per-line []byte copies they reference. Keeping capacity would save
+	// a tiny allocation (a few dozen bytes for 2–5 slice headers) but at the
+	// cost of retaining references to previous event data for the stream lifetime.
+	b.rawLines = nil
+	b.dataParts = nil
+	b.metaLines = nil
 	b.totalBytes = 0
 }
 
@@ -73,10 +96,14 @@ func (b *sseEventBuf) isEmpty() bool {
 
 // addLine appends line to the event buffer. It returns ErrSSEEventTooLarge if
 // the cumulative byte length of all lines in the current event would exceed
-// maxSSEEventBytes. line must be a complete SSE field line without a trailing \n.
+// maxSSEEventBytes, and ErrSSETooManyLines if the number of lines would exceed
+// maxSSELinesPerEvent. line must be a complete SSE field line without a trailing \n.
 func (b *sseEventBuf) addLine(line []byte) error {
 	if len(line) == 0 {
 		return nil
+	}
+	if len(b.rawLines) >= maxSSELinesPerEvent {
+		return ErrSSETooManyLines
 	}
 	if b.totalBytes+len(line) > maxSSEEventBytes {
 		return ErrSSEEventTooLarge
@@ -209,10 +236,13 @@ func NewSSEEventDataJSONWriter(dst io.Writer, meta *dslmeta.Meta, rules []SSEJSO
 // Write implements [io.Writer]. It buffers bytes until complete SSE lines are
 // available, then applies the configured rules and ops to each complete event.
 // It returns ErrSSELineTooLong if any single line (content before \n) would
-// exceed maxSSELineBytes, and ErrSSEEventTooLarge if the accumulated byte
-// length of one event's lines would exceed maxSSEEventBytes.
+// exceed maxSSELineBytes, ErrSSEEventTooLarge if the accumulated byte length of
+// one event's lines would exceed maxSSEEventBytes, and ErrSSETooManyLines if
+// the number of lines in one event would exceed maxSSELinesPerEvent.
+// On error, n reflects the number of bytes consumed before the error so the
+// caller can determine which bytes have already been processed.
 func (w *SSEEventDataJSONWriter) Write(p []byte) (int, error) {
-	written := len(p)
+	consumed := 0
 	for len(p) > 0 {
 		idx := bytes.IndexByte(p, '\n')
 		if idx < 0 {
@@ -221,9 +251,10 @@ func (w *SSEEventDataJSONWriter) Write(p []byte) (int, error) {
 			// guard against unbounded partial-line growth. addLine's event-total
 			// check (maxSSEEventBytes = 4 MiB) would not fire here.
 			if w.partial.Len()+len(p) > maxSSELineBytes {
-				return 0, ErrSSELineTooLong
+				return consumed, ErrSSELineTooLong
 			}
 			w.partial.Write(p)
+			consumed += len(p)
 			break
 		}
 		// \n found: w.partial + p[:idx] is the full assembled line. addLine will
@@ -232,15 +263,16 @@ func (w *SSEEventDataJSONWriter) Write(p []byte) (int, error) {
 		// before writing to w.partial so the per-line limit is enforced uniformly
 		// regardless of whether the line spans multiple Write calls.
 		if w.partial.Len()+idx > maxSSELineBytes {
-			return 0, ErrSSELineTooLong
+			return consumed, ErrSSELineTooLong
 		}
 		w.partial.Write(p[:idx])
 		p = p[idx+1:]
+		consumed += idx + 1
 		if err := w.processLine(); err != nil {
-			return 0, err
+			return consumed, err
 		}
 	}
-	return written, nil
+	return consumed, nil
 }
 
 func (w *SSEEventDataJSONWriter) processLine() error {
@@ -276,6 +308,29 @@ func (w *SSEEventDataJSONWriter) Finish() error {
 	return nil
 }
 
+// readBoundedLine reads one complete SSE line from br without the trailing
+// newline. It accumulates fragments via ReadLine (each at most
+// bufio.Reader.Size() bytes) and checks cumulative length against
+// maxSSELineBytes before each append. It returns ErrSSELineTooLong as soon
+// as that check fires, without reading further. At EOF with no pending bytes
+// it returns nil, io.EOF.
+func readBoundedLine(br *bufio.Reader) ([]byte, error) {
+	var line []byte
+	for {
+		fragment, isPrefix, err := br.ReadLine()
+		if len(line)+len(fragment) > maxSSELineBytes {
+			return nil, ErrSSELineTooLong
+		}
+		line = append(line, fragment...)
+		if !isPrefix {
+			return line, err
+		}
+		if err != nil {
+			return line, err
+		}
+	}
+}
+
 // TransformSSEEventDataJSON applies response SSE rules to a text/event-stream.
 //
 // It reads from r and writes to w, event-by-event, using the SSE framing rules:
@@ -297,13 +352,9 @@ func TransformSSEEventDataJSON(r io.Reader, w io.Writer, meta *dslmeta.Meta, rul
 	counts := make([]int, len(ops))
 
 	for {
-		line, err := br.ReadBytes('\n')
-		if len(line) > 0 {
-			line = bytes.TrimSuffix(line, []byte{'\n'})
-			line = bytes.TrimSuffix(line, []byte{'\r'})
-		}
-		if len(line) > maxSSELineBytes {
-			return ErrSSELineTooLong
+		line, err := readBoundedLine(br)
+		if err != nil && err != io.EOF {
+			return err
 		}
 
 		if len(bytes.TrimSpace(line)) == 0 {
@@ -317,16 +368,13 @@ func TransformSSEEventDataJSON(r io.Reader, w io.Writer, meta *dslmeta.Meta, rul
 			}
 		}
 
-		if err != nil {
-			if err == io.EOF {
-				if !ev.isEmpty() {
-					if err2 := ev.flush(w, meta, rules, ops, counts); err2 != nil {
-						return err2
-					}
+		if err == io.EOF {
+			if !ev.isEmpty() {
+				if err2 := ev.flush(w, meta, rules, ops, counts); err2 != nil {
+					return err2
 				}
-				return nil
 			}
-			return err
+			return nil
 		}
 	}
 }
