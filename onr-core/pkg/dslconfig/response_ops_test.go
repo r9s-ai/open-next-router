@@ -572,6 +572,63 @@ func TestTransformSSEEventDataJSON_LargeJSONEvent(t *testing.T) {
 	require.False(t, hasDrop)
 }
 
+// TestTransformSSEEventDataJSON_RejectsLineTooLong verifies that a line
+// exceeding maxSSELineBytes returns ErrSSELineTooLong.
+func TestTransformSSEEventDataJSON_RejectsLineTooLong(t *testing.T) {
+	orig := maxSSELineBytes
+	maxSSELineBytes = 10
+	defer func() { maxSSELineBytes = orig }()
+
+	// 11-byte line (without \n) exceeds the limit of 10
+	in := strings.Repeat("x", 11) + "\n\n"
+	ops := []JSONOp{{Op: "json_del", Path: "$.x"}}
+	err := TransformSSEEventDataJSON(bytes.NewBufferString(in), io.Discard, &dslmeta.Meta{}, nil, ops)
+	require.ErrorIs(t, err, ErrSSELineTooLong)
+}
+
+// TestTransformSSEEventDataJSON_RejectsEventTooLarge verifies that an event
+// whose accumulated line bytes exceed maxSSEEventBytes returns ErrSSEEventTooLarge.
+func TestTransformSSEEventDataJSON_RejectsEventTooLarge(t *testing.T) {
+	orig := maxSSEEventBytes
+	maxSSEEventBytes = 20
+	defer func() { maxSSEEventBytes = orig }()
+
+	// Two lines totalling 22 bytes (> 20) within the same event
+	in := strings.Repeat("a", 12) + "\n" + strings.Repeat("b", 10) + "\n\n"
+	ops := []JSONOp{{Op: "json_del", Path: "$.x"}}
+	err := TransformSSEEventDataJSON(bytes.NewBufferString(in), io.Discard, &dslmeta.Meta{}, nil, ops)
+	require.ErrorIs(t, err, ErrSSEEventTooLarge)
+}
+
+// TestSSEEventDataJSONWriter_RejectsLineTooLong verifies that Write returns
+// ErrSSELineTooLong when the partial buffer would exceed maxSSELineBytes.
+func TestSSEEventDataJSONWriter_RejectsLineTooLong(t *testing.T) {
+	orig := maxSSELineBytes
+	maxSSELineBytes = 10
+	defer func() { maxSSELineBytes = orig }()
+
+	w := NewSSEEventDataJSONWriter(io.Discard, &dslmeta.Meta{}, nil, nil)
+	// 11 bytes without \n — partial accumulation exceeds limit
+	_, err := w.Write([]byte(strings.Repeat("x", 11)))
+	require.ErrorIs(t, err, ErrSSELineTooLong)
+}
+
+// TestSSEEventDataJSONWriter_RejectsEventTooLarge verifies that Write returns
+// ErrSSEEventTooLarge when the event accumulation would exceed maxSSEEventBytes.
+func TestSSEEventDataJSONWriter_RejectsEventTooLarge(t *testing.T) {
+	orig := maxSSEEventBytes
+	maxSSEEventBytes = 20
+	defer func() { maxSSEEventBytes = orig }()
+
+	w := NewSSEEventDataJSONWriter(io.Discard, &dslmeta.Meta{}, nil, nil)
+	// First line: 12 bytes, fits
+	_, err := w.Write([]byte(strings.Repeat("a", 12) + "\n"))
+	require.NoError(t, err)
+	// Second line: 10 bytes, total 22 > 20 — triggers event-level limit
+	_, err = w.Write([]byte(strings.Repeat("b", 10) + "\n"))
+	require.ErrorIs(t, err, ErrSSEEventTooLarge)
+}
+
 func responseJSONPayloads(t *testing.T, raw []byte) []map[string]any {
 	t.Helper()
 	var payloads []map[string]any

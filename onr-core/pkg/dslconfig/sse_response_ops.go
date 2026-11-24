@@ -4,10 +4,30 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
 )
+
+// ErrSSELineTooLong is returned when a single SSE line (content before \n)
+// exceeds maxSSELineBytes. It bounds partial-line accumulation in
+// SSEEventDataJSONWriter.Write and the ReadBytes buffer in
+// TransformSSEEventDataJSON.
+var ErrSSELineTooLong = errors.New("sse: line exceeds maximum byte length")
+
+// ErrSSEEventTooLarge is returned when the total byte length of all lines
+// accumulated in one SSE event by sseEventBuf.addLine exceeds maxSSEEventBytes.
+var ErrSSEEventTooLarge = errors.New("sse: event exceeds maximum byte length")
+
+// maxSSELineBytes is the maximum byte length of a single SSE line (without \n).
+// Declared as var so tests can override it without allocating large buffers.
+var maxSSELineBytes = 1 * 1024 * 1024 // 1 MiB
+
+// maxSSEEventBytes is the maximum total byte length of all lines in one SSE
+// event as tracked by sseEventBuf.addLine.
+// Declared as var so tests can override it without allocating large buffers.
+var maxSSEEventBytes = 4 * 1024 * 1024 // 4 MiB
 
 // sseEventBuf accumulates the lines of one SSE event between field lines and
 // the blank-line terminator. rawLines holds every non-empty line verbatim;
@@ -23,45 +43,53 @@ import (
 // event is roughly 2× raw event size for passthrough events, and up to ~5×
 // for large JSON transform events.
 //
-// Large-event risk: if an upstream sends a single data: line carrying megabytes
-// of JSON (e.g. a provider that returns a full document as one SSE event), every
-// concurrent stream hitting such an event will each allocate proportionally,
-// raising GC pressure or causing OOM at high concurrency. There is currently no
-// size limit on accumulated lines.
+// Two independent unbounded-accumulation paths are both bounded by size caps:
 //
-// Resolution decision: mainstream AI API upstreams (OpenAI, Anthropic) emit
-// token-delta events of at most a few KB each, so the unbounded accumulation is
-// not a practical risk for the current workload. If a deployment targets custom
-// upstreams with documented large-event patterns, a byte cap should be added in
-// addLine — it must return an error when exceeded so flush and its callers
-// (TransformSSEEventDataJSON, SSEEventDataJSONWriter) can surface it cleanly.
+//  1. Partial-line path: SSEEventDataJSONWriter.Write checks w.partial.Len()+
+//     pending bytes against maxSSELineBytes before accumulating; TransformSSEEventDataJSON
+//     checks len(line) against maxSSELineBytes after ReadBytes trims the newline.
+//     Either path returns ErrSSELineTooLong when exceeded.
+//
+//  2. Event-level path: addLine tracks totalBytes across all lines in the current
+//     event and returns ErrSSEEventTooLarge when the cumulative length would exceed
+//     maxSSEEventBytes, bounding per-event and per-stream allocation.
 type sseEventBuf struct {
-	rawLines  [][]byte
-	dataParts [][]byte
-	metaLines [][]byte
+	rawLines   [][]byte
+	dataParts  [][]byte
+	metaLines  [][]byte
+	totalBytes int
 }
 
 func (b *sseEventBuf) reset() {
 	b.rawLines = b.rawLines[:0]
 	b.dataParts = b.dataParts[:0]
 	b.metaLines = b.metaLines[:0]
+	b.totalBytes = 0
 }
 
 func (b *sseEventBuf) isEmpty() bool {
 	return len(b.rawLines) == 0 && len(b.dataParts) == 0 && len(b.metaLines) == 0
 }
 
-func (b *sseEventBuf) addLine(line []byte) {
+// addLine appends line to the event buffer. It returns ErrSSEEventTooLarge if
+// the cumulative byte length of all lines in the current event would exceed
+// maxSSEEventBytes. line must be a complete SSE field line without a trailing \n.
+func (b *sseEventBuf) addLine(line []byte) error {
 	if len(line) == 0 {
-		return
+		return nil
 	}
+	if b.totalBytes+len(line) > maxSSEEventBytes {
+		return ErrSSEEventTooLarge
+	}
+	b.totalBytes += len(line)
 	b.rawLines = append(b.rawLines, append([]byte(nil), line...))
 	if bytes.HasPrefix(line, []byte("data:")) {
 		rest := bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
 		b.dataParts = append(b.dataParts, append([]byte(nil), rest...))
-		return
+		return nil
 	}
 	b.metaLines = append(b.metaLines, append([]byte(nil), line...))
+	return nil
 }
 
 func (b *sseEventBuf) payload() []byte {
@@ -178,15 +206,33 @@ func NewSSEEventDataJSONWriter(dst io.Writer, meta *dslmeta.Meta, rules []SSEJSO
 	}
 }
 
-// Write implements [io.Writer]. It buffers bytes until complete SSE lines are available,
-// then applies the configured rules and ops to each complete event.
+// Write implements [io.Writer]. It buffers bytes until complete SSE lines are
+// available, then applies the configured rules and ops to each complete event.
+// It returns ErrSSELineTooLong if any single line (content before \n) would
+// exceed maxSSELineBytes, and ErrSSEEventTooLarge if the accumulated byte
+// length of one event's lines would exceed maxSSEEventBytes.
 func (w *SSEEventDataJSONWriter) Write(p []byte) (int, error) {
 	written := len(p)
 	for len(p) > 0 {
 		idx := bytes.IndexByte(p, '\n')
 		if idx < 0 {
+			// No \n in p: bytes will accumulate in w.partial until the next Write.
+			// addLine is never called for a line without \n, so this is the only
+			// guard against unbounded partial-line growth. addLine's event-total
+			// check (maxSSEEventBytes = 4 MiB) would not fire here.
+			if w.partial.Len()+len(p) > maxSSELineBytes {
+				return 0, ErrSSELineTooLong
+			}
 			w.partial.Write(p)
 			break
+		}
+		// \n found: w.partial + p[:idx] is the full assembled line. addLine will
+		// check the cumulative event total (maxSSEEventBytes = 4 MiB), but that
+		// is a weaker per-line bound than maxSSELineBytes (1 MiB). Check here
+		// before writing to w.partial so the per-line limit is enforced uniformly
+		// regardless of whether the line spans multiple Write calls.
+		if w.partial.Len()+idx > maxSSELineBytes {
+			return 0, ErrSSELineTooLong
 		}
 		w.partial.Write(p[:idx])
 		p = p[idx+1:]
@@ -206,7 +252,9 @@ func (w *SSEEventDataJSONWriter) processLine() error {
 		}
 		w.ev.reset()
 	} else {
-		w.ev.addLine(trimmed) // addLine copies trimmed before we reset
+		if err := w.ev.addLine(trimmed); err != nil { // addLine copies trimmed before we reset
+			return err
+		}
 		w.partial.Reset()
 	}
 	return nil
@@ -254,6 +302,9 @@ func TransformSSEEventDataJSON(r io.Reader, w io.Writer, meta *dslmeta.Meta, rul
 			line = bytes.TrimSuffix(line, []byte{'\n'})
 			line = bytes.TrimSuffix(line, []byte{'\r'})
 		}
+		if len(line) > maxSSELineBytes {
+			return ErrSSELineTooLong
+		}
 
 		if len(bytes.TrimSpace(line)) == 0 {
 			if err2 := ev.flush(w, meta, rules, ops, counts); err2 != nil {
@@ -261,7 +312,9 @@ func TransformSSEEventDataJSON(r io.Reader, w io.Writer, meta *dslmeta.Meta, rul
 			}
 			ev.reset()
 		} else {
-			ev.addLine(line)
+			if err2 := ev.addLine(line); err2 != nil {
+				return err2
+			}
 		}
 
 		if err != nil {
