@@ -694,6 +694,46 @@ type errWriter struct{ err error }
 
 func (e *errWriter) Write(p []byte) (int, error) { return 0, e.err }
 
+// failAfterNWriter succeeds for the first n Write calls, then returns err for all subsequent calls.
+type failAfterNWriter struct {
+	n   int
+	err error
+}
+
+func (f *failAfterNWriter) Write(p []byte) (int, error) {
+	if f.n <= 0 {
+		return 0, f.err
+	}
+	f.n--
+	return len(p), nil
+}
+
+// TestSSEEventDataJSONWriter_TerminatesAfterFinishError verifies that when Finish
+// itself encounters an error (e.g. a downstream write failure during the final flush),
+// the error is recorded as the terminal state: a second Finish call returns the same
+// error without re-processing, and a Write call after the failed Finish also fails.
+func TestSSEEventDataJSONWriter_TerminatesAfterFinishError(t *testing.T) {
+	finishErr := errors.New("downstream closed during finish")
+	// Allow zero successful writes so the first flush attempt in Finish fails.
+	dst := &failAfterNWriter{n: 0, err: finishErr}
+
+	w := NewSSEEventDataJSONWriter(dst, &dslmeta.Meta{}, nil, nil)
+	// Write a data line without an event-boundary blank line; no flush fires during Write.
+	_, err := w.Write([]byte("data: hello\n"))
+	require.NoError(t, err)
+
+	// Finish triggers ev.flush → dst.Write → error.
+	firstFinishErr := w.Finish()
+	require.ErrorIs(t, firstFinishErr, finishErr)
+
+	// Second Finish must return the recorded error immediately without re-processing.
+	require.ErrorIs(t, w.Finish(), finishErr)
+
+	// Write after a failed Finish must also return the recorded error.
+	_, writeErr := w.Write([]byte("data: more\n"))
+	require.ErrorIs(t, writeErr, finishErr)
+}
+
 // TestSSEEventDataJSONWriter_TerminatesAfterAddLineError verifies that after
 // processLine returns ErrSSETooManyLines (via addLine), all subsequent Write and
 // Finish calls return the same error without processing any input.

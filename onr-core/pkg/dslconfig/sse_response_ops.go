@@ -212,9 +212,10 @@ func parseJSONObject(payload []byte) (map[string]any, bool) {
 // It buffers incomplete lines across Write calls. Callers must invoke Finish after the
 // last Write to flush any trailing buffered state.
 //
-// Once Write returns a non-nil error the writer is permanently terminated: all subsequent
-// Write and Finish calls return the same error immediately without processing any input.
-// Internal state after an error is indeterminate; callers must not retry or reuse the writer.
+// Once Write or Finish returns a non-nil error the writer is permanently terminated: all
+// subsequent Write and Finish calls return the same error immediately without processing
+// any input. Internal state after an error is indeterminate; callers must not retry or
+// reuse the writer.
 type SSEEventDataJSONWriter struct {
 	dst      io.Writer
 	meta     *dslmeta.Meta
@@ -307,17 +308,21 @@ func (w *SSEEventDataJSONWriter) processLine() error {
 
 // Finish flushes any buffered trailing content. Must be called after the last Write.
 // If Write previously returned a non-nil error, Finish returns the same error immediately.
+// If Finish itself encounters an error, that error is recorded as the terminal error so
+// that any subsequent Write or Finish call returns it without re-processing.
 func (w *SSEEventDataJSONWriter) Finish() error {
 	if w.writeErr != nil {
 		return w.writeErr
 	}
 	if w.partial.Len() > 0 {
 		if err := w.processLine(); err != nil {
+			w.writeErr = err
 			return err
 		}
 	}
 	if !w.ev.isEmpty() {
 		if err := w.ev.flush(w.dst, w.meta, w.rules, w.ops, w.counts); err != nil {
+			w.writeErr = err
 			return err
 		}
 		w.ev.reset()
