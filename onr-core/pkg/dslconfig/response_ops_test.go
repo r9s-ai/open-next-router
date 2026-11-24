@@ -1,8 +1,10 @@
 package dslconfig
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -685,6 +687,82 @@ func TestSSEEventDataJSONWriter_RejectsTooManyLines(t *testing.T) {
 	w := NewSSEEventDataJSONWriter(io.Discard, &dslmeta.Meta{}, nil, nil)
 	_, err := w.Write([]byte("line1\nline2\nline3\n"))
 	require.ErrorIs(t, err, ErrSSETooManyLines)
+}
+
+// errWriter is an io.Writer that always returns the given error.
+type errWriter struct{ err error }
+
+func (e *errWriter) Write(p []byte) (int, error) { return 0, e.err }
+
+// TestSSEEventDataJSONWriter_TerminatesAfterAddLineError verifies that after
+// processLine returns ErrSSETooManyLines (via addLine), all subsequent Write and
+// Finish calls return the same error without processing any input.
+func TestSSEEventDataJSONWriter_TerminatesAfterAddLineError(t *testing.T) {
+	orig := maxSSELinesPerEvent
+	maxSSELinesPerEvent = 2
+	defer func() { maxSSELinesPerEvent = orig }()
+
+	w := NewSSEEventDataJSONWriter(io.Discard, &dslmeta.Meta{}, nil, nil)
+	_, firstErr := w.Write([]byte("line1\nline2\nline3\n"))
+	require.ErrorIs(t, firstErr, ErrSSETooManyLines)
+
+	// Subsequent Write must return the recorded error without reading input.
+	_, secondErr := w.Write([]byte("more\n"))
+	require.ErrorIs(t, secondErr, ErrSSETooManyLines)
+
+	// Finish must also return the recorded error.
+	require.ErrorIs(t, w.Finish(), ErrSSETooManyLines)
+}
+
+// TestSSEEventDataJSONWriter_TerminatesAfterDownstreamWriteError verifies that
+// after ev.flush returns a downstream write error, all subsequent Write and
+// Finish calls return the same error without touching the (indeterminate) state.
+func TestSSEEventDataJSONWriter_TerminatesAfterDownstreamWriteError(t *testing.T) {
+	downstreamErr := errors.New("downstream closed")
+	w := NewSSEEventDataJSONWriter(&errWriter{downstreamErr}, &dslmeta.Meta{}, nil, nil)
+
+	// A complete event (data line + blank terminator) triggers ev.flush → dst.Write → error.
+	_, firstErr := w.Write([]byte("data: hello\n\n"))
+	require.ErrorIs(t, firstErr, downstreamErr)
+
+	// Subsequent Write must return the recorded error.
+	_, secondErr := w.Write([]byte("data: more\n"))
+	require.ErrorIs(t, secondErr, downstreamErr)
+
+	// Finish must also return the recorded error.
+	require.ErrorIs(t, w.Finish(), downstreamErr)
+}
+
+// TestReadBoundedLine_MultiFragmentLine verifies that readBoundedLine correctly
+// assembles a line that spans multiple bufio.Reader internal fragments (isPrefix=true).
+func TestReadBoundedLine_MultiFragmentLine(t *testing.T) {
+	orig := maxSSELineBytes
+	maxSSELineBytes = 100
+	defer func() { maxSSELineBytes = orig }()
+
+	// 50-byte line followed by another line; small bufio buffer forces ≥3 fragments.
+	content := strings.Repeat("a", 50) + "\n" + "next\n"
+	br := bufio.NewReaderSize(strings.NewReader(content), 20)
+
+	line, err := readBoundedLine(br)
+	require.NoError(t, err)
+	require.Equal(t, strings.Repeat("a", 50), string(line))
+}
+
+// TestReadBoundedLine_RejectsLongLineAcrossFragments verifies that readBoundedLine
+// returns ErrSSELineTooLong before accumulating the full over-limit line in memory,
+// even when the line spans multiple bufio.Reader fragments.
+func TestReadBoundedLine_RejectsLongLineAcrossFragments(t *testing.T) {
+	orig := maxSSELineBytes
+	maxSSELineBytes = 10
+	defer func() { maxSSELineBytes = orig }()
+
+	// 100-byte line split into 5-byte fragments via small bufio buffer.
+	content := strings.Repeat("x", 100) + "\n"
+	br := bufio.NewReaderSize(strings.NewReader(content), 5)
+
+	_, err := readBoundedLine(br)
+	require.ErrorIs(t, err, ErrSSELineTooLong)
 }
 
 func responseJSONPayloads(t *testing.T, raw []byte) []map[string]any {

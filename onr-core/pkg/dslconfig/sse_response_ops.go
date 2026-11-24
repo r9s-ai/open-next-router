@@ -211,14 +211,19 @@ func parseJSONObject(payload []byte) (map[string]any, bool) {
 // rules to each complete SSE event's data payload before forwarding to an inner writer.
 // It buffers incomplete lines across Write calls. Callers must invoke Finish after the
 // last Write to flush any trailing buffered state.
+//
+// Once Write returns a non-nil error the writer is permanently terminated: all subsequent
+// Write and Finish calls return the same error immediately without processing any input.
+// Internal state after an error is indeterminate; callers must not retry or reuse the writer.
 type SSEEventDataJSONWriter struct {
-	dst     io.Writer
-	meta    *dslmeta.Meta
-	rules   []SSEJSONDelIfRule
-	ops     []JSONOp
-	counts  []int
-	ev      sseEventBuf
-	partial bytes.Buffer
+	dst      io.Writer
+	meta     *dslmeta.Meta
+	rules    []SSEJSONDelIfRule
+	ops      []JSONOp
+	counts   []int
+	ev       sseEventBuf
+	partial  bytes.Buffer
+	writeErr error // first error from Write; set once, never cleared
 }
 
 // NewSSEEventDataJSONWriter returns an [SSEEventDataJSONWriter] that transforms each SSE
@@ -241,7 +246,12 @@ func NewSSEEventDataJSONWriter(dst io.Writer, meta *dslmeta.Meta, rules []SSEJSO
 // the number of lines in one event would exceed maxSSELinesPerEvent.
 // On error, n reflects the number of bytes consumed before the error so the
 // caller can determine which bytes have already been processed.
+// Once an error is returned the writer is permanently terminated; all subsequent
+// Write and Finish calls return the same error.
 func (w *SSEEventDataJSONWriter) Write(p []byte) (int, error) {
+	if w.writeErr != nil {
+		return 0, w.writeErr
+	}
 	consumed := 0
 	for len(p) > 0 {
 		idx := bytes.IndexByte(p, '\n')
@@ -251,6 +261,7 @@ func (w *SSEEventDataJSONWriter) Write(p []byte) (int, error) {
 			// guard against unbounded partial-line growth. addLine's event-total
 			// check (maxSSEEventBytes = 4 MiB) would not fire here.
 			if w.partial.Len()+len(p) > maxSSELineBytes {
+				w.writeErr = ErrSSELineTooLong
 				return consumed, ErrSSELineTooLong
 			}
 			w.partial.Write(p)
@@ -263,12 +274,14 @@ func (w *SSEEventDataJSONWriter) Write(p []byte) (int, error) {
 		// before writing to w.partial so the per-line limit is enforced uniformly
 		// regardless of whether the line spans multiple Write calls.
 		if w.partial.Len()+idx > maxSSELineBytes {
+			w.writeErr = ErrSSELineTooLong
 			return consumed, ErrSSELineTooLong
 		}
 		w.partial.Write(p[:idx])
 		p = p[idx+1:]
 		consumed += idx + 1
 		if err := w.processLine(); err != nil {
+			w.writeErr = err
 			return consumed, err
 		}
 	}
@@ -293,7 +306,11 @@ func (w *SSEEventDataJSONWriter) processLine() error {
 }
 
 // Finish flushes any buffered trailing content. Must be called after the last Write.
+// If Write previously returned a non-nil error, Finish returns the same error immediately.
 func (w *SSEEventDataJSONWriter) Finish() error {
+	if w.writeErr != nil {
+		return w.writeErr
+	}
 	if w.partial.Len() > 0 {
 		if err := w.processLine(); err != nil {
 			return err
