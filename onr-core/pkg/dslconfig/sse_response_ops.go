@@ -52,34 +52,26 @@ func (b *sseEventBuf) eventName() string {
 }
 
 func (b *sseEventBuf) writeRaw(w io.Writer) error {
+	var buf bytes.Buffer
 	for _, l := range b.rawLines {
-		if _, err := w.Write(l); err != nil {
-			return err
-		}
-		if _, err := io.WriteString(w, "\n"); err != nil {
-			return err
-		}
+		buf.Write(l)
+		buf.WriteByte('\n')
 	}
-	_, err := io.WriteString(w, "\n")
+	buf.WriteByte('\n')
+	_, err := w.Write(buf.Bytes())
 	return err
 }
 
 func (b *sseEventBuf) writeNormalizedJSON(w io.Writer, jsonBytes []byte) error {
+	var buf bytes.Buffer
 	for _, l := range b.metaLines {
-		if _, err := w.Write(l); err != nil {
-			return err
-		}
-		if _, err := io.WriteString(w, "\n"); err != nil {
-			return err
-		}
+		buf.Write(l)
+		buf.WriteByte('\n')
 	}
-	if _, err := io.WriteString(w, "data: "); err != nil {
-		return err
-	}
-	if _, err := w.Write(jsonBytes); err != nil {
-		return err
-	}
-	_, err := io.WriteString(w, "\n\n")
+	buf.WriteString("data: ")
+	buf.Write(jsonBytes)
+	buf.WriteString("\n\n")
+	_, err := w.Write(buf.Bytes())
 	return err
 }
 

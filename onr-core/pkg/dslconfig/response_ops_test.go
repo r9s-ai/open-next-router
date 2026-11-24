@@ -464,6 +464,75 @@ func TestSSEEventDataJSONWriter_CRLFLineEndings(t *testing.T) {
 	require.False(t, hasRemove)
 }
 
+// countingWriter records how many Write calls it receives.
+type countingWriter struct {
+	buf   bytes.Buffer
+	calls int
+}
+
+func (cw *countingWriter) Write(p []byte) (int, error) {
+	cw.calls++
+	return cw.buf.Write(p)
+}
+
+// TestTransformSSEEventDataJSON_SingleWritePerEvent verifies that each complete SSE
+// event results in exactly one Write to the destination, so a flush-on-every-write
+// wrapper triggers at most one Flush per event.
+func TestTransformSSEEventDataJSON_SingleWritePerEvent(t *testing.T) {
+	cases := []struct {
+		name     string
+		in       string
+		ops      []JSONOp
+		rules    []SSEJSONDelIfRule
+		wantEvts int
+	}{
+		{
+			name: "three events with json ops",
+			in: "" +
+				"event: message_start\n" +
+				"data: {\"type\":\"message_start\"}\n\n" +
+				"data: {\"type\":\"message_delta\"}\n\n" +
+				"data: [DONE]\n\n",
+			ops:      []JSONOp{{Op: "json_del", Path: "$.nonexistent"}},
+			wantEvts: 3,
+		},
+		{
+			name: "event with sse_json_del_if rule",
+			in: "" +
+				"data: {\"type\":\"keep\"}\n\n" +
+				"data: {\"type\":\"drop\",\"usage\":1}\n\n",
+			rules:    []SSEJSONDelIfRule{{CondPath: "$.type", Equals: "drop", DelPath: "$.usage"}},
+			wantEvts: 2,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var cw countingWriter
+			err := TransformSSEEventDataJSON(bytes.NewBufferString(tc.in), &cw, &dslmeta.Meta{}, tc.rules, tc.ops)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantEvts, cw.calls, "must produce exactly one Write per SSE event")
+		})
+	}
+}
+
+// TestSSEEventDataJSONWriter_SingleWritePerEvent mirrors the above for the streaming
+// io.Writer interface so both code paths are covered.
+func TestSSEEventDataJSONWriter_SingleWritePerEvent(t *testing.T) {
+	in := "" +
+		"event: message_start\n" +
+		"data: {\"type\":\"message_start\"}\n\n" +
+		"data: {\"type\":\"message_delta\"}\n\n" +
+		"data: [DONE]\n\n"
+
+	ops := []JSONOp{{Op: "json_del", Path: "$.nonexistent"}}
+	var cw countingWriter
+	w := NewSSEEventDataJSONWriter(&cw, &dslmeta.Meta{}, nil, ops)
+	_, err := io.Copy(w, bytes.NewBufferString(in))
+	require.NoError(t, err)
+	require.NoError(t, w.Finish())
+	require.Equal(t, 3, cw.calls, "must produce exactly one Write per SSE event")
+}
+
 func responseJSONPayloads(t *testing.T, raw []byte) []map[string]any {
 	t.Helper()
 	var payloads []map[string]any
