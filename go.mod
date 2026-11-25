@@ -13,7 +13,7 @@ require (
 	github.com/gin-gonic/gin v1.12.0
 	github.com/mattn/go-isatty v0.0.24
 	github.com/meterry-com/meterry-go v0.0.1-alpha.2
-	github.com/r9s-ai/open-next-router/onr-core v1.16.24
+	github.com/r9s-ai/open-next-router/onr-core v1.16.25
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/net v0.63.0
 	gopkg.in/yaml.v3 v3.0.1
