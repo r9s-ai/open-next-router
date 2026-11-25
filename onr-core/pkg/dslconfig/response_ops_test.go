@@ -1,11 +1,14 @@
 package dslconfig
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/r9s-ai/open-next-router/onr-core/pkg/dslmeta"
@@ -462,6 +465,385 @@ func TestSSEEventDataJSONWriter_CRLFLineEndings(t *testing.T) {
 	require.Equal(t, float64(1), payloads[0]["keep"])
 	_, hasRemove := payloads[0]["remove"]
 	require.False(t, hasRemove)
+}
+
+// countingWriter records how many Write calls it receives.
+type countingWriter struct {
+	buf   bytes.Buffer
+	calls int
+}
+
+func (cw *countingWriter) Write(p []byte) (int, error) {
+	cw.calls++
+	return cw.buf.Write(p)
+}
+
+// TestTransformSSEEventDataJSON_SingleWritePerEvent verifies that each complete SSE
+// event results in exactly one Write to the destination, so a flush-on-every-write
+// wrapper triggers at most one Flush per event.
+func TestTransformSSEEventDataJSON_SingleWritePerEvent(t *testing.T) {
+	cases := []struct {
+		name     string
+		in       string
+		ops      []JSONOp
+		rules    []SSEJSONDelIfRule
+		wantEvts int
+	}{
+		{
+			name: "three events with json ops",
+			in: "" +
+				"event: message_start\n" +
+				"data: {\"type\":\"message_start\"}\n\n" +
+				"data: {\"type\":\"message_delta\"}\n\n" +
+				"data: [DONE]\n\n",
+			ops:      []JSONOp{{Op: "json_del", Path: "$.nonexistent"}},
+			wantEvts: 3,
+		},
+		{
+			name: "event with sse_json_del_if rule",
+			in: "" +
+				"data: {\"type\":\"keep\"}\n\n" +
+				"data: {\"type\":\"drop\",\"usage\":1}\n\n",
+			rules:    []SSEJSONDelIfRule{{CondPath: "$.type", Equals: "drop", DelPath: "$.usage"}},
+			wantEvts: 2,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var cw countingWriter
+			err := TransformSSEEventDataJSON(bytes.NewBufferString(tc.in), &cw, &dslmeta.Meta{}, tc.rules, tc.ops)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantEvts, cw.calls, "must produce exactly one Write per SSE event")
+		})
+	}
+}
+
+// TestSSEEventDataJSONWriter_SingleWritePerEvent mirrors the above for the streaming
+// io.Writer interface so both code paths are covered.
+func TestSSEEventDataJSONWriter_SingleWritePerEvent(t *testing.T) {
+	in := "" +
+		"event: message_start\n" +
+		"data: {\"type\":\"message_start\"}\n\n" +
+		"data: {\"type\":\"message_delta\"}\n\n" +
+		"data: [DONE]\n\n"
+
+	ops := []JSONOp{{Op: "json_del", Path: "$.nonexistent"}}
+	var cw countingWriter
+	w := NewSSEEventDataJSONWriter(&cw, &dslmeta.Meta{}, nil, ops)
+	_, err := io.Copy(w, bytes.NewBufferString(in))
+	require.NoError(t, err)
+	require.NoError(t, w.Finish())
+	require.Equal(t, 3, cw.calls, "must produce exactly one Write per SSE event")
+}
+
+// TestTransformSSEEventDataJSON_LargeRawEvent verifies that a non-JSON data
+// line larger than a typical SSE delta (64 KB) is passed through byte-for-byte
+// via writeRaw and produces exactly one Write to the destination.
+func TestTransformSSEEventDataJSON_LargeRawEvent(t *testing.T) {
+	largeData := strings.Repeat("a", 64*1024)
+	in := "data: " + largeData + "\n\ndata: [DONE]\n\n"
+
+	ops := []JSONOp{{Op: "json_del", Path: "$.x"}}
+	var cw countingWriter
+	err := TransformSSEEventDataJSON(bytes.NewBufferString(in), &cw, &dslmeta.Meta{}, nil, ops)
+	require.NoError(t, err)
+	// non-JSON event + [DONE] = 2 Write calls
+	require.Equal(t, 2, cw.calls, "must produce exactly one Write per SSE event")
+	require.Contains(t, cw.buf.String(), largeData)
+}
+
+// TestTransformSSEEventDataJSON_LargeJSONEvent verifies that a large JSON
+// payload (64 KB content field) is transformed correctly via writeNormalizedJSON
+// and produces exactly one Write to the destination.
+func TestTransformSSEEventDataJSON_LargeJSONEvent(t *testing.T) {
+	largeValue := strings.Repeat("x", 64*1024)
+	objJSON, err := json.Marshal(map[string]any{"content": largeValue, "drop": true})
+	require.NoError(t, err)
+	in := "data: " + string(objJSON) + "\n\ndata: [DONE]\n\n"
+
+	ops := []JSONOp{{Op: "json_del", Path: "$.drop"}}
+	var cw countingWriter
+	require.NoError(t, TransformSSEEventDataJSON(bytes.NewBufferString(in), &cw, &dslmeta.Meta{}, nil, ops))
+	// transformed JSON event + [DONE] = 2 Write calls
+	require.Equal(t, 2, cw.calls, "must produce exactly one Write per SSE event")
+
+	payloads := responseJSONPayloads(t, cw.buf.Bytes())
+	require.Len(t, payloads, 1)
+	require.Equal(t, largeValue, payloads[0]["content"])
+	_, hasDrop := payloads[0]["drop"]
+	require.False(t, hasDrop)
+}
+
+// TestTransformSSEEventDataJSON_RejectsLineTooLong verifies that a line
+// exceeding maxSSELineBytes returns ErrSSELineTooLong.
+func TestTransformSSEEventDataJSON_RejectsLineTooLong(t *testing.T) {
+	orig := maxSSELineBytes
+	maxSSELineBytes = 10
+	defer func() { maxSSELineBytes = orig }()
+
+	// 11-byte line (without \n) exceeds the limit of 10
+	in := strings.Repeat("x", 11) + "\n\n"
+	ops := []JSONOp{{Op: "json_del", Path: "$.x"}}
+	err := TransformSSEEventDataJSON(bytes.NewBufferString(in), io.Discard, &dslmeta.Meta{}, nil, ops)
+	require.ErrorIs(t, err, ErrSSELineTooLong)
+}
+
+// TestTransformSSEEventDataJSON_RejectsLineTooLong_NoNewline verifies that the
+// limit fires during accumulation for a stream that never sends \n.
+// ReadBytes('\n') would allocate the full payload before checking; readBoundedLine
+// checks after each fragment so the error fires within one buffer-worth of the limit.
+func TestTransformSSEEventDataJSON_RejectsLineTooLong_NoNewline(t *testing.T) {
+	orig := maxSSELineBytes
+	maxSSELineBytes = 10
+	defer func() { maxSSELineBytes = orig }()
+
+	// 11 bytes, no \n at all — stream ends at EOF without a line boundary
+	in := strings.Repeat("x", 11)
+	ops := []JSONOp{{Op: "json_del", Path: "$.x"}}
+	err := TransformSSEEventDataJSON(bytes.NewBufferString(in), io.Discard, &dslmeta.Meta{}, nil, ops)
+	require.ErrorIs(t, err, ErrSSELineTooLong)
+}
+
+// TestTransformSSEEventDataJSON_RejectsEventTooLarge verifies that an event
+// whose accumulated line bytes exceed maxSSEEventBytes returns ErrSSEEventTooLarge.
+func TestTransformSSEEventDataJSON_RejectsEventTooLarge(t *testing.T) {
+	orig := maxSSEEventBytes
+	maxSSEEventBytes = 20
+	defer func() { maxSSEEventBytes = orig }()
+
+	// Two lines totalling 22 bytes (> 20) within the same event
+	in := strings.Repeat("a", 12) + "\n" + strings.Repeat("b", 10) + "\n\n"
+	ops := []JSONOp{{Op: "json_del", Path: "$.x"}}
+	err := TransformSSEEventDataJSON(bytes.NewBufferString(in), io.Discard, &dslmeta.Meta{}, nil, ops)
+	require.ErrorIs(t, err, ErrSSEEventTooLarge)
+}
+
+// TestSSEEventDataJSONWriter_RejectsLineTooLong verifies that Write returns
+// ErrSSELineTooLong when the partial buffer would exceed maxSSELineBytes.
+func TestSSEEventDataJSONWriter_RejectsLineTooLong(t *testing.T) {
+	orig := maxSSELineBytes
+	maxSSELineBytes = 10
+	defer func() { maxSSELineBytes = orig }()
+
+	w := NewSSEEventDataJSONWriter(io.Discard, &dslmeta.Meta{}, nil, nil)
+	// 11 bytes without \n — partial accumulation exceeds limit
+	_, err := w.Write([]byte(strings.Repeat("x", 11)))
+	require.ErrorIs(t, err, ErrSSELineTooLong)
+}
+
+// TestSSEEventDataJSONWriter_Write_ReportsConsumedBytesOnError verifies that
+// Write returns the number of bytes consumed before an error, not 0.
+// When p contains a valid first line followed by an over-limit second line,
+// the first line's bytes are reported as consumed so callers do not retry them.
+func TestSSEEventDataJSONWriter_Write_ReportsConsumedBytesOnError(t *testing.T) {
+	orig := maxSSELineBytes
+	maxSSELineBytes = 5
+	defer func() { maxSSELineBytes = orig }()
+
+	w := NewSSEEventDataJSONWriter(io.Discard, &dslmeta.Meta{}, nil, nil)
+	// "ok\n" (3 bytes) fits and is consumed; "toolong\n" exceeds maxSSELineBytes=5.
+	n, err := w.Write([]byte("ok\ntoolong\n"))
+	require.ErrorIs(t, err, ErrSSELineTooLong)
+	require.Equal(t, 3, n) // "ok\n" was consumed before the error
+}
+
+// TestSSEEventDataJSONWriter_RejectsEventTooLarge verifies that Write returns
+// ErrSSEEventTooLarge when the event accumulation would exceed maxSSEEventBytes.
+func TestSSEEventDataJSONWriter_RejectsEventTooLarge(t *testing.T) {
+	orig := maxSSEEventBytes
+	maxSSEEventBytes = 20
+	defer func() { maxSSEEventBytes = orig }()
+
+	w := NewSSEEventDataJSONWriter(io.Discard, &dslmeta.Meta{}, nil, nil)
+	// First line: 12 bytes, fits
+	_, err := w.Write([]byte(strings.Repeat("a", 12) + "\n"))
+	require.NoError(t, err)
+	// Second line: 10 bytes, total 22 > 20 — triggers event-level limit
+	_, err = w.Write([]byte(strings.Repeat("b", 10) + "\n"))
+	require.ErrorIs(t, err, ErrSSEEventTooLarge)
+}
+
+// TestTransformSSEEventDataJSON_RejectsTooManyLines verifies that addLine
+// returns ErrSSETooManyLines once the per-event line count exceeds maxSSELinesPerEvent.
+func TestTransformSSEEventDataJSON_RejectsTooManyLines(t *testing.T) {
+	orig := maxSSELinesPerEvent
+	maxSSELinesPerEvent = 3
+	defer func() { maxSSELinesPerEvent = orig }()
+
+	// 4 lines in one event (no blank line separator between them) exceeds limit of 3
+	in := "data: x\ndata: x\ndata: x\ndata: x\n\n"
+	ops := []JSONOp{{Op: "json_del", Path: "$.x"}}
+	err := TransformSSEEventDataJSON(bytes.NewBufferString(in), io.Discard, &dslmeta.Meta{}, nil, ops)
+	require.ErrorIs(t, err, ErrSSETooManyLines)
+}
+
+// TestSSEEventDataJSONWriter_RejectsTooManyLines verifies Write returns
+// ErrSSETooManyLines once the per-event line count exceeds maxSSELinesPerEvent.
+func TestSSEEventDataJSONWriter_RejectsTooManyLines(t *testing.T) {
+	orig := maxSSELinesPerEvent
+	maxSSELinesPerEvent = 2
+	defer func() { maxSSELinesPerEvent = orig }()
+
+	w := NewSSEEventDataJSONWriter(io.Discard, &dslmeta.Meta{}, nil, nil)
+	_, err := w.Write([]byte("line1\nline2\nline3\n"))
+	require.ErrorIs(t, err, ErrSSETooManyLines)
+}
+
+// errWriter is an io.Writer that always returns the given error.
+type errWriter struct{ err error }
+
+func (e *errWriter) Write(p []byte) (int, error) { return 0, e.err }
+
+// failAfterNWriter succeeds for the first n Write calls, then returns err for all subsequent calls.
+type failAfterNWriter struct {
+	n   int
+	err error
+}
+
+func (f *failAfterNWriter) Write(p []byte) (int, error) {
+	if f.n <= 0 {
+		return 0, f.err
+	}
+	f.n--
+	return len(p), nil
+}
+
+// TestSSEEventDataJSONWriter_TerminatesAfterFinishError verifies that when Finish
+// itself encounters an error (e.g. a downstream write failure during the final flush),
+// the error is recorded as the terminal state: a second Finish call returns the same
+// error without re-processing, and a Write call after the failed Finish also fails.
+func TestSSEEventDataJSONWriter_TerminatesAfterFinishError(t *testing.T) {
+	finishErr := errors.New("downstream closed during finish")
+	// Allow zero successful writes so the first flush attempt in Finish fails.
+	dst := &failAfterNWriter{n: 0, err: finishErr}
+
+	w := NewSSEEventDataJSONWriter(dst, &dslmeta.Meta{}, nil, nil)
+	// Write a data line without an event-boundary blank line; no flush fires during Write.
+	_, err := w.Write([]byte("data: hello\n"))
+	require.NoError(t, err)
+
+	// Finish triggers ev.flush → dst.Write → error.
+	firstFinishErr := w.Finish()
+	require.ErrorIs(t, firstFinishErr, finishErr)
+
+	// Second Finish must return the recorded error immediately without re-processing.
+	require.ErrorIs(t, w.Finish(), finishErr)
+
+	// Write after a failed Finish must also return the recorded error.
+	_, writeErr := w.Write([]byte("data: more\n"))
+	require.ErrorIs(t, writeErr, finishErr)
+}
+
+// TestSSEEventDataJSONWriter_TerminatesAfterFinishProcessLineError verifies that
+// when Finish itself encounters a processLine error (not an ev.flush error), the
+// error is recorded as the terminal state. It also asserts via downstream call count
+// that no Write reaches dst after the error.
+func TestSSEEventDataJSONWriter_TerminatesAfterFinishProcessLineError(t *testing.T) {
+	orig := maxSSELinesPerEvent
+	maxSSELinesPerEvent = 1
+	defer func() { maxSSELinesPerEvent = orig }()
+
+	var cw countingWriter
+	w := NewSSEEventDataJSONWriter(&cw, &dslmeta.Meta{}, nil, nil)
+
+	// Write a complete data line; addLine accepts it (first line, at limit).
+	// No flush fires here because there is no blank-line event boundary.
+	_, err := w.Write([]byte("data: hello\n"))
+	require.NoError(t, err)
+
+	// Write a partial line (no \n) so it stays in w.partial.
+	_, err = w.Write([]byte("data: world"))
+	require.NoError(t, err)
+
+	// No write to dst should have happened yet.
+	require.Equal(t, 0, cw.calls)
+
+	// Finish calls processLine for the buffered partial → addLine → ErrSSETooManyLines.
+	firstFinishErr := w.Finish()
+	require.ErrorIs(t, firstFinishErr, ErrSSETooManyLines)
+
+	// The error occurred in processLine before any flush: dst must still be untouched.
+	require.Equal(t, 0, cw.calls)
+
+	// Subsequent Finish must return the recorded error without retrying.
+	require.ErrorIs(t, w.Finish(), ErrSSETooManyLines)
+	require.Equal(t, 0, cw.calls)
+
+	// Write after a failed Finish must also return the recorded error without writing.
+	_, writeErr := w.Write([]byte("data: more\n"))
+	require.ErrorIs(t, writeErr, ErrSSETooManyLines)
+	require.Equal(t, 0, cw.calls)
+}
+
+// TestSSEEventDataJSONWriter_TerminatesAfterAddLineError verifies that after
+// processLine returns ErrSSETooManyLines (via addLine), all subsequent Write and
+// Finish calls return the same error without processing any input.
+func TestSSEEventDataJSONWriter_TerminatesAfterAddLineError(t *testing.T) {
+	orig := maxSSELinesPerEvent
+	maxSSELinesPerEvent = 2
+	defer func() { maxSSELinesPerEvent = orig }()
+
+	w := NewSSEEventDataJSONWriter(io.Discard, &dslmeta.Meta{}, nil, nil)
+	_, firstErr := w.Write([]byte("line1\nline2\nline3\n"))
+	require.ErrorIs(t, firstErr, ErrSSETooManyLines)
+
+	// Subsequent Write must return the recorded error without reading input.
+	_, secondErr := w.Write([]byte("more\n"))
+	require.ErrorIs(t, secondErr, ErrSSETooManyLines)
+
+	// Finish must also return the recorded error.
+	require.ErrorIs(t, w.Finish(), ErrSSETooManyLines)
+}
+
+// TestSSEEventDataJSONWriter_TerminatesAfterDownstreamWriteError verifies that
+// after ev.flush returns a downstream write error, all subsequent Write and
+// Finish calls return the same error without touching the (indeterminate) state.
+func TestSSEEventDataJSONWriter_TerminatesAfterDownstreamWriteError(t *testing.T) {
+	downstreamErr := errors.New("downstream closed")
+	w := NewSSEEventDataJSONWriter(&errWriter{downstreamErr}, &dslmeta.Meta{}, nil, nil)
+
+	// A complete event (data line + blank terminator) triggers ev.flush → dst.Write → error.
+	_, firstErr := w.Write([]byte("data: hello\n\n"))
+	require.ErrorIs(t, firstErr, downstreamErr)
+
+	// Subsequent Write must return the recorded error.
+	_, secondErr := w.Write([]byte("data: more\n"))
+	require.ErrorIs(t, secondErr, downstreamErr)
+
+	// Finish must also return the recorded error.
+	require.ErrorIs(t, w.Finish(), downstreamErr)
+}
+
+// TestReadBoundedLine_MultiFragmentLine verifies that readBoundedLine correctly
+// assembles a line that spans multiple bufio.Reader internal fragments (isPrefix=true).
+func TestReadBoundedLine_MultiFragmentLine(t *testing.T) {
+	orig := maxSSELineBytes
+	maxSSELineBytes = 100
+	defer func() { maxSSELineBytes = orig }()
+
+	// 50-byte line followed by another line; small bufio buffer forces ≥3 fragments.
+	content := strings.Repeat("a", 50) + "\n" + "next\n"
+	br := bufio.NewReaderSize(strings.NewReader(content), 20)
+
+	line, err := readBoundedLine(br)
+	require.NoError(t, err)
+	require.Equal(t, strings.Repeat("a", 50), string(line))
+}
+
+// TestReadBoundedLine_RejectsLongLineAcrossFragments verifies that readBoundedLine
+// returns ErrSSELineTooLong before accumulating the full over-limit line in memory,
+// even when the line spans multiple bufio.Reader fragments.
+func TestReadBoundedLine_RejectsLongLineAcrossFragments(t *testing.T) {
+	orig := maxSSELineBytes
+	maxSSELineBytes = 10
+	defer func() { maxSSELineBytes = orig }()
+
+	// 100-byte line split into 5-byte fragments via small bufio buffer.
+	content := strings.Repeat("x", 100) + "\n"
+	br := bufio.NewReaderSize(strings.NewReader(content), 5)
+
+	_, err := readBoundedLine(br)
+	require.ErrorIs(t, err, ErrSSELineTooLong)
 }
 
 func responseJSONPayloads(t *testing.T, raw []byte) []map[string]any {
